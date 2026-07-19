@@ -1,0 +1,609 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum UserRole {
+  TOURIST
+  GUIDE
+  ORGANIZER
+  FAMILY_TRAVELER
+  ADMIN
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+  NONE
+}
+
+enum PrivacySetting {
+  PUBLIC
+  PRIVATE
+  INVITE_ONLY
+}
+
+enum JoinRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  WAITLISTED
+}
+
+enum BookingType {
+  TRIP
+  GUIDE
+  HOTEL
+  VEHICLE
+  LOCAL_EXPERIENCE
+  TEMPLE_DARSHAN
+  ADVENTURE_ACTIVITY
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum TransactionType {
+  DEPOSIT
+  WITHDRAWAL
+  PAYMENT
+  REFUND
+  CASHBACK
+  REWARD
+  REFERRAL
+}
+
+model User {
+  id                 String             @id @default(uuid())
+  email              String?            @unique
+  phoneNumber        String?            @unique
+  passwordHash       String?
+  role               UserRole           @default(TOURIST)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  verificationStatus VerificationStatus @default(NONE)
+
+  // Auth Relations
+  socialLogins      SocialLogin[]
+  
+  // Profile
+  profile            Profile?
+  guideProfile       GuideProfile?
+  
+  // App Relations
+  createdTrips       Trip[]             @relation("TripCreator")
+  tripMemberships    TripMember[]
+  joinRequests       JoinRequest[]
+  
+  // Group Relations
+  createdGroups      Group[]            @relation("GroupCreator")
+  groupMemberships   GroupMember[]
+  groupPosts         GroupPost[]
+  groupComments      GroupComment[]
+  votes              PollVote[]
+  
+  // Payments & Wallet
+  wallet             Wallet?
+  transactions       Transaction[]
+  bookings           Booking[]          @relation("UserBookings")
+  
+  // Safety
+  sosAlerts          SOSAlert[]
+  emergencyContacts  EmergencyContact[]
+  liveLocations      LiveLocation[]
+
+  // Social Relations
+  followers          Follow[]           @relation("Following")
+  following          Follow[]           @relation("Follower")
+  blogs              Blog[]
+  likes              Like[]
+  comments           Comment[]
+
+  // Chat Relations
+  chatMemberships    ChatRoomMember[]
+  sentMessages       Message[]          @relation("MessageSender")
+  readReceipts       MessageReadReceipt[]
+  initiatedCalls     CallLog[]          @relation("CallInitiator")
+  receivedCalls      CallLog[]          @relation("CallReceiver")
+
+  // Admin Logs
+  adminActions       AdminLog[]
+}
+
+model SocialLogin {
+  id         String   @id @default(uuid())
+  userId     String
+  provider   String   // 'google', 'facebook', 'apple'
+  providerId String   @unique
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Profile {
+  id               String             @id @default(uuid())
+  userId           String             @unique
+  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firstName        String
+  lastName         String
+  avatarUrl        String?
+  coverPhotoUrl    String?
+  bio              String?
+  age              Int?
+  gender           String?
+  languages        String[]           // Array of languages spoken
+  country          String             @default("India")
+  state            String?
+  city             String?
+  interests        String[]           // List of user interests
+  budgetPreference String?            // 'budget', 'moderate', 'luxury'
+  travelStyle      String[]           // 'adventure', 'luxury', 'religious', 'backpacking', 'family', 'solo'
+  verifiedBadge    Boolean            @default(false)
+  rating           Float              @default(5.0)
+  
+  // Documents for verification
+  aadhaarNumber      String?
+  aadhaarPhotoUrl    String?
+  govIdType          String?            // 'Passport', 'PAN', 'VoterID'
+  govIdPhotoUrl      String?
+  faceVerificationImg String?
+  selfieVerification String?
+
+  updatedAt        DateTime           @updatedAt
+}
+
+model GuideProfile {
+  id               String             @id @default(uuid())
+  userId           String             @unique
+  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  licenseNumber    String             @unique
+  licensePhotoUrl  String
+  experienceYears  Int
+  expertisePlaces  String[]           // List of places/destinations
+  languagesSpoken  String[]
+  hourlyRate       Float
+  dailyRate        Float
+  availability     Json               // Weekly/custom calendar representation
+  verifiedStatus   VerificationStatus @default(PENDING)
+  rating           Float              @default(5.0)
+  
+  packages         GuidePackage[]
+  bookings         Booking[]          @relation("GuideBookings")
+  reviews          Review[]
+}
+
+model GuidePackage {
+  id             String       @id @default(uuid())
+  guideProfileId String
+  guide          GuideProfile @relation(fields: [guideProfileId], references: [id], onDelete: Cascade)
+  title          String
+  description    String
+  price          Float
+  durationDays   Int
+  citiesIncluded String[]
+  createdAt      DateTime     @default(now())
+}
+
+model Trip {
+  id            String         @id @default(uuid())
+  creatorId     String
+  creator       User           @relation("TripCreator", fields: [creatorId], references: [id])
+  name          String
+  description   String
+  cities        String[]       // Multi-city route details (e.g. ['Ranchi', 'Delhi', 'Mathura'])
+  startDate     DateTime
+  endDate       DateTime
+  durationDays  Int
+  budget        Float
+  availableSeats Int
+  totalSeats    Int
+  meetingPoint  String
+  vehicleDetails String?
+  hotelDetails   String?
+  foodIncluded  Boolean        @default(false)
+  guideIncluded Boolean        @default(false)
+  privacy       PrivacySetting @default(PUBLIC)
+  rules         String?
+  requirements  String?
+  ageLimitMin   Int?
+  ageLimitMax   Int?
+  genderPref    String?        // 'Any', 'MaleOnly', 'FemaleOnly'
+  languages     String[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  members       TripMember[]
+  requests      JoinRequest[]
+  bookings      Booking[]
+}
+
+model TripMember {
+  id       String   @id @default(uuid())
+  tripId   String
+  trip     Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt DateTime @default(now())
+  role     String   @default("MEMBER") // 'ORGANIZER', 'CO_LEAD', 'MEMBER'
+
+  @@unique([tripId, userId])
+}
+
+model JoinRequest {
+  id           String            @id @default(uuid())
+  tripId       String
+  trip         Trip              @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status       JoinRequestStatus @default(PENDING)
+  message      String?
+  fromCity     String?           // For Family Connect: where the user joins from
+  toCity       String?           // For Family Connect: where the user travels to
+  adjustedPrice Float?           // Auto-calculated adjusted payment for remaining cities
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  @@unique([tripId, userId])
+}
+
+model Group {
+  id          String        @id @default(uuid())
+  creatorId   String
+  creator     User          @relation("GroupCreator", fields: [creatorId], references: [id])
+  name        String
+  description String
+  joiningFee  Float         @default(0.0)
+  isPaid      Boolean       @default(false)
+  privacy     PrivacySetting @default(PUBLIC)
+  avatarUrl   String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  members       GroupMember[]
+  posts         GroupPost[]
+  announcements Announcement[]
+  polls         Poll[]
+  expenses      Expense[]
+}
+
+model GroupMember {
+  id       String   @id @default(uuid())
+  groupId  String
+  group    Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt DateTime @default(now())
+  role     String   @default("MEMBER") // 'OWNER', 'ADMIN', 'MEMBER'
+
+  attendance Attendance[]
+
+  @@unique([groupId, userId])
+}
+
+model GroupPost {
+  id        String         @id @default(uuid())
+  groupId   String
+  group     Group          @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  content   String
+  imageUrl  String?
+  createdAt DateTime       @default(now())
+  comments  GroupComment[]
+}
+
+model GroupComment {
+  id        String    @id @default(uuid())
+  postId    String
+  post      GroupPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  content   String
+  createdAt DateTime  @default(now())
+}
+
+model Announcement {
+  id        String   @id @default(uuid())
+  groupId   String
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  title     String
+  content   String
+  createdAt DateTime @default(now())
+}
+
+model Poll {
+  id        String       @id @default(uuid())
+  groupId   String
+  group     Group        @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  question  String
+  expiresAt DateTime
+  createdAt DateTime     @default(now())
+  options   PollOption[]
+}
+
+model PollOption {
+  id     String     @id @default(uuid())
+  pollId String
+  poll   Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  text   String
+  votes  PollVote[]
+}
+
+model PollVote {
+  id       String     @id @default(uuid())
+  optionId String
+  option   PollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([optionId, userId])
+}
+
+model Expense {
+  id          String       @id @default(uuid())
+  groupId     String
+  group       Group        @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  description String
+  amount      Float
+  paidById    String
+  splitData   Json         // Details of how expenses are split between members
+  createdAt   DateTime     @default(now())
+}
+
+model Attendance {
+  id          String      @id @default(uuid())
+  memberId    String
+  member      GroupMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  date        DateTime
+  isPresent   Boolean     @default(true)
+  remarks     String?
+
+  @@unique([memberId, date])
+}
+
+model Booking {
+  id              String        @id @default(uuid())
+  userId          String
+  user            User          @relation("UserBookings", fields: [userId], references: [id])
+  type            BookingType
+  targetId        String        // ID of the trip, guide package, hotel, vehicle etc.
+  guideProfileId  String?
+  guide           GuideProfile? @relation("GuideBookings", fields: [guideProfileId], references: [id])
+  tripId          String?
+  trip            Trip?         @relation(fields: [tripId], references: [id])
+  bookingDate     DateTime      @default(now())
+  travelDate      DateTime
+  amount          Float
+  status          BookingStatus @default(PENDING)
+  paymentStatus   PaymentStatus @default(PENDING)
+  ticketData      Json?         // QR codes, offline validation info
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  payments        Payment[]
+}
+
+model Payment {
+  id            String        @id @default(uuid())
+  bookingId     String
+  booking       Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  gateway       String        // 'RAZORPAY', 'STRIPE', 'WALLET'
+  gatewayTxnId  String        @unique
+  amount        Float
+  status        PaymentStatus @default(PENDING)
+  couponCode    String?
+  gstInvoiceId  String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
+
+model Wallet {
+  id           String              @id @default(uuid())
+  userId       String              @unique
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balance      Float               @default(0.0)
+  rewardPoints Int                 @default(0)
+  transactions WalletTransaction[]
+}
+
+model WalletTransaction {
+  id        String          @id @default(uuid())
+  walletId  String
+  wallet    Wallet          @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  amount    Float
+  type      TransactionType
+  remark    String?
+  createdAt DateTime        @default(now())
+}
+
+model Transaction {
+  id           String        @id @default(uuid())
+  userId       String
+  user         User          @relation(fields: [userId], references: [id])
+  amount       Float
+  type         TransactionType
+  status       PaymentStatus @default(SUCCESS)
+  description  String?
+  createdAt    DateTime      @default(now())
+}
+
+model ChatRoom {
+  id        String           @id @default(uuid())
+  name      String?          // Dynamic name or specific name for groups
+  isGroup   Boolean          @default(false)
+  createdAt DateTime         @default(now())
+  members   ChatRoomMember[]
+  messages  Message[]
+}
+
+model ChatRoomMember {
+  id         String   @id @default(uuid())
+  chatRoomId String
+  chatRoom   ChatRoom @relation(fields: [chatRoomId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt   DateTime @default(now())
+
+  @@unique([chatRoomId, userId])
+}
+
+model Message {
+  id         String               @id @default(uuid())
+  chatRoomId String
+  chatRoom   ChatRoom             @relation(fields: [chatRoomId], references: [id], onDelete: Cascade)
+  senderId   String
+  sender     User                 @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  content    String?
+  mediaType  String?              // 'IMAGE', 'VIDEO', 'FILE', 'VOICE', 'GIF', 'NONE'
+  mediaUrl   String?
+  createdAt  DateTime             @default(now())
+  readBy     MessageReadReceipt[]
+}
+
+model MessageReadReceipt {
+  id        String   @id @default(uuid())
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  readAt    DateTime @default(now())
+
+  @@unique([messageId, userId])
+}
+
+model CallLog {
+  id          String   @id @default(uuid())
+  initiatorId String
+  initiator   User     @relation("CallInitiator", fields: [initiatorId], references: [id])
+  receiverId  String
+  receiver    User     @relation("CallReceiver", fields: [receiverId], references: [id])
+  isVideo     Boolean  @default(false)
+  startedAt   DateTime @default(now())
+  endedAt     DateTime?
+  durationSec Int?
+}
+
+model SOSAlert {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  latitude  Float
+  longitude Float
+  alertTime DateTime @default(now())
+  status    String   @default("ACTIVE") // 'ACTIVE', 'RESOLVED'
+}
+
+model EmergencyContact {
+  id          String @id @default(uuid())
+  userId      String
+  user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  relation    String
+  phoneNumber String
+}
+
+model LiveLocation {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  latitude  Float
+  longitude Float
+  updatedAt DateTime @default(now())
+}
+
+model Review {
+  id             String       @id @default(uuid())
+  guideProfileId String
+  guide          GuideProfile @relation(fields: [guideProfileId], references: [id], onDelete: Cascade)
+  reviewerName   String
+  rating         Float
+  comment        String
+  createdAt      DateTime     @default(now())
+}
+
+model Blog {
+  id        String    @id @default(uuid())
+  authorId  String
+  author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  title     String
+  content   String
+  coverImg  String?
+  createdAt DateTime  @default(now())
+  likes     Like[]
+  comments  Comment[]
+}
+
+model Like {
+  id        String   @id @default(uuid())
+  blogId    String
+  blog      Blog     @relation(fields: [blogId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([blogId, userId])
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  blogId    String
+  blog      Blog     @relation(fields: [blogId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  content   String
+  createdAt DateTime @default(now())
+}
+
+model Follow {
+  id          String   @id @default(uuid())
+  followerId  String
+  follower    User     @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
+  followingId String
+  following   User     @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([followerId, followingId])
+}
+
+model AppBanner {
+  id        String   @id @default(uuid())
+  imageUrl  String
+  linkUrl   String?
+  title     String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model Coupon {
+  id        String    @id @default(uuid())
+  code      String    @unique
+  discount  Float     // Percent or Flat amount
+  isPercent Boolean   @default(true)
+  expiresAt DateTime
+  active    Boolean   @default(true)
+}
+
+model AdminLog {
+  id        String   @id @default(uuid())
+  adminId   String
+  admin     User     @relation(fields: [adminId], references: [id])
+  action    String
+  ipAddress String?
+  createdAt DateTime @default(now())
+}
