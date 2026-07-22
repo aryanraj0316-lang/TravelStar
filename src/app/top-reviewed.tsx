@@ -412,7 +412,7 @@ export default function TopReviewedScreen() {
 
                   <TouchableOpacity
                     style={styles.playBtnCircle}
-                    onPress={() => showToast(`▶️ Playing Reel: ${reel.title}`)}
+                    onPress={() => router.push('/stories')}
                   >
                     <Play size={20} color={C.white} fill={C.white} style={{ marginLeft: 2 }} />
                   </TouchableOpacity>

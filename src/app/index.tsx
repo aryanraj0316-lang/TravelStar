@@ -35,17 +35,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const TRENDING_CARD_WIDTH = SCREEN_WIDTH * 0.52;
 
-// ─── Dark Theme Color Palette ───────────────────────────────────────
+// ─── Color Palette synchronized with search page theme ───────────────
 const C = {
-  bg: '#0D0F1A',
-  card: '#161829',
-  cardAlt: '#1C1E30',
-  border: '#252740',
+  bg: '#060814',
+  card: '#111322',
+  cardAlt: '#181C2E',
+  border: '#1A1D30',
   white: '#FFFFFF',
-  textSec: '#8B8D9E',
-  textMuted: '#5A5C6E',
+  textSec: '#7E8494',
+  textMuted: '#64748B',
   purple: '#0066FF',
-  blue: '#3B82F6',
+  blue: '#0066FF',
   green: '#10B981',
   orange: '#F59E0B',
   red: '#EF4444',
@@ -56,17 +56,17 @@ const C = {
 
 // ─── Data ───────────────────────────────────────────────────────────
 const roles: { value: UserRole; label: string; sub: string; Icon: typeof Globe; borderColors: [string, string] }[] = [
-  { value: 'TOURIST', label: 'Tourist', sub: 'Explore places', Icon: Globe, borderColors: ['#00F2FE', '#4FACFE'] },
-  { value: 'GUIDE', label: 'Travel Guide', sub: 'Guide travelers', Icon: Map, borderColors: ['#EC4899', '#8B5CF6'] },
-  { value: 'ORGANIZER', label: 'Group Organizer', sub: 'Plan together', Icon: Users, borderColors: ['#F59E0B', '#EF4444'] },
-  { value: 'FAMILY_TRAVELER', label: 'Family', sub: 'Travel safely', Icon: Heart, borderColors: ['#10B981', '#06B6D4'] },
+  { value: 'TOURIST', label: 'Tourist', sub: 'Explore places', Icon: Globe, borderColors: ['#0066FF', '#00F2FE'] },
+  { value: 'GUIDE', label: 'Travel Guide', sub: 'Guide travelers', Icon: Map, borderColors: ['#0066FF', '#6366F1'] },
+  { value: 'ORGANIZER', label: 'Group Organizer', sub: 'Plan together', Icon: Users, borderColors: ['#0066FF', '#7C3AED'] },
+  { value: 'FAMILY_TRAVELER', label: 'Family', sub: 'Travel safely', Icon: Heart, borderColors: ['#0066FF', '#BA68C8'] },
 ];
 
 const quickAccessItems: { label: string; Icon: typeof MapPin; gradient: [string, string]; iconColor: string; isNew: boolean; route?: string }[] = [
-  { label: 'Nearby', Icon: MapPin, gradient: ['#065F46', '#10B981'], iconColor: '#A7F3D0', isNew: false, route: '/nearby-trips' },
-  { label: 'Trips', Icon: Plane, gradient: ['#1E40AF', '#3B82F6'], iconColor: '#BFDBFE', isNew: false, route: '/search' },
-  { label: 'Bookings', Icon: CalendarCheck, gradient: ['#92400E', '#F59E0B'], iconColor: '#FDE68A', isNew: false, route: '/bookings' },
-  { label: 'Budget Tracker', Icon: Wallet, gradient: ['#B45309', '#FBBF24'], iconColor: '#FEF08A', isNew: true, route: '/budget-tracker' },
+  { label: 'Nearby', Icon: MapPin, gradient: ['#111322', '#1B1E30'], iconColor: '#38BDF8', isNew: false, route: '/nearby-trips' },
+  { label: 'Trips', Icon: Plane, gradient: ['#111322', '#1B1E30'], iconColor: '#818CF8', isNew: false, route: '/search' },
+  { label: 'Bookings', Icon: CalendarCheck, gradient: ['#111322', '#1B1E30'], iconColor: '#34D399', isNew: false, route: '/bookings' },
+  { label: 'Budget Tracker', Icon: Wallet, gradient: ['#111322', '#1B1E30'], iconColor: '#F59E0B', isNew: true, route: '/budget-tracker' },
 ];
 
 const storyData = [
@@ -330,85 +330,114 @@ function AppleMultilingualGreeting() {
 }
 
 function FloatingTouristWeatherCard() {
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const anim = useRef(new Animated.Value(1)).current;
+  // Base image: always static at (0,0), fully visible
+  const [baseIndex, setBaseIndex] = useState(0);
+  // Sliding image: only exists while animating, starts off-screen and slides to (0,0)
+  const [slidingIndex, setSlidingIndex] = useState<number | null>(null);
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const baseIndexRef = useRef(0);
+  const isAnimatingRef = useRef(false);
 
   useEffect(() => {
     const interval = setInterval(() => {
-      Animated.timing(anim, {
-        toValue: 0,
-        duration: 350,
+      if (isAnimatingRef.current) return; // guard against overlap
+      isAnimatingRef.current = true;
+
+      const nextIdx = (baseIndexRef.current + 1) % TOURIST_WEATHER_LOCATIONS.length;
+
+      // 1. Add the sliding layer (starts off-screen because slideAnim is 0)
+      slideAnim.setValue(0);
+      setSlidingIndex(nextIdx);
+
+      // 2. Animate it from off-screen to (0,0)
+      Animated.timing(slideAnim, {
+        toValue: 1,
+        duration: 600,
+        easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
-      }).start(() => {
-        setCurrentIndex((prev) => (prev + 1) % TOURIST_WEATHER_LOCATIONS.length);
-        Animated.spring(anim, {
-          toValue: 1,
-          tension: 45,
-          friction: 7,
-          useNativeDriver: true,
-        }).start();
+      }).start(({ finished }) => {
+        if (finished) {
+          // 3. Animation done — sliding layer now fully covers base.
+          //    Promote: make base show this image, remove sliding layer.
+          //    Both layers show the same image at (0,0), so swap is invisible.
+          baseIndexRef.current = nextIdx;
+          setBaseIndex(nextIdx);
+          setSlidingIndex(null);
+        }
+        isAnimatingRef.current = false;
       });
-    }, 2000);
+    }, 3200);
 
     return () => clearInterval(interval);
-  }, [anim]);
+  }, []);
 
-  const item = TOURIST_WEATHER_LOCATIONS[currentIndex];
-  // 0: left slide, 1: top slide, 2: right slide, 3: bottom slide
-  const transitionType = currentIndex % 4;
+  // Slide direction alternates based on the sliding image index
+  const dir = slidingIndex !== null ? slidingIndex % 4 : 0;
 
-  const translateX = anim.interpolate({
+  const translateX = slideAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: transitionType === 0 ? [-70, 0] : transitionType === 2 ? [70, 0] : [0, 0],
+    outputRange: dir === 0 ? [-200, 0] : dir === 2 ? [200, 0] : [0, 0],
   });
 
-  const translateY = anim.interpolate({
+  const translateY = slideAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: transitionType === 1 ? [-50, 0] : transitionType === 3 ? [50, 0] : [0, 0],
+    outputRange: dir === 1 ? [-200, 0] : dir === 3 ? [200, 0] : [0, 0],
   });
 
-  const scale = anim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.9, 1],
-  });
+  const renderWeatherContent = (loc: typeof TOURIST_WEATHER_LOCATIONS[0]) => (
+    <>
+      <Image source={{ uri: loc.image }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+      <LinearGradient
+        colors={['rgba(13,15,26,0.35)', 'rgba(13,15,26,0.92)']}
+        style={StyleSheet.absoluteFill}
+      />
+      <View style={styles.weatherContent}>
+        <View style={styles.locationRow}>
+          <MapPin size={13} color={C.green} />
+          <Text style={styles.locationText}>{loc.name}</Text>
+          <Text style={styles.placeText}>• {loc.place}</Text>
+        </View>
+        <View style={styles.tempRow}>
+          <Text style={styles.tempText}>{loc.temp}</Text>
+          <Sun size={32} color={C.orange} />
+        </View>
+        <Text style={styles.weatherCondition}>{loc.condition}</Text>
+        <Text style={styles.aqiText}>{loc.aqi}</Text>
+        <View style={styles.weatherBottom}>
+          <Text style={styles.weatherDetail}>Humidity {loc.humidity}</Text>
+          <View style={styles.badgeLive}>
+            <View style={styles.liveDot} />
+            <Text style={styles.liveText}>LIVE</Text>
+          </View>
+        </View>
+      </View>
+    </>
+  );
+
+  const baseItem = TOURIST_WEATHER_LOCATIONS[baseIndex];
+  const slidingItem = slidingIndex !== null ? TOURIST_WEATHER_LOCATIONS[slidingIndex] : null;
 
   return (
     <View style={styles.weatherCard}>
-      <Animated.View
-        style={[
-          StyleSheet.absoluteFill,
-          {
-            opacity: anim,
-            transform: [{ translateX }, { translateY }, { scale }],
-          },
-        ]}
-      >
-        <Image source={{ uri: item.image }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-        <LinearGradient
-          colors={['rgba(13,15,26,0.35)', 'rgba(13,15,26,0.92)']}
-          style={StyleSheet.absoluteFill}
-        />
-        <View style={styles.weatherContent}>
-          <View style={styles.locationRow}>
-            <MapPin size={13} color={C.green} />
-            <Text style={styles.locationText}>{item.name}</Text>
-            <Text style={styles.placeText}>• {item.place}</Text>
-          </View>
-          <View style={styles.tempRow}>
-            <Text style={styles.tempText}>{item.temp}</Text>
-            <Sun size={32} color={C.orange} />
-          </View>
-          <Text style={styles.weatherCondition}>{item.condition}</Text>
-          <Text style={styles.aqiText}>{item.aqi}</Text>
-          <View style={styles.weatherBottom}>
-            <Text style={styles.weatherDetail}>Humidity {item.humidity}</Text>
-            <View style={styles.badgeLive}>
-              <View style={styles.liveDot} />
-              <Text style={styles.liveText}>LIVE</Text>
-            </View>
-          </View>
-        </View>
-      </Animated.View>
+      {/* Base layer: always static, always visible, never animates */}
+      <View style={StyleSheet.absoluteFill}>
+        {renderWeatherContent(baseItem)}
+      </View>
+
+      {/* Sliding layer: only rendered while animating, slides from off-screen to (0,0) */}
+      {slidingItem && (
+        <Animated.View
+          style={[
+            StyleSheet.absoluteFill,
+            {
+              transform: [{ translateX }, { translateY }],
+              zIndex: 10,
+            },
+          ]}
+        >
+          {renderWeatherContent(slidingItem)}
+        </Animated.View>
+      )}
     </View>
   );
 }
@@ -465,12 +494,14 @@ function OngoingTripNotificationCard() {
 
 // ─── Component ──────────────────────────────────────────────────────
 export default function HomeScreen() {
-  const { currentRole, setCurrentRole, profile } = useApp();
+  const { currentRole, setCurrentRole, profile, setNavbarHidden } = useApp();
   const router = useRouter();
   const [activeDot, setActiveDot] = useState(0);
   const trendingRef = useRef<ScrollView>(null);
   const scrollXRef = useRef(0);
   const isInteractingRef = useRef(false);
+  const lastScrollYRef = useRef(0);
+  const navbarHiddenRef = useRef(false);
 
   useEffect(() => {
     let animFrameId: number;
@@ -501,6 +532,21 @@ export default function HomeScreen() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        scrollEventThrottle={16}
+        onScroll={(e) => {
+          const y = e.nativeEvent.contentOffset.y;
+          const diff = y - lastScrollYRef.current;
+          if (diff > 10 && !navbarHiddenRef.current) {
+            // Scrolling down — hide navbar
+            navbarHiddenRef.current = true;
+            setNavbarHidden(true);
+          } else if (diff < -8 && navbarHiddenRef.current) {
+            // Scrolling up — show navbar
+            navbarHiddenRef.current = false;
+            setNavbarHidden(false);
+          }
+          lastScrollYRef.current = y;
+        }}
       >
         {/* ════════════════════════════════════════════════
             HEADER — Greeting + Avatar
@@ -527,7 +573,7 @@ export default function HomeScreen() {
               onPress={() => router.push('/profile')}
             >
               <LinearGradient
-                colors={['#EC4899', '#8B5CF6']}
+                colors={['#0066FF', '#7C3AED']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.avatarBorder}
@@ -555,19 +601,23 @@ export default function HomeScreen() {
               <TouchableOpacity
                 key={role.value}
                 activeOpacity={0.8}
-                onPress={() => setCurrentRole(role.value)}
+                onPress={() => {
+                  setCurrentRole(role.value);
+                  // Update the profile context role to mirror this change globally
+                  profile.role = role.value;
+                }}
               >
                 <LinearGradient
                   colors={
                     isActive
-                      ? ['#00F2FE', '#06B6D4', '#0891B2', '#3B82F6']
-                      : ['rgba(59, 130, 246, 0.45)', 'rgba(139, 92, 246, 0.35)', 'rgba(236, 72, 153, 0.35)']
+                      ? ['#0066FF', '#6366F1', '#8B5CF6']
+                      : ['#1A1D30', '#1A1D30']
                   }
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                   style={styles.roleTabBorder}
                 >
-                  <View style={[styles.roleTabInner, isActive && { backgroundColor: 'rgba(6, 182, 212, 0.22)' }]}>
+                  <View style={[styles.roleTabInner, isActive && { backgroundColor: 'rgba(0, 102, 255, 0.12)' }]}>
                     <role.Icon size={18} color={isActive ? C.white : C.textSec} strokeWidth={2} />
                     <View>
                       <Text style={[styles.roleLabel, { color: C.white }]}>{role.label}</Text>
@@ -596,9 +646,9 @@ export default function HomeScreen() {
           contentContainerStyle={styles.storiesRow}
         >
           {storyData.map((story) => (
-            <TouchableOpacity key={story.id} style={styles.storyItem} activeOpacity={0.8}>
+            <TouchableOpacity key={story.id} style={styles.storyItem} activeOpacity={0.8} onPress={() => router.push('/stories')}>
               <LinearGradient
-                colors={['#0047C4', '#0066FF', '#00D0FF']}
+                colors={['#00E5FF', '#0066FF', '#0891B2']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.storyBorder}
@@ -621,7 +671,7 @@ export default function HomeScreen() {
             QUICK ACCESS GRID — Squircle tiles
             ════════════════════════════════════════════════ */}
         <LinearGradient
-          colors={['#181D33', '#0F1224']}
+          colors={['#111322', '#0A0C16']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.quickCard}
@@ -888,7 +938,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 14.5,
-    backgroundColor: '#151929',
+    backgroundColor: '#111322',
     minWidth: 140,
   },
   roleLabel: {
@@ -929,12 +979,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: 'rgba(59, 130, 246, 0.35)',
-    shadowColor: '#3B82F6',
+    borderColor: '#1A1D30',
+    shadowColor: '#0066FF',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.15,
     shadowRadius: 10,
-    elevation: 8,
+    elevation: 4,
   },
   quickItem: {
     flex: 1,

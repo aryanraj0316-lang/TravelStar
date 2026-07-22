@@ -6,24 +6,21 @@ import {
   PlusCircle,
   Search,
   User,
-  Plane,
-  Train,
-  Car,
-  Bike,
 } from 'lucide-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
-  Platform,
+  Dimensions,
   StyleSheet,
   TouchableOpacity,
   useColorScheme,
   View,
   Text,
-  Easing,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+
+import { useApp } from '@/store/AppContext';
 
 const TAB_ICONS: Record<string, typeof Home> = {
   index: Home,
@@ -42,147 +39,6 @@ const TAB_LABELS: Record<string, string> = {
   chat: 'Chat',
   profile: 'Profile',
 };
-
-export type TravelVehicle = 'FLIGHT' | 'TRAIN' | 'CAR' | 'BIKE';
-const VEHICLE_SEQUENCE: TravelVehicle[] = ['FLIGHT', 'TRAIN', 'CAR', 'BIKE'];
-
-// ─── Top Border Vehicle Animation Banner ───────────────────────────────
-function NavTravelBanner({
-  animValue,
-  startX,
-  targetX,
-  vehicleType,
-}: {
-  animValue: Animated.Value;
-  startX: number;
-  targetX: number;
-  vehicleType: TravelVehicle;
-}) {
-  const isMovingRight = targetX >= startX;
-
-  const currentX = animValue.interpolate({
-    inputRange: [0, 1],
-    outputRange: [startX, targetX],
-  });
-
-  // Flight High Altitude Take-Off Arc (-35px sky lift!)
-  const flightY = animValue.interpolate({
-    inputRange: [0, 0.25, 0.75, 1],
-    outputRange: [0, -35, -35, 0],
-  });
-
-  // Takeoff nose pitch rotation: tilts UP in direction of flight, then levels off and lands down!
-  const flightRotate = animValue.interpolate({
-    inputRange: [0, 0.25, 0.75, 1],
-    outputRange: isMovingRight
-      ? ['0deg', '-28deg', '-8deg', '10deg']
-      : ['0deg', '28deg', '8deg', '-10deg'],
-  });
-
-  // Gentle road bounce for Train/Car/Bike
-  const vehicleBounceY = animValue.interpolate({
-    inputRange: [0, 0.2, 0.4, 0.6, 0.8, 1],
-    outputRange: [0, -3, 0, -3, 0, 0],
-  });
-
-  const opacity = animValue.interpolate({
-    inputRange: [0, 0.05, 0.95, 1],
-    outputRange: [0, 1, 1, 0],
-  });
-
-  // Airplane ✈️ emoji points RIGHT by default: moving RIGHT uses scaleX: 1, moving LEFT uses scaleX: -1
-  const planeScaleX = isMovingRight ? 1 : -1;
-
-  // Ground vehicles (🚗, 🏍️, 🚂) point LEFT by default: moving RIGHT uses scaleX: -1, moving LEFT uses scaleX: 1
-  const groundScaleX = isMovingRight ? -1 : 1;
-
-  // 1. FLIGHT ✈️ (High Altitude Take-Off)
-  if (vehicleType === 'FLIGHT') {
-    return (
-      <Animated.View
-        pointerEvents="none"
-        style={[
-          styles.travelVehicleWrap,
-          {
-            left: currentX,
-            opacity: opacity,
-            transform: [
-              { translateY: flightY },
-              { rotate: flightRotate },
-              { scaleX: planeScaleX },
-            ],
-          },
-        ]}
-      >
-        <Text style={styles.largeEmojiVehicle}>✈️</Text>
-      </Animated.View>
-    );
-  }
-
-  // 2. TRAIN 🚂🚃🚃🚃 (Compound Emoji Train with 3 coaches)
-  if (vehicleType === 'TRAIN') {
-    return (
-      <Animated.View
-        pointerEvents="none"
-        style={[
-          styles.travelVehicleWrap,
-          {
-            left: currentX,
-            opacity: opacity,
-            transform: [
-              { translateY: vehicleBounceY },
-              { scaleX: groundScaleX },
-            ],
-          },
-        ]}
-      >
-        <Text style={styles.largeEmojiVehicle}>🚂🚃🚃🚃</Text>
-      </Animated.View>
-    );
-  }
-
-  // 3. CAR 🚗
-  if (vehicleType === 'CAR') {
-    return (
-      <Animated.View
-        pointerEvents="none"
-        style={[
-          styles.travelVehicleWrap,
-          {
-            left: currentX,
-            opacity: opacity,
-            transform: [
-              { translateY: vehicleBounceY },
-              { scaleX: groundScaleX },
-            ],
-          },
-        ]}
-      >
-        <Text style={styles.largeEmojiVehicle}>🚗</Text>
-      </Animated.View>
-    );
-  }
-
-  // 4. BIKE 🏍️
-  return (
-    <Animated.View
-      pointerEvents="none"
-      style={[
-        styles.travelVehicleWrap,
-        {
-          left: currentX,
-          opacity: opacity,
-          transform: [
-            { translateY: vehicleBounceY },
-            { scaleX: groundScaleX },
-          ],
-        },
-      ]}
-    >
-      <Text style={styles.largeEmojiVehicle}>🏍️</Text>
-    </Animated.View>
-  );
-}
 
 // ─── Animated Tab Item ──────────────────────────────────────────────
 function AnimatedTabButton({
@@ -203,8 +59,8 @@ function AnimatedTabButton({
   useEffect(() => {
     Animated.spring(scaleAnim, {
       toValue: isFocused ? 1 : 0,
-      friction: 6,
-      tension: 110,
+      friction: 8,
+      tension: 180,
       useNativeDriver: true,
     }).start();
   }, [isFocused]);
@@ -228,13 +84,12 @@ function AnimatedTabButton({
       >
         {isFocused ? (
           <LinearGradient
-            colors={['#00F2FE', '#0066FF']}
+            colors={['#0044CC', '#0066FF']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.activePillCapsule}
           >
-            <Icon size={16} color="#FFFFFF" strokeWidth={2.5} />
-            <Text style={styles.activePillLabel}>{label}</Text>
+            <Icon size={20} color="#FFFFFF" strokeWidth={2.4} />
           </LinearGradient>
         ) : (
           <View style={styles.inactiveTabBox}>
@@ -254,155 +109,202 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
   const scheme = useColorScheme();
   const isDark = scheme === 'dark' || true;
   const insets = useSafeAreaInsets();
+  const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
   const activeIndex = state.index;
+  const currentRouteName = state.routes[activeIndex]?.name;
   const prevIndexRef = useRef(activeIndex);
-  const vehicleIndexRef = useRef(0);
-
-  const [animating, setAnimating] = useState(false);
-  const [animKey, setAnimKey] = useState(0);
   const [dockWidth, setDockWidth] = useState(0);
-  const [vehicleType, setVehicleType] = useState<TravelVehicle>('FLIGHT');
-  const [startX, setStartX] = useState(0);
-  const [targetX, setTargetX] = useState(0);
-
-  const animValue = useRef(new Animated.Value(0)).current;
   const tabCenterXRef = useRef<Record<number, number>>({});
+
+  // ── Animations ──────────────────────────────────────────────────────
+  // Dock: slides from 0 to -(dockWidth + margin) to go fully off-screen
+  const dockSlideAnim = useRef(new Animated.Value(0)).current;
+  // Peek icon: starts fully off-screen left (-44), slides to -22 (half visible)
+  const peekSlideAnim = useRef(new Animated.Value(-50)).current;
+  const peekOpacityAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     prevIndexRef.current = activeIndex;
   }, [activeIndex]);
 
+  const { activeRoomId, navbarHidden, setNavbarHidden } = useApp();
+
+  // ── Core slide in/out logic ──────────────────────────────────────────
+  useEffect(() => {
+    if (currentRouteName !== 'index') return;
+
+    const dockW = dockWidth > 0 ? dockWidth : SCREEN_WIDTH - 20;
+
+    if (navbarHidden) {
+      // 1. Slide the full dock completely off-screen to the left
+      Animated.spring(dockSlideAnim, {
+        toValue: -(dockW + 30),
+        friction: 7,
+        tension: 55,
+        useNativeDriver: true,
+      }).start();
+
+      // 2. Animate the extracted active-icon peeking from the left edge
+      //    peekSlideAnim: -50 (hidden) → -22 (half visible)
+      Animated.parallel([
+        Animated.spring(peekSlideAnim, {
+          toValue: -22,
+          friction: 7,
+          tension: 55,
+          useNativeDriver: true,
+        }),
+        Animated.timing(peekOpacityAnim, {
+          toValue: 1,
+          duration: 280,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      // 1. Slide the full dock back into view
+      Animated.spring(dockSlideAnim, {
+        toValue: 0,
+        friction: 7,
+        tension: 55,
+        useNativeDriver: true,
+      }).start();
+
+      // 2. Fade & slide the peeking icon back off-screen
+      Animated.parallel([
+        Animated.spring(peekSlideAnim, {
+          toValue: -50,
+          friction: 7,
+          tension: 55,
+          useNativeDriver: true,
+        }),
+        Animated.timing(peekOpacityAnim, {
+          toValue: 0,
+          duration: 180,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [navbarHidden, dockWidth]);
+
+  // ── Reset when leaving home tab ──────────────────────────────────────
+  useEffect(() => {
+    if (currentRouteName !== 'index') {
+      setNavbarHidden(false);
+      dockSlideAnim.setValue(0);
+      peekSlideAnim.setValue(-50);
+      peekOpacityAnim.setValue(0);
+    }
+  }, [currentRouteName]);
+
+  // ── Hide entirely when in chat room or stories ───────────────────────
+  if ((currentRouteName === 'chat' && activeRoomId !== null) || currentRouteName === 'stories') {
+    return <View style={{ height: 0 }} />;
+  }
+
   const visibleRoutes = state.routes.filter(
     (r: any) => ['index', 'search', 'create', 'map', 'chat', 'profile'].includes(r.name)
   );
 
-  const getTabX = (idx: number) => {
-    if (tabCenterXRef.current[idx] !== undefined && tabCenterXRef.current[idx] > 0) {
-      return tabCenterXRef.current[idx];
-    }
-    const widthToUse = dockWidth > 0 ? dockWidth : 360;
-    const tabSlotWidth = widthToUse / 6;
-    return tabSlotWidth * idx + tabSlotWidth / 2 - 21;
-  };
-
   const handleTabPress = (routeKey: string, routeName: string, index: number) => {
     const isFocused = activeIndex === index;
-
     if (!isFocused) {
-      const fromX = getTabX(prevIndexRef.current);
-      const toX = getTabX(index);
-
-      const nextVehicleIndex = (vehicleIndexRef.current + 1) % VEHICLE_SEQUENCE.length;
-      vehicleIndexRef.current = nextVehicleIndex;
-      const nextVehicle = VEHICLE_SEQUENCE[nextVehicleIndex];
-
-      setStartX(fromX);
-      setTargetX(toX);
-      setVehicleType(nextVehicle);
-      setAnimKey((prev) => prev + 1);
-      setAnimating(true);
-      animValue.setValue(0);
-
-      Animated.timing(animValue, {
-        toValue: 1,
-        duration: 1600,
-        easing: Easing.inOut(Easing.quad),
-        useNativeDriver: false,
-      }).start(() => {
-        setAnimating(false);
-      });
-
       prevIndexRef.current = index;
     }
-
     const event = navigation.emit({
       type: 'tabPress',
       target: routeKey,
       canPreventDefault: true,
     });
-
     if (!isFocused && !event.defaultPrevented) {
       navigation.navigate(routeName);
     }
   };
 
+  // Active icon for the peek element
+  const ActiveIcon = TAB_ICONS[currentRouteName] || Home;
+  const bottomOffset = Math.max(insets.bottom, 12);
+
   return (
-    <View
-      style={[styles.floatingDockWrap, { bottom: Math.max(insets.bottom, 12) }]}
-      onLayout={(e) => setDockWidth(e.nativeEvent.layout.width)}
-    >
-      
-      {/* Top Border Vehicle Animation Track */}
-      {animating && (
-        <NavTravelBanner
-          key={animKey}
-          animValue={animValue}
-          startX={startX}
-          targetX={targetX}
-          vehicleType={vehicleType}
-        />
-      )}
-
-      {/* Laser Rail Track Accent */}
-      {animating && (
-        <Animated.View
-          key={`laser-${animKey}`}
-          pointerEvents="none"
-          style={[
-            styles.laserRailTrack,
-            {
-              left: Math.min(startX, targetX) + 18,
-              width: Math.abs(targetX - startX),
-              opacity: animValue.interpolate({
-                inputRange: [0, 0.1, 0.9, 1],
-                outputRange: [0, 0.9, 0.9, 0],
-              }),
-            },
-          ]}
-        />
-      )}
-
-      <LinearGradient
-        colors={isDark ? ['rgba(20, 25, 45, 0.96)', 'rgba(8, 10, 20, 0.98)'] : ['#FFFFFF', '#F1F5F9']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
+    <>
+      {/* ── Peeking floating icon: extracted from navbar, half-visible from left edge ── */}
+      <Animated.View
         style={[
-          styles.tabBarContainer,
+          styles.peekingWrap,
           {
-            borderColor: isDark ? 'rgba(0, 242, 254, 0.22)' : '#CBD5E1',
+            bottom: bottomOffset + 6, // vertically match the dock
+            opacity: peekOpacityAnim,
+            transform: [{ translateX: peekSlideAnim }],
           },
         ]}
+        pointerEvents={navbarHidden ? 'auto' : 'none'}
       >
-        {visibleRoutes.map((route: any, idx: number) => {
-          const isFocused = activeIndex === idx;
+        <TouchableOpacity
+          onPress={() => setNavbarHidden(false)}
+          activeOpacity={0.85}
+        >
+          <LinearGradient
+            colors={['#0044CC', '#0066FF']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.peekPill}
+          >
+            <ActiveIcon size={20} color="#FFFFFF" strokeWidth={2.4} />
+          </LinearGradient>
+        </TouchableOpacity>
+      </Animated.View>
 
-          return (
-            <View
-              key={route.key}
-              style={{ flex: 1, alignItems: 'center' }}
-              onLayout={(e) => {
-                const { x, width } = e.nativeEvent.layout;
-                tabCenterXRef.current[idx] = x + width / 2 - 21; // Offset for 42px badge
-              }}
-            >
-              <AnimatedTabButton
-                routeName={route.name}
-                isFocused={isFocused}
-                onPress={() => handleTabPress(route.key, route.name, idx)}
-                onLongPress={() => {
-                  navigation.emit({
-                    type: 'tabLongPress',
-                    target: route.key,
-                  });
+      {/* ── Full dock ─────────────────────────────────────────────────────── */}
+      <Animated.View
+        style={[
+          styles.floatingDockWrap,
+          {
+            bottom: bottomOffset,
+            transform: [{ translateX: dockSlideAnim }],
+          },
+        ]}
+        onLayout={(e) => setDockWidth(e.nativeEvent.layout.width)}
+      >
+        <LinearGradient
+          colors={isDark ? ['#0C1020', '#050710'] : ['#FFFFFF', '#F1F5F9']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[
+            styles.tabBarContainer,
+            {
+              borderColor: isDark ? '#1A1D30' : '#CBD5E1',
+            },
+          ]}
+        >
+          {visibleRoutes.map((route: any, idx: number) => {
+            const isFocused = activeIndex === idx;
+
+            return (
+              <View
+                key={route.key}
+                style={{ flex: 1, alignItems: 'center' }}
+                onLayout={(e) => {
+                  const { x, width } = e.nativeEvent.layout;
+                  tabCenterXRef.current[idx] = x + width / 2 - 21;
                 }}
-                isDark={isDark}
-              />
-            </View>
-          );
-        })}
-      </LinearGradient>
-    </View>
+              >
+                <AnimatedTabButton
+                  routeName={route.name}
+                  isFocused={isFocused}
+                  onPress={() => handleTabPress(route.key, route.name, idx)}
+                  onLongPress={() => {
+                    navigation.emit({
+                      type: 'tabLongPress',
+                      target: route.key,
+                    });
+                  }}
+                  isDark={isDark}
+                />
+              </View>
+            );
+          })}
+        </LinearGradient>
+      </Animated.View>
+    </>
   );
 }
 
@@ -444,72 +346,54 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     shadowColor: '#0066FF',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.15,
     shadowRadius: 18,
-    elevation: 18,
+    elevation: 8,
   },
   tabButton: {
     alignItems: 'center',
     justifyContent: 'center',
   },
   activePillCapsule: {
-    flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 7,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    gap: 5,
-    shadowColor: '#00F2FE',
+    justifyContent: 'center',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    shadowColor: '#0066FF',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
+    shadowOpacity: 0.3,
     shadowRadius: 8,
-    elevation: 6,
-  },
-  activePillLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#FFFFFF',
+    elevation: 4,
   },
   inactiveTabBox: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
   },
   inactiveTabLabel: {
-    fontSize: 9.5,
+    fontSize: 9,
     fontWeight: '600',
     marginTop: 2,
     textAlign: 'center',
   },
-
-  // Travel Vehicle Animations
-  travelVehicleWrap: {
+  // ── Peeking icon ─────────────────────────────────────────────────
+  peekingWrap: {
     position: 'absolute',
-    top: -38,
-    zIndex: 120,
+    left: 0,       // anchored to left edge of screen
+    zIndex: 100,
+  },
+  peekPill: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  largeEmojiVehicle: {
-    fontSize: 32,
-    lineHeight: 38,
-    textAlign: 'center',
-    textShadowColor: 'rgba(0, 242, 254, 0.7)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 6,
-  },
-  laserRailTrack: {
-    position: 'absolute',
-    top: -2,
-    height: 3,
-    backgroundColor: '#00F2FE',
-    zIndex: 110,
-    borderRadius: 2,
-    shadowColor: '#00F2FE',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.95,
-    shadowRadius: 5,
-    elevation: 6,
+    shadowColor: '#0066FF',
+    shadowOffset: { width: 2, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 10,
   },
 });

@@ -79,6 +79,10 @@ interface AppContextType {
   walletTransactions: any[];
   addWalletFunds: (amount: number) => void;
   withdrawWalletFunds: (amount: number) => void;
+  activeRoomId: string | null;
+  setActiveRoomId: (id: string | null) => void;
+  navbarHidden: boolean;
+  setNavbarHidden: (hidden: boolean) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -289,6 +293,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
+  const [navbarHidden, setNavbarHidden] = useState(false);
+
   return (
     <AppContext.Provider
       value={{
@@ -307,6 +314,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         walletTransactions,
         addWalletFunds,
         withdrawWalletFunds,
+        activeRoomId,
+        setActiveRoomId,
+        navbarHidden,
+        setNavbarHidden,
       }}
     >
       {children}
