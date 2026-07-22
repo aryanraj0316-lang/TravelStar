@@ -1,43 +1,36 @@
-import React, { useState, useEffect, useRef } from 'react';
-import {
-  ScrollView,
-  StyleSheet,
-  View,
-  Image,
-  TouchableOpacity,
-  Dimensions,
-  Text,
-  StatusBar,
-  NativeScrollEvent,
-  NativeSyntheticEvent,
-  Animated,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useApp, UserRole } from '@/store/AppContext';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
 import {
   Bell,
-  Search,
-  SlidersHorizontal,
+  CalendarCheck,
+  ChevronRight,
+  Clock,
+  CloudRain,
+  Globe,
+  Heart,
+  Map,
   MapPin,
   Plane,
-  CalendarCheck,
-  Wallet,
-  Sparkles,
-  Sun,
-  CloudRain,
-  Shield,
-  ChevronRight,
-  ChevronDown,
-  Heart,
   Star,
-  Globe,
-  Map,
+  Sun,
   Users,
-  Bot,
-  Clock,
+  Wallet
 } from 'lucide-react-native';
-import { useApp, UserRole } from '@/store/AppContext';
-import { useRouter } from 'expo-router';
+import { useEffect, useRef, useState } from 'react';
+import {
+  Animated,
+  Dimensions,
+  Easing,
+  Image,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const TRENDING_CARD_WIDTH = SCREEN_WIDTH * 0.52;
@@ -62,18 +55,18 @@ const C = {
 };
 
 // ─── Data ───────────────────────────────────────────────────────────
-const roles: { value: UserRole; label: string; sub: string; Icon: typeof Globe }[] = [
-  { value: 'TOURIST', label: 'Tourist', sub: 'Explore places', Icon: Globe },
-  { value: 'GUIDE', label: 'Travel Guide', sub: 'Guide travelers', Icon: Map },
-  { value: 'ORGANIZER', label: 'Group Organizer', sub: 'Plan together', Icon: Users },
-  { value: 'FAMILY_TRAVELER', label: 'Family', sub: 'Travel safely', Icon: Heart },
+const roles: { value: UserRole; label: string; sub: string; Icon: typeof Globe; borderColors: [string, string] }[] = [
+  { value: 'TOURIST', label: 'Tourist', sub: 'Explore places', Icon: Globe, borderColors: ['#00F2FE', '#4FACFE'] },
+  { value: 'GUIDE', label: 'Travel Guide', sub: 'Guide travelers', Icon: Map, borderColors: ['#EC4899', '#8B5CF6'] },
+  { value: 'ORGANIZER', label: 'Group Organizer', sub: 'Plan together', Icon: Users, borderColors: ['#F59E0B', '#EF4444'] },
+  { value: 'FAMILY_TRAVELER', label: 'Family', sub: 'Travel safely', Icon: Heart, borderColors: ['#10B981', '#06B6D4'] },
 ];
 
-const quickAccessItems = [
-  { label: 'Nearby', Icon: MapPin, color: C.green, isNew: false },
-  { label: 'Trips', Icon: Plane, color: C.blue, isNew: false },
-  { label: 'Bookings', Icon: CalendarCheck, color: C.orange, isNew: false },
-  { label: 'Budget Tracker', Icon: Wallet, color: C.purple, isNew: true },
+const quickAccessItems: { label: string; Icon: typeof MapPin; gradient: [string, string]; iconColor: string; isNew: boolean; route?: string }[] = [
+  { label: 'Nearby', Icon: MapPin, gradient: ['#065F46', '#10B981'], iconColor: '#A7F3D0', isNew: false, route: '/nearby-trips' },
+  { label: 'Trips', Icon: Plane, gradient: ['#1E40AF', '#3B82F6'], iconColor: '#BFDBFE', isNew: false, route: '/search' },
+  { label: 'Bookings', Icon: CalendarCheck, gradient: ['#92400E', '#F59E0B'], iconColor: '#FDE68A', isNew: false, route: '/bookings' },
+  { label: 'Budget Tracker', Icon: Wallet, gradient: ['#B45309', '#FBBF24'], iconColor: '#FEF08A', isNew: true, route: '/budget-tracker' },
 ];
 
 const storyData = [
@@ -106,7 +99,44 @@ const trendingDests = [
     rating: 4.6,
     image: 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=400&q=80',
   },
+  {
+    id: 4,
+    name: 'Kerala',
+    tags: 'Nature • Backwaters',
+    rating: 4.9,
+    image: 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=400&q=80',
+  },
+  {
+    id: 5,
+    name: 'Manali',
+    tags: 'Snow • Hill Station',
+    rating: 4.8,
+    image: 'https://images.unsplash.com/photo-1605649487212-47bdab064df7?w=400&q=80',
+  },
+  {
+    id: 6,
+    name: 'Varanasi',
+    tags: 'Ghats • Ganga River',
+    rating: 4.9,
+    image: 'https://images.unsplash.com/photo-1571536802807-30451e3955d8?w=500&q=80',
+  },
+  {
+    id: 7,
+    name: 'Udaipur',
+    tags: 'Palaces • Romance',
+    rating: 4.9,
+    image: 'https://images.unsplash.com/photo-1615836245337-f5b9b2303f10?w=400&q=80',
+  },
+  {
+    id: 8,
+    name: 'Darjeeling',
+    tags: 'Tea Gardens • Views',
+    rating: 4.6,
+    image: 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=400&q=80',
+  },
 ];
+
+const infiniteTrendingDests = [...trendingDests, ...trendingDests];
 
 const TOURIST_WEATHER_LOCATIONS = [
   {
@@ -157,7 +187,7 @@ const TOURIST_WEATHER_LOCATIONS = [
     condition: 'Clear Sky',
     aqi: 'Good AQI • 45',
     humidity: '52%',
-    image: 'https://images.unsplash.com/photo-1561361513-2d000a50f0dc?w=500&q=80',
+    image: 'https://images.unsplash.com/photo-1571536802807-30451e3955d8?w=500&q=80',
   },
   {
     id: 6,
@@ -169,7 +199,135 @@ const TOURIST_WEATHER_LOCATIONS = [
     humidity: '75%',
     image: 'https://images.unsplash.com/photo-1593693397690-362cb9666fc2?w=500&q=80',
   },
+  {
+    id: 7,
+    name: 'Mumbai',
+    place: 'Gateway of India',
+    temp: '29°C',
+    condition: 'Sea Breeze',
+    aqi: 'Moderate AQI • 55',
+    humidity: '70%',
+    image: 'https://images.unsplash.com/photo-1570168007204-dfb528c6958f?w=500&q=80',
+  },
+  {
+    id: 8,
+    name: 'Leh-Ladakh',
+    place: 'Pangong Tso',
+    temp: '14°C',
+    condition: 'Chilly & Sunny',
+    aqi: 'Pure AQI • 10',
+    humidity: '25%',
+    image: 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=500&q=80',
+  },
+  {
+    id: 9,
+    name: 'Goa',
+    place: 'Baga Beach',
+    temp: '31°C',
+    condition: 'Tropical Sun',
+    aqi: 'Good AQI • 35',
+    humidity: '68%',
+    image: 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=500&q=80',
+  },
+  {
+    id: 10,
+    name: 'Shimla',
+    place: 'The Ridge',
+    temp: '18°C',
+    condition: 'Cool Mountain Air',
+    aqi: 'Excellent AQI • 15',
+    humidity: '55%',
+    image: 'https://images.unsplash.com/photo-1605649487212-47bdab064df7?w=500&q=80',
+  },
+  {
+    id: 11,
+    name: 'Rishikesh',
+    place: 'Laxman Jhula',
+    temp: '26°C',
+    condition: 'Pleasant & Calm',
+    aqi: 'Good AQI • 28',
+    humidity: '50%',
+    image: 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=500&q=80',
+  },
+  {
+    id: 12,
+    name: 'Udaipur',
+    place: 'Lake Pichola',
+    temp: '33°C',
+    condition: 'Sunny Horizon',
+    aqi: 'Moderate AQI • 48',
+    humidity: '38%',
+    image: 'https://images.unsplash.com/photo-1615836245337-f5b9b2303f10?w=500&q=80',
+  },
 ];
+
+// ─── Apple-Style Live Character Formation Greeting Component ────────
+function AppleMultilingualGreeting() {
+  const wordSequences = [
+    ['N', 'Na', 'Nam', 'Nama', 'Namas', 'Namast', 'Namaste', 'Namaste 🙏'],
+    ['न', 'नम', 'नमस्', 'नमस्त', 'नमस्ते', 'नमस्ते 🙏'],
+  ];
+
+  const [wordIdx, setWordIdx] = useState(0);
+  const [stepIdx, setStepIdx] = useState(0);
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    let isMounted = true;
+    const currentSequence = wordSequences[wordIdx];
+
+    setStepIdx(0);
+    fadeAnim.setValue(1);
+
+    let charTimer: ReturnType<typeof setInterval>;
+    let stepCounter = 0;
+
+    const animateNextChar = () => {
+      if (!isMounted) return;
+
+      if (stepCounter < currentSequence.length - 1) {
+        stepCounter++;
+        setStepIdx(stepCounter);
+        charTimer = setTimeout(animateNextChar, 85);
+      } else {
+        // Hold for 1.4s when word is fully formed
+        setTimeout(() => {
+          if (!isMounted) return;
+
+          // Dissolve word smoothly
+          Animated.timing(fadeAnim, {
+            toValue: 0,
+            duration: 450,
+            easing: Easing.inOut(Easing.quad),
+            useNativeDriver: true,
+          }).start(({ finished }) => {
+            if (!finished || !isMounted) return;
+
+            // Switch language
+            setWordIdx((prev) => (prev + 1) % wordSequences.length);
+          });
+        }, 1400);
+      }
+    };
+
+    charTimer = setTimeout(animateNextChar, 85);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(charTimer);
+    };
+  }, [wordIdx]);
+
+  const currentText = wordSequences[wordIdx][stepIdx] || '';
+
+  return (
+    <View style={styles.appleGreetingContainer}>
+      <Animated.View style={{ opacity: fadeAnim }}>
+        <Text style={styles.appleGreetingText}>{currentText}</Text>
+      </Animated.View>
+    </View>
+  );
+}
 
 function FloatingTouristWeatherCard() {
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -252,6 +410,7 @@ function FloatingTouristWeatherCard() {
         </View>
       </Animated.View>
     </View>
+  );
 }
 
 function OngoingTripNotificationCard() {
@@ -269,7 +428,7 @@ function OngoingTripNotificationCard() {
   const seconds = String(secondsLeft % 60).padStart(2, '0');
 
   return (
-    <View style={styles.alertCard}>
+    <View style={[styles.alertCard, styles.tripCardWrap]}>
       <View style={styles.tripHeaderRow}>
         <View style={[styles.alertIconWrap, { backgroundColor: 'rgba(16,185,129,0.15)', marginBottom: 0 }]}>
           <Plane size={14} color={C.green} />
@@ -280,7 +439,16 @@ function OngoingTripNotificationCard() {
         </View>
       </View>
 
-      <Text style={styles.alertTitle} numberOfLines={1}>Ranchi → Vrindavan</Text>
+      <View style={styles.tripTitleRow}>
+        <View style={{ flex: 1, paddingRight: 4 }}>
+          <Text style={styles.alertTitle} numberOfLines={1}>Ranchi → Vrindavan</Text>
+        </View>
+        <View style={styles.routeGraphic}>
+          <View style={styles.routeDotBlue} />
+          <View style={styles.routeLinePath} />
+          <View style={styles.routeDotGreen} />
+        </View>
+      </View>
 
       <View style={styles.timerWrap}>
         <Clock size={10} color={C.orange} />
@@ -297,15 +465,35 @@ function OngoingTripNotificationCard() {
 
 // ─── Component ──────────────────────────────────────────────────────
 export default function HomeScreen() {
-  const { currentRole, setCurrentRole } = useApp();
+  const { currentRole, setCurrentRole, profile } = useApp();
   const router = useRouter();
   const [activeDot, setActiveDot] = useState(0);
+  const trendingRef = useRef<ScrollView>(null);
+  const scrollXRef = useRef(0);
+  const isInteractingRef = useRef(false);
 
-  const handleTrendingScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const offset = e.nativeEvent.contentOffset.x;
-    const index = Math.round(offset / (TRENDING_CARD_WIDTH + 12));
-    setActiveDot(index);
-  };
+  useEffect(() => {
+    let animFrameId: number;
+    const itemWidth = TRENDING_CARD_WIDTH + 12;
+    const singleSetWidth = itemWidth * trendingDests.length;
+
+    const animate = () => {
+      if (!isInteractingRef.current) {
+        scrollXRef.current += 0.8;
+        if (scrollXRef.current >= singleSetWidth) {
+          scrollXRef.current -= singleSetWidth;
+        }
+        trendingRef.current?.scrollTo({ x: scrollXRef.current, animated: false });
+
+        const currentDot = Math.floor(scrollXRef.current / itemWidth) % trendingDests.length;
+        setActiveDot(currentDot);
+      }
+      animFrameId = requestAnimationFrame(animate);
+    };
+
+    animFrameId = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(animFrameId);
+  }, []);
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
@@ -319,29 +507,42 @@ export default function HomeScreen() {
             ════════════════════════════════════════════════ */}
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.greeting}>Namaste 🙏</Text>
-            <Text style={styles.userName}>Aarav Sharma</Text>
+            <AppleMultilingualGreeting />
+            <Text style={styles.userName}>{profile.name}</Text>
             <Text style={styles.userSub}>Explore more. Experience better.</Text>
           </View>
           <View style={styles.headerRight}>
-            <TouchableOpacity style={styles.bellWrap}>
-              <Bell size={22} color={C.white} strokeWidth={1.8} />
+            <TouchableOpacity
+              style={styles.bellWrap}
+              activeOpacity={0.7}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              onPress={() => router.push('/notifications')}
+            >
+              <Bell size={16} color={C.white} strokeWidth={1.8} />
               <View style={styles.bellDot} />
             </TouchableOpacity>
-            <View style={styles.avatarWrap}>
-              <Image
-                source={{ uri: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&q=80' }}
-                style={styles.avatar}
-              />
-              <View style={styles.proBadge}>
-                <Text style={styles.proBadgeText}>Pro</Text>
-              </View>
-            </View>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={styles.avatarWrap}
+              onPress={() => router.push('/profile')}
+            >
+              <LinearGradient
+                colors={['#EC4899', '#8B5CF6']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.avatarBorder}
+              >
+                <Image
+                  source={{ uri: profile.avatar }}
+                  style={styles.avatar}
+                />
+              </LinearGradient>
+            </TouchableOpacity>
           </View>
         </View>
 
         {/* ════════════════════════════════════════════════
-            ROLE TABS — Horizontal scroll
+            ROLE TABS — Horizontal scroll with gradient borders
             ════════════════════════════════════════════════ */}
         <ScrollView
           horizontal
@@ -356,28 +557,24 @@ export default function HomeScreen() {
                 activeOpacity={0.8}
                 onPress={() => setCurrentRole(role.value)}
               >
-                {isActive ? (
-                  <LinearGradient
-                    colors={['#0066FF', '#0047C4']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.roleTab}
-                  >
-                    <role.Icon size={18} color={C.white} strokeWidth={2} />
-                    <View>
-                      <Text style={styles.roleLabel}>{role.label}</Text>
-                      <Text style={styles.roleSub}>{role.sub}</Text>
-                    </View>
-                  </LinearGradient>
-                ) : (
-                  <View style={[styles.roleTab, styles.roleTabInactive]}>
-                    <role.Icon size={18} color={C.textSec} strokeWidth={1.8} />
+                <LinearGradient
+                  colors={
+                    isActive
+                      ? ['#00F2FE', '#06B6D4', '#0891B2', '#3B82F6']
+                      : ['rgba(59, 130, 246, 0.45)', 'rgba(139, 92, 246, 0.35)', 'rgba(236, 72, 153, 0.35)']
+                  }
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.roleTabBorder}
+                >
+                  <View style={[styles.roleTabInner, isActive && { backgroundColor: 'rgba(6, 182, 212, 0.22)' }]}>
+                    <role.Icon size={18} color={isActive ? C.white : C.textSec} strokeWidth={2} />
                     <View>
                       <Text style={[styles.roleLabel, { color: C.white }]}>{role.label}</Text>
                       <Text style={styles.roleSub}>{role.sub}</Text>
                     </View>
                   </View>
-                )}
+                </LinearGradient>
               </TouchableOpacity>
             );
           })}
@@ -421,30 +618,37 @@ export default function HomeScreen() {
         </ScrollView>
 
         {/* ════════════════════════════════════════════════
-            QUICK ACCESS GRID
+            QUICK ACCESS GRID — Squircle tiles
             ════════════════════════════════════════════════ */}
         <LinearGradient
-          colors={['#1E223D', '#121426']}
+          colors={['#181D33', '#0F1224']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.quickCard}
         >
           {quickAccessItems.map((item, index) => (
-            <TouchableOpacity key={index} style={styles.quickItem} activeOpacity={0.7}>
-              <View
-                style={[
-                  styles.quickIcon,
-                  {
-                    backgroundColor: `${item.color}22`,
-                    borderColor: `${item.color}45`,
-                    borderWidth: 1,
-                  },
-                ]}
-              >
-                <item.Icon size={18} color={item.color} strokeWidth={2} />
+            <TouchableOpacity
+              key={index}
+              style={styles.quickItem}
+              activeOpacity={0.7}
+              onPress={() => {
+                if (item.route) {
+                  router.push(item.route as any);
+                }
+              }}
+            >
+              <View style={{ position: 'relative' }}>
+                <LinearGradient
+                  colors={item.gradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.quickIconTile}
+                >
+                  <item.Icon size={19} color={item.iconColor} strokeWidth={2.2} />
+                </LinearGradient>
                 {item.isNew && (
-                  <View style={styles.newBadge}>
-                    <Text style={styles.newBadgeText}>NEW</Text>
+                  <View style={styles.newBadgeGold}>
+                    <Text style={styles.newBadgeGoldText}>NEW</Text>
                   </View>
                 )}
               </View>
@@ -463,15 +667,15 @@ export default function HomeScreen() {
           {/* Alerts Stack — Two Half Cards */}
           <View style={styles.alertsColumn}>
             {/* Monsoon Warning (Half Box) */}
-            <View style={styles.alertCard}>
-              <View style={[styles.alertIconWrap, { backgroundColor: 'rgba(239,68,68,0.15)' }]}>
-                <CloudRain size={14} color={'#FF6B6B'} />
+            <View style={[styles.alertCard, styles.monsoonCard]}>
+              <View style={[styles.alertIconWrap, { backgroundColor: 'rgba(245,158,11,0.2)' }]}>
+                <CloudRain size={14} color={'#FBBF24'} />
               </View>
-              <Text style={[styles.alertTitle, { color: '#FF6B6B' }]} numberOfLines={1}>Monsoon Warning</Text>
+              <Text style={[styles.alertTitle, { color: '#FBBF24' }]} numberOfLines={1}>Monsoon Warning</Text>
               <Text style={styles.alertDesc} numberOfLines={1}>Heavy rain in Ladakh route</Text>
               <TouchableOpacity style={styles.alertLink}>
-                <Text style={styles.alertLinkText}>View Details</Text>
-                <ChevronRight size={11} color={C.blue} />
+                <Text style={[styles.alertLinkText, { color: '#F59E0B' }]}>View Details</Text>
+                <ChevronRight size={11} color={'#F59E0B'} />
               </TouchableOpacity>
             </View>
 
@@ -491,15 +695,31 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
         <ScrollView
+          ref={trendingRef}
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.trendingRow}
-          snapToInterval={TRENDING_CARD_WIDTH + 12}
-          decelerationRate="fast"
-          onMomentumScrollEnd={handleTrendingScroll}
+          scrollEventThrottle={16}
+          onTouchStart={() => {
+            isInteractingRef.current = true;
+          }}
+          onTouchEnd={() => {
+            setTimeout(() => {
+              isInteractingRef.current = false;
+            }, 1200);
+          }}
+          onScrollBeginDrag={() => {
+            isInteractingRef.current = true;
+          }}
+          onScrollEndDrag={(e) => {
+            scrollXRef.current = e.nativeEvent.contentOffset.x;
+            setTimeout(() => {
+              isInteractingRef.current = false;
+            }, 1200);
+          }}
         >
-          {trendingDests.map((dest) => (
-            <TouchableOpacity key={dest.id} style={styles.trendingCard} activeOpacity={0.9}>
+          {infiniteTrendingDests.map((dest, index) => (
+            <TouchableOpacity key={`${dest.id}-${index}`} style={styles.trendingCard} activeOpacity={0.9}>
               <Image
                 source={{ uri: dest.image }}
                 style={StyleSheet.absoluteFill}
@@ -509,9 +729,16 @@ export default function HomeScreen() {
                 colors={['transparent', 'rgba(0,0,0,0.78)']}
                 style={styles.trendingOverlay}
               />
-              {/* Rank Badge */}
-              <View style={styles.rankBadge}>
-                <Text style={styles.rankText}>{dest.id}</Text>
+              {/* Hanging Vertical Ribbon Tag for Rank */}
+              <View style={styles.rankRibbonWrap}>
+                <LinearGradient
+                  colors={['#475569', '#334155', '#1E293B']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 0, y: 1 }}
+                  style={styles.rankRibbonBody}
+                >
+                  <Text style={styles.rankRibbonText}>{dest.id}</Text>
+                </LinearGradient>
               </View>
               {/* Heart Button */}
               <TouchableOpacity style={styles.heartBtn} activeOpacity={0.7}>
@@ -567,10 +794,20 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     marginBottom: 16,
   },
-  greeting: {
-    fontSize: 14,
+  appleGreetingContainer: {
+    height: 24,
+    justifyContent: 'center',
+    marginBottom: 3,
+  },
+  appleGreetingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  appleGreetingText: {
+    fontSize: 15,
+    fontWeight: '600',
     color: C.textSec,
-    marginBottom: 4,
+    letterSpacing: 0.2,
   },
   userName: {
     fontSize: 28,
@@ -584,68 +821,75 @@ const styles = StyleSheet.create({
     color: C.textSec,
   },
   headerRight: {
+    flexDirection: 'column',
     alignItems: 'flex-end',
-    gap: 10,
-    paddingTop: 4,
+    gap: 4,
+    paddingTop: 0,
   },
   bellWrap: {
-    position: 'relative',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#F59E0B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    alignSelf: 'flex-end',
   },
   bellDot: {
     position: 'absolute',
-    top: 0,
-    right: 0,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: C.red,
-    borderWidth: 1.5,
+    top: 5,
+    right: 5,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#F59E0B',
+    borderWidth: 1.2,
     borderColor: C.bg,
   },
   avatarWrap: {
-    position: 'relative',
+    marginTop: 2,
+  },
+  avatarBorder: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    padding: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   avatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    borderWidth: 2,
-    borderColor: C.purple,
-  },
-  proBadge: {
-    position: 'absolute',
-    bottom: -3,
-    right: -6,
-    backgroundColor: C.green,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 8,
-    borderWidth: 2,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1.5,
     borderColor: C.bg,
   },
-  proBadgeText: {
-    fontSize: 8,
-    fontWeight: '800',
-    color: C.white,
-  },
 
-  // ── Role Tabs ───────────────────────────────────────
+  // ── Role Tabs Gradient Outline ──────────────────────
   roleTabs: {
     paddingHorizontal: 20,
     gap: 10,
-    marginBottom: 16,
+    marginBottom: 18,
   },
-  roleTab: {
+  roleTabBorder: {
+    borderRadius: 16,
+    padding: 1.5,
+  },
+  roleTabInner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    paddingVertical: 13,
+    paddingVertical: 12,
     paddingHorizontal: 16,
-    borderRadius: 14,
+    borderRadius: 14.5,
+    backgroundColor: '#151929',
     minWidth: 140,
-  },
-  roleTabInactive: {
-    backgroundColor: C.card,
   },
   roleLabel: {
     fontSize: 13,
@@ -680,15 +924,15 @@ const styles = StyleSheet.create({
   quickCard: {
     flexDirection: 'row',
     marginHorizontal: 16,
-    borderRadius: 50,
-    paddingVertical: 12,
+    borderRadius: 30,
+    paddingVertical: 14,
     paddingHorizontal: 12,
-    marginBottom: 18,
-    borderWidth: 1.5,
-    borderColor: 'rgba(59, 130, 246, 0.45)',
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.35)',
     shadowColor: '#3B82F6',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.3,
     shadowRadius: 10,
     elevation: 8,
   },
@@ -696,34 +940,37 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
   },
-  quickIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+  quickIconTile: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 4,
-    position: 'relative',
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
   },
   quickLabel: {
-    fontSize: 10,
+    fontSize: 10.5,
     fontWeight: '600',
     color: C.white,
     textAlign: 'center',
   },
-  newBadge: {
+  newBadgeGold: {
     position: 'absolute',
-    top: -3,
-    right: -6,
-    backgroundColor: C.green,
-    paddingHorizontal: 4,
-    paddingVertical: 1,
+    top: -4,
+    right: -8,
+    backgroundColor: '#F59E0B',
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
     borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#0F1224',
   },
-  newBadgeText: {
+  newBadgeGoldText: {
     fontSize: 7,
     fontWeight: '800',
-    color: C.white,
+    color: '#111827',
   },
 
   // ── Weather & Alerts ────────────────────────────────
@@ -826,6 +1073,16 @@ const styles = StyleSheet.create({
     padding: 10,
     justifyContent: 'space-between',
   },
+  monsoonCard: {
+    backgroundColor: '#24160E',
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.35)',
+  },
+  tripCardWrap: {
+    backgroundColor: '#131726',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+  },
   alertIconWrap: {
     width: 24,
     height: 24,
@@ -833,11 +1090,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 2,
-  },
-  alertTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
   },
   alertTitle: {
     fontSize: 11,
@@ -888,6 +1140,38 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: C.green,
     letterSpacing: 0.3,
+  },
+  tripTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginVertical: 2,
+  },
+  routeGraphic: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: 44,
+    height: 14,
+  },
+  routeDotBlue: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#3B82F6',
+  },
+  routeLinePath: {
+    flex: 1,
+    height: 2,
+    backgroundColor: 'rgba(59, 130, 246, 0.45)',
+    marginHorizontal: 2,
+  },
+  routeDotGreen: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: C.green,
+    borderWidth: 1.5,
+    borderColor: '#131726',
   },
   timerWrap: {
     flexDirection: 'row',
@@ -999,19 +1283,29 @@ const styles = StyleSheet.create({
   trendingOverlay: {
     ...StyleSheet.absoluteFill,
   },
-  rankBadge: {
+  rankRibbonWrap: {
     position: 'absolute',
-    top: 10,
-    left: 10,
-    width: 24,
-    height: 24,
-    borderRadius: 8,
-    backgroundColor: 'rgba(124,58,237,0.85)',
+    top: 0,
+    left: 14,
+    zIndex: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 5,
+    elevation: 6,
+  },
+  rankRibbonBody: {
+    width: 26,
+    height: 38,
+    borderBottomLeftRadius: 6,
+    borderBottomRightRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
   },
-  rankText: {
-    fontSize: 12,
+  rankRibbonText: {
+    fontSize: 13,
     fontWeight: '800',
     color: C.white,
   },

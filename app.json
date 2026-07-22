@@ -33,6 +33,13 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow TravelStar to access your photos to select your profile picture.",
+          "cameraPermission": "Allow TravelStar to access your camera to take a profile picture."
+        }
       ]
     ],
     "experiments": {

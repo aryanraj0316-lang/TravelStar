@@ -1,32 +1,29 @@
-import React, { useState, useRef, useEffect } from 'react';
 import {
-  ScrollView,
-  StyleSheet,
-  View,
-  Text,
-  TouchableOpacity,
-  TextInput,
-  Image,
-  useColorScheme,
-  KeyboardAvoidingView,
-  Platform,
-  Animated,
-  Dimensions,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import {
-  Send,
-  Smile,
-  Phone,
-  Video,
   Info,
   MoreVertical,
+  Phone,
   Plus,
-  Users as UsersIcon,
+  Send,
+  Smile,
   Globe as TranslateIcon,
-  MapPin,
-  CheckCheck,
+  Users as UsersIcon,
+  Video
 } from 'lucide-react-native';
+import { useState } from 'react';
+import {
+  Dimensions,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  useColorScheme,
+  View
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 

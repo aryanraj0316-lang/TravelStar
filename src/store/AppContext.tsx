@@ -5,6 +5,7 @@ export type UserRole = 'TOURIST' | 'GUIDE' | 'ORGANIZER' | 'FAMILY_TRAVELER' | '
 export interface UserProfile {
   name: string;
   avatar: string;
+  gender?: string;
   role: UserRole;
   isVerified: boolean;
   aadhaarStatus: 'NONE' | 'PENDING' | 'VERIFIED';
