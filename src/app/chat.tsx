@@ -565,6 +565,43 @@ export default function ChatScreen() {
     }
   ]);
 
+  // Dynamic Room Sync effect
+  useEffect(() => {
+    if (selectedRoomId) {
+      const matchedRoom = inboxRooms.find((r) => r.id === selectedRoomId);
+      if (matchedRoom) {
+        setSelectedTripId(matchedRoom.tripId);
+      }
+    }
+  }, [selectedRoomId, inboxRooms]);
+
+  // Dynamic trips synchronization into inboxRooms
+  useEffect(() => {
+    setInboxRooms((prevRooms) => {
+      const missingTrips = trips.filter((t) => !prevRooms.some((r) => r.tripId === t.id));
+      if (missingTrips.length === 0) return prevRooms;
+
+      const newRooms: ChatRoom[] = missingTrips.map((t) => ({
+        id: t.id === 'trip-1' ? 'room-vrindavan-group' :
+            t.id === 'trip-2' ? 'room-ladakh-group' :
+            t.id === 'trip-3' ? 'room-kerala-group' : `room-${t.id}`,
+        tripId: t.id,
+        name: t.name.includes('Chat') || t.name.includes('Group') ? t.name : `${t.name} Group Chat`,
+        avatar: t.id === 'trip-1' ? 'https://images.unsplash.com/photo-1548013146-72479768bada?w=150&q=80' :
+                t.id === 'trip-2' ? 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=150&q=80' :
+                t.id === 'trip-3' ? 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=150&q=80' : 
+                'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=150&q=80',
+        type: 'GROUP',
+        latestMessage: 'System: Welcome to the group chat! Start planning together.',
+        latestTime: 'Just Now',
+        unreadCount: 0,
+        badge: 'Organizer Trip',
+      }));
+
+      return [...prevRooms, ...newRooms];
+    });
+  }, [trips]);
+
   // Input states
   const [inputText, setInputText] = useState('');
   const [replyingToMessage, setReplyingToMessage] = useState<CustomMessage | null>(null);
