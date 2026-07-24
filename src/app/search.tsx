@@ -15,6 +15,7 @@ import {
   Grid2x2,
   Headphones,
   Heart,
+  Hotel,
   Home as HomeIcon,
   MapPin,
   Mountain,
@@ -25,6 +26,7 @@ import {
   Sparkles,
   UserCheck,
   Users,
+  Utensils,
   Wallet,
   X
 } from 'lucide-react-native';
@@ -43,7 +45,7 @@ import {
   useColorScheme,
   View
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -107,7 +109,7 @@ const TRIP_EXTRA: Record<string, { duration: string; transport: string; displayC
 
 // Color theme system matching dark/light mode
 const DARK = {
-  bg: '#060814',
+  bg: '#000000',
   card: '#111322',
   cardBorder: '#1A1D30',
   searchBg: '#111322',
@@ -147,10 +149,12 @@ export default function SearchScreen() {
   const scheme = useColorScheme();
   const isDark = scheme === 'dark';
   const C = isDark ? DARK : LIGHT;
-  const { trips } = useApp();
+  const { trips, joinTrip } = useApp();
+  const insets = useSafeAreaInsets();
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [likedTrips, setLikedTrips] = useState<Set<string>>(new Set());
+  const [requestedTrips, setRequestedTrips] = useState<Set<string>>(new Set());
 
   // Join modal state
   const [selectedTrip, setSelectedTrip] = useState<any>(null);
@@ -191,6 +195,14 @@ export default function SearchScreen() {
   };
 
   const handleRequestJoin = () => {
+    if (selectedTrip) {
+      joinTrip(selectedTrip.id);
+      setRequestedTrips((prev) => {
+        const next = new Set(prev);
+        next.add(selectedTrip.id);
+        return next;
+      });
+    }
     setJoinedMsg(true);
     setTimeout(() => {
       setJoinedMsg(false);
@@ -198,6 +210,19 @@ export default function SearchScreen() {
       setSelectedTrip(null);
       setMidwayJoin(false);
     }, 2500);
+  };
+
+  const handleCancelRequest = () => {
+    if (selectedTrip) {
+      setRequestedTrips((prev) => {
+        const next = new Set(prev);
+        next.delete(selectedTrip.id);
+        return next;
+      });
+    }
+    setShowJoinModal(false);
+    setSelectedTrip(null);
+    setMidwayJoin(false);
   };
 
   // Filter & Preference Modal State
@@ -464,7 +489,7 @@ export default function SearchScreen() {
                 style={[styles.quickCard, { backgroundColor: C.card, borderColor: C.cardBorder }]}
                 onPress={() => {
                   if (item.key === 'custom') {
-                    router.push('/custom-trip');
+                    router.push('/create');
                   } else if (item.key === 'nearby') {
                     router.push('/nearby-trips');
                   } else if (item.key === 'budget') {
@@ -520,7 +545,9 @@ export default function SearchScreen() {
               displayDate: trip.startDate,
             };
             const badge = TRIP_BADGES[trip.id];
-            const imageUri = TRIP_IMAGES[trip.id] || 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=600&q=80';
+            // Prefer the cover image stored on the trip (set from Create/CustomTrip),
+            // then fall back to the static TRIP_IMAGES map, then a generic fallback
+            const imageUri = trip.coverImage || TRIP_IMAGES[trip.id] || 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=600&q=80';
             const imageSource = typeof imageUri === 'string' ? { uri: imageUri } : imageUri;
             const isLiked = likedTrips.has(trip.id);
 
@@ -633,16 +660,25 @@ export default function SearchScreen() {
                       </Text>
                       <Text style={[styles.pricePer, { color: C.textSecondary, marginTop: -2 }]} numberOfLines={1}>per person</Text>
                     </View>
-                    <TouchableOpacity
-                      style={styles.joinBtn}
-                      onPress={() => {
-                        setSelectedTrip(trip);
-                        setShowJoinModal(true);
-                      }}
-                    >
-                      <Text style={styles.joinBtnText} numberOfLines={1}>Request to Join</Text>
-                      <ChevronRight size={11} color="#FFF" style={{ marginLeft: 2 }} />
-                    </TouchableOpacity>
+                    {requestedTrips.has(trip.id) ? (
+                      <View style={[styles.joinBtn, styles.joinBtnRequested]}>
+                        <Check size={11} color="#2ECC71" style={{ marginRight: 4 }} />
+                        <Text style={[styles.joinBtnText, styles.joinBtnRequestedText]} numberOfLines={1}>
+                          Requested
+                        </Text>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.joinBtn}
+                        onPress={() => {
+                          setSelectedTrip(trip);
+                          setShowJoinModal(true);
+                        }}
+                      >
+                        <Text style={styles.joinBtnText} numberOfLines={1}>Request to Join</Text>
+                        <ChevronRight size={11} color="#FFF" style={{ marginLeft: 2 }} />
+                      </TouchableOpacity>
+                    )}
                   </View>
                 </View>
               </TouchableOpacity>
@@ -655,10 +691,9 @@ export default function SearchScreen() {
               source={require('@/assets/images/cta-banner.png')}
               style={styles.ctaBannerImage}
             />
-            {/* Clickable hotspot aligned precisely with the 'Plan My Trip' button on the image */}
             <Pressable
               onPress={() => {
-                alert("Plan My Trip clicked! Connecting to our travel experts...");
+                router.push('/create');
               }}
               style={({ pressed }) => [
                 styles.ctaHotspot,
@@ -710,7 +745,9 @@ export default function SearchScreen() {
       {/* ─── JOIN MODAL ─────────────────────────────────────────── */}
       <Modal visible={showJoinModal} transparent animationType="slide" onRequestClose={() => setShowJoinModal(false)}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: isDark ? '#111322' : '#FFF', borderColor: C.cardBorder }]}>
+          <View style={[styles.modalContent, { backgroundColor: isDark ? '#111322' : '#FFF', borderColor: C.cardBorder, paddingBottom: insets.bottom }]}>
+            {/* Drag Handle */}
+            <View style={styles.sheetHandle} />
             {joinedMsg ? (
               <View style={styles.successContainer}>
                 <CheckCircle size={54} color="#2ECC71" />
@@ -723,11 +760,13 @@ export default function SearchScreen() {
               </View>
             ) : (
               selectedTrip && (
-                <View style={{ flex: 1 }}>
+                <>
                   {/* Modal Header */}
                   <View style={styles.modalHeader}>
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.modalTripName, { color: C.text }]}>{selectedTrip.name}</Text>
+                      <Text style={[styles.modalTripName, { color: C.text }]} numberOfLines={2}>
+                        {selectedTrip.name}
+                      </Text>
                       <Text style={[styles.modalOrganizerText, { color: C.textSecondary }]}>
                         Organized by {selectedTrip.creator}
                       </Text>
@@ -740,9 +779,45 @@ export default function SearchScreen() {
                     </TouchableOpacity>
                   </View>
 
-                  <ScrollView style={styles.modalForm} showsVerticalScrollIndicator={false}>
+                  <ScrollView style={styles.modalForm} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
+                    {/* Organizer Profile Card */}
+                    <View style={[styles.modalOrganizerCard, { backgroundColor: isDark ? '#1A1D30' : '#F0F2F6' }]}>
+                      <View style={[styles.organizerAvatarWrap, { backgroundColor: C.accentLight }]}>
+                        <Text style={{ fontSize: 16, fontWeight: 'bold', color: C.accent }}>
+                          {selectedTrip.creator.charAt(0)}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.modalOrganizerName, { color: C.text }]}>{selectedTrip.creator}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+                          <Shield size={11} color={C.accent} style={{ marginRight: 4 }} />
+                          <Text style={{ fontSize: 10, color: C.textSecondary }}>Background-Verified Organizer</Text>
+                        </View>
+                      </View>
+                    </View>
+
+                    {/* Schedule / Dates Details */}
+                    <Text style={[styles.formSectionTitle, { color: C.textSecondary, marginTop: 14 }]}>SCHEDULE & DURATION</Text>
+                    <View style={[styles.detailRowCard, { backgroundColor: isDark ? '#1B1E30' : '#F5F5F8' }]}>
+                      <View style={styles.detailCardHalf}>
+                        <Calendar size={14} color={C.accent} />
+                        <View style={{ marginLeft: 6 }}>
+                          <Text style={{ fontSize: 9, color: C.textSecondary, fontWeight: '700' }}>START DATE</Text>
+                          <Text style={[styles.detailCardVal, { color: C.text }]}>{selectedTrip.startDate}</Text>
+                        </View>
+                      </View>
+                      <View style={[styles.detailCardDivider, { backgroundColor: C.divider }]} />
+                      <View style={styles.detailCardHalf}>
+                        <Calendar size={14} color={C.accent} />
+                        <View style={{ marginLeft: 6 }}>
+                          <Text style={{ fontSize: 9, color: C.textSecondary, fontWeight: '700' }}>END DATE</Text>
+                          <Text style={[styles.detailCardVal, { color: C.text }]}>{selectedTrip.endDate || selectedTrip.startDate}</Text>
+                        </View>
+                      </View>
+                    </View>
+
                     {/* Itinerary */}
-                    <Text style={[styles.formSectionTitle, { color: C.textSecondary }]}>ITINERARY PATH</Text>
+                    <Text style={[styles.formSectionTitle, { color: C.textSecondary, marginTop: 14 }]}>ITINERARY PATH</Text>
                     <View style={styles.modalItineraryRow}>
                       {selectedTrip.cities.map((city: string, i: number) => (
                         <View key={city} style={[styles.itineraryCityCard, { backgroundColor: C.accentLight }]}>
@@ -752,8 +827,50 @@ export default function SearchScreen() {
                       ))}
                     </View>
 
+                    {/* Assembly / Meeting Point Details */}
+                    <Text style={[styles.formSectionTitle, { color: C.textSecondary, marginTop: 14 }]}>MEETING & ASSEMBLY POINT</Text>
+                    <View style={[styles.meetingPointInfoCard, { backgroundColor: isDark ? 'rgba(0,102,255,0.06)' : 'rgba(0,102,255,0.03)', borderColor: C.accent + '25' }]}>
+                      <MapPin size={15} color={C.accent} />
+                      <View style={{ flex: 1, marginLeft: 8 }}>
+                        <Text style={[styles.meetingPointValText, { color: C.text }]}>
+                          {selectedTrip.meetingPoint || 'Central Assembly Point'}
+                        </Text>
+                        <Text style={{ fontSize: 9.5, color: C.textSecondary, marginTop: 2 }}>
+                          Please arrive at the assembly point 30 minutes before time.
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Service Inclusions */}
+                    <Text style={[styles.formSectionTitle, { color: C.textSecondary, marginTop: 14 }]}>SERVICE INCLUSIONS</Text>
+                    <View style={styles.inclusionsGrid}>
+                      <View style={[styles.inclusionCell, { backgroundColor: isDark ? '#1B1E30' : '#F5F5F8' }]}>
+                        <UserCheck size={12} color={selectedTrip.guideIncluded ? '#2ECC71' : C.textSecondary} />
+                        <Text style={[styles.inclusionText, { color: C.text }]}>Local Guide: {selectedTrip.guideIncluded ? 'YES' : 'NO'}</Text>
+                      </View>
+                      <View style={[styles.inclusionCell, { backgroundColor: isDark ? '#1B1E30' : '#F5F5F8' }]}>
+                        <Hotel size={12} color={selectedTrip.hotelIncluded !== false ? '#2ECC71' : C.textSecondary} />
+                        <Text style={[styles.inclusionText, { color: C.text }]}>Hotel Stay: {selectedTrip.hotelIncluded !== false ? 'YES' : 'NO'}</Text>
+                      </View>
+                      <View style={[styles.inclusionCell, { backgroundColor: isDark ? '#1B1E30' : '#F5F5F8' }]}>
+                        <Utensils size={12} color={selectedTrip.foodIncluded ? '#2ECC71' : C.textSecondary} />
+                        <Text style={[styles.inclusionText, { color: C.text }]}>Meals/Food: {selectedTrip.foodIncluded ? 'YES' : 'NO'}</Text>
+                      </View>
+                      <View style={[styles.inclusionCell, { backgroundColor: isDark ? '#1B1E30' : '#F5F5F8' }]}>
+                        {selectedTrip.name.toLowerCase().includes('bike') ? (
+                          <Bike size={12} color={selectedTrip.cabIncluded !== false ? '#2ECC71' : C.textSecondary} />
+                        ) : (
+                          <Bus size={12} color={selectedTrip.cabIncluded !== false ? '#2ECC71' : C.textSecondary} />
+                        )}
+                        <Text style={[styles.inclusionText, { color: C.text }]}>
+                          {selectedTrip.name.toLowerCase().includes('bike') ? 'Fuel/Bike: ' : 'AC Cab: '}
+                          {selectedTrip.cabIncluded !== false ? 'YES' : 'NO'}
+                        </Text>
+                      </View>
+                    </View>
+
                     {/* Midway Toggle */}
-                    <View style={[styles.toggleRow, { borderColor: C.divider }]}>
+                    <View style={[styles.toggleRow, { borderColor: C.divider, marginTop: 14 }]}>
                       <View style={{ flex: 1 }}>
                         <Text style={[styles.toggleLabel, { color: C.text }]}>Family Connect Midway Join</Text>
                         <Text style={{ fontSize: 10, color: C.textSecondary }}>
@@ -778,31 +895,55 @@ export default function SearchScreen() {
                     {midwayJoin && (
                       <View style={[styles.midwaySection, { borderColor: C.accent + '20' }]}>
                         <Text style={[styles.midwaySectionTitle, { color: C.accent }]}>SELECT SEGMENT</Text>
-                        <View style={styles.selectorGrid}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>Start Joining From</Text>
-                            <View style={[styles.pickerBox, { backgroundColor: isDark ? '#1B1E30' : '#F0F0F3' }]}>
-                              <TextInput
-                                style={[styles.pickerInput, { color: C.text }]}
-                                value={startCity}
-                                onChangeText={setStartCity}
-                                placeholder="e.g. Delhi"
-                                placeholderTextColor={C.textSecondary}
-                              />
-                            </View>
-                          </View>
-                          <View style={{ flex: 1, marginLeft: 8 }}>
-                            <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>Travel End Point</Text>
-                            <View style={[styles.pickerBox, { backgroundColor: isDark ? '#1B1E30' : '#F0F0F3' }]}>
-                              <TextInput
-                                style={[styles.pickerInput, { color: C.text }]}
-                                value={endCity}
-                                onChangeText={setEndCity}
-                                placeholder="e.g. Vrindavan"
-                                placeholderTextColor={C.textSecondary}
-                              />
-                            </View>
-                          </View>
+                        <View style={{ marginBottom: 12 }}>
+                          <Text style={[styles.fieldLabel, { color: C.textSecondary, marginBottom: 6 }]}>Start Joining From</Text>
+                          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.citySelectScroll}>
+                            {selectedTrip.cities.slice(0, selectedTrip.cities.length - 1).map((city: string) => {
+                              const isSelected = startCity === city;
+                              return (
+                                <TouchableOpacity
+                                  key={city}
+                                  style={[
+                                    styles.citySelectChip,
+                                    isSelected && styles.citySelectChipActive,
+                                    { borderColor: isSelected ? C.accent : C.cardBorder }
+                                  ]}
+                                  onPress={() => {
+                                    setStartCity(city);
+                                    const startIdx = selectedTrip.cities.indexOf(city);
+                                    const endIdx = selectedTrip.cities.indexOf(endCity);
+                                    if (endIdx <= startIdx) {
+                                      setEndCity(selectedTrip.cities[startIdx + 1] || '');
+                                    }
+                                  }}
+                                  activeOpacity={0.8}
+                                >
+                                  <Text style={[styles.citySelectChipText, { color: isSelected ? '#FFF' : C.text }, isSelected && { fontWeight: '700' }]}>{city}</Text>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </ScrollView>
+
+                          <Text style={[styles.fieldLabel, { color: C.textSecondary, marginTop: 10, marginBottom: 6 }]}>Travel End Point</Text>
+                          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.citySelectScroll}>
+                            {selectedTrip.cities.slice(selectedTrip.cities.indexOf(startCity) + 1).map((city: string) => {
+                              const isSelected = endCity === city;
+                              return (
+                                <TouchableOpacity
+                                  key={city}
+                                  style={[
+                                    styles.citySelectChip,
+                                    isSelected && styles.citySelectChipActive,
+                                    { borderColor: isSelected ? C.accent : C.cardBorder }
+                                  ]}
+                                  onPress={() => setEndCity(city)}
+                                  activeOpacity={0.8}
+                                >
+                                  <Text style={[styles.citySelectChipText, { color: isSelected ? '#FFF' : C.text }, isSelected && { fontWeight: '700' }]}>{city}</Text>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </ScrollView>
                         </View>
                         <View style={[styles.priceCalcRow, { borderTopColor: C.divider }]}>
                           <Text style={{ fontSize: 12, color: C.textSecondary }}>Automatic Price Adjustment</Text>
@@ -814,25 +955,65 @@ export default function SearchScreen() {
                       </View>
                     )}
 
-                    {/* Meta grid */}
-                    <View style={styles.tripMetaGrid}>
-                      <View style={[styles.metaCell, { backgroundColor: isDark ? '#1B1E30' : '#F5F5F8' }]}>
-                        <Text style={{ fontSize: 11, color: C.textSecondary }}>Seats Available</Text>
-                        <Text style={[styles.metaCellValue, { color: C.text }]}>{selectedTrip.availableSeats}</Text>
+                    {/* ── Cost & Vacancy Bar ──────────────────────────── */}
+                    <View style={[styles.pricingBar, { backgroundColor: isDark ? '#161929' : '#F0F2F8', borderColor: isDark ? '#1E2340' : '#E1E4EE' }]}>
+                      <View style={styles.pricingBarLeft}>
+                        <Text style={[styles.pricingBarLabel, { color: C.textSecondary }]}>Per Person</Text>
+                        <View style={styles.pricingBarAmountRow}>
+                          <Text style={[styles.pricingBarCurrency, { color: C.accent }]}>₹</Text>
+                          <Text style={[styles.pricingBarAmount, { color: C.text }]}>
+                            {(midwayJoin && startCity && endCity
+                              ? calculateMidwayPrice(selectedTrip)
+                              : selectedTrip.budget
+                            ).toLocaleString('en-IN')}
+                          </Text>
+                        </View>
                       </View>
-                      <View style={[styles.metaCell, { backgroundColor: isDark ? '#1B1E30' : '#F5F5F8' }]}>
-                        <Text style={{ fontSize: 11, color: C.textSecondary }}>Food Included</Text>
-                        <Text style={[styles.metaCellValue, { color: C.text }]}>{selectedTrip.foodIncluded ? 'Yes' : 'No'}</Text>
+                      <View style={[styles.pricingBarDivider, { backgroundColor: isDark ? '#252A42' : '#D4D8E8' }]} />
+                      <View style={styles.pricingBarRight}>
+                        <Text style={[styles.pricingBarLabel, { color: C.textSecondary }]}>Availability</Text>
+                        <View style={styles.pricingBarSeatsRow}>
+                          <Users size={12} color={selectedTrip.availableSeats > 0 ? '#10B981' : '#EF4444'} />
+                          <Text style={[styles.pricingBarSeats, { color: selectedTrip.availableSeats > 0 ? '#10B981' : '#EF4444' }]}>
+                            {selectedTrip.availableSeats} of {selectedTrip.totalSeats} open
+                          </Text>
+                        </View>
                       </View>
                     </View>
 
-                    <TouchableOpacity style={styles.modalSubmitBtn} onPress={handleRequestJoin}>
-                      <Text style={styles.modalSubmitBtnText}>
-                        {midwayJoin ? 'Request Segment Join' : 'Request Instant Join'}
-                      </Text>
-                    </TouchableOpacity>
+                    {/* ── Action Area ─────────────────────────────────── */}
+                    {selectedTrip && requestedTrips.has(selectedTrip.id) ? (
+                      <View style={styles.requestedActionArea}>
+                        {/* Status confirmation row */}
+                        <View style={[styles.requestedStatusRow, { borderColor: isDark ? '#1E2A22' : '#D1FAE5', backgroundColor: isDark ? 'rgba(16,185,129,0.07)' : 'rgba(16,185,129,0.06)' }]}>
+                          <View style={styles.requestedStatusIcon}>
+                            <CheckCircle size={18} color='#10B981' />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.requestedStatusTitle}>Request Submitted</Text>
+                            <Text style={[styles.requestedStatusSub, { color: C.textSecondary }]}>
+                              Awaiting organizer confirmation
+                            </Text>
+                          </View>
+                        </View>
+                        {/* Cancel ghost button */}
+                        <TouchableOpacity
+                          style={[styles.cancelRequestBtn, { borderColor: isDark ? 'rgba(239,68,68,0.3)' : 'rgba(239,68,68,0.35)' }]}
+                          onPress={handleCancelRequest}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={styles.cancelRequestBtnText}>Withdraw Request</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <TouchableOpacity style={styles.modalSubmitBtn} onPress={handleRequestJoin} activeOpacity={0.88}>
+                        <Text style={styles.modalSubmitBtnText}>
+                          {midwayJoin ? 'Request Segment Join' : 'Request to Join'}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
                   </ScrollView>
-                </View>
+                </>
               )
             )}
           </View>
@@ -1462,11 +1643,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   modalContent: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    width: '100%',
+    flex: 1,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     borderWidth: 1,
-    padding: 20,
-    maxHeight: '90%',
+    paddingTop: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 0,
   },
   successContainer: {
     alignItems: 'center',
@@ -1500,7 +1684,16 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   modalForm: {
-    marginBottom: 16,
+    flex: 1,
+    marginBottom: 0,
+  },
+  sheetHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignSelf: 'center',
+    marginBottom: 18,
   },
   formSectionTitle: {
     fontSize: 10,
@@ -1819,4 +2012,210 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
+  citySelectScroll: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingVertical: 4,
+  },
+  citySelectChip: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  citySelectChipActive: {
+    backgroundColor: '#0066FF',
+    borderColor: '#0066FF',
+  },
+  citySelectChipText: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  modalOrganizerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 16,
+    marginBottom: 16,
+  },
+  organizerAvatarWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalOrganizerName: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  detailRowCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 16,
+    marginBottom: 16,
+  },
+  detailCardHalf: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  detailCardVal: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  detailCardDivider: {
+    width: 1,
+    height: 24,
+    marginHorizontal: 12,
+  },
+  meetingPointInfoCard: {
+    flexDirection: 'row',
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  meetingPointValText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
+  inclusionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  inclusionCell: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '48%',
+    padding: 10,
+    borderRadius: 12,
+    gap: 6,
+  },
+  inclusionText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  joinBtnRequested: {
+    backgroundColor: 'rgba(46, 204, 113, 0.12)',
+    borderColor: '#2ECC71',
+    borderWidth: 1,
+  },
+  joinBtnRequestedText: {
+    color: '#2ECC71',
+    fontWeight: '700',
+  },
+
+  // Cancel request action area in expanded modal
+  requestedActionArea: {
+    gap: 10,
+    marginTop: 4,
+  },
+  requestedStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  requestedStatusIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(16,185,129,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  requestedStatusTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#10B981',
+    marginBottom: 2,
+  },
+  requestedStatusSub: {
+    fontSize: 10.5,
+    fontWeight: '500',
+  },
+  cancelRequestBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 14,
+    backgroundColor: 'transparent',
+  },
+  cancelRequestBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#EF4444',
+    letterSpacing: 0.2,
+  },
+
+  // Pricing bar
+  pricingBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginTop: 14,
+    marginBottom: 16,
+  },
+  pricingBarLeft: {
+    flex: 1,
+  },
+  pricingBarRight: {
+    flex: 1,
+    alignItems: 'flex-end',
+  },
+  pricingBarLabel: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    marginBottom: 4,
+  },
+  pricingBarAmountRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 1,
+  },
+  pricingBarCurrency: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  pricingBarAmount: {
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  pricingBarSeatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 2,
+  },
+  pricingBarSeats: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  pricingBarDivider: {
+    width: 1,
+    height: 40,
+    marginHorizontal: 16,
+  },
+
+  // Legacy — kept for safety
+  requestedStatusBadge: {},
+  requestedStatusText: {},
 });

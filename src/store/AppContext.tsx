@@ -29,6 +29,7 @@ export interface Trip {
   foodIncluded: boolean;
   privacy: 'PUBLIC' | 'PRIVATE' | 'INVITE_ONLY';
   membersCount: number;
+  coverImage?: string; // optional custom cover URI (from gallery or preset)
 }
 
 export interface Guide {
@@ -70,6 +71,7 @@ interface AppContextType {
   updateProfile: (profile: Partial<UserProfile>) => void;
   trips: Trip[];
   addTrip: (trip: Trip) => void;
+  joinTrip: (tripId: string) => void;
   guides: Guide[];
   messages: Message[];
   sendMessage: (content: string, mediaType?: 'NONE' | 'IMAGE' | 'VOICE') => void;
@@ -153,6 +155,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       privacy: 'PUBLIC',
       membersCount: 4,
     },
+    {
+      id: 'creation-1',
+      name: 'Taj Mahal Heritage Getaway',
+      creator: 'Aarav Sharma (Organizer)',
+      cities: ['Delhi', 'Agra', 'Fatehpur Sikri'],
+      startDate: '2026-08-10',
+      endDate: '2026-08-12',
+      budget: 6500,
+      availableSeats: 12,
+      totalSeats: 15,
+      meetingPoint: 'Delhi Aerocity Metro Stn',
+      guideIncluded: true,
+      foodIncluded: true,
+      privacy: 'PUBLIC',
+      membersCount: 3,
+      coverImage: 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1000&q=80',
+      category: 'Heritage',
+    },
+    {
+      id: 'creation-2',
+      name: 'Golden Triangle Scenic Tour',
+      creator: 'Aarav Sharma (Organizer)',
+      cities: ['Delhi', 'Agra', 'Jaipur'],
+      startDate: '2026-08-20',
+      endDate: '2026-08-25',
+      budget: 9800,
+      availableSeats: 8,
+      totalSeats: 12,
+      meetingPoint: 'New Delhi Rly Station PF 1',
+      guideIncluded: true,
+      foodIncluded: true,
+      privacy: 'PUBLIC',
+      membersCount: 4,
+      coverImage: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=800&q=80',
+      category: 'Adventure',
+    },
   ]);
 
   const [guides] = useState<Guide[]>([
@@ -233,6 +271,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setTrips((prev) => [trip, ...prev]);
   };
 
+  const joinTrip = (tripId: string) => {
+    setTrips((prev) =>
+      prev.map((t) => {
+        if (t.id === tripId && t.availableSeats > 0) {
+          return {
+            ...t,
+            availableSeats: t.availableSeats - 1,
+            membersCount: t.membersCount + 1,
+          };
+        }
+        return t;
+      })
+    );
+  };
+
   const sendMessage = (content: string, mediaType: 'NONE' | 'IMAGE' | 'VOICE' = 'NONE') => {
     const newMsg: Message = {
       id: `m-${Date.now()}`,
@@ -305,6 +358,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateProfile,
         trips,
         addTrip,
+        joinTrip,
         guides,
         messages,
         sendMessage,

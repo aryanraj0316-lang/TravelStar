@@ -777,7 +777,7 @@ export default function ProfileScreen() {
                     <Plus size={16} color="#FFF" />
                     <Text style={styles.dashboardBtnText}>Create Group Tour</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={[styles.dashboardBtn, { backgroundColor: '#F59E0B' }]} onPress={() => router.push('/custom-trip')}>
+                   <TouchableOpacity style={[styles.dashboardBtn, { backgroundColor: '#F59E0B' }]} onPress={() => router.push('/create')}>
                     <Sliders size={16} color="#FFF" />
                     <Text style={styles.dashboardBtnText}>Custom Trip Studio</Text>
                   </TouchableOpacity>

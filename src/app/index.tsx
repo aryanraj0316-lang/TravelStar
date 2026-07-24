@@ -463,7 +463,6 @@ function OngoingTripNotificationCard() {
           <Plane size={14} color={C.green} />
         </View>
         <View style={styles.tripLiveBadge}>
-          <View style={styles.tripLiveDot} />
           <Text style={styles.tripLiveText}>STARTS SOON</Text>
         </View>
       </View>

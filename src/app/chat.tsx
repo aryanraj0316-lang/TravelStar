@@ -6,23 +6,29 @@ import {
   AlertTriangle,
   ArrowLeft,
   BarChart2,
+  Calendar,
   Check,
   CheckCircle,
   ChevronDown,
   ChevronUp,
   Clock,
   Compass,
+  CornerUpLeft,
+  Copy,
   DollarSign,
   Download,
+  FileText,
   Globe as TranslateIcon,
   Image as ImageIcon,
   Info,
+  LogOut,
   MapPin,
   Megaphone,
   MessageSquare,
   Mic,
   MoreVertical,
   Phone,
+  Pin,
   Plus,
   Search,
   Send,
@@ -30,17 +36,20 @@ import {
   ShieldAlert,
   Smile,
   Star,
+  Trash2,
   Users as UsersIcon,
   Video,
   X
 } from 'lucide-react-native';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Dimensions,
   Image,
   Keyboard,
+  PanResponder,
   Platform,
   ScrollView,
   StyleSheet,
@@ -51,11 +60,18 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+let ImagePicker: any = null;
+try {
+  ImagePicker = require('expo-image-picker');
+} catch (e) {
+  ImagePicker = null;
+}
+
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // Color Palette matching search theme exactly
 const C = {
-  bg: '#060814',
+  bg: '#000000',
   card: '#111322',
   cardAlt: '#181C2E',
   border: '#1A1D30',
@@ -93,6 +109,11 @@ interface CustomMessage {
   locationCoords?: { latitude: number; longitude: number };
   sosId?: string;
   resolved?: boolean;
+  replyTo?: {
+    id: string;
+    senderName: string;
+    content: string;
+  };
 }
 
 // Initial messages mapped by tripId (Unified streams)
@@ -275,6 +296,103 @@ const INITIAL_TRIP_EXPENSES: Record<string, TripExpense[]> = {
   ]
 };
 
+// Swipe to Reply gesture wrapper component
+const SwipeableMessageRow = ({ children, onSwipeReply, isMe }: { children: React.ReactNode, onSwipeReply: () => void, isMe: boolean }) => {
+  const pan = useRef(new Animated.Value(0)).current;
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (evt, gestureState) => {
+        // Active when dragging left-to-right significantly, and horizontal exceeds vertical
+        return gestureState.dx > 10 && Math.abs(gestureState.dy) < 8;
+      },
+      onPanResponderMove: (evt, gestureState) => {
+        // Drag only to the right, up to a limit of 70px
+        if (gestureState.dx > 0) {
+          pan.setValue(Math.min(gestureState.dx, 70));
+        } else {
+          pan.setValue(0);
+        }
+      },
+      onPanResponderRelease: (evt, gestureState) => {
+        if (gestureState.dx > 55) {
+          onSwipeReply();
+        }
+        Animated.spring(pan, {
+          toValue: 0,
+          useNativeDriver: true,
+          tension: 50,
+          friction: 6,
+        }).start();
+      },
+      onPanResponderTerminate: () => {
+        Animated.spring(pan, {
+          toValue: 0,
+          useNativeDriver: true,
+        }).start();
+      }
+    })
+  ).current;
+
+  return (
+    <View style={{ position: 'relative', width: '100%' }} {...panResponder.panHandlers}>
+      {/* Revealed background reply icon container */}
+      <Animated.View
+        style={{
+          position: 'absolute',
+          left: 12,
+          top: 0,
+          bottom: 0,
+          justifyContent: 'center',
+          alignItems: 'center',
+          opacity: pan.interpolate({
+            inputRange: [0, 35],
+            outputRange: [0, 1],
+            extrapolate: 'clamp',
+          }),
+          transform: [
+            {
+              scale: pan.interpolate({
+                inputRange: [0, 55],
+                outputRange: [0.6, 1.1],
+                extrapolate: 'clamp',
+              }),
+            },
+          ],
+        }}
+      >
+        <LinearGradient
+          colors={['#0066FF', '#7C3AED']}
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: 16,
+            justifyContent: 'center',
+            alignItems: 'center',
+            shadowColor: '#0066FF',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.3,
+            shadowRadius: 4,
+            elevation: 4,
+          }}
+        >
+          <CornerUpLeft size={16} color="#FFF" />
+        </LinearGradient>
+      </Animated.View>
+
+      <Animated.View
+        style={{
+          transform: [{ translateX: pan }],
+          width: '100%',
+        }}
+      >
+        {children}
+      </Animated.View>
+    </View>
+  );
+};
+
 // WhatsApp-style Room model
 interface ChatRoom {
   id: string;
@@ -297,6 +415,42 @@ export default function ChatScreen() {
   const selectedRoomId = activeRoomId;
   const setSelectedRoomId = setActiveRoomId;
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isTripDetailsExpanded, setIsTripDetailsExpanded] = useState(false);
+
+  // Tab Selection & Group Updates
+  const [activeTab, setActiveTab] = useState<'chat' | 'itinerary' | 'docs' | 'members'>('chat');
+  const [showGroupUpdate, setShowGroupUpdate] = useState(true);
+
+  // Initial Documents per Trip
+  const [tripDocs, setTripDocs] = useState<Record<string, { id: string; title: string; subtitle: string; status: string; date: string }[]>>({
+    'trip-1': [
+      { id: 'doc-1-1', title: 'Train Tickets (Ranchi - Mathura)', subtitle: 'IRCTC PNR #2847395837', status: 'Confirmed', date: '2026-07-21' },
+      { id: 'doc-1-2', title: 'Temple Special Darshan Passes', subtitle: 'Banke Bihari Temple Entry Pass', status: 'Booked', date: '2026-07-22' },
+      { id: 'doc-1-3', title: 'Aadhaar ID Verification', subtitle: 'All participants verified', status: 'Completed', date: '2026-07-18' },
+    ],
+    'trip-2': [
+      { id: 'doc-2-1', title: 'Inner Line Permits (ILP)', subtitle: 'Approved & Managed by Lobsang Yeshi', status: 'Approved', date: '2026-07-22' },
+      { id: 'doc-2-2', title: 'Bike Rental Agreement', subtitle: 'Royal Enfield Himalayan 411cc', status: 'Signed', date: '2026-07-20' },
+      { id: 'doc-2-3', title: 'Aadhaar / ID Verification', subtitle: 'Aditya, Priya, Vikram verified', status: 'Completed', date: '2026-07-18' },
+      { id: 'doc-2-4', title: 'Travel Insurance Policy', subtitle: 'Digit Policy #DG-2026-9938', status: 'Valid', date: '2026-07-15' },
+    ],
+    'trip-3': [
+      { id: 'doc-3-1', title: 'Alleppey Houseboat Booking Voucher', subtitle: 'Voucher #LH-938592', status: 'Confirmed', date: '2026-07-21' },
+      { id: 'doc-3-2', title: 'Munnar Resort Stay Confirmation', subtitle: 'Standard Rooms x 4', status: 'Confirmed', date: '2026-07-20' },
+    ]
+  });
+
+  // Document Upload form states
+  const [isDocModalOpen, setIsDocModalOpen] = useState(false);
+  const [docTitle, setDocTitle] = useState('');
+  const [docSubtitle, setDocSubtitle] = useState('');
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
+
+  // Reset tab to chat when activeRoomId/selectedRoomId changes
+  useEffect(() => {
+    setActiveTab('chat');
+  }, [activeRoomId]);
 
   // Filters for the Inbox List view
   const [inboxFilter, setInboxFilter] = useState<'ALL' | 'GROUPS' | 'GUIDES'>('ALL');
@@ -319,7 +473,36 @@ export default function ChatScreen() {
   const [locationForm, setLocationForm] = useState({ label: '', lat: '', lng: '' });
 
   // Stateful Chat Data
-  const [tripMessages, setTripMessages] = useState<Record<string, CustomMessage[]>>(INITIAL_TRIP_MESSAGES);
+  const [tripMessages, setTripMessages] = useState<Record<string, CustomMessage[]>>(() => {
+    return {
+      ...INITIAL_TRIP_MESSAGES,
+      'room-vrindavan-group': INITIAL_TRIP_MESSAGES['trip-1'] || [],
+      'room-ladakh-group': INITIAL_TRIP_MESSAGES['trip-2'] || [],
+      'room-kerala-group': INITIAL_TRIP_MESSAGES['trip-3'] || [],
+      'room-guide-rajesh': [
+        {
+          id: 'guide-init-1',
+          senderName: 'Rajesh Kumar',
+          senderRole: 'Guide',
+          avatar: 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=150&q=80',
+          content: 'Hello! Feel free to ask me any private questions about temple entry or darshan coordinates here. 🙏',
+          timestamp: 'Yesterday, 04:00 PM',
+          isMe: false,
+        }
+      ],
+      'room-guide-lobsang': [
+        {
+          id: 'guide-init-2',
+          senderName: 'Lobsang Yeshi',
+          senderRole: 'Guide',
+          avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80',
+          content: 'Hello! I am Lobsang Yeshi. We can coordinate here regarding bike gears or acclimatization rest. 🏔️',
+          timestamp: 'Yesterday',
+          isMe: false,
+        }
+      ],
+    };
+  });
   const [tripPolls, setTripPolls] = useState<Record<string, typeof INITIAL_TRIP_POLLS['trip-1']>>(INITIAL_TRIP_POLLS);
   const [tripExpenses, setTripExpenses] = useState<Record<string, TripExpense[]>>(INITIAL_TRIP_EXPENSES);
 
@@ -384,6 +567,10 @@ export default function ChatScreen() {
 
   // Input states
   const [inputText, setInputText] = useState('');
+  const [replyingToMessage, setReplyingToMessage] = useState<CustomMessage | null>(null);
+  const [selectedMessageForOptions, setSelectedMessageForOptions] = useState<CustomMessage | null>(null);
+  const [selectedRoomForOptions, setSelectedRoomForOptions] = useState<ChatRoom | null>(null);
+  const [pinnedRoomIds, setPinnedRoomIds] = useState<Set<string>>(new Set());
   const [translatedMsgs, setTranslatedMsgs] = useState<Set<string>>(new Set());
 
   // Typing simulator
@@ -418,6 +605,57 @@ export default function ChatScreen() {
 
   // Active global SOS check
   const activeSOS = sosAlerts.find(sos => sos.status === 'ACTIVE');
+
+  // Retrieve current active messages list (unified feed)
+  const currentMessages = tripMessages[selectedRoomId || selectedTripId] || [];
+
+  // Dynamically extract group members from message history in this room/trip
+  const groupMembers = useMemo(() => {
+    const membersMap = new Map<string, { name: string; avatar: string; role: string }>();
+    
+    // Add the guide
+    if (activeGuide) {
+      membersMap.set(activeGuide.name, {
+        name: activeGuide.name,
+        avatar: activeGuide.avatar,
+        role: 'Guide'
+      });
+    }
+    
+    // Add other senders from the current active messages
+    currentMessages.forEach(msg => {
+      if (msg.senderName && !msg.isMe) {
+        membersMap.set(msg.senderName, {
+          name: msg.senderName,
+          avatar: msg.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
+          role: msg.senderRole || 'Tourist'
+        });
+      }
+    });
+    
+    // Fallback static list of members if message history is empty
+    if (membersMap.size <= 1) {
+      const mockMembers = [
+        { name: 'Neha Sharma', avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80', role: 'Tourist' },
+        { name: 'Vikram Singh', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80', role: 'Tourist' },
+        { name: 'Suman Gupta', avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=150&q=80', role: 'Tourist' },
+        { name: 'Aditya Sen', avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80', role: 'Tourist' },
+      ];
+      mockMembers.forEach(m => {
+        if (m.name !== activeGuide?.name) {
+          membersMap.set(m.name, m);
+        }
+      });
+    }
+    
+    return Array.from(membersMap.values());
+  }, [currentMessages, activeGuide]);
+
+  // Click a member to direct message
+  const handleMemberClick = (member: { name: string; avatar: string }) => {
+    setIsSettingsOpen(false); // Close settings panel
+    handleStartDirectMessage(member.name, member.avatar);
+  };
 
   // Toggle Attachment panel Animation
   useEffect(() => {
@@ -491,7 +729,7 @@ export default function ChatScreen() {
 
   // Core send message handler
   const sendNewMessage = (msgData: Partial<CustomMessage>) => {
-    const key = selectedTripId;
+    const key = selectedRoomId || selectedTripId;
     const newMsg: CustomMessage = {
       id: `msg-${Date.now()}`,
       senderName: profile.name,
@@ -512,7 +750,7 @@ export default function ChatScreen() {
     // Update the WhatsApp Inbox snippet text dynamically!
     setInboxRooms(prevRooms =>
       prevRooms.map(room => {
-        if (room.tripId === selectedTripId) {
+        if (room.id === selectedRoomId) {
           return {
             ...room,
             latestMessage: `You: ${msgData.content || 'Attachment shared'}`,
@@ -530,11 +768,157 @@ export default function ChatScreen() {
   // Submit keyboard text message
   const handleSendText = () => {
     if (inputText.trim() === '') return;
-    sendNewMessage({
+    const msgData: Partial<CustomMessage> = {
       content: inputText,
       type: 'text'
-    });
+    };
+
+    if (replyingToMessage) {
+      msgData.replyTo = {
+        id: replyingToMessage.id,
+        senderName: replyingToMessage.senderName,
+        content: replyingToMessage.content
+      };
+      setReplyingToMessage(null);
+    }
+
+    sendNewMessage(msgData);
     setInputText('');
+  };
+
+  // Copy message text to device clipboard safely
+  const handleCopyMessage = (content: string) => {
+    try {
+      const ClipboardObj = require('react-native').Clipboard;
+      if (ClipboardObj && typeof ClipboardObj.setString === 'function') {
+        ClipboardObj.setString(content);
+      }
+    } catch (e) {
+      // Fallback if Clipboard module is unlinked or not bundled in Expo client
+    }
+    Alert.alert('Success', 'Message text copied to clipboard.');
+    setSelectedMessageForOptions(null);
+  };
+
+  // Delete message from current active room history stream
+  const handleDeleteMessage = (msgId: string) => {
+    const key = selectedRoomId || selectedTripId;
+    setTripMessages(prev => {
+      const list = prev[key] || [];
+      return {
+        ...prev,
+        [key]: list.filter(m => m.id !== msgId)
+      };
+    });
+    setSelectedMessageForOptions(null);
+  };
+
+  // Delete document from vault
+  const handleDeleteDoc = (docId: string) => {
+    Alert.alert(
+      'Delete Document',
+      'Are you sure you want to delete this document?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            setTripDocs(prev => ({
+              ...prev,
+              [selectedTripId]: (prev[selectedTripId] || []).filter(d => d.id !== docId)
+            }));
+          }
+        }
+      ]
+    );
+  };
+
+  // Simulated upload and submission of document
+  const handleDocSubmit = () => {
+    if (docTitle.trim() === '') {
+      Alert.alert('Error', 'Please enter a document title.');
+      return;
+    }
+    
+    setIsUploading(true);
+    setUploadProgress(0);
+    
+    let progress = 0;
+    const interval = setInterval(() => {
+      progress += 10;
+      setUploadProgress(progress);
+      if (progress >= 100) {
+        clearInterval(interval);
+        
+        const newDoc = {
+          id: 'doc-uploaded-' + Date.now(),
+          title: docTitle.trim(),
+          subtitle: docSubtitle.trim() || 'Uploaded certificate file',
+          status: 'Approved',
+          date: new Date().toISOString().split('T')[0]
+        };
+        
+        setTripDocs(prev => ({
+          ...prev,
+          [selectedTripId]: [...(prev[selectedTripId] || []), newDoc]
+        }));
+        
+        setIsUploading(false);
+        setIsDocModalOpen(false);
+        setDocTitle('');
+        setDocSubtitle('');
+        setUploadProgress(0);
+        
+        Alert.alert('Success', 'Document uploaded and verified successfully.');
+      }
+    }, 120);
+  };
+
+  // Start Direct Message with sender
+  const handleStartDirectMessage = (senderName: string, avatar: string) => {
+    const dmRoomId = `room-dm-${senderName.toLowerCase().replace(/\s+/g, '-')}`;
+    
+    // Check if DM room already exists in state
+    const existingRoom = inboxRooms.find(r => r.id === dmRoomId);
+    if (existingRoom) {
+      setSelectedRoomId(dmRoomId);
+      setSelectedTripId(existingRoom.tripId);
+    } else {
+      // Create new private chat room
+      const newRoom: ChatRoom = {
+        id: dmRoomId,
+        tripId: selectedTripId,
+        name: senderName,
+        avatar: avatar,
+        type: 'GUIDE', // treat as GUIDE/DM in inbox rendering
+        latestMessage: `Direct chat started with ${senderName}`,
+        latestTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        unreadCount: 0,
+        badge: 'Member',
+      };
+      
+      setInboxRooms(prev => [newRoom, ...prev]);
+      
+      // Initialize message history
+      setTripMessages(prev => ({
+        ...prev,
+        [dmRoomId]: [
+          {
+            id: `dm-init-${Date.now()}`,
+            senderName: senderName,
+            senderRole: 'Tourist',
+            avatar: avatar,
+            content: `This is the beginning of your private message thread with ${senderName}. 👋`,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            isMe: false,
+          }
+        ]
+      }));
+      
+      setSelectedRoomId(dmRoomId);
+    }
+    setSelectedMessageForOptions(null);
   };
 
   // Vote in Poll
@@ -641,14 +1025,36 @@ export default function ChatScreen() {
     });
   };
 
-  // Photo receipt simulator
-  const handlePhotoSimulate = () => {
+  // Photo receipt selector using device image library
+  const handlePhotoSimulate = async () => {
     setIsAttachmentOpen(false);
-    sendNewMessage({
-      content: '📷 Uploaded a photo receipt',
-      type: 'image',
-      mediaUrl: 'https://images.unsplash.com/photo-1599661046289-e31897846e41?w=500&q=80'
-    });
+    try {
+      if (!ImagePicker || typeof ImagePicker.requestMediaLibraryPermissionsAsync !== 'function') {
+        Alert.alert('Notice', 'Photo gallery module is initializing or requires restarting Expo dev client.');
+        return;
+      }
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permissionResult?.granted) {
+        Alert.alert('Permission Required', 'Permission to access photo gallery is required to select photos from your device.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions ? ImagePicker.MediaTypeOptions.Images : 'images',
+        allowsEditing: true,
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        sendNewMessage({
+          content: '📷 Photo Sent',
+          type: 'image',
+          mediaUrl: result.assets[0].uri
+        });
+      }
+    } catch (err: any) {
+      Alert.alert('Notice', 'Photo gallery selection error: ' + (err?.message || 'Please try again.'));
+    }
   };
 
   // SOS Countdown handles
@@ -738,22 +1144,25 @@ export default function ChatScreen() {
     outputRange: [0, 120],
   });
 
-  // Filtered rooms listing
-  const filteredRooms = inboxRooms.filter(room => {
-    const matchesSearch = room.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      room.latestMessage.toLowerCase().includes(searchQuery.toLowerCase());
+  // Filtered and sorted rooms listing (pins at the top!)
+  const filteredRooms = inboxRooms
+    .filter(room => {
+      const matchesSearch = room.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        room.latestMessage.toLowerCase().includes(searchQuery.toLowerCase());
 
-    if (!matchesSearch) return false;
+      if (!matchesSearch) return false;
 
-    if (inboxFilter === 'ALL') return true;
-    if (inboxFilter === 'GROUPS') return room.type === 'GROUP';
-    if (inboxFilter === 'GUIDES') return room.type === 'GUIDE';
+      if (inboxFilter === 'ALL') return true;
+      if (inboxFilter === 'GROUPS') return room.type === 'GROUP';
+      if (inboxFilter === 'GUIDES') return room.type === 'GUIDE';
 
-    return true;
-  });
-
-  // Retrieve current active messages list (unified feed)
-  const currentMessages = tripMessages[selectedTripId] || [];
+      return true;
+    })
+    .sort((a, b) => {
+      const aPinned = pinnedRoomIds.has(a.id) ? 1 : 0;
+      const bPinned = pinnedRoomIds.has(b.id) ? 1 : 0;
+      return bPinned - aPinned;
+    });
 
   // Find Room info of the selected room
   const activeRoom = inboxRooms.find(r => r.id === selectedRoomId);
@@ -844,22 +1253,24 @@ export default function ChatScreen() {
                   setSelectedRoomId(room.id);
                   setSelectedTripId(room.tripId);
                 }}
+                onLongPress={() => setSelectedRoomForOptions(room)}
+                delayLongPress={400}
                 activeOpacity={0.85}
               >
                 {/* Avatar left */}
                 <View style={styles.roomAvatarWrap}>
                   <Image source={{ uri: room.avatar }} style={styles.roomAvatarImg} />
-                  {room.type === 'GUIDE' ? (
-                    <View style={styles.onlineBadgeGuide} />
-                  ) : (
-                    <View style={[styles.onlineBadgeGuide, { backgroundColor: C.blue }]} />
-                  )}
                 </View>
 
                 {/* Info Center */}
                 <View style={styles.roomMetaWrap}>
                   <View style={styles.roomNameRow}>
-                    <Text style={styles.roomNameText} numberOfLines={1}>{room.name}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 6 }}>
+                      <Text style={[styles.roomNameText, { flex: 1, marginRight: 4 }]} numberOfLines={1}>{room.name}</Text>
+                      {pinnedRoomIds.has(room.id) && (
+                        <Pin size={12} color={C.blueGlow} />
+                      )}
+                    </View>
                     <Text style={[styles.roomTimeText, hasUnread && { color: C.blueGlow }]}>{room.latestTime}</Text>
                   </View>
 
@@ -888,6 +1299,149 @@ export default function ChatScreen() {
             );
           })}
         </ScrollView>
+
+        {/* ─── CHAT ROOM LONG PRESS OPTIONS OVERLAY ─────────────── */}
+        {selectedRoomForOptions && (
+          <View style={styles.optionsModalOverlay}>
+            <TouchableOpacity
+              style={StyleSheet.absoluteFill}
+              activeOpacity={1}
+              onPress={() => setSelectedRoomForOptions(null)}
+            />
+            <View style={styles.optionsModalContent}>
+              <View style={styles.optionsHeaderRow}>
+                <Text style={styles.optionsHeaderTitle} numberOfLines={1}>
+                  {selectedRoomForOptions.name} Options
+                </Text>
+                <Text style={styles.optionsHeaderSubText} numberOfLines={1}>
+                  {selectedRoomForOptions.type === 'GROUP' ? 'Group Chat' : 'Direct Message'} • {selectedRoomForOptions.badge || 'Contact'}
+                </Text>
+              </View>
+
+              <View style={styles.optionsDivider} />
+
+              {/* PIN / UNPIN CHAT */}
+              <TouchableOpacity
+                style={styles.optionsRowBtn}
+                onPress={() => {
+                  const roomId = selectedRoomForOptions.id;
+                  setPinnedRoomIds(prev => {
+                    const next = new Set(prev);
+                    next.has(roomId) ? next.delete(roomId) : next.add(roomId);
+                    return next;
+                  });
+                  setSelectedRoomForOptions(null);
+                }}
+              >
+                <Pin size={16} color="#94A3B8" style={styles.optionsRowIcon} />
+                <Text style={styles.optionsRowText}>
+                  {pinnedRoomIds.has(selectedRoomForOptions.id) ? 'Unpin Chat' : 'Pin Chat to Top'}
+                </Text>
+              </TouchableOpacity>
+
+              {/* MARK AS READ / UNREAD */}
+              <TouchableOpacity
+                style={styles.optionsRowBtn}
+                onPress={() => {
+                  const roomId = selectedRoomForOptions.id;
+                  setInboxRooms(prev =>
+                    prev.map(r => {
+                      if (r.id === roomId) {
+                        return { ...r, unreadCount: r.unreadCount > 0 ? 0 : 3 };
+                      }
+                      return r;
+                    })
+                  );
+                  setSelectedRoomForOptions(null);
+                }}
+              >
+                <CheckCircle size={16} color="#94A3B8" style={styles.optionsRowIcon} />
+                <Text style={styles.optionsRowText}>
+                  {selectedRoomForOptions.unreadCount > 0 ? 'Mark as Read' : 'Mark as Unread'}
+                </Text>
+              </TouchableOpacity>
+
+              {/* CLEAR CHAT HISTORY */}
+              <TouchableOpacity
+                style={styles.optionsRowBtn}
+                onPress={() => {
+                  const roomId = selectedRoomForOptions.id;
+                  Alert.alert(
+                    'Clear Chat',
+                    'Are you sure you want to clear all message history for this chat? This action cannot be undone.',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Clear',
+                        style: 'destructive',
+                        onPress: () => {
+                          setTripMessages(prev => ({
+                            ...prev,
+                            [roomId]: []
+                          }));
+                          // Reset the room's latest message snippet
+                          setInboxRooms(prev =>
+                            prev.map(r => {
+                              if (r.id === roomId) {
+                                return { ...r, latestMessage: 'No messages in this chat' };
+                              }
+                              return r;
+                            })
+                          );
+                        }
+                      }
+                    ]
+                  );
+                  setSelectedRoomForOptions(null);
+                }}
+              >
+                <Trash2 size={16} color="#EF4444" style={styles.optionsRowIcon} />
+                <Text style={[styles.optionsRowText, { color: '#EF4444' }]}>Clear Conversation</Text>
+              </TouchableOpacity>
+
+              {/* LEAVE GROUP / DELETE CHAT */}
+              <TouchableOpacity
+                style={styles.optionsRowBtn}
+                onPress={() => {
+                  const roomId = selectedRoomForOptions.id;
+                  const roomName = selectedRoomForOptions.name;
+                  const isGroup = selectedRoomForOptions.type === 'GROUP';
+                  Alert.alert(
+                    isGroup ? 'Leave Group' : 'Delete Chat',
+                    isGroup
+                      ? `Are you sure you want to leave ${roomName}? You will no longer receive updates.`
+                      : `Are you sure you want to delete the chat with ${roomName}?`,
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: isGroup ? 'Leave' : 'Delete',
+                        style: 'destructive',
+                        onPress: () => {
+                          setInboxRooms(prev => prev.filter(r => r.id !== roomId));
+                        }
+                      }
+                    ]
+                  );
+                  setSelectedRoomForOptions(null);
+                }}
+              >
+                <X size={16} color="#EF4444" style={styles.optionsRowIcon} />
+                <Text style={[styles.optionsRowText, { color: '#EF4444' }]}>
+                  {selectedRoomForOptions.type === 'GROUP' ? 'Leave Group' : 'Delete Chat'}
+                </Text>
+              </TouchableOpacity>
+
+              <View style={styles.optionsCancelDivider} />
+
+              <TouchableOpacity
+                style={styles.optionsCancelBtn}
+                onPress={() => setSelectedRoomForOptions(null)}
+              >
+                <Text style={styles.optionsCancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
       </SafeAreaView>
     );
   }
@@ -927,14 +1481,73 @@ export default function ChatScreen() {
         </View>
 
         <View style={styles.headerRightActions}>
-          <TouchableOpacity style={styles.actionRoundBtn} onPress={() => router.push('/map')}>
-            <MapPin size={15} color="#FFF" />
+          <TouchableOpacity 
+            style={styles.actionRoundBtn} 
+            onPress={() => router.push('/map')}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            activeOpacity={0.7}
+          >
+            <MapPin size={17} color="#FFF" />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionRoundBtn} onPress={() => setIsSettingsOpen(true)}>
-            <Settings size={15} color="#FFF" />
+          <TouchableOpacity 
+            style={styles.actionRoundBtn} 
+            onPress={() => setIsSettingsOpen(true)}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            activeOpacity={0.7}
+          >
+            <Settings size={17} color="#FFF" />
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* ─── TAB SELECTION BAR ───────────────────────────────── */}
+      {activeRoom?.type === 'GROUP' && (
+        <View style={styles.tabBarWrapper}>
+          <TouchableOpacity
+            style={[styles.tabItemTouch, activeTab === 'chat' && styles.tabItemTouchActive]}
+            onPress={() => setActiveTab('chat')}
+            activeOpacity={0.8}
+          >
+            <MessageSquare size={17} color={activeTab === 'chat' ? '#C084FC' : '#7E8494'} />
+            <Text style={[styles.tabItemLabel, activeTab === 'chat' && styles.tabItemLabelActive]}>
+              Chat
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tabItemTouch, activeTab === 'itinerary' && styles.tabItemTouchActive]}
+            onPress={() => setActiveTab('itinerary')}
+            activeOpacity={0.8}
+          >
+            <Calendar size={17} color={activeTab === 'itinerary' ? '#C084FC' : '#7E8494'} />
+            <Text style={[styles.tabItemLabel, activeTab === 'itinerary' && styles.tabItemLabelActive]}>
+              Itinerary
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tabItemTouch, activeTab === 'docs' && styles.tabItemTouchActive]}
+            onPress={() => setActiveTab('docs')}
+            activeOpacity={0.8}
+          >
+            <FileText size={17} color={activeTab === 'docs' ? '#C084FC' : '#7E8494'} />
+            <Text style={[styles.tabItemLabel, activeTab === 'docs' && styles.tabItemLabelActive]}>
+              Docs
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tabItemTouch, activeTab === 'members' && styles.tabItemTouchActive]}
+            onPress={() => setActiveTab('members')}
+            activeOpacity={0.8}
+          >
+            <UsersIcon size={17} color={activeTab === 'members' ? '#C084FC' : '#7E8494'} />
+            <Text style={[styles.tabItemLabel, activeTab === 'members' && styles.tabItemLabelActive]}>
+              Members
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* ─── SOS ACTIVE BANNER ─────────────────────────────────── */}
       {activeSOS && (
@@ -967,325 +1580,752 @@ export default function ChatScreen() {
         </LinearGradient>
       )}
 
-      {/* ─── WORKSPACE CONTENT AREA (CLEAN CONVERSATION FEED) ───── */}
-      <View style={{ flex: 1 }}>
-        <ScrollView
-          ref={scrollViewRef}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContent}
-          onContentSizeChange={scrollToBottom}
-        >
-          {currentMessages.map((msg, idx) => {
-            const hasTranslation = !!translatedMsgs.has(msg.id);
-            const displayedContent = hasTranslation && msg.translations?.hindi ? msg.translations.hindi : msg.content;
-            const isSOS = msg.type === 'sos';
-
-            // Check if previous message was sent by the same sender using senderName as key
-            const isConsecutive = idx > 0 && currentMessages[idx - 1].senderName === msg.senderName;
-
-            return (
-              <View key={msg.id} style={[styles.messageRow, msg.isMe && { justifyContent: 'flex-end' }, isSOS && styles.sosMessageBg, isConsecutive && { marginTop: 2 }]}>
-                {!msg.isMe && (
-                  <View style={styles.avatarContainer}>
-                    {!isConsecutive && (
-                      <>
-                        <Image source={{ uri: msg.avatar }} style={styles.messageAvatar} />
-                        {msg.senderRole === 'Organizer' && (
-                          <View style={styles.roleOnlineBadge} />
-                        )}
-                      </>
-                    )}
-                  </View>
-                )}
-
-                <View style={[styles.messageBody, msg.isMe ? { flex: 0, alignItems: 'flex-end', alignSelf: 'flex-end', maxWidth: '85%' } : { flex: 1 }]}>
-                  {!isConsecutive && (
-                    <View style={[styles.senderHeader, msg.isMe && { justifyContent: 'flex-end' }]}>
-                      <Text style={[
-                        styles.senderNameText,
-                        msg.senderRole === 'Organizer' ? { color: C.blueGlow } :
-                        msg.senderRole === 'Guide' ? { color: C.purple } : { color: C.green }
-                      ]}>
-                        {msg.isMe ? 'You' : msg.senderName}
-                      </Text>
-                      {msg.senderRole && !msg.isMe && (
-                        <View style={[
-                          styles.rolePill,
-                          msg.senderRole === 'Organizer' ? styles.rolePillOrganizer :
-                          msg.senderRole === 'Guide' ? styles.rolePillGuide : styles.rolePillTourist
-                        ]}>
-                          <Text style={styles.rolePillText}>{msg.senderRole}</Text>
-                        </View>
-                      )}
-                    </View>
-                  )}
-
-                  {msg.type === 'poll' ? (
-                    <View style={styles.pollCard}>
-                      <View style={styles.pollHeader}>
-                        <BarChart2 size={16} color={C.orange} style={{ marginRight: 6 }} />
-                        <Text style={styles.pollQuestionText}>{msg.pollQuestion}</Text>
-                      </View>
-                      {msg.pollOptions?.map((opt, idx) => {
-                        const totalVotes = msg.pollOptions?.reduce((acc, current) => acc + current.votes, 0) || 1;
-                        const percent = Math.round((opt.votes / totalVotes) * 100) || 0;
-                        const isVotedByMe = msg.pollVoted === idx;
-
-                        return (
-                          <TouchableOpacity
-                            key={opt.text}
-                            style={[styles.pollOptionTouch, isVotedByMe && styles.pollOptionVoted]}
-                            onPress={() => handlePollVote(msg.id, idx)}
-                          >
-                            <View style={[styles.pollProgressFill, { width: `${percent}%` }]} />
-                            <View style={styles.pollOptionContent}>
-                              <Text style={[styles.pollOptionLabel, isVotedByMe && { fontWeight: '800', color: '#FFF' }]}>{opt.text}</Text>
-                              <Text style={styles.pollOptionPercent}>{percent}% ({opt.votes})</Text>
-                            </View>
-                          </TouchableOpacity>
-                        );
-                      })}
-                      <Text style={styles.pollFooter}>Tap option to vote in thread</Text>
-                    </View>
-                  ) : msg.type === 'expense' ? (
-                    <View style={styles.expenseCard}>
-                      <View style={styles.expenseHeader}>
-                        <DollarSign size={16} color={C.green} />
-                        <Text style={styles.expenseHeaderTitle}>Shared Expense Logged</Text>
-                      </View>
-                      <Text style={styles.expenseBillDesc}>{msg.expenseDesc}</Text>
-                      <Text style={styles.expenseBillAmount}>₹{msg.expenseAmount}</Text>
-                      <View style={styles.expenseDivider} />
-                      <View style={styles.expenseFooterRow}>
-                        <Text style={styles.expenseShareText}>Split with {msg.expenseSplitWith} members</Text>
-                        <Text style={styles.expenseCostHead}>₹{Math.round((msg.expenseAmount || 0) / (msg.expenseSplitWith || 1))}/head</Text>
-                      </View>
-                    </View>
-                  ) : msg.type === 'location' ? (
-                    <View style={styles.locationCard}>
-                      <View style={styles.locationHeader}>
-                        <MapPin size={16} color={C.blueGlow} />
-                        <Text style={styles.locationCardTitle}>Shared Meeting Point</Text>
-                      </View>
-                      <Text style={styles.locationText}>{msg.content}</Text>
-                      <View style={styles.miniMapPlaceholder}>
-                        <View style={styles.radarRing1} />
-                        <View style={styles.radarRing2} />
-                        <MapPin size={24} color={C.red} style={styles.miniMapPin} />
-                        <Text style={styles.coordsText}>Lat: {msg.locationCoords?.latitude.toFixed(4)}, Lng: {msg.locationCoords?.longitude.toFixed(4)}</Text>
-                      </View>
-                      <TouchableOpacity
-                        style={styles.locationActionTouch}
-                        onPress={() => router.push('/map')}
-                      >
-                        <Text style={styles.locationActionText}>Open Live Navigation</Text>
-                      </TouchableOpacity>
-                    </View>
-                  ) : msg.type === 'voice' ? (
-                    <View style={styles.voiceNoteCard}>
-                      <TouchableOpacity style={styles.playButtonCircle}>
-                        <View style={styles.playArrow} />
-                      </TouchableOpacity>
-                      <View style={styles.waveformContainer}>
-                        <View style={[styles.waveBar, { height: 12, backgroundColor: C.blueGlow }]} />
-                        <View style={[styles.waveBar, { height: 22, backgroundColor: C.blueGlow }]} />
-                        <View style={[styles.waveBar, { height: 18, backgroundColor: C.blueGlow }]} />
-                        <View style={[styles.waveBar, { height: 14, backgroundColor: C.textSec }]} />
-                        <View style={[styles.waveBar, { height: 8, backgroundColor: C.textSec }]} />
-                        <View style={[styles.waveBar, { height: 16, backgroundColor: C.textSec }]} />
-                        <View style={[styles.waveBar, { height: 24, backgroundColor: C.textSec }]} />
-                        <View style={[styles.waveBar, { height: 10, backgroundColor: C.textSec }]} />
-                      </View>
-                      <Text style={styles.voiceDuration}>0:04</Text>
-                    </View>
-                  ) : msg.type === 'image' ? (
-                    <View style={styles.imageCard}>
-                      <Image source={{ uri: msg.mediaUrl }} style={styles.imageMedia} />
-                      <View style={styles.imageOverlayTextRow}>
-                        <Text style={styles.imageCardDesc} numberOfLines={1}>{msg.content}</Text>
-                        <TouchableOpacity style={styles.imageDownloadBtn}>
-                          <Download size={14} color="#FFF" />
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  ) : msg.type === 'sos' ? (
-                    <View style={styles.sosCardAlert}>
-                      <View style={styles.sosAlertHeader}>
-                        <AlertCircle size={18} color="#FFF" />
-                        <Text style={styles.sosAlertHeaderTitle}>CRITICAL EMERGENCY WARNING</Text>
-                      </View>
-                      <Text style={styles.sosAlertDesc}>{msg.content}</Text>
-                      <Text style={styles.sosAlertCoords}>Coordinates: {msg.locationCoords?.latitude.toFixed(4)}, {msg.locationCoords?.longitude.toFixed(4)}</Text>
-                      <View style={styles.sosAlertBtnRow}>
-                        <TouchableOpacity
-                          style={[styles.sosAlertBtn, { backgroundColor: 'rgba(255,255,255,0.15)' }]}
-                          onPress={() => router.push('/map')}
-                        >
-                          <Text style={styles.sosAlertBtnText}>Show on Map</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[styles.sosAlertBtn, { backgroundColor: C.green }]}
-                          onPress={handleResolveSOSEvent}
-                        >
-                          <Text style={styles.sosAlertBtnText}>Mark as Safe</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  ) : (
-                    <View style={[msg.isMe ? styles.instagramBubbleContainerMe : styles.bubbleContainerOther]}>
-                      {msg.isMe ? (
-                        <LinearGradient
-                          colors={['#0066FF', '#7C3AED', '#BA68C8']}
-                          start={(() => {
-                            // Compute deterministic but randomized start coordinates based on message ID
-                            let hash = 0;
-                            const idStr = msg.id || 'random';
-                            for (let i = 0; i < idStr.length; i++) {
-                              hash = idStr.charCodeAt(i) + ((hash << 5) - hash);
-                            }
-                            const normX = (Math.abs(hash) % 5) / 10; // 0.0 to 0.4
-                            const normY = (Math.abs(hash >> 2) % 5) / 10; // 0.0 to 0.4
-                            return { x: normX, y: normY };
-                          })()}
-                          end={(() => {
-                            let hash = 0;
-                            const idStr = msg.id || 'random';
-                            for (let i = 0; i < idStr.length; i++) {
-                              hash = idStr.charCodeAt(i) + ((hash << 3) - hash);
-                            }
-                            const normX = 0.6 + (Math.abs(hash) % 5) / 10; // 0.6 to 1.0
-                            const normY = 0.6 + (Math.abs(hash >> 2) % 5) / 10; // 0.6 to 1.0
-                            return { x: normX, y: normY };
-                          })()}
-                          style={styles.instagramGradientBubble}
-                        >
-                          <Text style={styles.bubbleTextMe}>{displayedContent}</Text>
-                          <Text style={styles.timestampTextMe}>{msg.timestamp}</Text>
-                        </LinearGradient>
-                      ) : (
-                        <View style={[styles.bubble, styles.bubbleOther]}>
-                          <Text style={styles.bubbleText}>{displayedContent}</Text>
-                          {msg.translations && (
-                            <TouchableOpacity
-                              activeOpacity={0.7}
-                              onPress={() => toggleTranslate(msg.id)}
-                              style={styles.translateRow}
-                            >
-                              <TranslateIcon size={12} color={C.blueGlow} />
-                              <Text style={styles.translateText}>
-                                {hasTranslation ? 'Show Original' : 'Translate to Hindi'}
-                              </Text>
-                            </TouchableOpacity>
-                          )}
-                          <Text style={styles.timestampText}>{msg.timestamp}</Text>
-                        </View>
-                      )}
-                    </View>
-                  )}
+      {/* ─── WORKSPACE CONTENT AREA (CLEAN CONVERSATION FEED OR TABS) ───── */}
+      {activeTab === 'chat' ? (
+        <View style={{ flex: 1 }}>
+          {/* Pinned Group Update Banner */}
+          {activeRoom?.type === 'GROUP' && showGroupUpdate && (
+            <View style={styles.groupUpdateCard}>
+              <View style={styles.groupUpdateLeft}>
+                <Pin size={16} color="#8B5CF6" style={styles.groupUpdatePinIcon} />
+                <View style={styles.groupUpdateInfo}>
+                  <Text style={styles.groupUpdateTitleText}>Group Update</Text>
+                  <Text style={styles.groupUpdateDescText}>
+                    {selectedTripId === 'trip-2' 
+                      ? 'Acclimatization is key. First 2 days in Leh we will rest. No high altitude rides on Day 1 & 2.' 
+                      : 'Acclimatization and schedule sync. Please tag luggage and be on time.'}
+                  </Text>
                 </View>
               </View>
-            );
-          })}
-
-          {isTyping && (
-            <View style={styles.typingIndicatorRow}>
-              <View style={styles.typingDotWrap}>
-                <Text style={styles.typingText}>{typerName} is typing</Text>
-                <ActivityIndicator size="small" color={C.textSec} style={{ marginLeft: 6 }} />
+              <View style={styles.groupUpdateRight}>
+                <TouchableOpacity 
+                  style={styles.groupUpdateViewBtn}
+                  onPress={() => setIsSettingsOpen(true)}
+                >
+                  <Text style={styles.groupUpdateViewBtnText}>View Details</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.groupUpdateCloseBtn}
+                  onPress={() => setShowGroupUpdate(false)}
+                >
+                  <X size={14} color="#7E8494" />
+                </TouchableOpacity>
               </View>
             </View>
           )}
-          
-          {/* Scroll spacer dynamically adjusts with keyboard height to keep latest messages just above the input box */}
-          <Animated.View style={{ height: Animated.add(selectedRoomId ? 110 : 170, keyboardOffset) }} />
-        </ScrollView>
 
-        {/* Floating Attachments Drawer */}
-        <Animated.View style={[styles.attachmentPanel, { height: attachMenuHeight, bottom: Animated.add(selectedRoomId ? Math.max(insets.bottom + 58, 74) : 140, keyboardOffset) }]}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.attachScrollInner}>
-            <TouchableOpacity style={styles.attachBtn} onPress={() => setActiveModal('POLL')}>
-              <LinearGradient colors={['#FF8A65', '#FF5722']} style={styles.attachIconCircle}>
-                <BarChart2 size={18} color="#FFF" />
-              </LinearGradient>
-              <Text style={styles.attachLabel}>Create Poll</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.attachBtn} onPress={() => setActiveModal('EXPENSE')}>
-              <LinearGradient colors={['#81C784', '#4CAF50']} style={styles.attachIconCircle}>
-                <DollarSign size={18} color="#FFF" />
-              </LinearGradient>
-              <Text style={styles.attachLabel}>Split Expense</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.attachBtn} onPress={() => setActiveModal('LOCATION')}>
-              <LinearGradient colors={['#64B5F6', '#2196F3']} style={styles.attachIconCircle}>
-                <MapPin size={18} color="#FFF" />
-              </LinearGradient>
-              <Text style={styles.attachLabel}>Share Place</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.attachBtn} onPress={handleVoiceNoteSimulate}>
-              <LinearGradient colors={['#BA68C8', '#9C27B0']} style={styles.attachIconCircle}>
-                <Mic size={18} color="#FFF" />
-              </LinearGradient>
-              <Text style={styles.attachLabel}>Voice Note</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.attachBtn} onPress={handlePhotoSimulate}>
-              <LinearGradient colors={['#4DB6AC', '#009688']} style={styles.attachIconCircle}>
-                <ImageIcon size={18} color="#FFF" />
-              </LinearGradient>
-              <Text style={styles.attachLabel}>Send Photo</Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </Animated.View>
-
-        {/* BOTTOM MESSAGE INPUT BAR — lifts with keyboard, dynamically positioned when tab bar is hidden, respecting system bottom inset */}
-        <Animated.View style={[styles.bottomInputBarDetail, { bottom: Animated.add(selectedRoomId ? Math.max(insets.bottom, 16) : 82, keyboardOffset) }]}>
-          <TouchableOpacity
-            style={[styles.plusCircle, isAttachmentOpen && styles.plusCircleOpen]}
-            onPress={() => setIsAttachmentOpen(!isAttachmentOpen)}
+          <ScrollView
+            ref={scrollViewRef}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.scrollContent}
+            onContentSizeChange={scrollToBottom}
           >
-            <Plus size={18} color="#FFF" style={{ transform: [{ rotate: isAttachmentOpen ? '45deg' : '0deg' }] }} />
-          </TouchableOpacity>
-          
-          <View style={styles.textInputWrapper}>
-            <TextInput
-              placeholder="Type your message..."
-              placeholderTextColor={C.textMuted}
-              style={styles.textInput}
-              value={inputText}
-              onChangeText={setInputText}
-              onSubmitEditing={handleSendText}
-            />
-            <TouchableOpacity style={styles.smileIcon}>
-              <Smile size={18} color={C.textSec} />
-            </TouchableOpacity>
+            {currentMessages.map((msg, idx) => {
+              const hasTranslation = !!translatedMsgs.has(msg.id);
+              const displayedContent = hasTranslation && msg.translations?.hindi ? msg.translations.hindi : msg.content;
+              const isSOS = msg.type === 'sos';
+
+              // Check if previous message was sent by the same sender using senderName as key
+              const isConsecutive = idx > 0 && currentMessages[idx - 1].senderName === msg.senderName;
+
+              return (
+                <SwipeableMessageRow
+                  key={msg.id}
+                  isMe={msg.isMe}
+                  onSwipeReply={() => setReplyingToMessage(msg)}
+                >
+                  <View style={[styles.messageRow, msg.isMe && { justifyContent: 'flex-end' }, isSOS && styles.sosMessageBg, isConsecutive && { marginTop: 2 }]}>
+                  {!msg.isMe && (
+                    <View style={styles.avatarContainer}>
+                      {!isConsecutive && (
+                        <>
+                          <Image source={{ uri: msg.avatar }} style={styles.messageAvatar} />
+                        </>
+                      )}
+                    </View>
+                  )}
+
+                  <View style={[styles.messageBody, msg.isMe ? { flex: 1, alignItems: 'flex-end' } : { flex: 1 }]}>
+                    {!isConsecutive && (
+                      <View style={[styles.senderHeader, msg.isMe && { justifyContent: 'flex-end' }]}>
+                        <Text style={[
+                          styles.senderNameText,
+                          msg.senderRole === 'Organizer' ? { color: C.blueGlow } :
+                          msg.senderRole === 'Guide' ? { color: C.purple } : { color: C.green }
+                        ]}>
+                          {msg.isMe ? 'You' : msg.senderName}
+                        </Text>
+                        {msg.senderRole && !msg.isMe && (
+                          <View style={[
+                            styles.rolePill,
+                            msg.senderRole === 'Organizer' ? styles.rolePillOrganizer :
+                            msg.senderRole === 'Guide' ? styles.rolePillGuide : styles.rolePillTourist
+                          ]}>
+                            <Text style={styles.rolePillText}>{msg.senderRole}</Text>
+                          </View>
+                        )}
+                      </View>
+                    )}
+
+                    {msg.type === 'poll' ? (
+                      <View style={styles.pollCard}>
+                        <View style={styles.pollHeader}>
+                          <BarChart2 size={16} color={C.orange} style={{ marginRight: 6 }} />
+                          <Text style={styles.pollQuestionText}>{msg.pollQuestion}</Text>
+                        </View>
+                        {msg.pollOptions?.map((opt, idx) => {
+                          const totalVotes = msg.pollOptions?.reduce((acc, current) => acc + current.votes, 0) || 1;
+                          const percent = Math.round((opt.votes / totalVotes) * 100) || 0;
+                          const isVotedByMe = msg.pollVoted === idx;
+
+                          return (
+                            <TouchableOpacity
+                              key={opt.text}
+                              style={[styles.pollOptionTouch, isVotedByMe && styles.pollOptionVoted]}
+                              onPress={() => handlePollVote(msg.id, idx)}
+                            >
+                              <View style={[styles.pollProgressFill, { width: `${percent}%` }]} />
+                              <View style={styles.pollOptionContent}>
+                                <Text style={[styles.pollOptionLabel, isVotedByMe && { fontWeight: '800', color: '#FFF' }]}>{opt.text}</Text>
+                                <Text style={styles.pollOptionPercent}>{percent}% ({opt.votes})</Text>
+                              </View>
+                            </TouchableOpacity>
+                          );
+                        })}
+                        <Text style={styles.pollFooter}>Tap option to vote in thread</Text>
+                      </View>
+                    ) : msg.type === 'expense' ? (
+                      <View style={styles.expenseCard}>
+                        <View style={styles.expenseHeader}>
+                          <DollarSign size={16} color={C.green} />
+                          <Text style={styles.expenseHeaderTitle}>Shared Expense Logged</Text>
+                        </View>
+                        <Text style={styles.expenseBillDesc}>{msg.expenseDesc}</Text>
+                        <Text style={styles.expenseBillAmount}>₹{msg.expenseAmount}</Text>
+                        <View style={styles.expenseDivider} />
+                        <View style={styles.expenseFooterRow}>
+                          <Text style={styles.expenseShareText}>Split with {msg.expenseSplitWith} members</Text>
+                          <Text style={styles.expenseCostHead}>₹{Math.round((msg.expenseAmount || 0) / (msg.expenseSplitWith || 1))}/head</Text>
+                        </View>
+                      </View>
+                    ) : msg.type === 'location' ? (
+                      <View style={styles.locationCard}>
+                        <View style={styles.locationHeader}>
+                          <MapPin size={16} color={C.blueGlow} />
+                          <Text style={styles.locationCardTitle}>Shared Meeting Point</Text>
+                        </View>
+                        <Text style={styles.locationText}>{msg.content}</Text>
+                        <View style={styles.miniMapPlaceholder}>
+                          <View style={styles.radarRing1} />
+                          <View style={styles.radarRing2} />
+                          <MapPin size={24} color={C.red} style={styles.miniMapPin} />
+                          <Text style={styles.coordsText}>Lat: {msg.locationCoords?.latitude.toFixed(4)}, Lng: {msg.locationCoords?.longitude.toFixed(4)}</Text>
+                        </View>
+                        <TouchableOpacity
+                          style={styles.locationActionTouch}
+                          onPress={() => router.push('/map')}
+                        >
+                          <Text style={styles.locationActionText}>Open Live Navigation</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : msg.type === 'voice' ? (
+                      <View style={styles.voiceNoteCard}>
+                        <TouchableOpacity style={styles.playButtonCircle}>
+                          <View style={styles.playArrow} />
+                        </TouchableOpacity>
+                        <View style={styles.waveformContainer}>
+                          <View style={[styles.waveBar, { height: 12, backgroundColor: C.blueGlow }]} />
+                          <View style={[styles.waveBar, { height: 22, backgroundColor: C.blueGlow }]} />
+                          <View style={[styles.waveBar, { height: 18, backgroundColor: C.blueGlow }]} />
+                          <View style={[styles.waveBar, { height: 14, backgroundColor: C.textSec }]} />
+                          <View style={[styles.waveBar, { height: 8, backgroundColor: C.textSec }]} />
+                          <View style={[styles.waveBar, { height: 16, backgroundColor: C.textSec }]} />
+                          <View style={[styles.waveBar, { height: 24, backgroundColor: C.textSec }]} />
+                          <View style={[styles.waveBar, { height: 10, backgroundColor: C.textSec }]} />
+                        </View>
+                        <Text style={styles.voiceDuration}>0:04</Text>
+                      </View>
+                    ) : msg.type === 'image' ? (
+                      <View style={styles.imageCard}>
+                        <Image source={{ uri: msg.mediaUrl }} style={styles.imageMedia} />
+                        <View style={styles.imageOverlayTextRow}>
+                          <Text style={styles.imageCardDesc} numberOfLines={1}>{msg.content}</Text>
+                          <TouchableOpacity style={styles.imageDownloadBtn}>
+                            <Download size={14} color="#FFF" />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ) : msg.type === 'sos' ? (
+                      <View style={styles.sosCardAlert}>
+                        <View style={styles.sosAlertHeader}>
+                          <AlertCircle size={18} color="#FFF" />
+                          <Text style={styles.sosAlertHeaderTitle}>CRITICAL EMERGENCY WARNING</Text>
+                        </View>
+                        <Text style={styles.sosAlertDesc}>{msg.content}</Text>
+                        <Text style={styles.sosAlertCoords}>Coordinates: {msg.locationCoords?.latitude.toFixed(4)}, {msg.locationCoords?.longitude.toFixed(4)}</Text>
+                        <View style={styles.sosAlertBtnRow}>
+                          <TouchableOpacity
+                            style={[styles.sosAlertBtn, { backgroundColor: 'rgba(255,255,255,0.15)' }]}
+                            onPress={() => router.push('/map')}
+                          >
+                            <Text style={styles.sosAlertBtnText}>Show on Map</Text>
+                          </TouchableOpacity>
+                          {profile.role === 'ORGANIZER' || profile.role === 'GUIDE' ? (
+                            <TouchableOpacity
+                              style={[styles.sosAlertBtn, { backgroundColor: C.green }]}
+                              onPress={handleResolveSOSEvent}
+                            >
+                              <Text style={styles.sosAlertBtnText}>Mark as Safe</Text>
+                            </TouchableOpacity>
+                          ) : null}
+                        </View>
+                      </View>
+                    ) : (
+                      <View style={[msg.isMe ? styles.instagramBubbleContainerMe : styles.bubbleContainerOther]}>
+                        {msg.isMe ? (
+                          <TouchableOpacity
+                            activeOpacity={0.9}
+                            onLongPress={() => setSelectedMessageForOptions(msg)}
+                          >
+                            <LinearGradient
+                              colors={['#0066FF', '#7C3AED', '#BA68C8']}
+                              start={(() => {
+                                // Compute deterministic but randomized start coordinates based on message ID
+                                let hash = 0;
+                                const idStr = msg.id || 'random';
+                                for (let i = 0; i < idStr.length; i++) {
+                                  hash = idStr.charCodeAt(i) + ((hash << 5) - hash);
+                                }
+                                const normX = (Math.abs(hash) % 5) / 10; // 0.0 to 0.4
+                                const normY = (Math.abs(hash >> 2) % 5) / 10; // 0.0 to 0.4
+                                return { x: normX, y: normY };
+                              })()}
+                              end={(() => {
+                                let hash = 0;
+                                const idStr = msg.id || 'random';
+                                for (let i = 0; i < idStr.length; i++) {
+                                  hash = idStr.charCodeAt(i) + ((hash << 3) - hash);
+                                }
+                                const normX = 0.6 + (Math.abs(hash) % 5) / 10; // 0.6 to 1.0
+                                const normY = 0.6 + (Math.abs(hash >> 2) % 5) / 10; // 0.6 to 1.0
+                                return { x: normX, y: normY };
+                              })()}
+                              style={styles.instagramGradientBubble}
+                            >
+                              {msg.replyTo && (
+                                <View style={styles.bubbleReplyHeaderMe}>
+                                  <Text style={styles.bubbleReplySenderMe} numberOfLines={1}>
+                                    {msg.replyTo.senderName}
+                                  </Text>
+                                  <Text style={styles.bubbleReplyContentMe} numberOfLines={1}>
+                                    {msg.replyTo.content}
+                                  </Text>
+                                </View>
+                              )}
+                              <Text style={styles.bubbleTextMe}>{displayedContent}</Text>
+                              <Text style={styles.timestampTextMe}>{msg.timestamp}</Text>
+                            </LinearGradient>
+                          </TouchableOpacity>
+                        ) : (
+                          <TouchableOpacity
+                            activeOpacity={0.9}
+                            onLongPress={() => setSelectedMessageForOptions(msg)}
+                          >
+                            <View style={[styles.bubble, styles.bubbleOther]}>
+                              {msg.replyTo && (
+                                <View style={styles.bubbleReplyHeaderOther}>
+                                  <Text style={styles.bubbleReplySenderOther} numberOfLines={1}>
+                                    {msg.replyTo.senderName}
+                                  </Text>
+                                  <Text style={styles.bubbleReplyContentOther} numberOfLines={1}>
+                                    {msg.replyTo.content}
+                                  </Text>
+                                </View>
+                              )}
+                              <Text style={styles.bubbleText}>{displayedContent}</Text>
+                              {msg.translations && (
+                                <TouchableOpacity
+                                  activeOpacity={0.7}
+                                  onPress={() => toggleTranslate(msg.id)}
+                                  style={styles.translateRow}
+                                >
+                                  <TranslateIcon size={12} color={C.blueGlow} />
+                                  <Text style={styles.translateText}>
+                                    {hasTranslation ? 'Show Original' : 'Translate to Hindi'}
+                                  </Text>
+                                </TouchableOpacity>
+                              )}
+                              <Text style={styles.timestampText}>{msg.timestamp}</Text>
+                            </View>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    )}
+                  </View>
+                </View>
+                </SwipeableMessageRow>
+              );
+            })}
+
+            {isTyping && (
+              <View style={styles.typingIndicatorRow}>
+                <View style={styles.typingDotWrap}>
+                  <Text style={styles.typingText}>{typerName} is typing</Text>
+                  <ActivityIndicator size="small" color={C.textSec} style={{ marginLeft: 6 }} />
+                </View>
+              </View>
+            )}
+            
+            {/* Scroll spacer dynamically adjusts with keyboard height to keep latest messages just above the input box */}
+            <Animated.View style={{ height: Animated.add(selectedRoomId ? 110 : 170, keyboardOffset) }} />
+          </ScrollView>
+
+          {/* Floating Attachments Drawer */}
+          <Animated.View style={[
+            styles.attachmentPanel, 
+            { 
+              height: attachMenuHeight, 
+              bottom: Animated.add(selectedRoomId ? Math.max(insets.bottom + 58, 74) : 140, keyboardOffset),
+              borderWidth: isAttachmentOpen ? 1 : 0,
+            }
+          ]}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.attachScrollInner}>
+              <TouchableOpacity style={styles.attachBtn} onPress={() => setActiveModal('POLL')}>
+                <LinearGradient colors={['#FF8A65', '#FF5722']} style={styles.attachIconCircle}>
+                  <BarChart2 size={18} color="#FFF" />
+                </LinearGradient>
+                <Text style={styles.attachLabel}>Create Poll</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.attachBtn} onPress={() => setActiveModal('EXPENSE')}>
+                <LinearGradient colors={['#81C784', '#4CAF50']} style={styles.attachIconCircle}>
+                  <DollarSign size={18} color="#FFF" />
+                </LinearGradient>
+                <Text style={styles.attachLabel}>Split Expense</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.attachBtn} onPress={() => setActiveModal('LOCATION')}>
+                <LinearGradient colors={['#64B5F6', '#2196F3']} style={styles.attachIconCircle}>
+                  <MapPin size={18} color="#FFF" />
+                </LinearGradient>
+                <Text style={styles.attachLabel}>Share Place</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.attachBtn} onPress={handleVoiceNoteSimulate}>
+                <LinearGradient colors={['#BA68C8', '#9C27B0']} style={styles.attachIconCircle}>
+                  <Mic size={18} color="#FFF" />
+                </LinearGradient>
+                <Text style={styles.attachLabel}>Voice Note</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.attachBtn} onPress={handlePhotoSimulate}>
+                <LinearGradient colors={['#4DB6AC', '#009688']} style={styles.attachIconCircle}>
+                  <ImageIcon size={18} color="#FFF" />
+                </LinearGradient>
+                <Text style={styles.attachLabel}>Send Photo</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </Animated.View>
+
+          {/* BOTTOM MESSAGE INPUT BAR — lifts with keyboard, dynamically positioned when tab bar is hidden, respecting system bottom inset */}
+          <Animated.View style={[
+            styles.bottomInputBarDetail, 
+            { 
+              bottom: keyboardOffset,
+              paddingBottom: insets.bottom > 0 ? insets.bottom + 12 : 20
+            }
+          ]}>
+            {replyingToMessage && (
+              <View style={styles.replyPreviewContainer}>
+                <View style={styles.replyPreviewTextCol}>
+                  <Text style={styles.replyPreviewSenderName}>
+                    Replying to {replyingToMessage.isMe ? 'yourself' : replyingToMessage.senderName}
+                  </Text>
+                  <Text style={styles.replyPreviewContentText} numberOfLines={1}>
+                    {replyingToMessage.content}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.replyPreviewCloseBtn}
+                  onPress={() => setReplyingToMessage(null)}
+                >
+                  <X size={14} color={C.textSec} />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <View style={styles.inputRowContainer}>
+              <TouchableOpacity
+                style={[styles.plusCircle, isAttachmentOpen && styles.plusCircleOpen]}
+                onPress={() => setIsAttachmentOpen(!isAttachmentOpen)}
+              >
+                <Plus size={18} color="#FFF" style={{ transform: [{ rotate: isAttachmentOpen ? '45deg' : '0deg' }] }} />
+              </TouchableOpacity>
+              
+              <View style={styles.textInputWrapper}>
+                <TextInput
+                  placeholder="Message..."
+                  placeholderTextColor={C.textMuted}
+                  style={styles.textInput}
+                  value={inputText}
+                  onChangeText={setInputText}
+                  onSubmitEditing={handleSendText}
+                />
+                <TouchableOpacity style={styles.smileIcon}>
+                  <Smile size={18} color={C.textSec} />
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.sendIconCircle,
+                  { backgroundColor: inputText.trim() === '' ? 'rgba(255, 255, 255, 0.08)' : C.blue }
+                ]}
+                onPress={handleSendText}
+                disabled={inputText.trim() === ''}
+              >
+                <Send size={15} color={inputText.trim() === '' ? C.textMuted : '#FFF'} />
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
+        </View>
+      ) : activeTab === 'itinerary' ? (
+        <ScrollView style={styles.tabScrollView} showsVerticalScrollIndicator={false} contentContainerStyle={styles.tabScrollViewContent}>
+          {/* Summary / Stats Card */}
+          <LinearGradient
+            colors={['#181236', '#0F0D22']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.statsSummaryCard}
+          >
+            <View style={styles.statsHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Compass size={16} color="#C084FC" />
+                <Text style={styles.statsTitle}>TRIP COMMAND CENTER</Text>
+              </View>
+              <View style={styles.statsStatusBadge}>
+                <Text style={styles.statsStatusText}>ACTIVE</Text>
+              </View>
+            </View>
+
+            <View style={styles.statsGrid}>
+              <View style={styles.statsCell}>
+                <Text style={styles.statsValLabel}>Shared Pool Total</Text>
+                <Text style={styles.statsValText}>₹{getExpensesTotal()}</Text>
+              </View>
+              <View style={styles.statsCell}>
+                <Text style={styles.statsValLabel}>Budget Per Person</Text>
+                <Text style={[styles.statsValText, { color: C.green }]}>₹{activeTrip.budget}</Text>
+              </View>
+            </View>
+
+            <View style={styles.statsFooter}>
+              <Clock size={12} color="#C084FC" style={{ marginRight: 6 }} />
+              <Text style={styles.statsFooterText}>Assembly: {activeTrip.meetingPoint}</Text>
+            </View>
+          </LinearGradient>
+
+          {/* Vertical Roadmap Timeline */}
+          <View style={styles.timelineCard}>
+            <View style={styles.timelineHeader}>
+              <MapPin size={16} color="#0066FF" style={{ marginRight: 6 }} />
+              <Text style={styles.timelineTitleText}>Vertical Itinerary Roadmap</Text>
+            </View>
+
+            <View style={styles.timelineList}>
+              {(() => {
+                const getTripItineraryHighlights = (tripId: string) => {
+                  if (tripId === 'trip-2') {
+                    return [
+                      { day: 'Day 1', title: 'Manali Assembly', desc: 'Assemble at Mall Road. Bike check & safety briefing.' },
+                      { day: 'Day 2', title: 'Sarchu Ride', desc: 'Cross Rohtang Pass / Atal Tunnel. Rest in Sarchu camps (14k ft).' },
+                      { day: 'Day 3', title: 'Leh Arrival', desc: 'Ride through Nakeela & Tanglang La passes. Reach Leh.' },
+                      { day: 'Day 4-5', title: 'Leh Acclimatization', desc: 'Local exploration, rest, and oxygen checks.' },
+                      { day: 'Day 6-7', title: 'Nubra Valley via Khardung La', desc: 'Cross one of the highest roads. Desert camping & double-hump camels.' },
+                      { day: 'Day 8-9', title: 'Pangong Tso Lakeside', desc: 'High-altitude lake riding. Overnight in lakeside tents.' },
+                      { day: 'Day 10', title: 'Leh Return & Departure', desc: 'Return ride to Leh and board flights.' },
+                    ];
+                  } else if (tripId === 'trip-1') {
+                    return [
+                      { day: 'Day 1', title: 'Departure from Ranchi', desc: 'Board train from Ranchi Junction. Group icebreaker.' },
+                      { day: 'Day 2', title: 'Arrive at Delhi', desc: 'Transit to Mathura via express cabs. Check-in at ashram.' },
+                      { day: 'Day 3', title: 'Vrindavan Temples', desc: 'Banke Bihari special darshan and Prem Mandir light show.' },
+                      { day: 'Day 4', title: 'Barsana & Nandgaon', desc: 'Visit Radha Rani temple and local spiritual walks.' },
+                      { day: 'Day 5', title: 'Mathura Heritage', desc: 'Krishna Janmabhoomi temple and Yamuna Aarti.' },
+                      { day: 'Day 6', title: 'Spiritual Wrap & Return', desc: 'Final morning prayers and return journey to Ranchi.' },
+                    ];
+                  } else {
+                    return [
+                      { day: 'Day 1', title: 'Kochi Meetup', desc: 'Assemble at Airport Terminal. Transfer to Munnar hills.' },
+                      { day: 'Day 2', title: 'Munnar Tea Gardens', desc: 'Trek through Eravikulam National Park and explore tea estates.' },
+                      { day: 'Day 3', title: 'Munnar to Alleppey', desc: 'Drive down to backwaters. Board private luxury houseboat.' },
+                      { day: 'Day 4', title: 'Backwater Cruising', desc: 'Full day cruising through canals. Traditional Kerala lunch.' },
+                      { day: 'Day 5', title: 'Alleppey Beach & Sunset', desc: 'Visit beach, local coir museums, and group dinner.' },
+                      { day: 'Day 6', title: 'Departure', desc: 'Checkout and transfer back to Kochi Airport.' },
+                    ];
+                  }
+                };
+
+                const highlights = getTripItineraryHighlights(selectedTripId);
+                return highlights.map((hl, idx) => {
+                  const isLast = idx === highlights.length - 1;
+                  return (
+                    <View key={hl.day} style={styles.verticalTimelineStep}>
+                      <View style={styles.verticalTimelineLeft}>
+                        <View style={styles.verticalTimelineDot}>
+                          <View style={styles.verticalTimelineInnerDot} />
+                        </View>
+                        {!isLast && <View style={styles.verticalTimelineLine} />}
+                      </View>
+                      <View style={styles.verticalTimelineCard}>
+                        <View style={styles.verticalTimelineHeaderRow}>
+                          <Text style={styles.verticalTimelineDayText}>{hl.day}</Text>
+                          <Text style={styles.verticalTimelineNodeTitle}>{hl.title}</Text>
+                        </View>
+                        <Text style={styles.verticalTimelineDesc}>{hl.desc}</Text>
+                      </View>
+                    </View>
+                  );
+                });
+              })()}
+            </View>
+          </View>
+        </ScrollView>
+      ) : activeTab === 'docs' ? (
+        <ScrollView style={styles.tabScrollView} showsVerticalScrollIndicator={false} contentContainerStyle={styles.tabScrollViewContent}>
+          {/* Docs Info */}
+          <View style={styles.docsHeaderBlock}>
+            <Text style={styles.docsHeaderTitleText}>Trip Documents Vault</Text>
+            <Text style={styles.docsHeaderDescText}>
+              Manage, upload, and view mandatory permits, flight tickets, and rental agreements for the group.
+            </Text>
           </View>
 
-          <TouchableOpacity
-            style={styles.sendIconCircle}
-            onPress={handleSendText}
-            disabled={inputText.trim() === ''}
+          {/* Upload Button */}
+          <TouchableOpacity 
+            style={styles.uploadDocBtn}
+            onPress={() => {
+              setDocTitle('');
+              setDocSubtitle('');
+              setUploadProgress(0);
+              setIsUploading(false);
+              setIsDocModalOpen(true);
+            }}
+            activeOpacity={0.85}
           >
-            <Send size={15} color="#FFF" />
+            <LinearGradient
+              colors={['#0044CC', '#0066FF']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.uploadDocGradient}
+            >
+              <Plus size={16} color="#FFF" style={{ marginRight: 6 }} />
+              <Text style={styles.uploadDocBtnText}>Upload New Document</Text>
+            </LinearGradient>
           </TouchableOpacity>
-        </Animated.View>
-      </View>
+
+          {/* Documents list */}
+          <View style={styles.docsListContainer}>
+            {((tripDocs[selectedTripId] || []).length === 0) ? (
+              <Text style={styles.noDocsText}>No documents uploaded yet for this trip.</Text>
+            ) : (
+              (tripDocs[selectedTripId] || []).map((doc) => {
+                const getStatusColor = (status: string) => {
+                  const s = status.toLowerCase();
+                  if (s === 'approved' || s === 'confirmed' || s === 'completed' || s === 'valid') return C.green;
+                  if (s === 'signed') return C.blue;
+                  return C.orange;
+                };
+
+                return (
+                  <View key={doc.id} style={styles.docItemRow}>
+                    <View style={styles.docItemLeft}>
+                      <View style={styles.docIconBox}>
+                        <FileText size={18} color="#0066FF" />
+                      </View>
+                      <View style={styles.docItemMeta}>
+                        <Text style={styles.docTitleText} numberOfLines={1}>{doc.title}</Text>
+                        <Text style={styles.docSubText} numberOfLines={1}>{doc.subtitle}</Text>
+                        <Text style={styles.docDateText}>Added: {doc.date}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.docItemRight}>
+                      <View style={[styles.docStatusBadge, { borderColor: getStatusColor(doc.status) }]}>
+                        <Text style={[styles.docStatusText, { color: getStatusColor(doc.status) }]}>{doc.status.toUpperCase()}</Text>
+                      </View>
+                      <TouchableOpacity 
+                        style={styles.docDeleteBtn}
+                        onPress={() => handleDeleteDoc(doc.id)}
+                      >
+                        <Trash2 size={13} color="#EF4444" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                );
+              })
+            )}
+          </View>
+        </ScrollView>
+      ) : (
+        <ScrollView style={styles.tabScrollView} showsVerticalScrollIndicator={false} contentContainerStyle={styles.tabScrollViewContent}>
+          {/* Members Title Info */}
+          <View style={styles.docsHeaderBlock}>
+            <Text style={styles.docsHeaderTitleText}>Group Directory</Text>
+            <Text style={styles.docsHeaderDescText}>
+              All members in this expedition chat. Click a participant to start a private conversation.
+            </Text>
+          </View>
+
+          {/* Members List Container */}
+          <View style={styles.membersTabList}>
+            {groupMembers.map((member) => (
+              <TouchableOpacity
+                key={member.name}
+                style={styles.memberTabCard}
+                onPress={() => handleMemberClick(member)}
+                activeOpacity={0.8}
+              >
+                <View style={styles.memberTabCardLeft}>
+                  <Image source={{ uri: member.avatar }} style={styles.memberTabAvatar} />
+                  <View style={styles.memberTabMeta}>
+                    <Text style={styles.memberTabNameText}>{member.name}</Text>
+                    <Text style={styles.memberTabRoleText}>{member.role}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.memberTabCardRight}>
+                  <View style={[
+                    styles.memberRoleBadge,
+                    member.role === 'Organizer' ? styles.roleBadgeOrganizer :
+                    member.role === 'Guide' ? styles.roleBadgeGuide : styles.roleBadgeTourist
+                  ]}>
+                    <Text style={[
+                      styles.memberRoleBadgeText,
+                      member.role === 'Organizer' ? { color: '#0066FF' } :
+                      member.role === 'Guide' ? { color: '#10B981' } : { color: '#94A3B8' }
+                    ]}>
+                      {member.role.toUpperCase()}
+                    </Text>
+                  </View>
+                  <View style={styles.memberChatIconBox}>
+                    <MessageSquare size={14} color="#0066FF" />
+                  </View>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </ScrollView>
+      )}
+
+      {/* ─── MESSAGE LONG PRESS OPTIONS OVERLAY ────────────────── */}
+      {selectedMessageForOptions && (
+        <View style={styles.optionsModalOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setSelectedMessageForOptions(null)}
+          />
+          <View style={styles.optionsModalContent}>
+            <View style={styles.optionsHeaderRow}>
+              <Text style={styles.optionsHeaderTitle} numberOfLines={1}>
+                Message Options
+              </Text>
+              <Text style={styles.optionsHeaderSubText} numberOfLines={1}>
+                "{selectedMessageForOptions.content}"
+              </Text>
+            </View>
+
+            <View style={styles.optionsDivider} />
+
+            {/* REPLY OPTION */}
+            <TouchableOpacity
+              style={styles.optionsRowBtn}
+              onPress={() => {
+                setReplyingToMessage(selectedMessageForOptions);
+                setSelectedMessageForOptions(null);
+              }}
+            >
+              <CornerUpLeft size={16} color="#94A3B8" style={styles.optionsRowIcon} />
+              <Text style={styles.optionsRowText}>Reply to Message</Text>
+            </TouchableOpacity>
+
+            {/* COPY OPTION */}
+            <TouchableOpacity
+              style={styles.optionsRowBtn}
+              onPress={() => handleCopyMessage(selectedMessageForOptions.content)}
+            >
+              <Copy size={16} color="#94A3B8" style={styles.optionsRowIcon} />
+              <Text style={styles.optionsRowText}>Copy Text</Text>
+            </TouchableOpacity>
+
+            {/* TRANSLATE OPTION */}
+            {selectedMessageForOptions.translations?.hindi && (
+              <TouchableOpacity
+                style={styles.optionsRowBtn}
+                onPress={() => {
+                  toggleTranslate(selectedMessageForOptions.id);
+                  setSelectedMessageForOptions(null);
+                }}
+              >
+                <TranslateIcon size={16} color="#94A3B8" style={styles.optionsRowIcon} />
+                <Text style={styles.optionsRowText}>Translate Message</Text>
+              </TouchableOpacity>
+            )}
+
+            {/* DIRECT MESSAGE OPTION */}
+            {!selectedMessageForOptions.isMe && activeRoom?.type === 'GROUP' && (
+              <TouchableOpacity
+                style={styles.optionsRowBtn}
+                onPress={() =>
+                  handleStartDirectMessage(
+                    selectedMessageForOptions.senderName,
+                    selectedMessageForOptions.avatar
+                  )
+                }
+              >
+                <MessageSquare size={16} color="#94A3B8" style={styles.optionsRowIcon} />
+                <Text style={styles.optionsRowText}>
+                  Direct Message {selectedMessageForOptions.senderName}
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {/* DELETE OPTION */}
+            {selectedMessageForOptions.isMe && (
+              <TouchableOpacity
+                style={styles.optionsRowBtn}
+                onPress={() => handleDeleteMessage(selectedMessageForOptions.id)}
+              >
+                <X size={16} color="#EF4444" style={styles.optionsRowIcon} />
+                <Text style={[styles.optionsRowText, { color: '#EF4444' }]}>Delete Message</Text>
+              </TouchableOpacity>
+            )}
+
+            <View style={styles.optionsCancelDivider} />
+
+            <TouchableOpacity
+              style={styles.optionsCancelBtn}
+              onPress={() => setSelectedMessageForOptions(null)}
+            >
+              <Text style={styles.optionsCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       {/* ─── GROUP INFO & OPTIONS SETTINGS OVERLAY ───────────── */}
       {isSettingsOpen && (
         <View style={styles.settingsOverlay}>
           <SafeAreaView style={{ flex: 1 }}>
             
-            {/* Settings Header */}
-            <View style={styles.settingsHeader}>
-              <TouchableOpacity onPress={() => setIsSettingsOpen(false)} style={styles.settingsBackBtn}>
-                <X size={22} color="#FFF" />
-              </TouchableOpacity>
-              <Text style={styles.settingsHeaderTitle}>Group Information</Text>
-              <View style={{ width: 22 }} />
-            </View>
+            {/* Floating Close Button */}
+            <TouchableOpacity 
+              onPress={() => setIsSettingsOpen(false)} 
+              style={styles.settingsAbsoluteCloseBtn}
+              activeOpacity={0.7}
+            >
+              <ArrowLeft size={20} color="#FFF" />
+            </TouchableOpacity>
 
             <ScrollView contentContainerStyle={styles.settingsScrollContent} showsVerticalScrollIndicator={false}>
               
@@ -1298,10 +2338,70 @@ export default function ChatScreen() {
                 </Text>
               </View>
 
-              {/* 1. Trip Progress Timeline */}
+              {/* ADVANCED TELEMETRY MONITOR CARD */}
+              <TouchableOpacity
+                onPress={() => setIsTripDetailsExpanded(prev => !prev)}
+                activeOpacity={0.85}
+                style={{ marginBottom: 16 }}
+              >
+                <LinearGradient
+                  colors={['#2E1065', '#120D26']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.telemetryCardGradient}
+                >
+                  <View style={styles.telemetryHeader}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Compass size={15} color="#C084FC" />
+                      <Text style={[styles.telemetryTitle, { color: '#E9D5FF' }]}>TRIP COMMAND CENTER</Text>
+                    </View>
+                    <View style={[styles.telemetryStatusBadge, { backgroundColor: 'rgba(192, 132, 252, 0.15)', borderColor: 'rgba(192, 132, 252, 0.3)' }]}>
+                      <Text style={[styles.telemetryStatusText, { color: '#F3E8FF' }]}>ACTIVE RUN</Text>
+                    </View>
+                  </View>
+
+                  <Text style={styles.telemetryLabel}>Itinerary Sync Progress</Text>
+                  <View style={styles.progressBarBg}>
+                    <LinearGradient
+                      colors={['#0066FF', '#8B5CF6']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={[styles.progressBarFill, { width: '45%' }]}
+                    />
+                  </View>
+
+                  <View style={styles.telemetryMetaGrid}>
+                    <View style={styles.telemetryMetaCell}>
+                      <Text style={styles.telemetryMetaVal}>{activeTrip.cities[1] || 'Delhi'}</Text>
+                      <Text style={styles.telemetryMetaLbl}>Last Node</Text>
+                    </View>
+                    <View style={[styles.telemetryMetaCell, { alignItems: 'flex-end' }]}>
+                      <Text style={styles.telemetryMetaVal}>{activeTrip.cities[activeTrip.cities.length - 1] || 'Vrindavan'}</Text>
+                      <Text style={styles.telemetryMetaLbl}>Target Node</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.telemetryDivider} />
+
+                  <View style={styles.telemetryFooter}>
+                    <Text style={[styles.telemetryFooterText, { color: '#C084FC' }]}>
+                      {isTripDetailsExpanded ? 'Tap to collapse settings & timeline' : 'Tap to expand settings, ledger & logs'}
+                    </Text>
+                    {isTripDetailsExpanded ? (
+                      <ChevronUp size={14} color="#C084FC" />
+                    ) : (
+                      <ChevronDown size={14} color="#C084FC" />
+                    )}
+                  </View>
+                </LinearGradient>
+              </TouchableOpacity>
+
+              {isTripDetailsExpanded && (
+                <>
+                  {/* 1. Trip Progress Timeline */}
               <View style={styles.settingSectionCard}>
                 <View style={styles.sectionHeader}>
-                  <MapPin size={16} color={C.blueGlow} style={{ marginRight: 6 }} />
+                  <MapPin size={16} color="#0066FF" style={{ marginRight: 6 }} />
                   <Text style={styles.sectionHeaderTitle}>Itinerary Timeline</Text>
                 </View>
                 <View style={styles.timelineRow}>
@@ -1333,7 +2433,7 @@ export default function ChatScreen() {
                   })}
                 </View>
                 <View style={styles.meetingPointPanel}>
-                  <Clock size={14} color={C.yellow} style={{ marginRight: 6 }} />
+                  <Clock size={14} color="#0066FF" style={{ marginRight: 6 }} />
                   <Text style={styles.meetingTitle}>Assembly point:</Text>
                   <Text style={styles.meetingLocation} numberOfLines={1}>{activeTrip.meetingPoint}</Text>
                 </View>
@@ -1342,7 +2442,7 @@ export default function ChatScreen() {
               {/* 2. Group Expenses & Split */}
               <View style={styles.settingSectionCard}>
                 <View style={styles.sectionHeader}>
-                  <DollarSign size={16} color={C.green} style={{ marginRight: 6 }} />
+                  <DollarSign size={16} color="#0066FF" style={{ marginRight: 6 }} />
                   <Text style={styles.sectionHeaderTitle}>Group Budget & Splits</Text>
                 </View>
                 
@@ -1358,21 +2458,21 @@ export default function ChatScreen() {
                 </View>
 
                 <TouchableOpacity 
-                  style={[styles.settingsOutlineBtn, { borderColor: C.green }]}
+                  style={[styles.settingsOutlineBtn, { borderColor: '#0066FF' }]}
                   onPress={() => {
                     setIsSettingsOpen(false);
                     setActiveModal('EXPENSE');
                   }}
                 >
-                  <DollarSign size={14} color={C.green} style={{ marginRight: 4 }} />
-                  <Text style={[styles.settingsOutlineBtnText, { color: C.green }]}>Log Shared Expense Bill</Text>
+                  <DollarSign size={14} color="#0066FF" style={{ marginRight: 4 }} />
+                  <Text style={[styles.settingsOutlineBtnText, { color: '#0066FF' }]}>Log Shared Expense Bill</Text>
                 </TouchableOpacity>
               </View>
 
               {/* 3. Group Polls & Decisions */}
               <View style={styles.settingSectionCard}>
                 <View style={styles.sectionHeader}>
-                  <BarChart2 size={16} color={C.orange} style={{ marginRight: 6 }} />
+                  <BarChart2 size={16} color="#0066FF" style={{ marginRight: 6 }} />
                   <Text style={styles.sectionHeaderTitle}>Group Polls</Text>
                 </View>
 
@@ -1388,21 +2488,21 @@ export default function ChatScreen() {
                 )}
 
                 <TouchableOpacity 
-                  style={[styles.settingsOutlineBtn, { borderColor: C.orange }]}
+                  style={[styles.settingsOutlineBtn, { borderColor: '#0066FF' }]}
                   onPress={() => {
                     setIsSettingsOpen(false);
                     setActiveModal('POLL');
                   }}
                 >
-                  <BarChart2 size={14} color={C.orange} style={{ marginRight: 4 }} />
-                  <Text style={[styles.settingsOutlineBtnText, { color: C.orange }]}>Create Group Poll</Text>
+                  <BarChart2 size={14} color="#0066FF" style={{ marginRight: 4 }} />
+                  <Text style={[styles.settingsOutlineBtnText, { color: '#0066FF' }]}>Create Group Poll</Text>
                 </TouchableOpacity>
               </View>
 
               {/* 4. Tour Guide details */}
               <View style={styles.settingSectionCard}>
                 <View style={styles.sectionHeader}>
-                  <Compass size={16} color={C.purple} style={{ marginRight: 6 }} />
+                  <Compass size={16} color="#0066FF" style={{ marginRight: 6 }} />
                   <Text style={styles.sectionHeaderTitle}>Your Travel Guide</Text>
                 </View>
 
@@ -1425,7 +2525,7 @@ export default function ChatScreen() {
               {/* 5. Safety Desk Controls & SOS Trigger */}
               <View style={[styles.settingSectionCard, { borderColor: 'rgba(239,68,68,0.2)' }]}>
                 <View style={styles.sectionHeader}>
-                  <ShieldAlert size={16} color={C.red} style={{ marginRight: 6 }} />
+                  <ShieldAlert size={16} color="#0066FF" style={{ marginRight: 6 }} />
                   <Text style={styles.sectionHeaderTitle}>Safety Command & Emergency Control</Text>
                 </View>
 
@@ -1434,7 +2534,7 @@ export default function ChatScreen() {
                     <Text style={styles.controlTitle}>Live Location Pinging</Text>
                     <Text style={styles.controlDesc}>Sends background telemetry updates</Text>
                   </View>
-                  <View style={styles.pingerActiveDot} />
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: '#0066FF', letterSpacing: 0.5 }}>ACTIVE</Text>
                 </View>
 
                 <View style={styles.safetyControlRow}>
@@ -1442,7 +2542,7 @@ export default function ChatScreen() {
                     <Text style={styles.controlTitle}>Government Aadhaar verification</Text>
                     <Text style={styles.controlDesc}>Aadhaar status: verified</Text>
                   </View>
-                  <CheckCircle size={16} color={C.green} />
+                  <CheckCircle size={16} color="#0066FF" />
                 </View>
 
                 {sosCountdown !== null ? (
@@ -1463,6 +2563,86 @@ export default function ChatScreen() {
                   </TouchableOpacity>
                 )}
               </View>
+            </>
+          )}
+
+              {/* 6. Group Members List (Core Info shown directly) */}
+              {activeRoom?.type === 'GROUP' && (
+                <View style={{ marginBottom: 14, paddingHorizontal: 4 }}>
+                  <View style={styles.sectionHeader}>
+                    <UsersIcon size={16} color="#0066FF" style={{ marginRight: 6 }} />
+                    <Text style={styles.sectionHeaderTitle}>Group Members ({groupMembers.length})</Text>
+                  </View>
+                  <Text style={styles.settingsSubInfo}>Tap a member to start a private chat.</Text>
+                  <View style={styles.membersListContainer}>
+                    {groupMembers.map((member, idx) => {
+                      const isLast = idx === groupMembers.length - 1;
+                      return (
+                        <TouchableOpacity
+                          key={member.name}
+                          style={[
+                            styles.memberItemRow,
+                            !isLast && { borderBottomWidth: 0.8, borderBottomColor: '#1E293B', paddingBottom: 12 }
+                          ]}
+                          onPress={() => handleMemberClick(member)}
+                          activeOpacity={0.7}
+                        >
+                          <Image source={{ uri: member.avatar }} style={styles.memberAvatar} />
+                          <View style={styles.memberMeta}>
+                            <Text style={styles.memberName}>{member.name}</Text>
+                            <Text style={styles.memberRoleText}>{member.role}</Text>
+                          </View>
+
+                          {/* Role Badge indicator */}
+                          <View style={[
+                            styles.roleBadge,
+                            member.role === 'Organizer' ? styles.roleBadgeOrganizer :
+                            member.role === 'Guide' ? styles.roleBadgeGuide : styles.roleBadgeTourist
+                          ]}>
+                            <Text style={[
+                              styles.roleBadgeText,
+                              member.role === 'Organizer' ? { color: '#0066FF' } :
+                              member.role === 'Guide' ? { color: '#10B981' } : { color: '#94A3B8' }
+                            ]}>
+                              {member.role.toUpperCase()}
+                            </Text>
+                          </View>
+
+                          <MessageSquare size={14} color="#0066FF" />
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
+              {/* EXIT GROUP ACTION */}
+              {activeRoom?.type === 'GROUP' && (
+                <TouchableOpacity
+                  style={styles.settingsExitBtn}
+                  onPress={() => {
+                    Alert.alert(
+                      'Exit Group',
+                      `Are you sure you want to leave ${activeRoom?.name}? You will no longer receive messages or updates.`,
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Exit',
+                          style: 'destructive',
+                          onPress: () => {
+                            setIsSettingsOpen(false);
+                            setSelectedRoomId(null);
+                            setInboxRooms(prev => prev.filter(r => r.id !== activeRoom?.id));
+                          }
+                        }
+                      ]
+                    );
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <LogOut size={16} color="#EF4444" style={{ marginRight: 6 }} />
+                  <Text style={styles.settingsExitBtnText}>Exit Group</Text>
+                </TouchableOpacity>
+              )}
 
               <View style={{ height: 40 }} />
             </ScrollView>
@@ -1611,6 +2791,60 @@ export default function ChatScreen() {
               </View>
             )}
 
+          </View>
+        </View>
+      )}
+
+      {/* ─── DOCUMENT UPLOAD MODAL OVERLAY ────────────────── */}
+      {isDocModalOpen && (
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContentCard}>
+            <Text style={styles.modalHeading}>Upload Document</Text>
+            
+            {isUploading ? (
+              <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+                <Text style={[styles.modalSubLabel, { marginBottom: 12, color: C.textSec }]}>Uploading document to vault...</Text>
+                <View style={styles.progressBarBg}>
+                  <View style={[styles.progressBarFill, { width: `${uploadProgress}%`, backgroundColor: '#0066FF' }]} />
+                </View>
+                <Text style={{ color: '#FFF', fontSize: 13, marginTop: 8, fontWeight: '600' }}>{uploadProgress}% Complete</Text>
+              </View>
+            ) : (
+              <View>
+                <Text style={styles.modalSubLabel}>Document Title / Name</Text>
+                <TextInput
+                  placeholder="e.g. Driving License, Aadhaar, Insurance..."
+                  placeholderTextColor={C.textMuted}
+                  value={docTitle}
+                  onChangeText={setDocTitle}
+                  style={styles.modalInput}
+                />
+                
+                <Text style={styles.modalSubLabel}>Details / Subtitle</Text>
+                <TextInput
+                  placeholder="e.g. DL #DL-03-2026194, PNR, Policy ID..."
+                  placeholderTextColor={C.textMuted}
+                  value={docSubtitle}
+                  onChangeText={setDocSubtitle}
+                  style={styles.modalInput}
+                />
+
+                <View style={styles.modalActionButtons}>
+                  <TouchableOpacity
+                    style={[styles.modalBtn, styles.modalBtnCancel]}
+                    onPress={() => setIsDocModalOpen(false)}
+                  >
+                    <Text style={styles.modalBtnCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modalBtn, styles.modalBtnSubmit, { backgroundColor: C.blue }]}
+                    onPress={handleDocSubmit}
+                  >
+                    <Text style={styles.modalBtnSubmitText}>Upload File</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
           </View>
         </View>
       )}
@@ -1879,13 +3113,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    flexShrink: 0,
   },
   actionRoundBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: C.card,
-    borderWidth: 0.5,
+    borderWidth: 1,
     borderColor: C.border,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1930,19 +3165,19 @@ const styles = StyleSheet.create({
 
   // Collapsible Accordion Itinerary Settings Panel (Settings overlay)
   settingSectionCard: {
-    backgroundColor: C.card,
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 14,
-    padding: 12,
+    backgroundColor: '#09090C',
+    borderWidth: 1.2,
+    borderColor: 'rgba(0, 102, 255, 0.25)',
+    borderRadius: 16,
+    padding: 14,
     marginBottom: 14,
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 10,
-    borderBottomWidth: 0.5,
-    borderBottomColor: C.border,
+    borderBottomWidth: 0.8,
+    borderBottomColor: '#1E293B',
     paddingBottom: 6,
   },
   sectionHeaderTitle: {
@@ -2797,22 +4032,13 @@ const styles = StyleSheet.create({
   // Dynamic Floating Detail Input Bar sits at bottom: 82 to float perfectly above nav bar!
   bottomInputBarDetail: {
     position: 'absolute',
-    bottom: 82,
-    left: 10,
-    right: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#070913EE',
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: C.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 6,
-    elevation: 8,
+    left: 0,
+    right: 0,
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    backgroundColor: C.bg,
     zIndex: 90,
   },
   plusCircle: {
@@ -2834,18 +4060,16 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: C.card,
-    borderWidth: 1,
-    borderColor: C.border,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderRadius: 20,
     paddingHorizontal: 12,
-    height: 38,
+    height: 40,
   },
   textInput: {
     flex: 1,
     color: '#FFF',
-    fontSize: 13.5,
-    padding: 0,
+    fontSize: 14.5,
+    paddingVertical: 4,
   },
   smileIcon: {
     padding: 2,
@@ -2902,7 +4126,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: C.bg,
+    backgroundColor: '#000000',
     zIndex: 200,
   },
   settingsHeader: {
@@ -2930,8 +4154,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
     paddingBottom: 16,
-    borderBottomWidth: 0.5,
-    borderBottomColor: C.border,
+    borderBottomWidth: 1.2,
+    borderBottomColor: '#1E293B',
   },
   settingsAvatarImg: {
     width: 72,
@@ -3043,5 +4267,761 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 12,
     fontWeight: '800',
+  },
+  
+  // Swipe to Reply & Reply UI Styles
+  inputRowContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+  },
+  replyPreviewContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderLeftWidth: 3,
+    borderLeftColor: C.blue,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginBottom: 8,
+    width: '100%',
+  },
+  replyPreviewTextCol: {
+    flex: 1,
+    marginRight: 10,
+  },
+  replyPreviewSenderName: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: C.blueGlow,
+    marginBottom: 2,
+  },
+  replyPreviewContentText: {
+    fontSize: 12,
+    color: C.textMuted,
+  },
+  replyPreviewCloseBtn: {
+    padding: 4,
+  },
+  bubbleReplyHeaderMe: {
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    borderLeftWidth: 3,
+    borderLeftColor: '#FFF',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    marginBottom: 6,
+  },
+  bubbleReplySenderMe: {
+    color: '#FFF',
+    fontWeight: '800',
+    fontSize: 10.5,
+    marginBottom: 1,
+  },
+  bubbleReplyContentMe: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 11,
+  },
+  bubbleReplyHeaderOther: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderLeftWidth: 3,
+    borderLeftColor: C.blue,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    marginBottom: 6,
+  },
+  bubbleReplySenderOther: {
+    color: C.blueGlow,
+    fontWeight: '800',
+    fontSize: 10.5,
+    marginBottom: 1,
+  },
+  bubbleReplyContentOther: {
+    color: C.textSec,
+    fontSize: 11,
+  },
+  
+  // Long Press Options Modal Styles
+  optionsModalOverlay: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 999,
+  },
+  optionsModalContent: {
+    backgroundColor: C.card,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#1E293B',
+    padding: 20,
+    width: '85%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  optionsHeaderRow: {
+    marginBottom: 12,
+  },
+  optionsHeaderTitle: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  optionsHeaderSubText: {
+    color: C.textSec,
+    fontSize: 11.5,
+    fontStyle: 'italic',
+  },
+  optionsDivider: {
+    height: 1,
+    backgroundColor: '#1E293B',
+    marginBottom: 10,
+  },
+  optionsRowBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    gap: 12,
+  },
+  optionsRowIcon: {
+    width: 20,
+    textAlign: 'center',
+  },
+  optionsRowText: {
+    color: '#E2E8F0',
+    fontSize: 13.5,
+    fontWeight: '500',
+  },
+  optionsCancelDivider: {
+    height: 1,
+    backgroundColor: '#1E293B',
+    marginVertical: 12,
+  },
+  optionsCancelBtn: {
+    alignItems: 'center',
+    paddingVertical: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderRadius: 10,
+  },
+  optionsCancelText: {
+    color: C.textSec,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+
+  // Group Members Styles
+  settingsSubInfo: {
+    color: C.textMuted,
+    fontSize: 12,
+    marginBottom: 12,
+  },
+  membersListContainer: {
+    marginTop: 4,
+    gap: 8,
+  },
+  memberItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+    borderRadius: 12,
+    padding: 10,
+    gap: 12,
+  },
+  memberAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+  },
+  memberMeta: {
+    flex: 1,
+  },
+  memberName: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  memberRoleText: {
+    color: '#64748B',
+    fontSize: 11,
+    marginTop: 1,
+  },
+  roleBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 0.8,
+    marginRight: 4,
+  },
+  roleBadgeOrganizer: {
+    backgroundColor: 'rgba(0, 102, 255, 0.1)',
+    borderColor: 'rgba(0, 102, 255, 0.3)',
+  },
+  roleBadgeGuide: {
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+  },
+  roleBadgeTourist: {
+    backgroundColor: 'rgba(148, 163, 184, 0.08)',
+    borderColor: 'rgba(148, 163, 184, 0.2)',
+  },
+  roleBadgeText: {
+    fontSize: 8.5,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+
+  // Telemetry Monitor Styles
+  telemetryCardGradient: {
+    borderRadius: 16,
+    padding: 16,
+  },
+  telemetryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  telemetryTitle: {
+    color: '#8B5CF6',
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  telemetryStatusBadge: {
+    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: 0.8,
+    borderColor: 'rgba(139, 92, 246, 0.45)',
+  },
+  telemetryStatusText: {
+    color: '#8B5CF6',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  telemetryLabel: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  progressBarBg: {
+    height: 6,
+    backgroundColor: '#0F172A',
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  telemetryMetaGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  telemetryMetaCell: {
+    flex: 1,
+  },
+  telemetryMetaVal: {
+    color: '#F8FAFC',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  telemetryMetaLbl: {
+    color: '#64748B',
+    fontSize: 9.5,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  telemetryDivider: {
+    height: 1,
+    backgroundColor: '#1E293B',
+    marginVertical: 12,
+  },
+  telemetryFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  telemetryFooterText: {
+    color: '#8B5CF6',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  settingsAbsoluteCloseBtn: {
+    position: 'absolute',
+    top: 45,
+    left: 20,
+    zIndex: 300,
+  },
+  settingsExitBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderWidth: 1.2,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    borderRadius: 14,
+    paddingVertical: 14,
+    marginTop: 10,
+    marginBottom: 20,
+    gap: 8,
+  },
+  settingsExitBtnText: {
+    color: '#EF4444',
+    fontSize: 13.5,
+    fontWeight: '700',
+  },
+
+  // ─── TAB SELECTION BAR STYLES ─────────────────────────────────
+  tabBarWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    backgroundColor: C.card,
+    borderRadius: 20,
+    borderWidth: 1.2,
+    borderColor: C.border,
+    marginHorizontal: 12,
+    marginVertical: 10,
+    elevation: 4,
+    shadowColor: '#0066FF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+  },
+  tabItemTouch: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: 14,
+    gap: 6,
+  },
+  tabItemTouchActive: {
+    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+  },
+  tabItemLabel: {
+    color: '#7E8494',
+    fontSize: 12.5,
+    fontWeight: '600',
+  },
+  tabItemLabelActive: {
+    color: '#C084FC',
+    fontWeight: '700',
+  },
+
+  // ─── PINNED GROUP UPDATE STYLES ───────────────────────────────
+  groupUpdateCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(139, 92, 246, 0.08)',
+    borderWidth: 1.2,
+    borderColor: 'rgba(139, 92, 246, 0.25)',
+    borderRadius: 16,
+    padding: 12,
+    marginHorizontal: 14,
+    marginTop: 6,
+    marginBottom: 10,
+  },
+  groupUpdateLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  groupUpdatePinIcon: {
+    marginTop: 2,
+    transform: [{ rotate: '45deg' }],
+  },
+  groupUpdateInfo: {
+    flex: 1,
+    paddingRight: 6,
+  },
+  groupUpdateTitleText: {
+    color: '#C084FC',
+    fontSize: 13.5,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  groupUpdateDescText: {
+    color: '#94A3B8',
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  groupUpdateRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  groupUpdateViewBtn: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 0.8,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  groupUpdateViewBtnText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  groupUpdateCloseBtn: {
+    padding: 4,
+  },
+
+  // ─── TAB CONTENT MAIN SCROLL VIEWS ────────────────────────────
+  tabScrollView: {
+    flex: 1,
+  },
+  tabScrollViewContent: {
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 40,
+  },
+
+  // ─── ITINERARY STATS SUMMARY CARD ─────────────────────────────
+  statsSummaryCard: {
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1.2,
+    borderColor: 'rgba(139, 92, 246, 0.2)',
+  },
+  statsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  statsTitle: {
+    color: '#E2E8F0',
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+  },
+  statsStatusBadge: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  statsStatusText: {
+    color: '#34D399',
+    fontSize: 8.5,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  statsCell: {
+    flex: 1,
+  },
+  statsValLabel: {
+    color: '#7E8494',
+    fontSize: 10.5,
+    fontWeight: '600',
+    marginBottom: 3,
+  },
+  statsValText: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  statsFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderTopWidth: 0.8,
+    borderTopColor: '#1E293B',
+    paddingTop: 10,
+  },
+  statsFooterText: {
+    color: '#C084FC',
+    fontSize: 11.5,
+    fontWeight: '600',
+    flex: 1,
+  },
+
+  // ─── ROADMAP TIMELINE STYLES ──────────────────────────────────
+  timelineCard: {
+    backgroundColor: C.card,
+    borderRadius: 20,
+    borderWidth: 1.2,
+    borderColor: C.border,
+    padding: 16,
+  },
+  timelineHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  timelineTitleText: {
+    color: '#FFF',
+    fontSize: 14.5,
+    fontWeight: '700',
+  },
+  timelineList: {
+    paddingLeft: 4,
+  },
+  verticalTimelineStep: {
+    flexDirection: 'row',
+    marginBottom: 16,
+  },
+  verticalTimelineLeft: {
+    alignItems: 'center',
+    marginRight: 12,
+    width: 20,
+  },
+  verticalTimelineDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: 'rgba(0, 102, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#0066FF',
+    zIndex: 10,
+  },
+  verticalTimelineInnerDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#0066FF',
+  },
+  verticalTimelineLine: {
+    width: 2,
+    flex: 1,
+    backgroundColor: '#1E293B',
+    marginVertical: 4,
+  },
+  verticalTimelineCard: {
+    flex: 1,
+    backgroundColor: C.cardAlt,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    padding: 12,
+  },
+  verticalTimelineHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+    gap: 8,
+  },
+  verticalTimelineDayText: {
+    color: '#0066FF',
+    fontSize: 11,
+    fontWeight: '800',
+    backgroundColor: 'rgba(0, 102, 255, 0.1)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  verticalTimelineNodeTitle: {
+    color: '#FFF',
+    fontSize: 13.5,
+    fontWeight: '700',
+    flex: 1,
+  },
+  verticalTimelineDesc: {
+    color: '#7E8494',
+    fontSize: 11.5,
+    lineHeight: 16,
+  },
+
+  // ─── DOCUMENTS VAULT STYLES ───────────────────────────────────
+  docsHeaderBlock: {
+    marginBottom: 16,
+    paddingHorizontal: 4,
+  },
+  docsHeaderTitleText: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  docsHeaderDescText: {
+    color: '#7E8494',
+    fontSize: 12.5,
+    lineHeight: 17,
+  },
+  uploadDocBtn: {
+    marginBottom: 16,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  uploadDocGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 13,
+  },
+  uploadDocBtnText: {
+    color: '#FFF',
+    fontSize: 13.5,
+    fontWeight: '700',
+  },
+  docsListContainer: {
+    gap: 12,
+  },
+  noDocsText: {
+    color: '#64748B',
+    fontSize: 13,
+    textAlign: 'center',
+    paddingVertical: 30,
+  },
+  docItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: C.card,
+    borderRadius: 16,
+    borderWidth: 1.2,
+    borderColor: C.border,
+    padding: 12,
+  },
+  docItemLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  docIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: 'rgba(0, 102, 255, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  docItemMeta: {
+    flex: 1,
+    paddingRight: 6,
+  },
+  docTitleText: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 1,
+  },
+  docSubText: {
+    color: '#7E8494',
+    fontSize: 11,
+    marginBottom: 2,
+  },
+  docDateText: {
+    color: '#64748B',
+    fontSize: 9,
+  },
+  docItemRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  docStatusBadge: {
+    borderWidth: 0.8,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  docStatusText: {
+    fontSize: 8.5,
+    fontWeight: '800',
+  },
+  docDeleteBtn: {
+    padding: 6,
+    borderRadius: 8,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+  },
+
+  // ─── MEMBERS DIRECTORY STYLES ─────────────────────────────────
+  membersTabList: {
+    gap: 10,
+  },
+  memberTabCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: C.card,
+    borderRadius: 16,
+    borderWidth: 1.2,
+    borderColor: C.border,
+    padding: 12,
+  },
+  memberTabCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  memberTabAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  memberTabMeta: {
+    justifyContent: 'center',
+  },
+  memberTabNameText: {
+    color: '#FFF',
+    fontSize: 13.5,
+    fontWeight: '700',
+  },
+  memberTabRoleText: {
+    color: '#7E8494',
+    fontSize: 10.5,
+    marginTop: 1,
+  },
+  memberTabCardRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  memberRoleBadge: {
+    borderWidth: 0.8,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  memberRoleBadgeText: {
+    fontSize: 8,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  memberChatIconBox: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0, 102, 255, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
