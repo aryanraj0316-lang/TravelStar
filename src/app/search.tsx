@@ -26,7 +26,9 @@ import {
   UserCheck,
   Users,
   Wallet,
-  X
+  X,
+  Star,
+  MessageSquare
 } from 'lucide-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -147,7 +149,7 @@ export default function SearchScreen() {
   const scheme = useColorScheme();
   const isDark = scheme === 'dark';
   const C = isDark ? DARK : LIGHT;
-  const { trips } = useApp();
+  const { trips, setActiveRoomId } = useApp();
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [likedTrips, setLikedTrips] = useState<Set<string>>(new Set());
@@ -165,6 +167,18 @@ export default function SearchScreen() {
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
   }, []);
+
+  const getRoomId = (id: string) => {
+    if (id === 'trip-1') return 'room-vrindavan-group';
+    if (id === 'trip-2') return 'room-ladakh-group';
+    if (id === 'trip-3') return 'room-kerala-group';
+    return `room-${id}`;
+  };
+
+  const handleJoinGroupChat = (tripId: string) => {
+    setActiveRoomId(getRoomId(tripId));
+    router.push('/chat');
+  };
 
   const toggleLike = (id: string) => {
     setLikedTrips((prev) => {
@@ -571,9 +585,17 @@ export default function SearchScreen() {
                     </Text>
                   </View>
 
-                  <View style={[styles.verifiedBadge, { backgroundColor: C.accentLight, marginTop: 2, marginBottom: 4 }]}>
-                    <Check size={9} color={C.accent} strokeWidth={3} />
-                    <Text style={[styles.verifiedText, { color: C.accent }]}>Verified Route</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2, marginBottom: 4 }}>
+                    <View style={[styles.verifiedBadge, { backgroundColor: C.accentLight, marginTop: 0, marginBottom: 0 }]}>
+                      <Check size={9} color={C.accent} strokeWidth={3} />
+                      <Text style={[styles.verifiedText, { color: C.accent }]}>Verified Route</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+                      <Star size={10} color="#FBBF24" fill="#FBBF24" />
+                      <Text style={{ fontSize: 9.5, fontWeight: '700', color: C.text }}>4.8</Text>
+                    </View>
+                    <Text style={{ fontSize: 9.5, color: C.textSecondary }}>•</Text>
+                    <Text style={{ fontSize: 9.5, fontWeight: '600', color: '#10B981' }}>{trip.availableSeats} left</Text>
                   </View>
 
                   {/* Route cities with arrow */}
@@ -633,16 +655,24 @@ export default function SearchScreen() {
                       </Text>
                       <Text style={[styles.pricePer, { color: C.textSecondary, marginTop: -2 }]} numberOfLines={1}>per person</Text>
                     </View>
-                    <TouchableOpacity
-                      style={styles.joinBtn}
-                      onPress={() => {
-                        setSelectedTrip(trip);
-                        setShowJoinModal(true);
-                      }}
-                    >
-                      <Text style={styles.joinBtnText} numberOfLines={1}>Request to Join</Text>
-                      <ChevronRight size={11} color="#FFF" style={{ marginLeft: 2 }} />
-                    </TouchableOpacity>
+                    <View style={{ gap: 4, flexShrink: 0, width: 120 }}>
+                      <TouchableOpacity
+                        style={styles.joinBtn}
+                        onPress={() => {
+                          setSelectedTrip(trip);
+                          setShowJoinModal(true);
+                        }}
+                      >
+                        <Text style={styles.joinBtnText} numberOfLines={1}>Join Now</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.joinBtn, { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#0066FF', paddingVertical: 6 }]}
+                        onPress={() => handleJoinGroupChat(trip.id)}
+                      >
+                        <MessageSquare size={10} color="#0066FF" style={{ marginRight: 2 }} />
+                        <Text style={[styles.joinBtnText, { color: '#0066FF' }]} numberOfLines={1}>Join Group Chat</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 </View>
               </TouchableOpacity>

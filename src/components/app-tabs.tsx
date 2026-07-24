@@ -197,7 +197,13 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
   }, [currentRouteName]);
 
   // ── Hide entirely when in chat room or stories ───────────────────────
-  if ((currentRouteName === 'chat' && activeRoomId !== null) || currentRouteName === 'stories') {
+  // ── Hide entirely when in chat room, stories, monsoon advisory, or destination details ──
+  if (
+    (currentRouteName === 'chat' && activeRoomId !== null) ||
+    currentRouteName === 'stories' ||
+    currentRouteName === 'destination-details' ||
+    currentRouteName === 'monsoon-advisory'
+  ) {
     return <View style={{ height: 0 }} />;
   }
 

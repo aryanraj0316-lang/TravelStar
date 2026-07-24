@@ -1,6 +1,6 @@
 import { useApp } from '@/store/AppContext';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   ArrowLeft,
   ChevronLeft,
@@ -38,37 +38,108 @@ interface Story {
   location: string;
 }
 
-const STORIES_DATA: Story[] = [
-  {
-    id: 'story-1',
-    creator: 'Rohan (Vlogger)',
-    creatorAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&q=80',
-    image: 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=800&q=80',
-    caption: 'Chasing the sunrise at the Taj Mahal. Magical morning vibes! 🌅✨',
-    location: 'Taj Mahal, Agra',
-  },
-  {
-    id: 'story-2',
-    creator: 'Priya (Backpacker)',
-    creatorAvatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&q=80',
-    image: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&q=80',
-    caption: 'Gulmarg Gondola Ride Phase 2. Zero degrees but pure bliss! ❄️🏔️',
-    location: 'Gulmarg, Kashmir',
-  },
-  {
-    id: 'story-3',
-    creator: 'Vikram (Rider)',
-    creatorAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&q=80',
-    image: 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=800&q=80',
-    caption: 'Cruising next to the blue waters of Pangong Tso. The cold wind hits different here! 🏍️💨',
-    location: 'Pangong Lake, Ladakh',
-  },
-];
+const STORIES_DATABASE: Record<string, Story[]> = {
+  Sikkim: [
+    {
+      id: 'sikkim-1',
+      creator: 'Tashi (Monk & Guide)',
+      creatorAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&q=80',
+      image: 'https://images.unsplash.com/photo-1548013146-72479768bada?w=800&q=80',
+      caption: 'High pass views in North Sikkim. Breathtaking beauty! 🏔️✨',
+      location: 'Sikkim Corridor',
+    },
+    {
+      id: 'sikkim-2',
+      creator: 'Tashi (Monk & Guide)',
+      creatorAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&q=80',
+      image: 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=800&q=80',
+      caption: 'Golden hour in the valleys. Feels like heaven. 🌅💛',
+      location: 'Gangtok, Sikkim',
+    },
+  ],
+  Jaipur: [
+    {
+      id: 'jaipur-1',
+      creator: 'Amit (Heritage Photographer)',
+      creatorAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&q=80',
+      image: 'https://images.unsplash.com/photo-1599661046289-e31897846e41?w=800&q=80',
+      caption: 'Checking out the intricate facade of Hawa Mahal! 🏰💖',
+      location: 'Jaipur, Rajasthan',
+    },
+    {
+      id: 'jaipur-2',
+      creator: 'Amit (Heritage Photographer)',
+      creatorAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&q=80',
+      image: 'https://images.unsplash.com/photo-1615836245337-f5b9b2303f10?w=800&q=80',
+      caption: 'Amber Fort reflections at dusk. Royal history live. 👑✨',
+      location: 'Amber Fort, Jaipur',
+    },
+  ],
+  Goa: [
+    {
+      id: 'goa-1',
+      creator: 'Sarah (Beach Nomad)',
+      creatorAvatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&q=80',
+      image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80',
+      caption: 'Sun, sand, and palms. Vacation mode is officially ON! 🏖️🥥',
+      location: 'South Goa Beaches',
+    },
+    {
+      id: 'goa-2',
+      creator: 'Sarah (Beach Nomad)',
+      creatorAvatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&q=80',
+      image: 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=800&q=80',
+      caption: 'Tasting local Goan curries at beach shacks. Delicious! 🍛🌊',
+      location: 'Anjuna, Goa',
+    },
+  ],
+  Manali: [
+    {
+      id: 'manali-1',
+      creator: 'Kabir (Ski Instructor)',
+      creatorAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&q=80',
+      image: 'https://images.unsplash.com/photo-1605649487212-47bdab064df7?w=800&q=80',
+      caption: 'Waking up to fresh snowfall in Solang Valley! ❄️🏔️',
+      location: 'Solang Valley, Manali',
+    },
+    {
+      id: 'manali-2',
+      creator: 'Kabir (Ski Instructor)',
+      creatorAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&q=80',
+      image: 'https://images.unsplash.com/photo-1598091383021-15ddea10925d?w=800&q=80',
+      caption: 'Chilly vibes and woodfired pizza in Old Manali. 🍕🌲',
+      location: 'Old Manali',
+    },
+  ],
+  Munnar: [
+    {
+      id: 'munnar-1',
+      creator: 'Meera (Botanist)',
+      creatorAvatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100&q=80',
+      image: 'https://images.unsplash.com/photo-1593693397690-362cb9666fc2?w=800&q=80',
+      caption: 'Lush green rolling tea fields covered in morning mist. 🍃💚',
+      location: 'Munnar, Kerala',
+    },
+    {
+      id: 'munnar-2',
+      creator: 'Meera (Botanist)',
+      creatorAvatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100&q=80',
+      image: 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=800&q=80',
+      caption: 'Sunset hike at Anamudi Peak. Stunning clouds. ⛰️⛅',
+      location: 'Anamudi Peak, Munnar',
+    },
+  ],
+};
 
 const STORY_DURATION = 5000; // 5 seconds per story slide
 
 export default function StoriesScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
+  const locationParam = (params.location as string) ?? 'Sikkim';
+
+  const activeStoriesList = STORIES_DATABASE[locationParam] ?? STORIES_DATABASE['Sikkim'];
+
   const insets = useSafeAreaInsets();
   const [currentIdx, setCurrentIdx] = useState(0);
   const [inputText, setInputText] = useState('');
@@ -106,7 +177,7 @@ export default function StoriesScreen() {
 
   const startStoryTimer = (startFrom = 0) => {
     progressAnim.setValue(startFrom);
-    
+
     // Stop any existing timers
     if (timerRef.current) clearTimeout(timerRef.current);
 
@@ -124,7 +195,7 @@ export default function StoriesScreen() {
   };
 
   const handleNextStory = () => {
-    if (currentIdx < STORIES_DATA.length - 1) {
+    if (currentIdx < activeStoriesList.length - 1) {
       setCurrentIdx((prev) => prev + 1);
     } else {
       // Out of stories, navigate back
@@ -146,7 +217,7 @@ export default function StoriesScreen() {
     };
   }, [currentIdx]);
 
-  const activeStory = STORIES_DATA[currentIdx];
+  const activeStory = activeStoriesList[currentIdx];
 
   const handleSendReply = () => {
     if (!inputText.trim()) return;
@@ -176,7 +247,7 @@ export default function StoriesScreen() {
 
       {/* Progress Bars Row */}
       <View style={styles.progressBarWrapper}>
-        {STORIES_DATA.map((story, index) => {
+        {activeStoriesList.map((story, index) => {
           let progressFillWidth: any = '0%';
           if (index < currentIdx) {
             progressFillWidth = '100%';

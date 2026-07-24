@@ -1,23 +1,31 @@
+import { MONSOON_ALERTS } from '@/constants/alerts';
 import { useApp, UserRole } from '@/store/AppContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import {
+  AlertTriangle,
   Bell,
   CalendarCheck,
+  Car,
+  Check,
   ChevronRight,
   Clock,
   CloudRain,
+  CloudSnow,
   Globe,
   Heart,
   Map,
   MapPin,
+  MessageSquare,
+  Mountain,
   Plane,
   Star,
   Sun,
   Users,
-  Wallet
+  Wallet,
+  Waves
 } from 'lucide-react-native';
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
@@ -59,7 +67,6 @@ const roles: { value: UserRole; label: string; sub: string; Icon: typeof Globe; 
   { value: 'TOURIST', label: 'Tourist', sub: 'Explore places', Icon: Globe, borderColors: ['#0066FF', '#00F2FE'] },
   { value: 'GUIDE', label: 'Travel Guide', sub: 'Guide travelers', Icon: Map, borderColors: ['#0066FF', '#6366F1'] },
   { value: 'ORGANIZER', label: 'Group Organizer', sub: 'Plan together', Icon: Users, borderColors: ['#0066FF', '#7C3AED'] },
-  { value: 'FAMILY_TRAVELER', label: 'Family', sub: 'Travel safely', Icon: Heart, borderColors: ['#0066FF', '#BA68C8'] },
 ];
 
 const quickAccessItems: { label: string; Icon: typeof MapPin; gradient: [string, string]; iconColor: string; isNew: boolean; route?: string }[] = [
@@ -442,59 +449,279 @@ function FloatingTouristWeatherCard() {
   );
 }
 
-function OngoingTripNotificationCard() {
-  const [secondsLeft, setSecondsLeft] = useState(8140); // 2 hours, 15 mins, 40 secs
+function RotatingMonsoonAlertCard() {
+  const router = useRouter();
+  const [alertIndex, setAlertIndex] = useState(0);
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const isAnimatingRef = useRef(false);
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setSecondsLeft((prev) => (prev > 0 ? prev - 1 : 8140));
-    }, 1000);
+      if (isAnimatingRef.current) return;
+      isAnimatingRef.current = true;
+
+      // 1. Fade out smoothly
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 400,
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (finished) {
+          // 2. Change content
+          setAlertIndex((prev) => (prev + 1) % MONSOON_ALERTS.length);
+
+          // 3. Fade back in
+          Animated.timing(fadeAnim, {
+            toValue: 1,
+            duration: 450,
+            useNativeDriver: true,
+          }).start(() => {
+            isAnimatingRef.current = false;
+          });
+        }
+      });
+    }, 5000); // 5 seconds interval
+
     return () => clearInterval(timer);
   }, []);
 
-  const hours = String(Math.floor(secondsLeft / 3600)).padStart(2, '0');
-  const minutes = String(Math.floor((secondsLeft % 3600) / 60)).padStart(2, '0');
-  const seconds = String(secondsLeft % 60).padStart(2, '0');
+  const activeAlert = MONSOON_ALERTS[alertIndex];
+
+  const getCategoryIcon = (category: string, severity: string) => {
+    const iconColor = severity === 'CRITICAL' ? '#EF4444' : severity === 'WARNING' ? '#F59E0B' : '#0066FF';
+    switch (category) {
+      case 'LANDSLIDE':
+        return <Mountain size={14} color={iconColor} />;
+      case 'FLOOD & RAIN':
+        return <Waves size={14} color={iconColor} />;
+      case 'SNOWFALL':
+        return <CloudSnow size={14} color={iconColor} />;
+      case 'CLOUDBURST':
+        return <CloudRain size={14} color={iconColor} />;
+      case 'TRAFFIC RUSH':
+        return <Car size={14} color={iconColor} />;
+      default:
+        return <AlertTriangle size={14} color={iconColor} />;
+    }
+  };
+
+  const getAlertColors = (severity: string) => {
+    switch (severity) {
+      case 'CRITICAL':
+        return { text: '#EF4444', iconBg: 'rgba(239, 68, 68, 0.15)' };
+      case 'WARNING':
+        return { text: '#F59E0B', iconBg: 'rgba(245, 158, 11, 0.15)' };
+      default:
+        return { text: '#0066FF', iconBg: 'rgba(0, 102, 255, 0.15)' };
+    }
+  };
+
+  const colors = getAlertColors(activeAlert.severity);
 
   return (
-    <View style={[styles.alertCard, styles.tripCardWrap]}>
-      <View style={styles.tripHeaderRow}>
-        <View style={[styles.alertIconWrap, { backgroundColor: 'rgba(16,185,129,0.15)', marginBottom: 0 }]}>
-          <Plane size={14} color={C.green} />
+    <Animated.View style={[styles.alertCard, styles.monsoonCard, { flex: 1, opacity: fadeAnim, overflow: 'hidden', position: 'relative', padding: 0 }]}>
+      <Image source={{ uri: activeAlert.image }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+      <LinearGradient
+        colors={['rgba(21,17,14,0.3)', 'rgba(21,17,14,0.92)']}
+        style={StyleSheet.absoluteFill}
+      />
+      <View style={{ flex: 1, padding: 10, justifyContent: 'space-between', zIndex: 2 }}>
+        <View style={[styles.alertIconWrap, { backgroundColor: colors.iconBg }]}>
+          {getCategoryIcon(activeAlert.category, activeAlert.severity)}
         </View>
-        <View style={styles.tripLiveBadge}>
-          <View style={styles.tripLiveDot} />
-          <Text style={styles.tripLiveText}>STARTS SOON</Text>
-        </View>
+        <Text style={[styles.alertTitle, { color: colors.text }]} numberOfLines={1}>
+          {activeAlert.title}
+        </Text>
+        <Text style={[styles.alertDesc, { color: '#E2E8F0', textShadowColor: '#000', textShadowOffset: { width: 0.5, height: 0.5 }, textShadowRadius: 1 }]} numberOfLines={3}>
+          {activeAlert.desc}
+        </Text>
+        <TouchableOpacity
+          style={styles.alertLink}
+          activeOpacity={0.8}
+          onPress={() => router.push('/monsoon-advisory')}
+        >
+          <Text style={[styles.alertLinkText, { color: colors.text }]}>View Details</Text>
+          <ChevronRight size={11} color={colors.text} />
+        </TouchableOpacity>
       </View>
+    </Animated.View>
+  );
+}
 
-      <View style={styles.tripTitleRow}>
-        <View style={{ flex: 1, paddingRight: 4 }}>
-          <Text style={styles.alertTitle} numberOfLines={1}>Ranchi → Vrindavan</Text>
-        </View>
-        <View style={styles.routeGraphic}>
-          <View style={styles.routeDotBlue} />
-          <View style={styles.routeLinePath} />
-          <View style={styles.routeDotGreen} />
-        </View>
-      </View>
+function FeaturedTripsCarousel() {
+  const { trips, setActiveRoomId } = useApp();
+  const router = useRouter();
+  const carouselRef = useRef<ScrollView>(null);
+  const scrollX = useRef(0);
+  const isInteracting = useRef(false);
 
-      <View style={styles.timerWrap}>
-        <Clock size={10} color={C.orange} />
-        <Text style={styles.timerText}>{`${hours}h : ${minutes}m : ${seconds}s`}</Text>
-      </View>
+  const organizerTrips = trips;
 
-      <TouchableOpacity style={styles.alertLink}>
-        <Text style={[styles.alertLinkText, { color: C.green }]}>Track Trip</Text>
-        <ChevronRight size={11} color={C.green} />
-      </TouchableOpacity>
+  useEffect(() => {
+    if (organizerTrips.length <= 1) return;
+
+    let animFrameId: number;
+    const cardWidth = SCREEN_WIDTH - 40; // width of each card + padding margin
+    const totalWidth = (cardWidth + 10) * organizerTrips.length; // include gap
+
+    const animate = () => {
+      if (!isInteracting.current) {
+        scrollX.current += 0.8;
+        if (scrollX.current >= totalWidth) {
+          scrollX.current = 0;
+        }
+        carouselRef.current?.scrollTo({ x: scrollX.current, animated: false });
+      }
+      animFrameId = requestAnimationFrame(animate);
+    };
+
+    animFrameId = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(animFrameId);
+  }, [organizerTrips]);
+
+  const getTripImage = (id: string, name: string) => {
+    if (id === 'trip-1') return 'https://images.unsplash.com/photo-1548013146-72479768bada?w=600&q=80';
+    if (id === 'trip-2') return 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=600&q=80';
+    if (id === 'trip-3') return 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=600&q=80';
+
+    const lowerName = name.toLowerCase();
+    if (lowerName.includes('sikkim')) return 'https://images.unsplash.com/photo-1548013146-72479768bada?w=600&q=80';
+    if (lowerName.includes('rajasthan') || lowerName.includes('jaipur') || lowerName.includes('heritage')) return 'https://images.unsplash.com/photo-1599661046289-e31897846e41?w=600&q=80';
+    if (lowerName.includes('kerala')) return 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=600&q=80';
+    return 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&q=80';
+  };
+
+  const getRoomId = (id: string) => {
+    if (id === 'trip-1') return 'room-vrindavan-group';
+    if (id === 'trip-2') return 'room-ladakh-group';
+    if (id === 'trip-3') return 'room-kerala-group';
+    return `room-${id}`;
+  };
+
+  return (
+    <View style={styles.carouselContainer}>
+      <ScrollView
+        ref={carouselRef}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onTouchStart={() => { isInteracting.current = true; }}
+        onTouchEnd={() => { setTimeout(() => { isInteracting.current = false; }, 1200); }}
+        onScrollBeginDrag={() => { isInteracting.current = true; }}
+        onScrollEndDrag={() => { setTimeout(() => { isInteracting.current = false; }, 1200); }}
+        contentContainerStyle={{ paddingHorizontal: 20, gap: 10 }}
+      >
+        {organizerTrips.map((trip) => {
+          const imageUri = getTripImage(trip.id, trip.name);
+          const durationText = trip.id === 'trip-1' ? '7 Nights / 8 Days' :
+            trip.id === 'trip-2' ? '10 Nights / 11 Days' :
+              trip.id === 'trip-3' ? '5 Nights / 6 Days' : '5 Nights / 6 Days';
+          const transportText = trip.id === 'trip-2' ? 'Bike + Stay' : 'AC Transport';
+
+          return (
+            <TouchableOpacity
+              key={trip.id}
+              activeOpacity={0.85}
+              onPress={() => {
+                router.push('/search');
+              }}
+              style={[styles.tripCard, { width: SCREEN_WIDTH - 40 }]}
+            >
+              {/* Left side: Image */}
+              <View style={styles.tripImageContainer}>
+                <Image source={{ uri: imageUri }} style={styles.tripImage} />
+                <LinearGradient
+                  colors={['rgba(0, 0, 0, 0.65)', 'rgba(0, 0, 0, 0.1)', 'rgba(0, 0, 0, 0.75)']}
+                  locations={[0, 0.45, 1]}
+                  style={StyleSheet.absoluteFill}
+                />
+                <View style={[styles.tripBadge, { backgroundColor: '#6C5CE7' }]}>
+                  <Text style={styles.tripBadgeText}>Featured</Text>
+                </View>
+              </View>
+
+              {/* Right side: Detailed trip content */}
+              <View style={styles.tripContent}>
+                <Text style={styles.tripName} numberOfLines={2}>
+                  {trip.name}
+                </Text>
+
+                <View style={styles.tripDetailsMetaRow}>
+                  <View style={styles.verifiedBadge}>
+                    <Check size={8} color="#0066FF" strokeWidth={3} />
+                    <Text style={styles.verifiedText}>Verified Route</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+                    <Star size={10} color="#FBBF24" fill="#FBBF24" />
+                    <Text style={{ fontSize: 9.5, fontWeight: '700', color: '#FFF' }}>4.8</Text>
+                  </View>
+                  <Text style={{ fontSize: 9.5, color: '#7E8494' }}>•</Text>
+                  <Text style={{ fontSize: 9.5, fontWeight: '600', color: '#10B981' }}>{trip.availableSeats} left</Text>
+                </View>
+
+                {/* Route cities with arrow */}
+                <View style={styles.routeCities}>
+                  {trip.cities.map((city, i) => (
+                    <React.Fragment key={city}>
+                      <Text style={styles.cityText}>{city}</Text>
+                      {i < trip.cities.length - 1 && (
+                        <Text style={styles.routeArrow}>→</Text>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </View>
+
+                {/* Subtitle / capsules */}
+                <View style={styles.capsulesRow}>
+                  <View style={styles.capsule}>
+                    <Clock size={8} color="#7E8494" />
+                    <Text style={styles.capsuleText} numberOfLines={1}>{durationText}</Text>
+                  </View>
+                  <View style={styles.capsule}>
+                    <Plane size={8} color="#7E8494" />
+                    <Text style={styles.capsuleText} numberOfLines={1}>{transportText}</Text>
+                  </View>
+                </View>
+
+                {/* Price and Action Buttons */}
+                <View style={styles.priceRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.priceLabel}>Total Package</Text>
+                    <Text style={styles.priceAmount}>₹{trip.budget}</Text>
+                  </View>
+                  <View style={{ gap: 4, width: 110 }}>
+                    <TouchableOpacity
+                      style={styles.joinBtn}
+                      onPress={() => {
+                        router.push('/search');
+                      }}
+                    >
+                      <Text style={styles.joinBtnText}>Join Now</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.joinBtn, { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#0066FF', paddingVertical: 4 }]}
+                      onPress={() => {
+                        setActiveRoomId(getRoomId(trip.id));
+                        router.push('/chat');
+                      }}
+                    >
+                      <MessageSquare size={9} color="#0066FF" style={{ marginRight: 2 }} />
+                      <Text style={[styles.joinBtnText, { color: '#0066FF' }]}>Join Chat</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
     </View>
   );
 }
 
 // ─── Component ──────────────────────────────────────────────────────
 export default function HomeScreen() {
-  const { currentRole, setCurrentRole, profile, setNavbarHidden } = useApp();
+  const { currentRole, setCurrentRole, profile, setNavbarHidden, trips, setActiveRoomId } = useApp();
   const router = useRouter();
   const [activeDot, setActiveDot] = useState(0);
   const trendingRef = useRef<ScrollView>(null);
@@ -605,6 +832,12 @@ export default function HomeScreen() {
                   setCurrentRole(role.value);
                   // Update the profile context role to mirror this change globally
                   profile.role = role.value;
+                  if (role.value === 'GUIDE') {
+                    router.push('/travel-guide');
+                  }
+                  if (role.value === 'ORGANIZER') {
+                    router.push('/group-organizer');
+                  }
                 }}
               >
                 <LinearGradient
@@ -646,7 +879,17 @@ export default function HomeScreen() {
           contentContainerStyle={styles.storiesRow}
         >
           {storyData.map((story) => (
-            <TouchableOpacity key={story.id} style={styles.storyItem} activeOpacity={0.8} onPress={() => router.push('/stories')}>
+            <TouchableOpacity
+              key={story.id}
+              style={styles.storyItem}
+              activeOpacity={0.8}
+              onPress={() => {
+                router.push({
+                  pathname: '/stories',
+                  params: { location: story.name }
+                });
+              }}
+            >
               <LinearGradient
                 colors={['#00E5FF', '#0066FF', '#0891B2']}
                 start={{ x: 0, y: 0 }}
@@ -714,25 +957,20 @@ export default function HomeScreen() {
           {/* Animated Floating Weather Card */}
           <FloatingTouristWeatherCard />
 
-          {/* Alerts Stack — Two Half Cards */}
+          {/* Alerts Stack — Stretched Monsoon Card */}
           <View style={styles.alertsColumn}>
-            {/* Monsoon Warning (Half Box) */}
-            <View style={[styles.alertCard, styles.monsoonCard]}>
-              <View style={[styles.alertIconWrap, { backgroundColor: 'rgba(245,158,11,0.2)' }]}>
-                <CloudRain size={14} color={'#FBBF24'} />
-              </View>
-              <Text style={[styles.alertTitle, { color: '#FBBF24' }]} numberOfLines={1}>Monsoon Warning</Text>
-              <Text style={styles.alertDesc} numberOfLines={1}>Heavy rain in Ladakh route</Text>
-              <TouchableOpacity style={styles.alertLink}>
-                <Text style={[styles.alertLinkText, { color: '#F59E0B' }]}>View Details</Text>
-                <ChevronRight size={11} color={'#F59E0B'} />
-              </TouchableOpacity>
-            </View>
-
-            {/* Ongoing/Upcoming Trip Notification (Half Box) */}
-            <OngoingTripNotificationCard />
+            {/* Monsoon Warning (Full Height in Column) */}
+            <RotatingMonsoonAlertCard />
           </View>
         </View>
+
+        {/* ════════════════════════════════════════════════
+            FEATURED GROUP TRIPS CAROUSEL
+            ════════════════════════════════════════════════ */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Featured Group Trips</Text>
+        </View>
+        <FeaturedTripsCarousel />
 
         {/* ════════════════════════════════════════════════
             TRENDING DESTINATIONS — Carousel + dots
@@ -769,7 +1007,17 @@ export default function HomeScreen() {
           }}
         >
           {infiniteTrendingDests.map((dest, index) => (
-            <TouchableOpacity key={`${dest.id}-${index}`} style={styles.trendingCard} activeOpacity={0.9}>
+            <TouchableOpacity
+              key={`${dest.id}-${index}`}
+              style={styles.trendingCard}
+              activeOpacity={0.9}
+              onPress={() => {
+                router.push({
+                  pathname: '/destination-details',
+                  params: { id: String(dest.id) }
+                });
+              }}
+            >
               <Image
                 source={{ uri: dest.image }}
                 style={StyleSheet.absoluteFill}
@@ -834,6 +1082,148 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingBottom: 20,
+  },
+  carouselContainer: {
+    marginBottom: 24,
+  },
+  tripCard: {
+    flexDirection: 'row',
+    backgroundColor: '#111322',
+    borderColor: '#1A1D30',
+    borderWidth: 1,
+    borderRadius: 16,
+    overflow: 'hidden',
+    minHeight: 180,
+    marginHorizontal: 20,
+  },
+  tripImageContainer: {
+    width: 110,
+    alignSelf: 'stretch',
+    position: 'relative',
+    backgroundColor: '#000',
+  },
+  tripImage: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    bottom: 0,
+    right: 0,
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  tripBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 5,
+    zIndex: 2,
+  },
+  tripBadgeText: {
+    fontSize: 8.5,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  tripContent: {
+    flex: 1,
+    padding: 10,
+    justifyContent: 'space-between',
+  },
+  tripName: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#FFF',
+    lineHeight: 16,
+  },
+  tripDetailsMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginVertical: 2,
+  },
+  verifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 102, 255, 0.08)',
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 5,
+    gap: 2,
+  },
+  verifiedText: {
+    fontSize: 8,
+    fontWeight: '700',
+    color: '#0066FF',
+  },
+  routeCities: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  cityText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#0066FF',
+  },
+  routeArrow: {
+    fontSize: 9,
+    color: '#7E8494',
+    marginHorizontal: 2,
+  },
+  capsulesRow: {
+    flexDirection: 'row',
+    gap: 4,
+    marginVertical: 2,
+  },
+  capsule: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1B1E30',
+    paddingHorizontal: 5,
+    paddingVertical: 3,
+    borderRadius: 5,
+    gap: 2,
+  },
+  capsuleText: {
+    fontSize: 8,
+    fontWeight: '600',
+    color: '#7E8494',
+    flex: 1,
+  },
+  priceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderTopWidth: 0.5,
+    borderTopColor: '#1A1D30',
+    paddingTop: 6,
+    marginTop: 4,
+  },
+  priceLabel: {
+    fontSize: 8,
+    fontWeight: '600',
+    color: '#7E8494',
+  },
+  priceAmount: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#0066FF',
+    marginTop: -2,
+  },
+  joinBtn: {
+    backgroundColor: '#0066FF',
+    paddingVertical: 5,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  joinBtnText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: '700',
   },
 
   // ── Header ──────────────────────────────────────────
