@@ -129,6 +129,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
   }, [activeIndex]);
 
   const { activeRoomId, navbarHidden, setNavbarHidden } = useApp();
+  console.log('[CustomTabBar] currentRouteName:', currentRouteName, 'navbarHidden:', navbarHidden);
 
   // ── Core slide in/out logic ──────────────────────────────────────────
   useEffect(() => {
@@ -188,7 +189,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
 
   // ── Reset when leaving home tab ──────────────────────────────────────
   useEffect(() => {
-    if (currentRouteName !== 'index') {
+    if (currentRouteName !== 'index' && currentRouteName !== 'profile') {
       setNavbarHidden(false);
       dockSlideAnim.setValue(0);
       peekSlideAnim.setValue(-50);
@@ -204,9 +205,10 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
     currentRouteName === 'destination-details' ||
     currentRouteName === 'monsoon-advisory' ||
     currentRouteName === 'auth' ||
-    currentRouteName === 'map'
+    currentRouteName === 'map' ||
+    (currentRouteName !== 'index' && navbarHidden)
   ) {
-    return <View style={{ height: 0 }} />;
+    return null;
   }
 
   const visibleRoutes = state.routes.filter(
@@ -231,6 +233,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
   // Active icon for the peek element
   const ActiveIcon = TAB_ICONS[currentRouteName] || Home;
   const bottomOffset = Math.max(insets.bottom, 12);
+  const shouldHideNavbar = navbarHidden && currentRouteName !== 'index';
 
   return (
     <>
@@ -243,6 +246,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
             opacity: peekOpacityAnim,
             transform: [{ translateX: peekSlideAnim }],
           },
+          shouldHideNavbar && { display: 'none', opacity: 0, height: 0 }
         ]}
         pointerEvents={navbarHidden ? 'auto' : 'none'}
       >
@@ -260,7 +264,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
           </LinearGradient>
         </TouchableOpacity>
       </Animated.View>
-
+ 
       {/* ── Full dock ─────────────────────────────────────────────────────── */}
       <Animated.View
         style={[
@@ -269,6 +273,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
             bottom: bottomOffset,
             transform: [{ translateX: dockSlideAnim }],
           },
+          shouldHideNavbar && { display: 'none', opacity: 0, height: 0 }
         ]}
         onLayout={(e) => setDockWidth(e.nativeEvent.layout.width)}
       >

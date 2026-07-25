@@ -16,6 +16,12 @@ export interface UserProfile {
   walletBalance: number;
   rewardPoints: number;
   email?: string;
+  phoneNumber?: string;
+  emergencyContact?: string;
+  bio?: string;
+  languages?: string;
+  travelStyles?: string;
+  savedPlaces?: any[];
 }
 
 export interface Trip {

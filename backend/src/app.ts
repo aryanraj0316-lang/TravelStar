@@ -1,14 +1,14 @@
-import express from 'express';
 import cors from 'cors';
-import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
+import express from 'express';
+import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 import authRoutes from './api/routes/auth';
-import tripRoutes from './api/routes/trips';
 import guideRoutes from './api/routes/guides';
 import paymentRoutes from './api/routes/payments';
 import safetyRoutes from './api/routes/safety';
 import storyRoutes from './api/routes/stories';
+import tripRoutes from './api/routes/trips';
 import { errorHandler } from './middleware/error';
 
 dotenv.config();

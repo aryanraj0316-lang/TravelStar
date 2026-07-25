@@ -1,5 +1,6 @@
 import { useApp } from '@/store/AppContext';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Location from 'expo-location';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   AlertCircle,
@@ -7,8 +8,6 @@ import {
   ArrowRight,
   Car,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   ChevronUp,
   Clock,
   Compass,
@@ -26,9 +25,9 @@ import {
   User,
   Users,
   X,
-  Zap,
+  Zap
 } from 'lucide-react-native';
-import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
@@ -40,7 +39,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
-import * as Location from 'expo-location';
 
 // Coordinates registry for dynamic routes mapping
 const CITY_COORDS: Record<string, { latitude: number; longitude: number }> = {
@@ -1203,7 +1201,7 @@ export default function MapScreen() {
 
 
         {/* BOTTOM TRIP INFO CARD / SEGMENT NAVIGATION CARD */}
-         <View 
+        <View
           style={styles.bottomCardContainer}
           onLayout={(e) => {
             const { height } = e.nativeEvent.layout;

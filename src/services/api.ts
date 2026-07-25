@@ -1,6 +1,6 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
-import { Trip, Guide, UserProfile, Message, SOSAlert } from '../store/AppContext';
+import { Guide, SOSAlert, Trip, UserProfile } from '../store/AppContext';
 
 // Dynamically resolve server IP so it connects on Web, Android Emulator (10.0.2.2), and Physical Android/iOS devices over local Wi-Fi
 export const getHostUrl = () => {

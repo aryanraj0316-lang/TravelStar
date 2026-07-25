@@ -607,3 +607,14 @@ model AdminLog {
   ipAddress String?
   createdAt DateTime @default(now())
 }
+
+model MapPin {
+  id        String   @id @default(uuid())
+  type      String   // 'GUIDE', 'GROUP', 'TOURIST', 'ATTRACTION'
+  name      String
+  latitude  Float
+  longitude Float
+  detail    String
+  targetId  String?
+  createdAt DateTime @default(now())
+}

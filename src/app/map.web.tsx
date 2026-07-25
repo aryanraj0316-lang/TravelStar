@@ -9,8 +9,6 @@ import {
   ArrowRight,
   Car,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   ChevronUp,
   Clock,
   Compass,
@@ -667,15 +665,25 @@ export default function WebMapScreen() {
                                pin.type === 'TOURIST' ? '#8B5CF6' : '#EF4444';
             
             const customIcon = L.divIcon({
-              html: \`<div style="width:24px;height:24px;border-radius:12px;background:\${markerColor};border:2px solid #FFF;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 5px rgba(0,0,0,0.3)"><span style="color:#FFF;font-size:10px">📍</span></div>\`,
+              html: '<div style="width:24px;height:24px;border-radius:12px;background:' + markerColor + ';border:2px solid #FFF;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 5px rgba(0,0,0,0.3)"><span style="color:#FFF;font-size:10px">📍</span></div>',
               className: 'custom-pin-icon',
               iconSize: [24, 24],
               iconAnchor: [12, 24]
             });
 
+            var badgeClass = pin.type === 'GUIDE' ? 'popup-badge-guide' :
+                             pin.type === 'GROUP' ? 'popup-badge-group' :
+                             pin.type === 'TOURIST' ? 'popup-badge-tourist' : 'popup-badge-attraction';
+
+            var popupHTML = '<div class="popup-card">' +
+              '<div class="popup-badge ' + badgeClass + '">' + pin.type + '</div>' +
+              '<h4>' + pin.name + '</h4>' +
+              '<p>' + pin.detail + '</p>' +
+              '<div class="popup-cta" onclick="startNavigationToPin(\'' + pin.id + '\', \'' + pin.name + '\', ' + pin.latitude + ', ' + pin.longitude + ')">Navigate \u2192</div></div>';
+
             var marker = L.marker([pin.latitude, pin.longitude], { icon: customIcon })
               .addTo(map)
-              .bindPopup(\`<h4>\${pin.name}</h4><p>\${pin.detail}</p>\`);
+              .bindPopup(popupHTML, { closeButton: false, minWidth: 120 });
 
             markerInstances.push({ marker: marker, type: pin.type });
           });
@@ -1003,7 +1011,7 @@ export default function WebMapScreen() {
 
 
         {/* BOTTOM TRIP INFO CARD / SEGMENT NAVIGATION CARD */}
-         <View 
+        <View
           style={styles.bottomCardContainer}
           onLayout={(e) => {
             const { height } = e.nativeEvent.layout;

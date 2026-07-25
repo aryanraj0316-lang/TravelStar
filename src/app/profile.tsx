@@ -8,20 +8,25 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   Bell,
+  Bookmark,
+  Briefcase,
   Camera,
   Check,
   CheckCircle,
   ChevronRight,
   Coins,
   Compass,
+  CreditCard,
   Download,
   Globe,
   HelpCircle,
   History,
   Image as ImageIcon,
+  LifeBuoy,
   Lock,
   LogOut,
   MapPin,
+  Maximize2,
   Pencil,
   PhoneCall,
   Plus,
@@ -32,6 +37,7 @@ import {
   ShieldCheck,
   Sliders,
   Sparkles,
+  Trash2,
   User,
   Wallet,
   X
@@ -126,6 +132,7 @@ export default function ProfileScreen() {
     isLoggedIn,
     login,
     logout,
+    setNavbarHidden,
   } = useApp();
 
   useEffect(() => {
@@ -142,6 +149,30 @@ export default function ProfileScreen() {
     return unsubscribe;
   }, [navigation]);
 
+  useEffect(() => {
+    console.log('[ProfileScreen] Toggling navbarHidden:', showSavedPlacesModal || showLanguageModal);
+    setNavbarHidden(showSavedPlacesModal || showLanguageModal);
+  }, [showSavedPlacesModal, showLanguageModal]);
+
+  useEffect(() => {
+    return () => {
+      setNavbarHidden(false);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (showEditModal) {
+      setEditAvatar(profile.avatar || AVATAR_PRESETS[0]);
+      setEditName(profile.name || '');
+      setEditGender(profile.gender || 'Male');
+      setEditBio(profile.bio || '');
+      setEditPhone(profile.phoneNumber || '');
+      setEditEmergencyPhone(profile.emergencyContact || '');
+      setEditLanguages(profile.languages || '');
+      setEditStyles(profile.travelStyles || '');
+    }
+  }, [showEditModal, profile]);
+
   // Navigation tab state
   const [activeTab, setActiveTab] = useState<'DETAILS' | 'HISTORY' | 'WALLET' | 'DASHBOARD' | 'SETTINGS'>('DETAILS');
   const [historyFilter, setHistoryFilter] = useState<'ALL' | 'UPCOMING' | 'COMPLETED'>('ALL');
@@ -152,6 +183,44 @@ export default function ProfileScreen() {
   const [withdrawalAmount, setWithdrawalAmount] = useState('');
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showSavedPlacesModal, setShowSavedPlacesModal] = useState(false);
+  const [savedPlaces, setSavedPlaces] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (profile.savedPlaces && Array.isArray(profile.savedPlaces)) {
+      setSavedPlaces(profile.savedPlaces);
+    } else {
+      setSavedPlaces([
+        {
+          id: 'sp-1',
+          name: 'Taj Mahal',
+          location: 'Agra, Uttar Pradesh',
+          image: 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=150&q=80',
+        },
+        {
+          id: 'sp-2',
+          name: 'Vrindavan Mandir',
+          location: 'Vrindavan, Uttar Pradesh',
+          image: 'https://images.unsplash.com/photo-1548013146-72479768bada?w=150&q=80',
+        },
+        {
+          id: 'sp-3',
+          name: 'Munnar Tea Estates',
+          location: 'Munnar, Kerala',
+          image: 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=150&q=80',
+        },
+        {
+          id: 'sp-4',
+          name: 'Pangong Lake',
+          location: 'Leh-Ladakh, India',
+          image: 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=150&q=80',
+        },
+      ]);
+    }
+  }, [profile.savedPlaces]);
+
+  const [showLanguageModal, setShowLanguageModal] = useState(false);
+  const [selectedLanguage, setSelectedLanguage] = useState('English');
 
   // Guide dashboard states
   const [hourlyRate, setHourlyRate] = useState('350');
@@ -256,9 +325,18 @@ export default function ProfileScreen() {
       Alert.alert('Required Field', 'Profile Name cannot be empty.');
       return;
     }
-    updateProfile({ name: editName, avatar: editAvatar, gender: editGender });
+    updateProfile({
+      name: editName,
+      avatar: editAvatar,
+      gender: editGender,
+      bio: editBio,
+      phoneNumber: editPhone,
+      emergencyContact: editEmergencyPhone,
+      languages: editLanguages,
+      travelStyles: editStyles,
+    });
     setShowEditModal(false);
-    Alert.alert('✨ Profile Saved', 'Your profile details, gender & photo have been updated successfully.');
+    Alert.alert('✨ Profile Saved', 'Your profile details, gender, bio & photo have been updated successfully.');
   };
 
   const handleShareProfile = () => {
@@ -285,7 +363,7 @@ export default function ProfileScreen() {
   });
 
   return (
-    <SafeAreaView edges={['top', 'left', 'right']} style={[styles.safeArea, { backgroundColor: isDark ? '#080A14' : '#F4F6FB' }]}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={[styles.safeArea, { backgroundColor: '#070913' }]}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
 
         {/* ════════════════════════════════════════════════
@@ -293,39 +371,27 @@ export default function ProfileScreen() {
             ════════════════════════════════════════════════ */}
         <View style={styles.heroWrap}>
           <Image
-            source={{ uri: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1000&q=80' }}
+            source={{ uri: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1000&q=80' }}
             style={styles.coverImage}
           />
           <LinearGradient
-            colors={['rgba(8,10,20,0.2)', 'rgba(8,10,20,0.92)']}
+            colors={['rgba(7,9,19,0.3)', 'rgba(7,9,19,0.98)']}
             style={StyleSheet.absoluteFill}
           />
 
-          {/* Top-Right Action Column: Notification, Sign In / Auth, Edit (Pencil), Share */}
+          {/* Top-Left Maximize/Scan Icon */}
+          <TouchableOpacity
+            style={styles.topLeftScanBtn}
+            activeOpacity={0.7}
+          >
+            <Maximize2 size={20} color="#FFF" />
+          </TouchableOpacity>
+
+          {/* Top-Right Action Column: Edit (Pencil), Notifications (Bell), Share */}
           <View style={styles.topRightActionCol}>
             <TouchableOpacity
               style={styles.topActionBtn}
               activeOpacity={0.7}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              onPress={() => setShowAuthModal(true)}
-            >
-              <User size={16} color="#FFF" />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.topActionBtn}
-              activeOpacity={0.7}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              onPress={() => router.push('/notifications')}
-            >
-              <Bell size={17} color="#FFF" />
-              <View style={styles.topNotifDot} />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.topActionBtn}
-              activeOpacity={0.7}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               onPress={() => setShowEditModal(true)}
             >
               <Pencil size={16} color="#FFF" />
@@ -334,7 +400,15 @@ export default function ProfileScreen() {
             <TouchableOpacity
               style={styles.topActionBtn}
               activeOpacity={0.7}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              onPress={() => router.push('/notifications')}
+            >
+              <Bell size={16} color="#FFF" />
+              <View style={styles.topNotifDot} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.topActionBtn}
+              activeOpacity={0.7}
               onPress={handleShareProfile}
             >
               <Share2 size={16} color="#FFF" />
@@ -342,730 +416,175 @@ export default function ProfileScreen() {
           </View>
 
           <View style={styles.profileHeaderContent}>
-            {/* Sleek Dual-Ring Floating Halo Avatar (Alpine Glacier Teal & Forest Emerald) */}
+            {/* Circular Avatar with Glowing Cyan Gradient Border Ring */}
             <View style={styles.avatarHaloContainer}>
               <LinearGradient
-                colors={['#00F2FE', '#06B6D4', '#10B981', '#3B82F6']}
+                colors={['#00F2FE', '#00D1FF', '#00F2FE']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.avatarGradientRing}
               >
                 <View style={styles.avatarInnerGap}>
-                  <Image source={{ uri: profile.avatar }} style={styles.avatar} />
+                  <Image source={{ uri: profile.avatar || AVATAR_PRESETS[0] }} style={styles.avatar} />
                 </View>
               </LinearGradient>
             </View>
 
             <View style={styles.nameSection}>
               <View style={styles.nameRow}>
-                <Text style={styles.userName}>{profile.name}</Text>
-                {profile.isVerified && (
-                  <CheckCircle size={18} color="#00D1FF" fill="#00D1FF" style={{ marginLeft: 6 }} />
-                )}
+                <Text style={styles.userName}>{profile.name || 'Aarav Sharma'}</Text>
+                <CheckCircle size={15} color="#00D1FF" fill="#00D1FF" style={{ marginLeft: 6 }} />
               </View>
 
-              <Text style={styles.userHandle}>@aarav_traveler • 📍 New Delhi, India</Text>
-
-              <View style={styles.roleCap}>
-                <Sparkles size={11} color="#FFB300" />
-                <Text style={styles.roleCapText}>{currentRole.replace('_', ' ')}</Text>
-              </View>
-
-              <Text style={styles.userBio} numberOfLines={2}>
-                {editBio}
+              <Text style={styles.userBio}>
+                {profile.bio || "Love exploring new places..."}
               </Text>
             </View>
           </View>
         </View>
 
         {/* ════════════════════════════════════════════════
-            STATS COUNTER ROW
+            MENU CARDS & TRAVEL HUB SECTIONS
             ════════════════════════════════════════════════ */}
-        <View style={[styles.statsRow, { backgroundColor: isDark ? '#111424' : '#FFFFFF', borderColor: isDark ? '#1D2138' : '#E2E8F0' }]}>
-          <View style={styles.statItem}>
-            <Text style={[styles.statValue, { color: isDark ? '#FFF' : '#0F172A' }]}>14</Text>
-            <Text style={styles.statLabel}>Trips Taken</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={[styles.statValue, { color: '#0066FF' }]}>4.95 ⭐</Text>
-            <Text style={styles.statLabel}>Traveler Score</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={[styles.statValue, { color: '#10B981' }]}>₹{profile.walletBalance.toLocaleString('en-IN')}</Text>
-            <Text style={styles.statLabel}>Wallet Cash</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={[styles.statValue, { color: '#F59E0B' }]}>{profile.rewardPoints}</Text>
-            <Text style={styles.statLabel}>Star Points</Text>
-          </View>
-        </View>
-
-        {/* ════════════════════════════════════════════════
-            PROMINENT LOGIN / SIGN UP BANNER (only when not logged in)
-            ════════════════════════════════════════════════ */}
-        {!isLoggedIn ? (
-          <TouchableOpacity
-            style={{
-              marginHorizontal: 16,
-              marginTop: 12,
-              marginBottom: 4,
-              padding: 14,
-              borderRadius: 20,
-              backgroundColor: 'rgba(0, 102, 255, 0.15)',
-              borderWidth: 1.5,
-              borderColor: 'rgba(0, 102, 255, 0.4)',
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-            }}
-            activeOpacity={0.85}
-            onPress={() => setShowAuthModal(true)}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-              <View
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 20,
-                  backgroundColor: '#0066FF',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  marginRight: 12,
-                }}
-              >
-                <User size={20} color="#FFFFFF" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 14, fontWeight: '800', color: '#FFFFFF' }}>
-                  Account & Authentication
-                </Text>
-                <Text style={{ fontSize: 11, color: '#60A5FA', marginTop: 2 }}>
-                  Sign In, Register, Switch Roles & Verify OTP
-                </Text>
-              </View>
+        <View style={styles.menuContainer}>
+          {/* Section: PERSONAL DETAILS */}
+          <Text style={styles.sectionHeader}>PERSONAL DETAILS</Text>
+          <View style={styles.menuCard}>
+            <View style={styles.profileDetailRow}>
+              <Text style={styles.profileDetailLabel}>Mobile Phone</Text>
+              <Text style={styles.profileDetailValue}>{profile.phoneNumber || '+91 98765 43210'}</Text>
             </View>
-            <ChevronRight size={18} color="#60A5FA" />
-          </TouchableOpacity>
-        ) : (
-          <View
-            style={{
-              marginHorizontal: 16,
-              marginTop: 12,
-              marginBottom: 4,
-              padding: 14,
-              borderRadius: 20,
-              backgroundColor: 'rgba(16, 185, 129, 0.15)',
-              borderWidth: 1.5,
-              borderColor: 'rgba(16, 185, 129, 0.4)',
-              flexDirection: 'row',
-              alignItems: 'center',
-            }}
-          >
-            <View
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 20,
-                backgroundColor: '#10B981',
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginRight: 12,
-              }}
+            <View style={styles.profileDetailDivider} />
+            <View style={styles.profileDetailRow}>
+              <Text style={styles.profileDetailLabel}>Emergency SOS Contact</Text>
+              <Text style={styles.profileDetailValue}>{profile.emergencyContact || '+91 98111 22334'}</Text>
+            </View>
+            <View style={styles.profileDetailDivider} />
+            <View style={styles.profileDetailRow}>
+              <Text style={styles.profileDetailLabel}>Languages Spoken</Text>
+              <Text style={styles.profileDetailValue}>{profile.languages || 'Hindi, English, Punjabi'}</Text>
+            </View>
+            <View style={styles.profileDetailDivider} />
+            <View style={styles.profileDetailRow}>
+              <Text style={styles.profileDetailLabel}>Adventure Styles</Text>
+              <Text style={styles.profileDetailValue}>{profile.travelStyles || 'Mountains, Backpacking, Photography'}</Text>
+            </View>
+          </View>
+
+          {/* Section 1: TRAVEL HUB */}
+          <Text style={styles.sectionHeader}>TRAVEL HUB</Text>
+          <View style={styles.menuCard}>
+            {/* Bookings & Trips */}
+            <TouchableOpacity 
+              style={styles.menuItem} 
+              activeOpacity={0.7}
+              onPress={() => router.push('/bookings')}
             >
-              <ShieldCheck size={20} color="#FFFFFF" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 14, fontWeight: '800', color: '#FFFFFF' }}>
-                Signed In as {profile.name}
-              </Text>
-              <Text style={{ fontSize: 11, color: '#6EE7B7', marginTop: 2 }}>
-                Role: {currentRole} • Account Verified ✓
-              </Text>
-            </View>
+              <View style={styles.menuItemLeft}>
+                <Briefcase size={17} color="#FFF" style={{ opacity: 0.8 }} />
+                <Text style={styles.menuItemText}>Bookings & Trips</Text>
+              </View>
+              <ChevronRight size={14} color="#8B949E" />
+            </TouchableOpacity>
+
+            <View style={styles.menuDivider} />
+
+            {/* Saved Destinations */}
+            <TouchableOpacity 
+              style={styles.menuItem} 
+              activeOpacity={0.7}
+              onPress={() => setShowSavedPlacesModal(true)}
+            >
+              <View style={styles.menuItemLeft}>
+                <Bookmark size={17} color="#FFF" style={{ opacity: 0.8 }} />
+                <Text style={styles.menuItemText}>Saved Destinations</Text>
+              </View>
+              <ChevronRight size={14} color="#8B949E" />
+            </TouchableOpacity>
+
+            <View style={styles.menuDivider} />
+
+            {/* Expense Tracker */}
+            <TouchableOpacity 
+              style={styles.menuItem} 
+              activeOpacity={0.7}
+              onPress={() => router.push('/budget-tracker')}
+            >
+              <View style={styles.menuItemLeft}>
+                <CreditCard size={17} color="#FFF" style={{ opacity: 0.8 }} />
+                <Text style={styles.menuItemText}>Expense Tracker</Text>
+              </View>
+              <ChevronRight size={14} color="#8B949E" />
+            </TouchableOpacity>
           </View>
-        )}
 
-        {/* ════════════════════════════════════════════════
-            5-TAB NAVIGATION BAR
-            ════════════════════════════════════════════════ */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.sectionTabs}
-        >
-          {[
-            { key: 'DETAILS', label: 'Overview', Icon: User },
-            { key: 'HISTORY', label: 'Trip History', Icon: History },
-            { key: 'SETTINGS', label: 'Settings', Icon: Settings },
-            { key: 'WALLET', label: 'Wallet', Icon: Wallet },
-            { key: 'DASHBOARD', label: 'Dashboard', Icon: Compass },
-          ].map((tab) => {
-            const isActive = activeTab === tab.key;
-            return (
-              <TouchableOpacity
-                key={tab.key}
-                activeOpacity={0.7}
-                style={[
-                  styles.tabButton,
-                  isActive && styles.tabButtonActive,
-                  !isActive && { backgroundColor: isDark ? '#111424' : '#E2E8F0' },
-                ]}
-                onPress={() => setActiveTab(tab.key as any)}
-              >
-                <tab.Icon size={14} color={isActive ? '#FFF' : (isDark ? '#94A3B8' : '#64748B')} />
-                <Text style={[styles.tabText, isActive ? styles.tabTextActive : { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                  {tab.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
+          {/* Section 2: PREFERENCES & SUPPORT */}
+          <Text style={styles.sectionHeader}>PREFERENCES & SUPPORT</Text>
+          <View style={styles.menuCard}>
+            {/* Language & Region */}
+            <TouchableOpacity 
+              style={styles.menuItem} 
+              activeOpacity={0.7}
+              onPress={() => setShowLanguageModal(true)}
+            >
+              <View style={styles.menuItemLeft}>
+                <Globe size={17} color="#FFF" style={{ opacity: 0.8 }} />
+                <Text style={styles.menuItemText}>Language & Region ({selectedLanguage})</Text>
+              </View>
+              <ChevronRight size={14} color="#8B949E" />
+            </TouchableOpacity>
 
-        {/* ════════════════════════════════════════════════
-            TAB 1: OVERVIEW & DETAILS
-            ════════════════════════════════════════════════ */}
-        {activeTab === 'DETAILS' && (
-          <View style={styles.tabContentContainer}>
-            {/* Profile Completion Bar */}
-            <GlassCard style={styles.innerCard}>
-              <View style={styles.completionHeaderRow}>
-                <View>
-                  <Text style={[styles.cardTitle, { color: isDark ? '#FFF' : '#0F172A' }]}>Profile Completion</Text>
-                  <Text style={styles.completionSub}>Complete verification to unlock verified travel badges</Text>
-                </View>
-                <Text style={styles.completionPercent}>85%</Text>
-              </View>
-              <View style={styles.progressTrack}>
-                <View style={[styles.progressFill, { width: '85%' }]} />
-              </View>
-            </GlassCard>
+            <View style={styles.menuDivider} />
 
-            {/* Identity Verification (Aadhaar) */}
-            <GlassCard style={[styles.innerCard, { marginTop: 12 }]}>
-              <View style={styles.cardHeaderRow}>
-                <Shield size={18} color="#0066FF" />
-                <Text style={[styles.cardTitle, { color: isDark ? '#FFF' : '#0F172A', marginLeft: 8 }]}>
-                  IDENTITY VERIFICATION (AADHAAR)
-                </Text>
+            {/* Customer Support */}
+            <TouchableOpacity 
+              style={styles.menuItem} 
+              activeOpacity={0.7}
+              onPress={() => Alert.alert("Customer Support", "Support desk is active 24/7 at support@travelstar.app")}
+            >
+              <View style={styles.menuItemLeft}>
+                <LifeBuoy size={17} color="#FFF" style={{ opacity: 0.8 }} />
+                <Text style={styles.menuItemText}>Customer Support</Text>
               </View>
+              <ChevronRight size={14} color="#8B949E" />
+            </TouchableOpacity>
 
-              {profile.aadhaarStatus === 'VERIFIED' ? (
-                <View style={styles.verifiedRow}>
-                  <CheckCircle size={20} color="#10B981" />
-                  <View style={{ marginLeft: 10 }}>
-                    <Text style={styles.verifiedMsg}>Aadhaar Identity Verified ✅</Text>
-                    <Text style={{ fontSize: 11, color: isDark ? '#94A3B8' : '#64748B' }}>
-                      Verified badge active on all public bookings & chat channels
-                    </Text>
-                  </View>
-                </View>
-              ) : profile.aadhaarStatus === 'PENDING' ? (
-                <View style={styles.pendingRow}>
-                  <Text style={{ fontSize: 13, fontStyle: 'italic', color: '#F59E0B' }}>
-                    ⏳ Aadhaar Verification Pending Review (Takes ~2 mins)...
-                  </Text>
-                </View>
-              ) : (
-                <View style={{ marginTop: 8 }}>
-                  <Text style={{ fontSize: 12, color: isDark ? '#94A3B8' : '#64748B', marginBottom: 10 }}>
-                    Enter your 12-digit Aadhaar number to obtain official traveler verification badge:
-                  </Text>
-                  <TextInput
-                    placeholder="1234 5678 9012"
-                    placeholderTextColor="#888"
-                    keyboardType="numeric"
-                    style={[styles.textInput, { color: isDark ? '#FFF' : '#000', borderColor: isDark ? '#262940' : '#CBD5E1' }]}
-                    value={aadhaarInput}
-                    onChangeText={setAadhaarInput}
-                  />
-                  <TouchableOpacity style={styles.verifyBtn} onPress={handleAadhaarVerify}>
-                    <Text style={styles.verifyBtnText}>Submit Aadhaar Verification</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </GlassCard>
+            <View style={styles.menuDivider} />
 
-            {/* Traveler Preferences */}
-            <GlassCard style={[styles.innerCard, { marginTop: 12 }]}>
-              <View style={styles.cardHeaderRow}>
-                <Globe size={18} color="#F59E0B" />
-                <Text style={[styles.cardTitle, { color: isDark ? '#FFF' : '#0F172A', marginLeft: 8 }]}>
-                  TRAVEL PREFERENCES & STYLES
-                </Text>
+            {/* About TravelStar */}
+            <TouchableOpacity 
+              style={styles.menuItem} 
+              activeOpacity={0.7}
+              onPress={() => Alert.alert("About TravelStar", "TravelStar v1.4.2\nPartnering with travelers across Incredible India.")}
+            >
+              <View style={styles.menuItemLeft}>
+                <HelpCircle size={17} color="#FFF" style={{ opacity: 0.8 }} />
+                <Text style={styles.menuItemText}>About TravelStar</Text>
               </View>
+              <ChevronRight size={14} color="#8B949E" />
+            </TouchableOpacity>
 
-              <View style={styles.prefGridItem}>
-                <Text style={styles.prefLabel}>Gender</Text>
-                <Text style={[styles.prefVal, { color: isDark ? '#FFF' : '#0F172A' }]}>{editGender}</Text>
+            <View style={styles.menuDivider} />
+
+            {/* Sign Out of Account */}
+            <TouchableOpacity 
+              style={styles.menuItem} 
+              activeOpacity={0.7}
+              onPress={handleLogout}
+            >
+              <View style={styles.menuItemLeft}>
+                <LogOut size={17} color="#FF453A" style={{ opacity: 0.9 }} />
+                <Text style={[styles.menuItemText, { color: '#FF453A' }]}>Sign Out of Account</Text>
               </View>
-              <View style={styles.prefGridItem}>
-                <Text style={styles.prefLabel}>Languages Spoken</Text>
-                <Text style={[styles.prefVal, { color: isDark ? '#FFF' : '#0F172A' }]}>{editLanguages}</Text>
-              </View>
-              <View style={styles.prefGridItem}>
-                <Text style={styles.prefLabel}>Adventure Styles</Text>
-                <Text style={[styles.prefVal, { color: isDark ? '#FFF' : '#0F172A' }]}>{editStyles}</Text>
-              </View>
-              <View style={styles.prefGridItem}>
-                <Text style={styles.prefLabel}>Contact Mobile</Text>
-                <Text style={[styles.prefVal, { color: isDark ? '#FFF' : '#0F172A' }]}>{editPhone}</Text>
-              </View>
-              <View style={styles.prefGridItem}>
-                <Text style={styles.prefLabel}>Emergency SOS Contact</Text>
-                <Text style={[styles.prefVal, { color: '#EF4444' }]}>{editEmergencyPhone}</Text>
-              </View>
-            </GlassCard>
+              <ChevronRight size={14} color="#8B949E" />
+            </TouchableOpacity>
           </View>
-        )}
-
-        {/* ════════════════════════════════════════════════
-            TAB 2: TRIP HISTORY & BOOKINGS
-            ════════════════════════════════════════════════ */}
-        {activeTab === 'HISTORY' && (
-          <View style={styles.tabContentContainer}>
-            {/* Sub-filter chips */}
-            <View style={styles.historyFilterRow}>
-              {['ALL', 'UPCOMING', 'COMPLETED'].map((f) => (
-                <TouchableOpacity
-                  key={f}
-                  onPress={() => setHistoryFilter(f as any)}
-                  style={[
-                    styles.historyFilterChip,
-                    historyFilter === f && styles.historyFilterChipActive,
-                    historyFilter !== f && { backgroundColor: isDark ? '#111424' : '#E2E8F0' },
-                  ]}
-                >
-                  <Text style={[styles.historyFilterText, historyFilter === f && styles.historyFilterTextActive]}>
-                    {f}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {/* List of bookings */}
-            {filteredHistory.map((trip) => (
-              <GlassCard key={trip.id} style={styles.historyCard}>
-                <View style={styles.historyCardHeader}>
-                  <Image source={{ uri: trip.image }} style={styles.historyImage} />
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <View style={styles.statusBadgeRow}>
-                      <View style={[
-                        styles.statusPill,
-                        trip.status === 'UPCOMING' ? { backgroundColor: 'rgba(59, 130, 246, 0.15)', borderColor: '#3B82F6' } : { backgroundColor: 'rgba(16, 185, 129, 0.15)', borderColor: '#10B981' }
-                      ]}>
-                        <Text style={[styles.statusPillText, { color: trip.status === 'UPCOMING' ? '#3B82F6' : '#10B981' }]}>
-                          {trip.status}
-                        </Text>
-                      </View>
-                      <Text style={styles.bookingIdText}>{trip.id}</Text>
-                    </View>
-
-                    <Text style={[styles.historyTitle, { color: isDark ? '#FFF' : '#0F172A' }]} numberOfLines={1}>
-                      {trip.title}
-                    </Text>
-                    <Text style={styles.historyDate}>{trip.date}</Text>
-                  </View>
-                </View>
-
-                {/* Route Diagram */}
-                <View style={styles.routeDiagramRow}>
-                  {trip.route.map((city, idx) => (
-                    <React.Fragment key={city}>
-                      <Text style={[styles.routeCityText, { color: '#0066FF' }]}>{city}</Text>
-                      {idx < trip.route.length - 1 && (
-                        <Text style={{ color: isDark ? '#64748B' : '#94A3B8', marginHorizontal: 4 }}>➔</Text>
-                      )}
-                    </React.Fragment>
-                  ))}
-                </View>
-
-                <View style={styles.historyFooter}>
-                  <View>
-                    <Text style={{ fontSize: 11, color: isDark ? '#94A3B8' : '#64748B' }}>Total Paid ({trip.seats} seats)</Text>
-                    <Text style={{ fontSize: 16, fontWeight: '700', color: '#10B981' }}>₹{trip.amount.toLocaleString('en-IN')}</Text>
-                  </View>
-
-                  <TouchableOpacity
-                    style={styles.viewTicketBtn}
-                    activeOpacity={0.8}
-                    onPress={() => {
-                      setSelectedTicket(trip);
-                      setShowTicketModal(true);
-                    }}
-                  >
-                    <QrCode size={14} color="#FFF" />
-                    <Text style={styles.viewTicketBtnText}>View Digital Ticket</Text>
-                  </TouchableOpacity>
-                </View>
-              </GlassCard>
-            ))}
-          </View>
-        )}
-
-        {/* ════════════════════════════════════════════════
-            TAB 3: WALLET & TRANSACTIONS
-            ════════════════════════════════════════════════ */}
-        {activeTab === 'WALLET' && (
-          <View style={styles.tabContentContainer}>
-            <GlassCard style={styles.walletCard}>
-              <View style={styles.walletRow}>
-                <View>
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#94A3B8' : '#64748B', letterSpacing: 1 }}>WALLET BALANCE</Text>
-                  <Text style={[styles.balanceText, { color: isDark ? '#FFF' : '#0F172A' }]}>
-                    ₹{profile.walletBalance.toFixed(2)}
-                  </Text>
-                </View>
-                <View style={styles.rewardsBox}>
-                  <Coins size={16} color="#F59E0B" />
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#F59E0B', marginLeft: 4 }}>
-                    {profile.rewardPoints} pts
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.walletActions}>
-                <View style={{ flex: 1 }}>
-                  <TextInput
-                    placeholder="Enter amount"
-                    placeholderTextColor="#888"
-                    keyboardType="numeric"
-                    style={[styles.walletInput, { color: isDark ? '#FFF' : '#000', borderColor: isDark ? '#262940' : '#CBD5E1' }]}
-                    value={fundingAmount}
-                    onChangeText={setFundingAmount}
-                  />
-                  <TouchableOpacity
-                    style={styles.actionBtn}
-                    onPress={() => {
-                      const val = parseFloat(fundingAmount);
-                      if (val > 0) {
-                        addWalletFunds(val);
-                        setFundingAmount('');
-                        Alert.alert('Success', `Added ₹${val} to your wallet.`);
-                      }
-                    }}
-                  >
-                    <ArrowUpRight size={14} color="#FFF" />
-                    <Text style={styles.actionBtnText}>Add Cash</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <View style={{ flex: 1, marginLeft: 12 }}>
-                  <TextInput
-                    placeholder="Enter amount"
-                    placeholderTextColor="#888"
-                    keyboardType="numeric"
-                    style={[styles.walletInput, { color: isDark ? '#FFF' : '#000', borderColor: isDark ? '#262940' : '#CBD5E1' }]}
-                    value={withdrawalAmount}
-                    onChangeText={setWithdrawalAmount}
-                  />
-                  <TouchableOpacity
-                    style={[styles.actionBtn, { backgroundColor: '#10B981' }]}
-                    onPress={() => {
-                      const val = parseFloat(withdrawalAmount);
-                      if (val > 0) {
-                        withdrawWalletFunds(val);
-                        setWithdrawalAmount('');
-                        Alert.alert('Success', `Withdrew ₹${val} to your bank account.`);
-                      }
-                    }}
-                  >
-                    <ArrowDownLeft size={14} color="#FFF" />
-                    <Text style={styles.actionBtnText}>Withdraw</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <TouchableOpacity
-                style={{
-                  marginTop: 14,
-                  paddingVertical: 12,
-                  borderRadius: 14,
-                  backgroundColor: '#0066FF',
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-                onPress={() => setShowPaymentModal(true)}
-              >
-                <Sparkles size={16} color="#FFF" style={{ marginRight: 6 }} />
-                <Text style={{ fontSize: 14, fontWeight: '700', color: '#FFF' }}>
-                  Test Dummy Payment Gateway Sheet
-                </Text>
-              </TouchableOpacity>
-            </GlassCard>
-
-            <Text style={[styles.transactionsHeader, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-              TRANSACTION HISTORY
-            </Text>
-
-            {walletTransactions.map((tx) => (
-              <GlassCard key={tx.id} style={styles.txItem}>
-                <View style={styles.txRow}>
-                  <View>
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: isDark ? '#FFF' : '#0F172A' }}>{tx.remark}</Text>
-                    <Text style={{ fontSize: 10, color: isDark ? '#94A3B8' : '#64748B', marginTop: 2 }}>{tx.date}</Text>
-                  </View>
-                  <Text
-                    style={{ fontSize: 14, fontWeight: '700', color: tx.amount > 0 ? '#10B981' : '#EF4444' }}
-                  >
-                    {tx.amount > 0 ? `+₹${tx.amount}` : `-₹${Math.abs(tx.amount)}`}
-                  </Text>
-                </View>
-              </GlassCard>
-            ))}
-          </View>
-        )}
-
-        {/* ════════════════════════════════════════════════
-            TAB 4: ROLE DASHBOARD
-            ════════════════════════════════════════════════ */}
-        {activeTab === 'DASHBOARD' && (
-          <View style={styles.tabContentContainer}>
-            {/* Role selection switcher */}
-            <GlassCard style={styles.innerCard}>
-              <Text style={[styles.cardTitle, { color: isDark ? '#FFF' : '#0F172A', marginBottom: 8 }]}>ACTIVE ROLE SUITE</Text>
-              <View style={styles.roleChipsWrap}>
-                {(['TOURIST', 'GUIDE', 'ORGANIZER', 'FAMILY_TRAVELER', 'ADMIN'] as UserRole[]).map((r) => (
-                  <TouchableOpacity
-                    key={r}
-                    onPress={() => setCurrentRole(r)}
-                    style={[
-                      styles.roleChip,
-                      currentRole === r && styles.roleChipActive,
-                      currentRole !== r && { backgroundColor: isDark ? '#1A1D30' : '#E2E8F0' },
-                    ]}
-                  >
-                    <Text style={[styles.roleChipText, currentRole === r && styles.roleChipTextActive]}>
-                      {r.replace('_', ' ')}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </GlassCard>
-
-            {/* 1. GUIDE DASHBOARD */}
-            {currentRole === 'GUIDE' && (
-              <GlassCard style={[styles.innerCard, { marginTop: 12 }]}>
-                <Text style={[styles.cardTitle, { color: isDark ? '#FFF' : '#0F172A', marginBottom: 12 }]}>GUIDE DASHBOARD</Text>
-                <View style={styles.dashboardMetricRow}>
-                  <View style={styles.metricItem}>
-                    <Text style={{ fontSize: 11, color: isDark ? '#94A3B8' : '#64748B' }}>Active Bookings</Text>
-                    <Text style={[styles.metricValue, { color: isDark ? '#FFF' : '#0F172A' }]}>4 Tours</Text>
-                  </View>
-                  <View style={styles.metricItem}>
-                    <Text style={{ fontSize: 11, color: isDark ? '#94A3B8' : '#64748B' }}>Guide Rating</Text>
-                    <Text style={[styles.metricValue, { color: '#F59E0B' }]}>4.95 ⭐</Text>
-                  </View>
-                </View>
-
-                <View style={styles.priceSettings}>
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: isDark ? '#FFF' : '#0F172A', marginBottom: 8 }}>Set Your Charges</Text>
-                  <View style={styles.rateInputs}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.label}>Hourly Rate (₹)</Text>
-                      <TextInput
-                        style={[styles.textInput, { color: isDark ? '#FFF' : '#000', borderColor: isDark ? '#262940' : '#CBD5E1' }]}
-                        value={hourlyRate}
-                        onChangeText={setHourlyRate}
-                        keyboardType="numeric"
-                      />
-                    </View>
-                    <View style={{ flex: 1, marginLeft: 8 }}>
-                      <Text style={styles.label}>Daily Rate (₹)</Text>
-                      <TextInput
-                        style={[styles.textInput, { color: isDark ? '#FFF' : '#000', borderColor: isDark ? '#262940' : '#CBD5E1' }]}
-                        value={dailyRate}
-                        onChangeText={setDailyRate}
-                        keyboardType="numeric"
-                      />
-                    </View>
-                  </View>
-                </View>
-
-                {profile.guideLicenseStatus === 'VERIFIED' ? (
-                  <View style={styles.verifiedRow}>
-                    <CheckCircle size={20} color="#10B981" />
-                    <Text style={styles.verifiedMsg}>Official Guide License Verified</Text>
-                  </View>
-                ) : (
-                  <TouchableOpacity style={styles.verifyBtn} onPress={handleApplyGuideLicense}>
-                    <Text style={styles.verifyBtnText}>Verify Guide License</Text>
-                  </TouchableOpacity>
-                )}
-              </GlassCard>
-            )}
-
-            {/* 2. ORGANIZER DASHBOARD */}
-            {currentRole === 'ORGANIZER' && (
-              <GlassCard style={[styles.innerCard, { marginTop: 12 }]}>
-                <Text style={[styles.cardTitle, { color: isDark ? '#FFF' : '#0F172A', marginBottom: 12 }]}>ORGANIZER DASHBOARD</Text>
-
-                <View style={styles.dashboardMetricRow}>
-                  <View style={styles.metricItem}>
-                    <Text style={{ fontSize: 11, color: isDark ? '#94A3B8' : '#64748B' }}>Groups Run</Text>
-                    <Text style={[styles.metricValue, { color: isDark ? '#FFF' : '#0F172A' }]}>8 Groups</Text>
-                  </View>
-                  <View style={styles.metricItem}>
-                    <Text style={{ fontSize: 11, color: isDark ? '#94A3B8' : '#64748B' }}>Active Members</Text>
-                    <Text style={[styles.metricValue, { color: '#0066FF' }]}>42 Members</Text>
-                  </View>
-                </View>
-
-                <View style={styles.organizerActions}>
-                  <TouchableOpacity style={styles.dashboardBtn} onPress={() => router.push('/create')}>
-                    <Plus size={16} color="#FFF" />
-                    <Text style={styles.dashboardBtnText}>Create Group Tour</Text>
-                  </TouchableOpacity>
-                   <TouchableOpacity style={[styles.dashboardBtn, { backgroundColor: '#F59E0B' }]} onPress={() => router.push('/create')}>
-                    <Sliders size={16} color="#FFF" />
-                    <Text style={styles.dashboardBtnText}>Custom Trip Studio</Text>
-                  </TouchableOpacity>
-                </View>
-              </GlassCard>
-            )}
-
-            {/* 3. FAMILY CONNECT DASHBOARD */}
-            {currentRole === 'FAMILY_TRAVELER' && (
-              <GlassCard style={[styles.innerCard, { marginTop: 12 }]}>
-                <Text style={[styles.cardTitle, { color: isDark ? '#FFF' : '#0F172A', marginBottom: 12 }]}>FAMILY CONNECT</Text>
-                <Text style={{ fontSize: 12, color: isDark ? '#94A3B8' : '#64748B', marginBottom: 12 }}>
-                  Discover safe verified family groups traveling through cities near your family.
-                </Text>
-
-                <View style={styles.familyInfoCard}>
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#0066FF' }}>Live Segment Tracking</Text>
-                  <Text style={{ fontSize: 11, marginTop: 4, color: isDark ? '#CBD5E1' : '#334155' }}>
-                    Ranchi → Delhi tour group is at stop "Delhi" today. If you are in Delhi, you can request to join Vrindavan segment next!
-                  </Text>
-                </View>
-              </GlassCard>
-            )}
-
-            {/* 4. ADMIN CONTROL PANEL */}
-            {currentRole === 'ADMIN' && (
-              <GlassCard style={[styles.innerCard, { marginTop: 12 }]}>
-                <Text style={[styles.cardTitle, { color: isDark ? '#FFF' : '#0F172A', marginBottom: 12 }]}>ADMIN CONTROL PANEL</Text>
-
-                <View style={styles.adminGrid}>
-                  <View style={styles.adminCell}>
-                    <Text style={{ fontSize: 11, color: isDark ? '#94A3B8' : '#64748B' }}>Platform Revenue</Text>
-                    <Text style={{ fontSize: 18, fontWeight: '700', color: '#10B981' }}>₹1,24,500</Text>
-                  </View>
-                  <View style={styles.adminCell}>
-                    <Text style={{ fontSize: 11, color: isDark ? '#94A3B8' : '#64748B' }}>Total Bookings</Text>
-                    <Text style={{ fontSize: 18, fontWeight: '700', color: '#0066FF' }}>1,024</Text>
-                  </View>
-                </View>
-
-                <View style={styles.adminActions}>
-                  <TouchableOpacity style={styles.dashboardBtn} onPress={() => Alert.alert('Guide Verification', 'No pending guides.')}>
-                    <CheckCircle size={16} color="#FFF" />
-                    <Text style={styles.dashboardBtnText}>Pending Guides (0)</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[styles.dashboardBtn, { backgroundColor: '#EF4444' }]} onPress={() => Alert.alert('System Logs', 'Zero security threats reported.')}>
-                    <Shield size={16} color="#FFF" />
-                    <Text style={styles.dashboardBtnText}>Security Logs</Text>
-                  </TouchableOpacity>
-                </View>
-              </GlassCard>
-            )}
-
-            {/* 5. TOURIST DASHBOARD */}
-            {currentRole === 'TOURIST' && (
-              <GlassCard style={[styles.innerCard, { marginTop: 12 }]}>
-                <Text style={[styles.cardTitle, { color: isDark ? '#FFF' : '#0F172A', marginBottom: 12 }]}>TOURIST SUITE</Text>
-                <Text style={{ fontSize: 12, color: isDark ? '#94A3B8' : '#64748B', marginBottom: 12 }}>
-                  Manage tickets, passes, and quick actions.
-                </Text>
-
-                <View style={styles.bookingStatusItem}>
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: isDark ? '#FFF' : '#0F172A' }}>Ranchi → Vrindavan Segment</Text>
-                  <Text style={{ fontSize: 11, color: '#10B981', marginTop: 2 }}>Booking Status: Confirmed ✅</Text>
-                </View>
-              </GlassCard>
-            )}
-          </View>
-        )}
-
-        {/* ════════════════════════════════════════════════
-            TAB 5: SETTINGS & SECURITY
-            ════════════════════════════════════════════════ */}
-        {activeTab === 'SETTINGS' && (
-          <View style={styles.tabContentContainer}>
-            {/* Account Settings */}
-            <GlassCard style={styles.innerCard}>
-              <Text style={[styles.cardTitle, { color: isDark ? '#FFF' : '#0F172A', marginBottom: 12 }]}>ACCOUNT & SECURITY</Text>
-
-              <TouchableOpacity style={styles.settingsRow} onPress={() => Alert.alert('Security', 'Password & biometrics enabled.')}>
-                <Lock size={16} color="#0066FF" />
-                <Text style={[styles.settingsRowText, { color: isDark ? '#FFF' : '#0F172A' }]}>Password & Authentication</Text>
-                <ChevronRight size={16} color="#888" />
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.settingsRow} onPress={() => Alert.alert('SOS Contact', `Current SOS: ${editEmergencyPhone}`)}>
-                <PhoneCall size={16} color="#EF4444" />
-                <Text style={[styles.settingsRowText, { color: isDark ? '#FFF' : '#0F172A' }]}>Emergency SOS Contact</Text>
-                <ChevronRight size={16} color="#888" />
-              </TouchableOpacity>
-
-              <View style={styles.settingsToggleRow}>
-                <Bell size={16} color="#F59E0B" />
-                <Text style={[styles.settingsRowText, { color: isDark ? '#FFF' : '#0F172A', flex: 1 }]}>Push Notifications</Text>
-                <TouchableOpacity
-                  style={[styles.switchTrack, pushNotifications ? { backgroundColor: '#0066FF' } : { backgroundColor: '#475569' }]}
-                  onPress={() => setPushNotifications(!pushNotifications)}
-                >
-                  <View style={[styles.switchThumb, pushNotifications ? styles.switchThumbOn : styles.switchThumbOff]} />
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.settingsToggleRow}>
-                <MapPin size={16} color="#10B981" />
-                <Text style={[styles.settingsRowText, { color: isDark ? '#FFF' : '#0F172A', flex: 1 }]}>Live Location Sharing</Text>
-                <TouchableOpacity
-                  style={[styles.switchTrack, locationSharing ? { backgroundColor: '#10B981' } : { backgroundColor: '#475569' }]}
-                  onPress={() => setLocationSharing(!locationSharing)}
-                >
-                  <View style={[styles.switchThumb, locationSharing ? styles.switchThumbOn : styles.switchThumbOff]} />
-                </TouchableOpacity>
-              </View>
-            </GlassCard>
-
-            {/* Support & Legal */}
-            <GlassCard style={[styles.innerCard, { marginTop: 12 }]}>
-              <Text style={[styles.cardTitle, { color: isDark ? '#FFF' : '#0F172A', marginBottom: 12 }]}>SUPPORT & ABOUT</Text>
-
-              <TouchableOpacity style={styles.settingsRow} onPress={() => Alert.alert('Help Center', 'Connecting to live support chat...')}>
-                <HelpCircle size={16} color="#0066FF" />
-                <Text style={[styles.settingsRowText, { color: isDark ? '#FFF' : '#0F172A' }]}>Help & Customer Support</Text>
-                <ChevronRight size={16} color="#888" />
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.settingsRow} onPress={() => Alert.alert('Privacy Policy', 'TravelStar v2.4.0 (Build 57) - Encrypted & Secure')}>
-                <Shield size={16} color="#10B981" />
-                <Text style={[styles.settingsRowText, { color: isDark ? '#FFF' : '#0F172A' }]}>Privacy Policy & Terms</Text>
-                <ChevronRight size={16} color="#888" />
-              </TouchableOpacity>
-            </GlassCard>
-
-          </View>
-        )}
-
-        {/* Main Bottom Sign Out Button */}
-        <TouchableOpacity
-          style={[styles.logoutBtn, { marginHorizontal: 16, marginTop: 20 }]}
-          activeOpacity={0.85}
-          onPress={handleLogout}
-        >
-          <LogOut size={18} color="#FFF" style={{ marginRight: 8 }} />
-          <Text style={styles.logoutBtnText}>Sign Out of Account</Text>
-        </TouchableOpacity>
+        </View>
 
         <View style={{ height: 60 }} />
       </ScrollView>
+
+
 
       {/* ════════════════════════════════════════════════
           EDIT PROFILE MODAL
@@ -1352,6 +871,122 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
       </Modal>
+
+      {/* ════════════════════════════════════════════════
+          SAVED DESTINATIONS BOTTOM SHEET OVERLAY
+          ════════════════════════════════════════════════ */}
+      {showSavedPlacesModal && (
+        <View style={styles.bottomSheetOverlay}>
+          <TouchableOpacity 
+            style={StyleSheet.absoluteFill} 
+            activeOpacity={1}
+            onPress={() => setShowSavedPlacesModal(false)}
+          >
+            <View style={{ flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)' }} />
+          </TouchableOpacity>
+          <View style={styles.bottomSheetContent}>
+            {/* Header */}
+            <View style={styles.bottomSheetHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={{ fontSize: 16 }}>❤️</Text>
+                <Text style={styles.bottomSheetTitle}>Saved Places</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowSavedPlacesModal(false)} style={styles.bottomSheetCloseBtn}>
+                <X size={20} color="#FFF" />
+              </TouchableOpacity>
+            </View>
+
+            {/* List */}
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 32 }}>
+              {savedPlaces.map((place) => (
+                <View key={place.id} style={styles.savedPlaceCard}>
+                  <Image source={{ uri: place.image }} style={styles.savedPlaceImage} />
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Text style={styles.savedPlaceName}>{place.name}</Text>
+                    <Text style={styles.savedPlaceLocation}>{place.location}</Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => {
+                      const updated = savedPlaces.filter((p) => p.id !== place.id);
+                      setSavedPlaces(updated);
+                      updateProfile({ savedPlaces: updated });
+                    }}
+                    style={styles.deletePlaceBtn}
+                  >
+                    <Trash2 size={16} color="#FF453A" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+              {savedPlaces.length === 0 && (
+                <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+                  <Text style={{ color: '#8A92A6', fontStyle: 'italic', fontSize: 13 }}>Your saved places list is empty.</Text>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      )}
+
+      {/* ════════════════════════════════════════════════
+          SELECT LANGUAGE BOTTOM SHEET OVERLAY
+          ════════════════════════════════════════════════ */}
+      {showLanguageModal && (
+        <View style={styles.bottomSheetOverlay}>
+          <TouchableOpacity 
+            style={StyleSheet.absoluteFill} 
+            activeOpacity={1}
+            onPress={() => setShowLanguageModal(false)}
+          >
+            <View style={{ flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)' }} />
+          </TouchableOpacity>
+          <View style={styles.bottomSheetContent}>
+            {/* Header */}
+            <View style={styles.bottomSheetHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={{ fontSize: 16 }}>🌐</Text>
+                <Text style={styles.bottomSheetTitle}>Select Language / भाषा</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowLanguageModal(false)} style={styles.bottomSheetCloseBtn}>
+                <X size={20} color="#FFF" />
+              </TouchableOpacity>
+            </View>
+
+            {/* List */}
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 }}>
+              {[
+                { label: 'English', sub: '' },
+                { label: 'Hindi', sub: '(हिन्दी)' },
+                { label: 'Punjabi', sub: '(ਪੰਜਾਬੀ)' },
+                { label: 'Bengali', sub: '(বাংলা)' },
+                { label: 'Tamil', sub: '(தமிழ்)' },
+              ].map((lang, idx, arr) => {
+                const isSelected = selectedLanguage.startsWith(lang.label);
+                return (
+                  <View key={lang.label}>
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      style={[
+                        styles.langRow,
+                        isSelected && { backgroundColor: 'rgba(0, 102, 255, 0.12)' }
+                      ]}
+                      onPress={() => {
+                        setSelectedLanguage(lang.label);
+                        setShowLanguageModal(false);
+                      }}
+                    >
+                      <Text style={[styles.langText, isSelected && { color: '#00D1FF', fontWeight: '700' }]}>
+                        {lang.label} {lang.sub && <Text style={styles.langSubText}>{lang.sub}</Text>}
+                      </Text>
+                      {isSelected && <Check size={16} color="#00D1FF" />}
+                    </TouchableOpacity>
+                    {idx < arr.length - 1 && <View style={styles.langDivider} />}
+                  </View>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -1377,6 +1012,68 @@ const styles = StyleSheet.create({
   },
   coverImage: {
     ...StyleSheet.absoluteFill,
+  },
+  topLeftScanBtn: {
+    position: 'absolute',
+    top: 16,
+    left: 16,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  menuContainer: {
+    paddingHorizontal: 16,
+    marginTop: -8,
+  },
+  sectionHeader: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#6A7182',
+    marginTop: 22,
+    marginBottom: 8,
+    letterSpacing: 1.5,
+    fontStyle: 'italic',
+  },
+  menuCard: {
+    backgroundColor: '#111322',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#1D2138',
+    overflow: 'hidden',
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  menuItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  menuItemText: {
+    fontSize: 13.5,
+    fontWeight: '600',
+    color: '#E1E4EC',
+    letterSpacing: 0.2,
+  },
+  menuDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    marginHorizontal: 16,
   },
   topRightActionCol: {
     position: 'absolute',
@@ -1434,7 +1131,7 @@ const styles = StyleSheet.create({
     width: 90,
     height: 90,
     borderRadius: 45,
-    backgroundColor: '#080A14',
+    backgroundColor: '#070913',
     padding: 2.5,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1489,10 +1186,10 @@ const styles = StyleSheet.create({
   },
   userBio: {
     fontSize: 11,
-    color: '#E2E8F0',
-    marginTop: 6,
-    lineHeight: 16,
+    color: '#8A92A6',
+    marginTop: 8,
     textAlign: 'center',
+    fontStyle: 'italic',
     paddingHorizontal: 12,
   },
 
@@ -2214,5 +1911,119 @@ const styles = StyleSheet.create({
     backgroundColor: '#0066FF',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  bottomSheetOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'flex-end',
+    zIndex: 99999,
+  },
+  bottomSheetContent: {
+    backgroundColor: '#121524',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 40,
+    maxHeight: '75%',
+  },
+  bottomSheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  bottomSheetTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#FFF',
+  },
+  bottomSheetCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  savedPlaceCard: {
+    backgroundColor: '#1C1F32',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  savedPlaceImage: {
+    width: 56,
+    height: 56,
+    borderRadius: 10,
+  },
+  savedPlaceName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  savedPlaceLocation: {
+    fontSize: 11,
+    color: '#8A92A6',
+    marginTop: 4,
+  },
+  deletePlaceBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 69, 58, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileDetailRow: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  profileDetailLabel: {
+    fontSize: 10,
+    color: '#8A92A6',
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  profileDetailValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#E1E4EC',
+    marginTop: 4,
+  },
+  profileDetailDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    marginHorizontal: 16,
+  },
+  langRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+  },
+  langText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#E1E4EC',
+  },
+  langSubText: {
+    fontSize: 13,
+    color: '#8A92A6',
+    fontWeight: 'normal',
+  },
+  langDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    marginHorizontal: 16,
   },
 });

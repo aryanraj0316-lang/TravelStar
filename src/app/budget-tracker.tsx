@@ -26,18 +26,18 @@ import {
 } from 'lucide-react-native';
 
 const C = {
-  bg: '#060814',
-  card: '#111322',
-  cardAlt: '#181C2E',
-  border: '#1E243B',
-  white: '#F8FAFC',
-  textSec: '#94A3B8',
-  textMuted: '#64748B',
-  blue: '#3B82F6',
+  bg: '#070913',
+  card: '#121524',
+  cardAlt: '#1A1D30',
+  border: '#1D2138',
+  white: '#FFFFFF',
+  textSec: '#8A92A6',
+  textMuted: '#6A7182',
+  blue: '#0066FF',
   purple: '#8B5CF6',
   green: '#10B981',
   amber: '#F59E0B',
-  rose: '#EC4899',
+  rose: '#FF2D55',
 };
 
 interface Expense {
@@ -50,10 +50,10 @@ interface Expense {
 }
 
 const CATEGORY_META = {
-  TRANSPORT: { label: 'Transport', color: C.blue, Icon: Car, bg: 'rgba(59,130,246,0.15)' },
-  LODGING: { label: 'Lodging', color: C.purple, Icon: Hotel, bg: 'rgba(139,92,246,0.15)' },
-  FOOD: { label: 'Food & Meals', color: C.amber, Icon: Utensils, bg: 'rgba(245,158,11,0.15)' },
-  OTHER: { label: 'Shopping & Other', color: C.rose, Icon: ShoppingBag, bg: 'rgba(236,72,153,0.15)' },
+  TRANSPORT: { label: 'Transport', color: C.blue, Icon: Car, bg: 'rgba(0,102,255,0.1)' },
+  LODGING: { label: 'Lodging', color: C.purple, Icon: Hotel, bg: 'rgba(139,92,246,0.1)' },
+  FOOD: { label: 'Food & Meals', color: C.amber, Icon: Utensils, bg: 'rgba(245,158,11,0.1)' },
+  OTHER: { label: 'Shopping & Other', color: C.rose, Icon: ShoppingBag, bg: 'rgba(255,45,85,0.1)' },
 };
 
 export default function BudgetTrackerScreen() {
@@ -118,7 +118,7 @@ export default function BudgetTrackerScreen() {
           onPress={() => router.back()}
           style={styles.backBtn}
         >
-          <ArrowLeft size={20} color={C.white} />
+          <ArrowLeft size={18} color={C.white} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Budget Tracker</Text>
         <TouchableOpacity
@@ -126,19 +126,14 @@ export default function BudgetTrackerScreen() {
           style={styles.addFloatBtnHeader}
           onPress={() => setShowAddModal(true)}
         >
-          <Plus size={18} color={C.white} />
+          <Plus size={20} color={C.blue} />
         </TouchableOpacity>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         
         {/* Main Budget Dashboard Card */}
-        <LinearGradient
-          colors={['#14182B', '#0D0F1C']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.dashboardCard}
-        >
+        <View style={styles.dashboardCard}>
           <View style={styles.tripContextRow}>
             <Text style={styles.tripContextLabel}>ACTIVE TRIP BUDGET</Text>
             <View style={styles.liveIndicator}>
@@ -155,7 +150,7 @@ export default function BudgetTrackerScreen() {
           {/* Progress Bar */}
           <View style={styles.progressTrack}>
             <LinearGradient
-              colors={remaining < 2000 ? [C.rose, '#EF4444'] : ['#00F2FE', '#0066FF']}
+              colors={['#00F2FE', '#0066FF']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={[styles.progressBar, { width: `${spentPercentage}%` }]}
@@ -170,7 +165,7 @@ export default function BudgetTrackerScreen() {
               of ₹{totalBudget.toLocaleString('en-IN')}
             </Text>
           </View>
-        </LinearGradient>
+        </View>
 
         {/* Dashboard Grid (Budget vs Spent) */}
         <View style={styles.statsGrid}>
@@ -394,11 +389,11 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(0, 102, 255, 0.2)',
+    backgroundColor: 'rgba(0, 102, 255, 0.12)',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(0, 102, 255, 0.4)',
+    borderColor: 'rgba(0, 102, 255, 0.35)',
   },
   scrollContent: {
     paddingHorizontal: 16,
@@ -406,10 +401,11 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   dashboardCard: {
+    backgroundColor: C.card,
     borderRadius: 24,
     padding: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
+    borderColor: C.border,
     marginBottom: 16,
   },
   tripContextRow: {

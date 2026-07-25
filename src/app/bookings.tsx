@@ -27,14 +27,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 
 const C = {
-  bg: '#060814',
-  card: '#111322',
-  cardAlt: '#181C2E',
-  border: '#1E243B',
-  white: '#F8FAFC',
-  textSec: '#94A3B8',
-  textMuted: '#64748B',
-  blue: '#3B82F6',
+  bg: '#070913',
+  card: '#121524',
+  cardAlt: '#1A1D30',
+  border: '#1D2138',
+  white: '#FFFFFF',
+  textSec: '#8A92A6',
+  textMuted: '#6A7182',
+  blue: '#0066FF',
   purple: '#8B5CF6',
   green: '#10B981',
   amber: '#F59E0B',
@@ -112,23 +112,23 @@ export default function BookingsScreen() {
     switch (status) {
       case 'ONGOING':
         return (
-          <View style={[styles.badgeContainer, { backgroundColor: 'rgba(16,185,129,0.15)', borderColor: C.green }]}>
+          <View style={[styles.badgeContainer, { backgroundColor: 'rgba(16,185,129,0.1)', borderColor: 'rgba(16,185,129,0.35)' }]}>
             <View style={[styles.pulseDot, { backgroundColor: C.green }]} />
             <Text style={[styles.badgeText, { color: C.green }]}>ONGOING</Text>
           </View>
         );
       case 'UPCOMING':
         return (
-          <View style={[styles.badgeContainer, { backgroundColor: 'rgba(245,158,11,0.15)', borderColor: C.amber }]}>
-            <Clock size={11} color={C.amber} style={{ marginRight: 4 }} />
+          <View style={[styles.badgeContainer, { backgroundColor: 'rgba(245,158,11,0.1)', borderColor: 'rgba(245,158,11,0.35)' }]}>
+            <View style={[styles.pulseDot, { backgroundColor: C.amber }]} />
             <Text style={[styles.badgeText, { color: C.amber }]}>UPCOMING</Text>
           </View>
         );
       case 'COMPLETED':
         return (
-          <View style={[styles.badgeContainer, { backgroundColor: 'rgba(59,130,246,0.15)', borderColor: C.blue }]}>
-            <CheckCircle size={11} color={C.blue} style={{ marginRight: 4 }} />
-            <Text style={[styles.badgeText, { color: C.blue }]}>COMPLETED</Text>
+          <View style={[styles.badgeContainer, { backgroundColor: 'rgba(139,92,246,0.1)', borderColor: 'rgba(139,92,246,0.35)' }]}>
+            <View style={[styles.pulseDot, { backgroundColor: C.purple }]} />
+            <Text style={[styles.badgeText, { color: C.purple }]}>COMPLETED</Text>
           </View>
         );
     }
@@ -145,7 +145,7 @@ export default function BookingsScreen() {
           onPress={() => router.back()}
           style={styles.backBtn}
         >
-          <ArrowLeft size={20} color={C.white} />
+          <ArrowLeft size={18} color={C.white} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>My Bookings</Text>
         <View style={{ width: 40 }} />
@@ -202,7 +202,7 @@ export default function BookingsScreen() {
               <View style={styles.cardImageContainer}>
                 <Image source={{ uri: booking.image }} style={styles.cardImage} />
                 <LinearGradient
-                  colors={['rgba(6,8,20,0.1)', 'rgba(6,8,20,0.85)']}
+                  colors={['rgba(7,9,19,0.15)', 'rgba(7,9,19,0.92)']}
                   style={StyleSheet.absoluteFill}
                 />
                 <View style={styles.cardHeaderOverlay}>
@@ -246,7 +246,7 @@ export default function BookingsScreen() {
                 <View style={styles.cardFooter}>
                   <View style={styles.footerCol}>
                     <View style={styles.footerIconLabel}>
-                      <Users size={12} color={C.textSec} style={{ marginRight: 4 }} />
+                      <Users size={12} color={C.textMuted} style={{ marginRight: 4 }} />
                       <Text style={styles.footerLabel}>Seats Booked</Text>
                     </View>
                     <Text style={styles.footerValue}>{booking.seatsBooked} {booking.seatsBooked === 1 ? 'Seat' : 'Seats'}</Text>
@@ -254,7 +254,7 @@ export default function BookingsScreen() {
 
                   <View style={[styles.footerCol, { alignItems: 'flex-end' }]}>
                     <View style={styles.footerIconLabel}>
-                      <DollarSign size={12} color={C.textSec} style={{ marginRight: 2 }} />
+                      <DollarSign size={12} color={C.textMuted} style={{ marginRight: 2 }} />
                       <Text style={styles.footerLabel}>Amount Paid</Text>
                     </View>
                     <Text style={[styles.footerValue, { color: C.green }]}>
@@ -268,7 +268,13 @@ export default function BookingsScreen() {
                   activeOpacity={0.8}
                   style={styles.actionBtn}
                   onPress={() => {
-                    // Logic based on status or general view
+                    if (booking.status === 'ONGOING') {
+                      router.push('/map');
+                    } else if (booking.status === 'UPCOMING') {
+                      Alert.alert('E-Ticket Verified', `Verification Code: ${booking.bookingId}\nPresent this code to the tour guide at the meeting point.`);
+                    } else {
+                      Alert.alert('Trip Review', 'Trip feedback and rating features will be available shortly.');
+                    }
                   }}
                 >
                   <Text style={styles.actionBtnText}>
@@ -316,13 +322,13 @@ const styles = StyleSheet.create({
   },
   tabsRow: {
     flexDirection: 'row',
-    paddingHorizontal: 12,
-    marginVertical: 10,
-    gap: 6,
+    paddingHorizontal: 16,
+    marginVertical: 12,
+    gap: 8,
   },
   tabBtn: {
     flex: 1,
-    height: 38,
+    height: 40,
   },
   activeTabGradient: {
     flex: 1,
@@ -333,14 +339,14 @@ const styles = StyleSheet.create({
   inactiveTabBox: {
     flex: 1,
     borderRadius: 12,
-    backgroundColor: C.card,
+    backgroundColor: '#121524',
     borderWidth: 1,
-    borderColor: C.border,
+    borderColor: '#1D2138',
     alignItems: 'center',
     justifyContent: 'center',
   },
   tabText: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '600',
   },
   activeTabText: {
@@ -375,7 +381,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   cardImageContainer: {
-    height: 140,
+    height: 170,
     position: 'relative',
   },
   cardImage: {
@@ -436,7 +442,7 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: 1,
-    backgroundColor: C.border,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     marginVertical: 14,
   },
   cardFooter: {

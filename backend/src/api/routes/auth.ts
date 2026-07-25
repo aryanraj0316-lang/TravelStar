@@ -158,10 +158,92 @@ router.get('/profile', async (req, res) => {
 // Update User Profile
 router.put('/profile', async (req, res) => {
   const updates = req.body;
+  
+  // 1. Update in-memory activeProfile fallback
   activeProfile = {
     ...activeProfile,
     ...updates,
   };
+
+  // 2. Try to update PostgreSQL Database using Prisma if applicable
+  try {
+    const userId = activeProfile.id;
+    if (userId && !userId.startsWith('user-')) {
+      // Split name into firstName and lastName
+      const nameParts = (updates.name || activeProfile.name).split(' ');
+      const firstName = nameParts[0] || 'Aarav';
+      const lastName = nameParts.slice(1).join(' ') || '';
+
+      // Update User table fields (such as phone number)
+      const userUpdateData: any = {};
+      if (updates.phoneNumber !== undefined) {
+        userUpdateData.phoneNumber = updates.phoneNumber;
+      }
+
+      if (Object.keys(userUpdateData).length > 0) {
+        await prisma.user.update({
+          where: { id: userId },
+          data: userUpdateData,
+        });
+      }
+
+      // Update Profile table fields
+      const profileUpdateData: any = {};
+      if (updates.name !== undefined) {
+        profileUpdateData.firstName = firstName;
+        profileUpdateData.lastName = lastName;
+      }
+      if (updates.avatar !== undefined) {
+        profileUpdateData.avatarUrl = updates.avatar;
+      }
+      if (updates.gender !== undefined) {
+        profileUpdateData.gender = updates.gender;
+      }
+      if (updates.bio !== undefined) {
+        profileUpdateData.bio = updates.bio;
+      }
+      if (updates.languages !== undefined) {
+        profileUpdateData.languages = typeof updates.languages === 'string'
+          ? updates.languages.split(',').map((l: string) => l.trim())
+          : updates.languages;
+      }
+      if (updates.travelStyles !== undefined) {
+        profileUpdateData.travelStyle = typeof updates.travelStyles === 'string'
+          ? updates.travelStyles.split(',').map((s: string) => s.trim())
+          : updates.travelStyles;
+      }
+
+      await prisma.profile.update({
+        where: { userId: userId },
+        data: profileUpdateData,
+      });
+
+      // Update Emergency contact inside EmergencyContact table if provided
+      if (updates.emergencyContact) {
+        const contact = await prisma.emergencyContact.findFirst({
+          where: { userId: userId },
+        });
+        if (contact) {
+          await prisma.emergencyContact.update({
+            where: { id: contact.id },
+            data: { phoneNumber: updates.emergencyContact },
+          });
+        } else {
+          await prisma.emergencyContact.create({
+            data: {
+              userId: userId,
+              name: 'Emergency SOS Contact',
+              relation: 'SOS',
+              phoneNumber: updates.emergencyContact,
+            },
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Postgres DB Warn] Profile database update failed:', err);
+  }
+
   res.status(200).json({ status: 'success', data: activeProfile });
 });
 
