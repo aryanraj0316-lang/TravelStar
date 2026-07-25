@@ -1,3 +1,5 @@
+import { useApp } from '@/store/AppContext';
+import TripDetailModal from '@/components/TripDetailModal';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import {
@@ -183,9 +185,23 @@ const USER_REVIEWS = [
 
 export default function TopReviewedScreen() {
   const router = useRouter();
+  const { trips } = useApp();
 
   const [activeTab, setActiveTab] = useState<'ROUTES' | 'SEASONAL' | 'REELS' | 'REVIEWS'>('ROUTES');
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [selectedTrip, setSelectedTrip] = useState<any | null>(null);
+  const [showJoinModal, setShowJoinModal] = useState(false);
+  const [requestedTrips, setRequestedTrips] = useState<Set<string>>(new Set());
+
+  const handleRouteSelect = (routeItem: any) => {
+    let matchId = 'creation-2';
+    if (routeItem.id === 'tr-2') matchId = 'bt-4';
+    if (routeItem.id === 'tr-3') matchId = 'bt-2';
+
+    const originalTrip = trips.find((t) => t.id === matchId) || trips[0];
+    setSelectedTrip(originalTrip);
+    setShowJoinModal(true);
+  };
 
   // Continuous 60fps Right-to-Left Sliding Marquee for Tab Options
   const tabScrollRef = React.useRef<ScrollView>(null);
@@ -306,7 +322,7 @@ export default function TopReviewedScreen() {
                 key={routeItem.id}
                 activeOpacity={0.9}
                 style={styles.routeCard}
-                onPress={() => router.push('/search')}
+                onPress={() => handleRouteSelect(routeItem)}
               >
                 <View style={styles.routeImgWrap}>
                   <Image source={{ uri: routeItem.imageUrl }} style={styles.routeImg} />
@@ -496,6 +512,14 @@ export default function TopReviewedScreen() {
           <Text style={styles.toastText}>{toastMsg}</Text>
         </View>
       )}
+
+      <TripDetailModal
+        visible={showJoinModal}
+        trip={selectedTrip}
+        onClose={() => setShowJoinModal(false)}
+        requestedTrips={requestedTrips}
+        setRequestedTrips={setRequestedTrips}
+      />
     </SafeAreaView>
   );
 }

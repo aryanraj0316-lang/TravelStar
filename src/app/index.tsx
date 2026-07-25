@@ -721,7 +721,7 @@ function FeaturedTripsCarousel() {
 
 // ─── Component ──────────────────────────────────────────────────────
 export default function HomeScreen() {
-  const { currentRole, setCurrentRole, profile, setNavbarHidden, trips, setActiveRoomId } = useApp();
+  const { currentRole, setCurrentRole, profile, setNavbarHidden, trips, setActiveRoomId, isLoggedIn } = useApp();
   const router = useRouter();
   const [activeDot, setActiveDot] = useState(0);
   const trendingRef = useRef<ScrollView>(null);
@@ -785,6 +785,29 @@ export default function HomeScreen() {
             <Text style={styles.userSub}>Explore more. Experience better.</Text>
           </View>
           <View style={styles.headerRight}>
+            {!isLoggedIn && (
+              <TouchableOpacity
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: 'rgba(0, 102, 255, 0.2)',
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  borderRadius: 16,
+                  borderWidth: 1,
+                  borderColor: 'rgba(0, 102, 255, 0.4)',
+                  marginRight: 8,
+                }}
+                activeOpacity={0.8}
+                onPress={() => router.push('/auth')}
+              >
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#60A5FA', marginRight: 4 }}>
+                  Login / Sign Up
+                </Text>
+                <ChevronRight size={12} color="#60A5FA" />
+              </TouchableOpacity>
+            )}
+
             <TouchableOpacity
               style={styles.bellWrap}
               activeOpacity={0.7}

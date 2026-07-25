@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { apiService } from '@/services/api';
+import TripDetailModal from '@/components/TripDetailModal';
 import {
   ScrollView,
   StyleSheet,
@@ -159,19 +161,51 @@ export default function NearbyTripsScreen() {
   const router = useRouter();
 
   const [activeSort, setActiveSort] = useState<'CHEAPEST' | 'NEAREST' | 'BEST_RATED'>('CHEAPEST');
-  const [selectedPlaceForModal, setSelectedPlaceForModal] = useState<NearbyPlace | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [nearbyPlaces, setNearbyPlaces] = useState<NearbyPlace[]>(NEARBY_PLACES);
+  const [selectedTrip, setSelectedTrip] = useState<any | null>(null);
+  const [showJoinModal, setShowJoinModal] = useState(false);
+  const [requestedTrips, setRequestedTrips] = useState<Set<string>>(new Set());
+
+  const handlePlaceSelect = (place: NearbyPlace) => {
+    const mockTrip = {
+      id: place.id,
+      name: place.name,
+      creator: 'Local Tour Guide',
+      cities: ['Delhi', place.name.split(' ')[0]],
+      startDate: '2026-08-15',
+      endDate: '2026-08-17',
+      budget: place.pricePerHead,
+      availableSeats: 6,
+      totalSeats: 12,
+      meetingPoint: 'New Delhi Railway Station',
+      guideIncluded: true,
+      foodIncluded: true,
+      hotelIncluded: true,
+      cabIncluded: true,
+    };
+    setSelectedTrip(mockTrip);
+    setShowJoinModal(true);
+  };
+
+  useEffect(() => {
+    apiService.getNearbyPlaces().then((places) => {
+      if (places && places.length > 0) {
+        setNearbyPlaces(places);
+      }
+    });
+  }, []);
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(null), 2500);
   };
 
-  const cheapestPlace = NEARBY_PLACES.find((p) => p.isCheapest) || NEARBY_PLACES[0];
-  const nearestPlace = NEARBY_PLACES.find((p) => p.isNearest) || NEARBY_PLACES[1];
-  const bestRatedPlace = NEARBY_PLACES.find((p) => p.isBestRated) || NEARBY_PLACES[2];
+  const cheapestPlace = nearbyPlaces.find((p) => p.isCheapest) || nearbyPlaces[0];
+  const nearestPlace = nearbyPlaces.find((p) => p.isNearest) || nearbyPlaces[1];
+  const bestRatedPlace = nearbyPlaces.find((p) => p.isBestRated) || nearbyPlaces[2];
 
-  const sortedPlaces = [...NEARBY_PLACES].sort((a, b) => {
+  const sortedPlaces = [...nearbyPlaces].sort((a, b) => {
     if (activeSort === 'CHEAPEST') return a.pricePerHead - b.pricePerHead;
     if (activeSort === 'NEAREST') return a.distanceKm - b.distanceKm;
     return b.rating - a.rating;
@@ -221,7 +255,7 @@ export default function NearbyTripsScreen() {
           <TouchableOpacity
             activeOpacity={0.85}
             style={[styles.highlightCard, { borderColor: C.green }]}
-            onPress={() => setSelectedPlaceForModal(cheapestPlace)}
+            onPress={() => handlePlaceSelect(cheapestPlace)}
           >
             <LinearGradient colors={['rgba(16,185,129,0.2)', 'rgba(17,19,34,0.95)']} style={StyleSheet.absoluteFill} />
             <View style={[styles.badgePill, { backgroundColor: C.green }]}>
@@ -235,12 +269,12 @@ export default function NearbyTripsScreen() {
               <Text style={styles.highlightDistText}>{cheapestPlace.distanceKm} km away</Text>
             </View>
           </TouchableOpacity>
-
+ 
           {/* 2. NEAREST LOCATION CARD */}
           <TouchableOpacity
             activeOpacity={0.85}
             style={[styles.highlightCard, { borderColor: C.blue }]}
-            onPress={() => setSelectedPlaceForModal(nearestPlace)}
+            onPress={() => handlePlaceSelect(nearestPlace)}
           >
             <LinearGradient colors={['rgba(59,130,246,0.2)', 'rgba(17,19,34,0.95)']} style={StyleSheet.absoluteFill} />
             <View style={[styles.badgePill, { backgroundColor: C.blue }]}>
@@ -253,12 +287,12 @@ export default function NearbyTripsScreen() {
               <Text style={styles.highlightDistText}>📍 {nearestPlace.distanceKm} km ({nearestPlace.driveTime})</Text>
             </View>
           </TouchableOpacity>
-
+ 
           {/* 3. BEST RATED LOCATION CARD */}
           <TouchableOpacity
             activeOpacity={0.85}
             style={[styles.highlightCard, { borderColor: C.amber }]}
-            onPress={() => setSelectedPlaceForModal(bestRatedPlace)}
+            onPress={() => handlePlaceSelect(bestRatedPlace)}
           >
             <LinearGradient colors={['rgba(245,158,11,0.2)', 'rgba(17,19,34,0.95)']} style={StyleSheet.absoluteFill} />
             <View style={[styles.badgePill, { backgroundColor: C.amber }]}>
@@ -360,10 +394,10 @@ export default function NearbyTripsScreen() {
 
                 <TouchableOpacity
                   style={styles.detailsBtn}
-                  onPress={() => setSelectedPlaceForModal(place)}
+                  onPress={() => handlePlaceSelect(place)}
                 >
                   <Info size={13} color={C.white} />
-                  <Text style={styles.detailsBtnText}>Cost Sheet</Text>
+                  <Text style={styles.detailsBtnText}>View Details</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -380,57 +414,13 @@ export default function NearbyTripsScreen() {
         </View>
       )}
 
-      {/* COST BREAKDOWN MODAL SHEET */}
-      {selectedPlaceForModal && (
-        <Modal transparent animationType="slide" visible={!!selectedPlaceForModal}>
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalCard}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle} numberOfLines={1}>{selectedPlaceForModal.name}</Text>
-                <TouchableOpacity style={styles.closeBtn} onPress={() => setSelectedPlaceForModal(null)}>
-                  <X size={18} color={C.white} />
-                </TouchableOpacity>
-              </View>
-
-              <Text style={styles.costSheetSub}>Minimal Expense & Distance Breakdown from GPS Location</Text>
-
-              <View style={styles.costRow}>
-                <Car size={16} color={C.blue} />
-                <Text style={styles.costLabel}>Estimated Transport Cost:</Text>
-                <Text style={styles.costVal}>₹{selectedPlaceForModal.transportCost}</Text>
-              </View>
-
-              <View style={styles.costRow}>
-                <Compass size={16} color={C.purple} />
-                <Text style={styles.costLabel}>Stay & Food Expenses:</Text>
-                <Text style={styles.costVal}>₹{selectedPlaceForModal.stayMealCost}</Text>
-              </View>
-
-              <View style={styles.costRow}>
-                <ShieldCheck size={16} color={C.green} />
-                <Text style={styles.costLabel}>Entry Tickets & Permits:</Text>
-                <Text style={styles.costVal}>₹{selectedPlaceForModal.entryCost}</Text>
-              </View>
-
-              <View style={styles.totalCostRow}>
-                <Text style={styles.totalCostLabel}>Total Minimal Cost per Person:</Text>
-                <Text style={styles.totalCostVal}>₹{selectedPlaceForModal.pricePerHead}</Text>
-              </View>
-
-              <TouchableOpacity
-                style={styles.bookTripBtn}
-                onPress={() => {
-                  setSelectedPlaceForModal(null);
-                  router.push('/create');
-                }}
-              >
-                <Sparkles size={16} color={C.white} />
-                <Text style={styles.bookTripBtnText}>Plan Trip to {selectedPlaceForModal.name.split(' ')[0]}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
-      )}
+      <TripDetailModal
+        visible={showJoinModal}
+        trip={selectedTrip}
+        onClose={() => setShowJoinModal(false)}
+        requestedTrips={requestedTrips}
+        setRequestedTrips={setRequestedTrips}
+      />
     </SafeAreaView>
   );
 }

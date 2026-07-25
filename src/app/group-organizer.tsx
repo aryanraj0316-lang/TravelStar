@@ -51,6 +51,7 @@ import {
   Send,
   Coffee,
   Star,
+  Cpu,
 } from 'lucide-react-native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -114,7 +115,7 @@ export default function GroupOrganizerScreen() {
   const router = useRouter();
   const { profile, addTrip } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'trips' | 'logistics' | 'payments' | 'chat'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'trips' | 'logistics' | 'payments' | 'chat' | 'live'>('dashboard');
 
   // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // STATE: TOURS & CHATS
@@ -665,7 +666,7 @@ export default function GroupOrganizerScreen() {
                 <View style={styles.subStatDivider} />
                 <View style={styles.subStatBox}>
                   <Text style={styles.subStatLabel}>Customer Satisfaction</Text>
-                  <Text style={[styles.subStatValue, { color: C.amberGlow }]}>96% â˜…</Text>
+                  <Text style={[styles.subStatValue, { color: C.amberGlow }]}>96% ★</Text>
                 </View>
                 <View style={styles.subStatDivider} />
                 <View style={styles.subStatBox}>
@@ -678,10 +679,10 @@ export default function GroupOrganizerScreen() {
               <Text style={styles.chartTitleInline}>Monthly Gross Revenue Log (Simulated)</Text>
               <View style={styles.chartContainer}>
                 {[
-                  { month: 'Apr', rev: 'â‚¹40k', height: 40 },
-                  { month: 'May', rev: 'â‚¹65k', height: 60 },
-                  { month: 'Jun', rev: 'â‚¹95k', height: 90 },
-                  { month: 'Jul', rev: 'â‚¹120k', height: 110 },
+                  { month: 'Apr', rev: '₹40k', height: 40 },
+                  { month: 'May', rev: '₹65k', height: 60 },
+                  { month: 'Jun', rev: '₹95k', height: 90 },
+                  { month: 'Jul', rev: '₹120k', height: 110 },
                 ].map((item, idx) => (
                   <View key={idx} style={styles.chartCol}>
                     <Text style={styles.chartBarValue}>{item.rev}</Text>
@@ -695,10 +696,10 @@ export default function GroupOrganizerScreen() {
             {/* Recent activity feed logs */}
             <Text style={styles.subTitle}>Recent Activity Logs</Text>
             <View style={styles.recentActivityBox}>
-              <Text style={styles.activityLogText}>â€¢ Jaspreet Singh (Driver) assigned to Sikkim Highlanders Winger vehicle.</Text>
-              <Text style={styles.activityLogText}>â€¢ Deposit payment of â‚¹5,000 confirmed for Rohan Malhotra.</Text>
-              <Text style={styles.activityLogText}>â€¢ Permit document "NorthSikkim_Permit_0812.pdf" approved by state authorities.</Text>
-              <Text style={styles.activityLogText}>â€¢ Consensus poll launched for deciding Day 3 trekking lunch preferences.</Text>
+              <Text style={styles.activityLogText}>• Jaspreet Singh (Driver) assigned to Sikkim Highlanders Winger vehicle.</Text>
+              <Text style={styles.activityLogText}>• Deposit payment of ₹5,000 confirmed for Rohan Malhotra.</Text>
+              <Text style={styles.activityLogText}>• Permit document "NorthSikkim_Permit_0812.pdf" approved by state authorities.</Text>
+              <Text style={styles.activityLogText}>• Consensus poll launched for deciding Day 3 trekking lunch preferences.</Text>
             </View>
           </View>
         )}

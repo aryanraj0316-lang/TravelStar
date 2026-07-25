@@ -21,7 +21,6 @@ import {
   Sparkles,
   Square,
   User,
-  UserCheck,
   UserPlus,
   Users,
   Utensils,
@@ -46,6 +45,195 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { WebView } from 'react-native-webview';
+
+// Coordinates registry for Indian cities
+const CITY_COORDS: Record<string, { latitude: number; longitude: number }> = {
+  // Northern India
+  'Delhi': { latitude: 28.6139, longitude: 77.2090 },
+  'New Delhi': { latitude: 28.6139, longitude: 77.2090 },
+  'Noida': { latitude: 28.5355, longitude: 77.3910 },
+  'Gurugram': { latitude: 28.4595, longitude: 77.0266 },
+  'Gurgaon': { latitude: 28.4595, longitude: 77.0266 },
+  'Faridabad': { latitude: 28.4089, longitude: 77.3178 },
+  'Ghaziabad': { latitude: 28.6692, longitude: 77.4538 },
+  'Agra': { latitude: 27.1767, longitude: 78.0081 },
+  'Mathura': { latitude: 27.4924, longitude: 77.6737 },
+  'Vrindavan': { latitude: 27.5650, longitude: 77.7008 },
+  'Varanasi': { latitude: 25.3176, longitude: 82.9739 },
+  'Sarnath': { latitude: 25.3762, longitude: 83.0227 },
+  'Lucknow': { latitude: 26.8467, longitude: 80.9462 },
+  'Kanpur': { latitude: 26.4499, longitude: 80.3319 },
+  'Ayodhya': { latitude: 26.7922, longitude: 82.1998 },
+  'Allahabad': { latitude: 25.4358, longitude: 81.8463 },
+  'Prayagraj': { latitude: 25.4358, longitude: 81.8463 },
+  'Haridwar': { latitude: 29.9457, longitude: 78.1642 },
+  'Rishikesh': { latitude: 30.0869, longitude: 78.2676 },
+  'Dehradun': { latitude: 30.3165, longitude: 78.0322 },
+  'Shimla': { latitude: 31.1048, longitude: 77.1734 },
+  'Manali': { latitude: 32.2396, longitude: 77.1887 },
+  'Srinagar': { latitude: 34.0837, longitude: 74.7973 },
+  'Gulmarg': { latitude: 34.0484, longitude: 74.3805 },
+  'Pahalgam': { latitude: 34.0161, longitude: 75.1950 },
+  'Leh': { latitude: 34.1526, longitude: 77.5771 },
+  'Ladakh': { latitude: 34.1526, longitude: 77.5771 },
+  'Amritsar': { latitude: 31.6340, longitude: 74.8723 },
+  'Chandigarh': { latitude: 30.7333, longitude: 76.7794 },
+  
+  // Western India
+  'Jaipur': { latitude: 26.9124, longitude: 75.7873 },
+  'Udaipur': { latitude: 24.5854, longitude: 73.7125 },
+  'Jodhpur': { latitude: 26.2389, longitude: 73.0243 },
+  'Jaisalmer': { latitude: 26.9157, longitude: 70.9083 },
+  'Mumbai': { latitude: 19.0760, longitude: 72.8777 },
+  'Pune': { latitude: 18.5204, longitude: 73.8567 },
+  'Nagpur': { latitude: 21.1458, longitude: 79.0882 },
+  'Ahmedabad': { latitude: 23.0225, longitude: 72.5714 },
+  'Surat': { latitude: 21.1702, longitude: 72.8311 },
+  'Vadodara': { latitude: 22.3072, longitude: 73.1812 },
+  'Goa': { latitude: 15.2993, longitude: 74.1240 },
+  'North Goa': { latitude: 15.5898, longitude: 73.8278 },
+  'South Goa': { latitude: 15.0644, longitude: 74.0229 },
+  'Dudhsagar': { latitude: 15.3185, longitude: 74.3142 },
+
+  // Eastern India
+  'Patna': { latitude: 25.5941, longitude: 85.1376 },
+  'Gaya': { latitude: 24.7955, longitude: 85.0002 },
+  'Ranchi': { latitude: 23.3441, longitude: 85.3090 },
+  'Jamshedpur': { latitude: 22.8046, longitude: 86.2029 },
+  'Kolkata': { latitude: 22.5726, longitude: 88.3639 },
+  'Bhubaneswar': { latitude: 20.2961, longitude: 85.8245 },
+  'Puri': { latitude: 19.8135, longitude: 85.8312 },
+  'Darjeeling': { latitude: 27.0410, longitude: 88.2627 },
+  'Gangtok': { latitude: 27.3314, longitude: 88.6138 },
+  'Guwahati': { latitude: 26.1445, longitude: 91.7362 },
+  'Shillong': { latitude: 25.5788, longitude: 91.8833 },
+
+  // Southern India
+  'Bengaluru': { latitude: 12.9716, longitude: 77.5946 },
+  'Bangalore': { latitude: 12.9716, longitude: 77.5946 },
+  'Mysore': { latitude: 12.2958, longitude: 76.6394 },
+  'Mysuru': { latitude: 12.2958, longitude: 76.6394 },
+  'Ooty': { latitude: 11.4102, longitude: 76.6950 },
+  'Chennai': { latitude: 13.0827, longitude: 80.2707 },
+  'Madurai': { latitude: 9.9252, longitude: 78.1198 },
+  'Hyderabad': { latitude: 17.3850, longitude: 78.4867 },
+  'Secunderabad': { latitude: 17.4399, longitude: 78.5000 },
+  'Visakhapatnam': { latitude: 17.6868, longitude: 83.2185 },
+  'Kochi': { latitude: 9.9312, longitude: 76.2673 },
+  'Munnar': { latitude: 10.0889, longitude: 77.0595 },
+  'Alleppey': { latitude: 9.4981, longitude: 76.3388 },
+  'Trivandrum': { latitude: 8.5241, longitude: 76.9366 },
+  'Thiruvananthapuram': { latitude: 8.5241, longitude: 76.9366 },
+  
+  // Central India
+  'Bhopal': { latitude: 23.2599, longitude: 77.4126 },
+  'Indore': { latitude: 22.7196, longitude: 75.8577 },
+  'Raipur': { latitude: 21.2514, longitude: 81.6296 },
+};
+
+// Build Leaflet HTML preview
+function buildPreviewMapHTML(routeCoords: { latitude: number; longitude: number; name: string }[]) {
+  return `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script>
+    <style>
+      body, html, #map {
+        margin: 0; padding: 0; width: 100%; height: 100%;
+        background: #080A12;
+      }
+      .leaflet-control-attribution { display: none !important; }
+      .leaflet-control-zoom { display: none !important; }
+      .leaflet-tooltip {
+        background: rgba(17, 20, 34, 0.9) !important;
+        border: 1px solid rgba(59, 130, 246, 0.3) !important;
+        color: #F8FAFC !important;
+        font-size: 10px !important;
+        font-weight: 700 !important;
+        border-radius: 6px !important;
+        padding: 4px 8px !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <script>
+      var pathPoints = ${JSON.stringify(routeCoords.map(c => [c.latitude, c.longitude]))};
+      var map = L.map('map', {
+        zoomControl: false,
+        attributionControl: false,
+      });
+
+      if (pathPoints.length > 0) {
+        map.setView(pathPoints[0], 6);
+      } else {
+        map.setView([20.5937, 78.9629], 4); // Center of India
+      }
+
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 20,
+        subdomains: ['a','b','c','d'],
+      }).addTo(map);
+
+      // Route polyline
+      if (pathPoints.length > 1) {
+        L.polyline(pathPoints, {
+          color: '#3B82F6', weight: 4, opacity: 0.9,
+          smoothFactor: 1.5, lineCap: 'round', lineJoin: 'round',
+        }).addTo(map);
+        map.fitBounds(pathPoints, { padding: [30, 30] });
+      }
+
+      var routeCities = ${JSON.stringify(routeCoords)};
+      routeCities.forEach(function(city, idx) {
+        var isStart = idx === 0;
+        var isEnd = idx === routeCities.length - 1;
+        var badgeBg = '#10B981'; // Emerald Green
+        var iconPrefix = '📍';
+        if (isStart) {
+          badgeBg = '#3B82F6'; // Blue
+          iconPrefix = '🚩';
+        } else if (isEnd) {
+          badgeBg = '#F59E0B'; // Amber Gold
+          iconPrefix = '🏁';
+        }
+
+        var markerHtml = '<div class="checkpoint-badge" style="' +
+          'background: ' + badgeBg + '; ' +
+          'color: #FFF; ' +
+          'font-family: -apple-system, BlinkMacSystemFont, \\'Segoe UI\\', Roboto, sans-serif; ' +
+          'font-size: 10px; ' +
+          'font-weight: 800; ' +
+          'padding: 4px 10px; ' +
+          'border-radius: 20px; ' +
+          'border: 2px solid #FFF; ' +
+          'box-shadow: 0 4px 12px rgba(0,0,0,0.35); ' +
+          'white-space: nowrap; ' +
+          'display: flex; ' +
+          'align-items: center; ' +
+          'gap: 4px; ' +
+          '">' + iconPrefix + ' ' + (idx + 1) + '. ' + city.name + '</div>';
+
+        var checkpointIcon = L.divIcon({
+          html: markerHtml,
+          className: '',
+          iconSize: [120, 26],
+          iconAnchor: [60, 13]
+        });
+
+        L.marker([city.latitude, city.longitude], { icon: checkpointIcon }).addTo(map);
+      });
+    <\/script>
+  </body>
+  </html>
+  `;
+}
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -93,6 +281,54 @@ export default function CreateTripScreen() {
   const [cabIncluded, setCabIncluded] = useState(false);
   const [privacy, setPrivacy] = useState<'PUBLIC' | 'PRIVATE' | 'INVITE_ONLY'>('PUBLIC');
   const [selectedCategory, setSelectedCategory] = useState('Adventure');
+  const [verifiedCoords, setVerifiedCoords] = useState<Record<string, { latitude: number; longitude: number }>>({});
+
+  // Dynamic geocoding via Nominatim with local fallback
+  React.useEffect(() => {
+    const fetchGeocoding = async () => {
+      const cities = citiesInput
+        .split(',')
+        .map((c) => c.trim())
+        .filter((c) => c !== '');
+
+      const newCoords = { ...verifiedCoords };
+      let changed = false;
+
+      for (const city of cities) {
+        if (!CITY_COORDS[city] && !newCoords[city]) {
+          try {
+            const response = await fetch(
+              `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(city + ', India')}`,
+              {
+                headers: {
+                  'User-Agent': 'TravelStarApp/1.0',
+                },
+              }
+            );
+            const data = await response.json();
+            if (data && data.length > 0) {
+              const lat = parseFloat(data[0].lat);
+              const lon = parseFloat(data[0].lon);
+              newCoords[city] = { latitude: lat, longitude: lon };
+              changed = true;
+            }
+          } catch (e) {
+            console.warn('Geocoding failed for city:', city, e);
+          }
+        }
+      }
+
+      if (changed) {
+        setVerifiedCoords(newCoords);
+      }
+    };
+
+    const timer = setTimeout(() => {
+      fetchGeocoding();
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [citiesInput]);
 
   // Creations Modal state
   const [showCreationsModal, setShowCreationsModal] = useState(false);
@@ -133,10 +369,7 @@ export default function CreateTripScreen() {
   const [selectedTripType, setSelectedTripType] = useState('Group');
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
-  // Co-Travelers and Join Requests
-  const [joinRequests, setJoinRequests] = useState([
-    { id: 'req-1', name: 'Kabir Mehta', avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&q=80' },
-  ]);
+  const [joinRequests, setJoinRequests] = useState<any[]>([]);
   const [participants, setParticipants] = useState([
     { id: 'p-1', name: 'Aarav Sharma (Creator)', isCreator: true },
   ]);
@@ -170,7 +403,7 @@ export default function CreateTripScreen() {
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [9, 16],   // strict portrait — matches the card image slot on Search tab
         quality: 1,
@@ -188,6 +421,24 @@ export default function CreateTripScreen() {
     .split(',')
     .map((c) => c.trim())
     .filter((c) => c !== '');
+
+  const previewRouteCoords = parsedCities
+    .map((city) => {
+      const clean = city.trim();
+      const found = verifiedCoords[clean] || CITY_COORDS[clean] || Object.entries(CITY_COORDS).find(([k]) => clean.toLowerCase().includes(k.toLowerCase()))?.[1];
+      if (found) {
+        return { latitude: found.latitude, longitude: found.longitude, name: clean };
+      } else {
+        // Deterministic fallback based on name hash
+        let hash = 0;
+        for (let i = 0; i < clean.length; i++) {
+          hash = clean.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        const lat = 18.0 + (Math.abs(hash % 100) / 100) * 8.0;
+        const lon = 74.0 + (Math.abs((hash >> 8) % 100) / 100) * 10.0;
+        return { latitude: lat, longitude: lon, name: clean };
+      }
+    });
 
 
 
@@ -221,6 +472,7 @@ export default function CreateTripScreen() {
       membersCount: 1,
       coverImage: customCoverUri || coverImage,
       category: selectedCategory,
+      coordinates: previewRouteCoords,
     };
 
     addTrip(newTrip);
@@ -267,6 +519,7 @@ export default function CreateTripScreen() {
       membersCount: 1,
       coverImage: customCoverUri || coverImage,
       category: selectedCategory,
+      coordinates: previewRouteCoords,
     };
     addTrip(newTrip);
     showToast('📝 Trip saved to Drafts successfully!');
@@ -635,6 +888,27 @@ export default function CreateTripScreen() {
                         </React.Fragment>
                       ))}
                     </ScrollView>
+
+                    {previewRouteCoords.length > 0 && (
+                      <View style={styles.mapPreviewWrap}>
+                        {Platform.OS === 'web' ? (
+                          <iframe
+                            srcDoc={buildPreviewMapHTML(previewRouteCoords)}
+                            style={{ width: '100%', height: '100%', border: 'none' }}
+                            title="Route Preview Map"
+                          />
+                        ) : (
+                          <WebView
+                            originWhitelist={['*']}
+                            source={{ html: buildPreviewMapHTML(previewRouteCoords) }}
+                            style={{ flex: 1 }}
+                            javaScriptEnabled={true}
+                            domStorageEnabled={true}
+                            scrollEnabled={false}
+                          />
+                        )}
+                      </View>
+                    )}
                   </View>
                 )}
               </View>
@@ -1054,28 +1328,6 @@ export default function CreateTripScreen() {
                 </View>
               </View>
 
-              {/* CONFIRMED PARTICIPANTS LIST */}
-              <View style={styles.sectionHeader}>
-                <UserCheck size={16} color={C.green} />
-                <Text style={styles.sectionTitle}>Confirmed Travelers ({participants.length})</Text>
-              </View>
-
-              <View style={styles.participantsList}>
-                {participants.map((p) => (
-                  <View key={p.id} style={styles.participantItem}>
-                    <View style={styles.avatarCircle}>
-                      <User size={15} color={C.white} />
-                    </View>
-                    <Text style={styles.participantName}>{p.name}</Text>
-                    {p.isCreator && (
-                      <View style={styles.creatorBadge}>
-                        <Text style={styles.creatorBadgeText}>CREATOR</Text>
-                      </View>
-                    )}
-                  </View>
-                ))}
-              </View>
-
               {/* PENDING JOIN REQUESTS */}
               {privacy !== 'PRIVATE' && joinRequests.length > 0 && (
                 <>
@@ -1381,6 +1633,19 @@ export default function CreateTripScreen() {
                   <Text style={styles.detailTripName}>{selectedCreation.name}</Text>
                   <Text style={styles.detailOrganizerText}>Organized by {selectedCreation.creator}</Text>
 
+                  <TouchableOpacity
+                    style={styles.viewOnMapHeaderBtn}
+                    activeOpacity={0.8}
+                    onPress={() => {
+                      setSelectedCreation(null);
+                      setShowCreationsModal(false);
+                      router.push({ pathname: '/map', params: { tripId: selectedCreation.id } });
+                    }}
+                  >
+                    <Compass size={12} color="#FFF" style={{ marginRight: 4 }} />
+                    <Text style={styles.viewOnMapHeaderBtnText}>View Route on Map</Text>
+                  </TouchableOpacity>
+
                   {/* Cities stops */}
                   <Text style={styles.detailSectionTitle}>ITINERARY FLOW</Text>
                   <View style={styles.detailRouteFlow}>
@@ -1476,6 +1741,30 @@ export default function CreateTripScreen() {
                           </View>
                         </View>
                       ))}
+                    </>
+                  )}
+                  {/* CONFIRMED TRAVELERS */}
+                  {participants.length > 0 && (
+                    <>
+                      <Text style={styles.detailSectionTitle}>CONFIRMED TRAVELERS</Text>
+                      <View style={{ gap: 8, marginTop: 6 }}>
+                        {participants.map((p) => (
+                          <View key={p.id} style={styles.detailRequestItem}>
+                            <View style={styles.detailReqAvatarWrap}>
+                              <User size={14} color={C.white} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.detailReqName}>{p.name}</Text>
+                              <Text style={styles.detailReqSub}>{p.isCreator ? 'Organizer / Creator' : 'Confirmed Traveler'}</Text>
+                            </View>
+                            {p.isCreator && (
+                              <View style={styles.creatorBadge}>
+                                <Text style={styles.creatorBadgeText}>CREATOR</Text>
+                              </View>
+                            )}
+                          </View>
+                        ))}
+                      </View>
                     </>
                   )}
 
@@ -2936,5 +3225,29 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#EF4444',
+  },
+  mapPreviewWrap: {
+    height: 160,
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#1E243B',
+  },
+  viewOnMapHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0066FF',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    marginTop: 10,
+    marginBottom: 5,
+  },
+  viewOnMapHeaderBtnText: {
+    color: '#FFF',
+    fontSize: 11,
+    fontWeight: '700',
   },
 });

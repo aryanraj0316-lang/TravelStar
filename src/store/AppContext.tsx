@@ -1,4 +1,7 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import { apiService } from '../services/api';
+import { socketService } from '../services/socket';
 
 export type UserRole = 'TOURIST' | 'GUIDE' | 'ORGANIZER' | 'FAMILY_TRAVELER' | 'ADMIN';
 
@@ -12,6 +15,7 @@ export interface UserProfile {
   guideLicenseStatus: 'NONE' | 'PENDING' | 'VERIFIED';
   walletBalance: number;
   rewardPoints: number;
+  email?: string;
 }
 
 export interface Trip {
@@ -29,7 +33,9 @@ export interface Trip {
   foodIncluded: boolean;
   privacy: 'PUBLIC' | 'PRIVATE' | 'INVITE_ONLY';
   membersCount: number;
-  coverImage?: string; // optional custom cover URI (from gallery or preset)
+  coverImage?: string;
+  category?: string;
+  coordinates?: { latitude: number; longitude: number; name: string }[];
 }
 
 export interface Guide {
@@ -64,11 +70,26 @@ export interface SOSAlert {
   status: 'ACTIVE' | 'RESOLVED';
 }
 
+export interface Story {
+  id: string;
+  authorName: string;
+  authorAvatar: string;
+  title: string;
+  content: string;
+  coverImg: string;
+  likesCount: number;
+  location: string;
+  createdAt: string;
+}
+
 interface AppContextType {
   currentRole: UserRole;
   setCurrentRole: (role: UserRole) => void;
   profile: UserProfile;
   updateProfile: (profile: Partial<UserProfile>) => void;
+  isLoggedIn: boolean;
+  login: () => void;
+  logout: () => void;
   trips: Trip[];
   addTrip: (trip: Trip) => void;
   joinTrip: (tripId: string) => void;
@@ -85,6 +106,8 @@ interface AppContextType {
   setActiveRoomId: (id: string | null) => void;
   navbarHidden: boolean;
   setNavbarHidden: (hidden: boolean) => void;
+  storiesList: Story[];
+  addStory: (storyData: any) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -102,8 +125,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     rewardPoints: 120,
   });
 
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  const login = () => {
+    setIsLoggedIn(true);
+    try {
+      AsyncStorage.setItem('isLoggedIn', 'true').catch(() => { });
+    } catch (e) { }
+  };
+  const logout = () => {
+    setIsLoggedIn(false);
+    setProfile((prev) => {
+      const nextProfile = {
+        ...prev,
+        name: 'Guest Traveler',
+        email: '',
+        phoneNumber: '',
+        isVerified: false,
+        aadhaarStatus: 'NONE' as const,
+      };
+      try {
+        AsyncStorage.setItem('savedProfile', JSON.stringify(nextProfile)).catch(() => { });
+      } catch (e) { }
+      return nextProfile;
+    });
+    try {
+      AsyncStorage.removeItem('isLoggedIn').catch(() => { });
+    } catch (e) { }
+  };
+
   useEffect(() => {
     setProfile((prev) => ({ ...prev, role: currentRole }));
+    apiService.updateProfile({ role: currentRole });
   }, [currentRole]);
 
   const [trips, setTrips] = useState<Trip[]>([
@@ -191,9 +244,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       coverImage: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=800&q=80',
       category: 'Adventure',
     },
+    {
+      id: 'bt-2',
+      name: 'Varanasi Spiritual Ghats & Sarnath Heritage Tour',
+      creator: 'Anjali Sharma (Local Guide)',
+      cities: ['Varanasi', 'Sarnath'],
+      startDate: '2026-08-18',
+      endDate: '2026-08-20',
+      budget: 6500,
+      availableSeats: 6,
+      totalSeats: 12,
+      meetingPoint: 'Dashashwamedh Ghat Varanasi',
+      guideIncluded: true,
+      foodIncluded: true,
+      privacy: 'PUBLIC',
+      membersCount: 6,
+      category: 'Religious',
+    },
+    {
+      id: 'bt-4',
+      name: 'Kashmir Backpacking (Srinagar, Gulmarg & Pahalgam)',
+      creator: 'Aarav Sharma (Solo Traveler/User)',
+      cities: ['Srinagar', 'Gulmarg', 'Pahalgam'],
+      startDate: '2026-09-01',
+      endDate: '2026-09-06',
+      budget: 14500,
+      availableSeats: 3,
+      totalSeats: 8,
+      meetingPoint: 'Srinagar Airport Gate 1',
+      guideIncluded: false,
+      foodIncluded: true,
+      privacy: 'PUBLIC',
+      membersCount: 5,
+      category: 'Adventure',
+    },
+    {
+      id: 'bt-5',
+      name: 'Goa Beach Hopping & Dudhsagar Waterfalls Road Trip',
+      creator: 'Priya & Friends (Tourist Group)',
+      cities: ['North Goa', 'South Goa', 'Dudhsagar'],
+      startDate: '2026-08-28',
+      endDate: '2026-09-01',
+      budget: 9800,
+      availableSeats: 2,
+      totalSeats: 8,
+      meetingPoint: 'Mapusa Bus Terminal Goa',
+      guideIncluded: false,
+      foodIncluded: true,
+      privacy: 'PUBLIC',
+      membersCount: 6,
+      category: 'Nature',
+    },
   ]);
 
-  const [guides] = useState<Guide[]>([
+  const [guides, setGuides] = useState<Guide[]>([
     {
       id: 'guide-1',
       name: 'Rajesh Kumar',
@@ -257,18 +361,151 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   ]);
 
   const [sosAlerts, setSosAlerts] = useState<SOSAlert[]>([]);
+  const [storiesList, setStoriesList] = useState<Story[]>([
+    {
+      id: 'story-1',
+      authorName: 'Aarav Sharma',
+      authorAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
+      title: 'Spiritual Peace in Vrindavan',
+      content: 'Experiencing the morning Aarti at Bankey Bihari Temple was truly divine...',
+      coverImg: 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1000&q=80',
+      likesCount: 24,
+      location: 'Vrindavan, UP',
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: 'story-2',
+      authorName: 'Anjali Sharma',
+      authorAvatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150&q=80',
+      title: 'Conquering Khardung La Pass',
+      content: 'Riding through the cold winds of Ladakh with our group was unforgettable.',
+      coverImg: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=800&q=80',
+      likesCount: 58,
+      location: 'Leh Ladakh',
+      createdAt: new Date().toISOString(),
+    },
+  ]);
   const [walletTransactions, setWalletTransactions] = useState<any[]>([
     { id: 't-1', amount: 1500, type: 'DEPOSIT', remark: 'Added via GPay', date: '2026-07-18' },
     { id: 't-2', amount: -500, type: 'PAYMENT', remark: 'Trip booking advance', date: '2026-07-17' },
     { id: 't-3', amount: 150, type: 'CASHBACK', remark: 'Referral cashback reward', date: '2026-07-16' },
   ]);
 
+  const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
+  const [navbarHidden, setNavbarHidden] = useState(false);
+
+  // Sync initial state from backend REST API & initialize WebSocket
+  useEffect(() => {
+    // Hydrate local auth status and saved profile safely
+    try {
+      AsyncStorage.getItem('isLoggedIn').then((val) => {
+        if (val === 'true') {
+          setIsLoggedIn(true);
+        }
+      }).catch(() => { });
+
+      AsyncStorage.getItem('savedProfile').then((val) => {
+        if (val) {
+          try {
+            setProfile(JSON.parse(val));
+          } catch (e) { }
+        }
+      }).catch(() => { });
+    } catch (e) {
+      console.warn('[AsyncStorage Warning] Native module fallback:', e);
+    }
+
+    socketService.connect();
+    if (activeRoomId) {
+      socketService.joinRoom(activeRoomId);
+    } else {
+      socketService.joinRoom('trip-1');
+    }
+
+    // Hydrate data from backend API
+    apiService.getTrips().then((remoteTrips) => {
+      if (remoteTrips && remoteTrips.length > 0) {
+        setTrips(remoteTrips);
+      }
+    });
+
+    apiService.getProfile().then((remoteProfile) => {
+      if (remoteProfile) {
+        setProfile((prev) => {
+          const merged = { ...prev, ...remoteProfile };
+          // If profile is fetched from backend and contains registered user info, auto sign-in
+          if (merged.email && merged.email !== 'aarav@example.com' && merged.name !== 'Guest Traveler') {
+            setIsLoggedIn(true);
+          }
+          try {
+            AsyncStorage.setItem('savedProfile', JSON.stringify(merged)).catch(() => { });
+          } catch (e) { }
+          return merged;
+        });
+      }
+    });
+
+    apiService.getGuides().then((remoteGuides) => {
+      if (remoteGuides && remoteGuides.length > 0) {
+        setGuides(remoteGuides);
+      }
+    });
+
+    apiService.getWalletTransactions().then((txns) => {
+      if (txns && txns.length > 0) {
+        setWalletTransactions(txns);
+      }
+    });
+
+    apiService.getSOSAlerts().then((alerts) => {
+      if (alerts && alerts.length > 0) {
+        setSosAlerts(alerts);
+      }
+    });
+
+    apiService.getStories().then((remoteStories) => {
+      if (remoteStories && remoteStories.length > 0) {
+        setStoriesList(remoteStories);
+      }
+    });
+
+    // Real-time socket subscriptions
+    const unsubMsg = socketService.onMessage((data) => {
+      if (data && data.message) {
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === data.message.id)) return prev;
+          return [...prev, data.message];
+        });
+      }
+    });
+
+    const unsubSOS = socketService.onSOS((alert) => {
+      if (alert) {
+        setSosAlerts((prev) => {
+          if (prev.some((a) => a.id === alert.id)) return prev;
+          return [alert, ...prev];
+        });
+      }
+    });
+
+    return () => {
+      unsubMsg();
+      unsubSOS();
+    };
+  }, [activeRoomId]);
+
   const updateProfile = (updated: Partial<UserProfile>) => {
-    setProfile((prev) => ({ ...prev, ...updated }));
+    setProfile((prev) => {
+      const next = { ...prev, ...updated };
+      AsyncStorage.setItem('savedProfile', JSON.stringify(next)).catch(() => { });
+      return next;
+    });
+    apiService.updateProfile(updated);
   };
 
   const addTrip = (trip: Trip) => {
     setTrips((prev) => [trip, ...prev]);
+    apiService.createTrip(trip);
   };
 
   const joinTrip = (tripId: string) => {
@@ -284,6 +521,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return t;
       })
     );
+    apiService.joinTrip(tripId);
   };
 
   const sendMessage = (content: string, mediaType: 'NONE' | 'IMAGE' | 'VOICE' = 'NONE') => {
@@ -296,6 +534,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       mediaType,
     };
     setMessages((prev) => [...prev, newMsg]);
+    socketService.sendMessage(activeRoomId || 'trip-1', profile.name, currentRole, content, mediaType);
   };
 
   const triggerSOS = (lat: number, lng: number) => {
@@ -308,46 +547,61 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status: 'ACTIVE',
     };
     setSosAlerts((prev) => [newAlert, ...prev]);
+    apiService.triggerSOS(profile.name, lat, lng);
+    socketService.triggerSOS(profile.name, lat, lng);
   };
 
   const resolveSOS = (id: string) => {
     setSosAlerts((prev) =>
       prev.map((alert) => (alert.id === id ? { ...alert, status: 'RESOLVED' } : alert))
     );
+    apiService.resolveSOS(id);
+    socketService.resolveSOS(id);
   };
 
   const addWalletFunds = (amount: number) => {
     setProfile((prev) => ({ ...prev, walletBalance: prev.walletBalance + amount }));
-    setWalletTransactions((prev) => [
-      {
-        id: `t-${Date.now()}`,
-        amount,
-        type: 'DEPOSIT',
-        remark: 'Added to wallet',
-        date: new Date().toISOString().split('T')[0],
-      },
-      ...prev,
-    ]);
+    const newTxn = {
+      id: `t-${Date.now()}`,
+      amount,
+      type: 'DEPOSIT',
+      remark: 'Added to wallet',
+      date: new Date().toISOString().split('T')[0],
+    };
+    setWalletTransactions((prev) => [newTxn, ...prev]);
+    apiService.addWalletFunds(amount);
   };
 
   const withdrawWalletFunds = (amount: number) => {
     if (profile.walletBalance >= amount) {
       setProfile((prev) => ({ ...prev, walletBalance: prev.walletBalance - amount }));
-      setWalletTransactions((prev) => [
-        {
-          id: `t-${Date.now()}`,
-          amount: -amount,
-          type: 'WITHDRAWAL',
-          remark: 'Withdrawn to Bank A/C',
-          date: new Date().toISOString().split('T')[0],
-        },
-        ...prev,
-      ]);
+      const newTxn = {
+        id: `t-${Date.now()}`,
+        amount: -amount,
+        type: 'WITHDRAWAL',
+        remark: 'Withdrawn to Bank A/C',
+        date: new Date().toISOString().split('T')[0],
+      };
+      setWalletTransactions((prev) => [newTxn, ...prev]);
+      apiService.withdrawWalletFunds(amount);
     }
   };
 
-  const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
-  const [navbarHidden, setNavbarHidden] = useState(false);
+  const addStory = (storyData: any) => {
+    const newStory = {
+      id: `story-${Date.now()}`,
+      authorName: profile.name,
+      authorAvatar: profile.avatar,
+      title: storyData.title,
+      content: storyData.content,
+      coverImg: storyData.coverImg || 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1000&q=80',
+      likesCount: 0,
+      location: storyData.location || 'India',
+      createdAt: new Date().toISOString(),
+    };
+    setStoriesList((prev) => [newStory, ...prev]);
+    apiService.createStory(newStory);
+  };
 
   return (
     <AppContext.Provider
@@ -356,6 +610,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setCurrentRole,
         profile,
         updateProfile,
+        isLoggedIn,
+        login,
+        logout,
         trips,
         addTrip,
         joinTrip,
@@ -372,6 +629,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setActiveRoomId,
         navbarHidden,
         setNavbarHidden,
+        storiesList,
+        addStory,
       }}
     >
       {children}

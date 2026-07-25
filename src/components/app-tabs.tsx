@@ -1,3 +1,4 @@
+import { LinearGradient } from 'expo-linear-gradient';
 import { Tabs } from 'expo-router';
 import {
   Home,
@@ -7,18 +8,17 @@ import {
   Search,
   User,
 } from 'lucide-react-native';
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
   StyleSheet,
+  Text,
   TouchableOpacity,
   useColorScheme,
   View,
-  Text,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 
 import { useApp } from '@/store/AppContext';
 
@@ -197,12 +197,14 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
   }, [currentRouteName]);
 
   // ── Hide entirely when in chat room or stories ───────────────────────
-  // ── Hide entirely when in chat room, stories, monsoon advisory, or destination details ──
+  // ── Hide entirely when in chat room, stories, monsoon advisory, destination details, or map ──
   if (
     (currentRouteName === 'chat' && activeRoomId !== null) ||
     currentRouteName === 'stories' ||
     currentRouteName === 'destination-details' ||
-    currentRouteName === 'monsoon-advisory'
+    currentRouteName === 'monsoon-advisory' ||
+    currentRouteName === 'auth' ||
+    currentRouteName === 'map'
   ) {
     return <View style={{ height: 0 }} />;
   }
@@ -331,6 +333,7 @@ export default function AppTabs() {
       <Tabs.Screen name="map" options={{ title: 'Map' }} />
       <Tabs.Screen name="chat" options={{ title: 'Chat' }} />
       <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
+      <Tabs.Screen name="auth" options={{ title: 'Auth' }} />
     </Tabs>
   );
 }

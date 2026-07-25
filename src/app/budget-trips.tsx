@@ -1,4 +1,5 @@
 import { Trip, useApp } from '@/store/AppContext';
+import TripDetailModal from '@/components/TripDetailModal';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import {
@@ -12,9 +13,14 @@ import {
   ShieldCheck,
   Sparkles,
   User,
-  Users
+  Users,
+  Check,
+  ChevronRight,
+  Bus,
+  Bike,
+  Clock
 } from 'lucide-react-native';
-import { useState } from 'react';
+import React, { useState } from 'react';
 import {
   Alert,
   Dimensions,
@@ -63,12 +69,18 @@ export interface BudgetTripItem {
   endDate: string;
   availableSeats: number;
   totalSeats: number;
-  imageUrl: string;
+  imageUrl: any;
   isBestValueDeal?: boolean;
   dealTagline?: string;
   meetingPoint: string;
   rating: number;
 }
+
+const TRIP_IMAGES: Record<string, any> = {
+  'trip-1': require('@/assets/images/spiritual-journey.png'),
+  'trip-2': require('@/assets/images/leh-expedition.jpg'),
+  'trip-3': require('@/assets/images/kerala.jpg'),
+};
 
 const BUDGET_TRIPS_DATA: BudgetTripItem[] = [
   {
@@ -180,12 +192,15 @@ const BUDGET_TRIPS_DATA: BudgetTripItem[] = [
 
 export default function BudgetTripsScreen() {
   const router = useRouter();
-  const { addTrip } = useApp();
+  const { trips, joinTrip, profile } = useApp();
 
-  const [userMaxBudget, setUserMaxBudget] = useState<number>(15000);
-  const [budgetTextInput, setBudgetTextInput] = useState<string>('15000');
+  const [userMaxBudget, setUserMaxBudget] = useState<number>(50000);
+  const [budgetTextInput, setBudgetTextInput] = useState<string>('50000');
   const [selectedOrgType, setSelectedOrgType] = useState<'ALL' | 'TOURIST_GUIDE' | 'GROUP_ORGANIZER' | 'INDIVIDUAL_TOURIST'>('ALL');
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [selectedTrip, setSelectedTrip] = useState<any | null>(null);
+  const [showJoinModal, setShowJoinModal] = useState(false);
+  const [requestedTrips, setRequestedTrips] = useState<Set<string>>(new Set());
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -205,42 +220,70 @@ export default function BudgetTripsScreen() {
     setBudgetTextInput(val.toString());
   };
 
+  // Map trips dynamically from our database state!
+  const mappedTrips: BudgetTripItem[] = trips.map((t) => {
+    // Map preset details strictly by ID to prevent fuzzy city hijacking!
+    let staticId = t.id;
+    if (t.id === 'trip-1') staticId = 'bt-3';
+    else if (t.id === 'creation-2') staticId = 'bt-1';
+
+    const staticItem = BUDGET_TRIPS_DATA.find((item) => item.id === staticId);
+    const isUserCreation = t.creator.includes('Aarav Sharma') || (profile && profile.name && t.creator.includes(profile.name));
+
+    if (staticItem) {
+      return {
+        ...staticItem,
+        id: t.id,
+        title: t.name,
+        organizerName: t.creator,
+        organizerType: isUserCreation ? 'INDIVIDUAL_TOURIST' : staticItem.organizerType,
+        pricePerPerson: t.budget,
+        availableSeats: t.availableSeats,
+        totalSeats: t.totalSeats,
+        imageUrl: TRIP_IMAGES[t.id] || staticItem.imageUrl,
+      };
+    }
+
+    return {
+      id: t.id,
+      title: t.name,
+      organizerName: t.creator,
+      organizerType: isUserCreation
+        ? 'INDIVIDUAL_TOURIST'
+        : t.guideIncluded
+        ? 'TOURIST_GUIDE'
+        : 'GROUP_ORGANIZER',
+      organizerAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&q=80',
+      verified: t.creator === 'Aarav Sharma' || t.creator.includes('Organizer') || t.creator.includes('Guide'),
+      pricePerPerson: t.budget,
+      placesCoveredCount: t.cities.length,
+      distanceKm: t.cities.length * 115,
+      cities: t.cities,
+      startDate: t.startDate,
+      endDate: t.endDate || t.startDate,
+      availableSeats: t.availableSeats,
+      totalSeats: t.totalSeats,
+      imageUrl: t.coverImage || TRIP_IMAGES[t.id] || 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&q=80',
+      isBestValueDeal: t.budget < 15000,
+      dealTagline: t.budget < 10000 ? '🚩 BEST VALUE BUDGET TRIP!' : undefined,
+      meetingPoint: t.meetingPoint,
+      rating: 4.8,
+    };
+  });
+
   // Filter trips matching user's budget and organizer filter
-  const filteredTrips = BUDGET_TRIPS_DATA.filter((trip) => {
+  const filteredTrips = mappedTrips.filter((trip) => {
     const matchesBudget = trip.pricePerPerson <= userMaxBudget;
     const matchesOrg = selectedOrgType === 'ALL' || trip.organizerType === selectedOrgType;
     return matchesBudget && matchesOrg;
   });
 
-  const bestValueDeals = BUDGET_TRIPS_DATA.filter((t) => t.isBestValueDeal && t.pricePerPerson <= userMaxBudget);
+  const bestValueDeals = mappedTrips.filter((t) => t.isBestValueDeal && t.pricePerPerson <= userMaxBudget);
 
-  const handleJoinTrip = (trip: BudgetTripItem) => {
-    const newTrip: Trip = {
-      id: `joined-${trip.id}-${Date.now()}`,
-      name: trip.title,
-      creator: trip.organizerName,
-      cities: trip.cities,
-      startDate: trip.startDate,
-      endDate: trip.endDate,
-      budget: trip.pricePerPerson,
-      availableSeats: Math.max(0, trip.availableSeats - 1),
-      totalSeats: trip.totalSeats,
-      meetingPoint: trip.meetingPoint,
-      guideIncluded: trip.organizerType === 'TOURIST_GUIDE',
-      foodIncluded: true,
-      privacy: 'PUBLIC',
-      membersCount: trip.totalSeats - trip.availableSeats + 1,
-    };
-
-    addTrip(newTrip);
-
-    Alert.alert(
-      '🎉 Seat Booked Successfully!',
-      `You joined "${trip.title}" organized by ${trip.organizerName} for ₹${trip.pricePerPerson}. Total budget fits in your ₹${userMaxBudget.toLocaleString('en-IN')} limit!`,
-      [
-        { text: 'View Search Feed', onPress: () => router.push('/search') },
-      ]
-    );
+  const handleJoinTrip = (trip: any) => {
+    const originalTrip = trips.find((t) => t.id === trip.id) || trip;
+    setSelectedTrip(originalTrip);
+    setShowJoinModal(true);
   };
 
   return (
@@ -325,7 +368,7 @@ export default function BudgetTripsScreen() {
           >
             <Briefcase size={13} color={selectedOrgType === 'TOURIST_GUIDE' ? C.white : C.textSec} />
             <Text style={[styles.orgTabText, selectedOrgType === 'TOURIST_GUIDE' && styles.orgTabTextActive]}>
-              👨‍🏫 Tourist Guides
+              Tourist Guides
             </Text>
           </TouchableOpacity>
 
@@ -335,7 +378,7 @@ export default function BudgetTripsScreen() {
           >
             <Users size={13} color={selectedOrgType === 'GROUP_ORGANIZER' ? C.white : C.textSec} />
             <Text style={[styles.orgTabText, selectedOrgType === 'GROUP_ORGANIZER' && styles.orgTabTextActive]}>
-              👥 Group Organizers
+              Group Organizers
             </Text>
           </TouchableOpacity>
 
@@ -345,7 +388,7 @@ export default function BudgetTripsScreen() {
           >
             <User size={13} color={selectedOrgType === 'INDIVIDUAL_TOURIST' ? C.white : C.textSec} />
             <Text style={[styles.orgTabText, selectedOrgType === 'INDIVIDUAL_TOURIST' && styles.orgTabTextActive]}>
-              👤 User/Tourists
+              User/Tourists
             </Text>
           </TouchableOpacity>
         </ScrollView>
@@ -366,9 +409,9 @@ export default function BudgetTripsScreen() {
                   key={deal.id}
                   activeOpacity={0.85}
                   style={styles.dealCard}
-                  onPress={() => handleJoinTrip(deal)}
+                  onPress={() => router.push({ pathname: '/map', params: { tripId: deal.id } })}
                 >
-                  <Image source={{ uri: deal.imageUrl }} style={styles.dealImg} />
+                  <Image source={typeof deal.imageUrl === 'string' ? { uri: deal.imageUrl } : deal.imageUrl} style={styles.dealImg} />
                   <LinearGradient colors={['rgba(6,8,20,0.2)', 'rgba(6,8,20,0.95)']} style={StyleSheet.absoluteFill} />
 
                   <View style={styles.dealBadgePill}>
@@ -404,80 +447,135 @@ export default function BudgetTripsScreen() {
         {filteredTrips.length > 0 ? (
           filteredTrips.map((trip) => {
             const savings = userMaxBudget - trip.pricePerPerson;
+            const isMyTrip = trip.organizerName.includes('Aarav Sharma') || (profile && profile.name && trip.organizerName.includes(profile.name));
+            const imageSource = typeof trip.imageUrl === 'string' ? { uri: trip.imageUrl } : trip.imageUrl;
+            
+            const duration = '5 Nights / 6 Days';
+            const transport = trip.title.toLowerCase().includes('bike') ? 'Royal Enfield Bike' : 'AC Tour Bus';
+
             return (
-              <View key={trip.id} style={styles.tripCard}>
-
-                {/* HERO IMAGE BANNER */}
-                <View style={styles.tripImgWrap}>
-                  <Image source={{ uri: trip.imageUrl }} style={styles.tripImg} />
-                  <LinearGradient colors={['rgba(0,0,0,0.3)', 'rgba(6,8,20,0.85)']} style={StyleSheet.absoluteFill} />
-
-                  {/* PRICE & SAVINGS TAG */}
-                  <View style={styles.priceTagBox}>
-                    <Text style={styles.priceTagText}>₹{trip.pricePerPerson.toLocaleString('en-IN')}</Text>
-                    <Text style={styles.savingsTagText}>
-                      {savings > 0 ? `Save ₹${savings.toLocaleString('en-IN')} vs budget` : 'Fits Budget'}
-                    </Text>
-                  </View>
-
-                  {/* ORGANIZER TYPE BADGE */}
-                  <View style={styles.orgBadgePill}>
-                    <User size={10} color={C.blue} />
-                    <Text style={styles.orgBadgeText}>
-                      {trip.organizerType === 'TOURIST_GUIDE'
-                        ? '👨‍🏫 TOURIST GUIDE'
-                        : trip.organizerType === 'GROUP_ORGANIZER'
-                          ? '👥 GROUP ORGANIZER'
-                          : '👤 INDIVIDUAL TOURIST'}
-                    </Text>
-                  </View>
+              <TouchableOpacity
+                key={trip.id}
+                activeOpacity={0.85}
+                onPress={() => handleJoinTrip(trip)}
+                style={[
+                  styles.tripCard,
+                  { backgroundColor: C.card, borderColor: C.border },
+                  isMyTrip && { backgroundColor: 'transparent', borderColor: 'transparent', borderWidth: 0 }
+                ]}
+              >
+                {isMyTrip && (
+                  <LinearGradient
+                    colors={['#3B0764', '#13042A', '#06010F']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={[StyleSheet.absoluteFill, { borderRadius: 16 }]}
+                  />
+                )}
+                {/* Left side: Image */}
+                <View style={styles.tripImageContainer}>
+                  <Image source={imageSource} style={styles.tripImage} />
+                  <LinearGradient
+                    colors={['rgba(0, 0, 0, 0.65)', 'rgba(0, 0, 0, 0.1)', 'rgba(0, 0, 0, 0.75)']}
+                    locations={[0, 0.45, 1]}
+                    style={StyleSheet.absoluteFill}
+                  />
+                  {trip.verified && (
+                    <View style={[styles.tripBadge, { backgroundColor: '#10B981' }]}>
+                      <Text style={styles.tripBadgeText}>Verified</Text>
+                    </View>
+                  )}
                 </View>
 
-                {/* TRIP CARD BODY */}
-                <View style={styles.tripCardBody}>
+                {/* Right side: Detailed trip content */}
+                <View style={styles.tripContent}>
+                  <View style={styles.tripHeaderRow}>
+                    <Text style={[styles.tripName, { color: C.white }]} numberOfLines={2}>
+                      {trip.title}
+                    </Text>
+                  </View>
 
-                  {/* ORGANIZER ROW */}
-                  <View style={styles.orgRow}>
-                    <Image source={{ uri: trip.organizerAvatar }} style={styles.orgAvatar} />
-                    <View style={{ flex: 1 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                        <Text style={styles.orgName}>{trip.organizerName}</Text>
-                        {trip.verified && <ShieldCheck size={14} color={C.green} />}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2, marginBottom: 4 }}>
+                    <View style={[styles.verifiedBadge, { backgroundColor: 'rgba(59,130,246,0.15)', marginTop: 0, marginBottom: 0 }]}>
+                      <Check size={9} color={C.blue} strokeWidth={3} />
+                      <Text style={[styles.verifiedText, { color: C.blue }]}>Verified Host</Text>
+                    </View>
+                    <Text style={{ fontSize: 9.5, fontWeight: '600', color: '#10B981' }}>{trip.availableSeats} left</Text>
+                  </View>
+
+                  {/* Route cities with arrow */}
+                  <View style={styles.routeCities}>
+                    {trip.cities.map((city, i) => (
+                      <React.Fragment key={city}>
+                        <Text style={[styles.cityText, { color: C.white }]}>{city}</Text>
+                        {i < trip.cities.length - 1 && (
+                          <Text style={[styles.routeArrow, { color: C.textSec }]}>➔</Text>
+                        )}
+                      </React.Fragment>
+                    ))}
+                  </View>
+
+                  {/* 2x2 grid of pill capsules */}
+                  <View style={styles.capsulesContainer}>
+                    <View style={styles.capsulesRow}>
+                      <View style={[styles.capsule, { backgroundColor: '#1E243B' }]}>
+                        <MapPin size={9} color={C.textSec} />
+                        <Text style={[styles.capsuleText, { color: C.textSec }]} numberOfLines={1}>
+                          {trip.meetingPoint}
+                        </Text>
                       </View>
-                      <Text style={styles.ratingSub}>⭐ {trip.rating} • Verified Trip Host</Text>
+                      <View style={[styles.capsule, { backgroundColor: '#1E243B' }]}>
+                        <Calendar size={9} color={C.textSec} />
+                        <Text style={[styles.capsuleText, { color: C.textSec }]} numberOfLines={1}>
+                          {trip.startDate}
+                        </Text>
+                      </View>
                     </View>
-
-                    <View style={styles.seatsPill}>
-                      <Users size={12} color={C.amber} />
-                      <Text style={styles.seatsText}>{trip.availableSeats} Seats Left</Text>
+                    <View style={styles.capsulesRow}>
+                      <View style={[styles.capsule, { backgroundColor: '#1E243B' }]}>
+                        <Clock size={9} color={C.textSec} />
+                        <Text style={[styles.capsuleText, { color: C.textSec }]} numberOfLines={1}>
+                          {duration}
+                        </Text>
+                      </View>
+                      <View style={[styles.capsule, { backgroundColor: '#1E243B' }]}>
+                        {trip.title.toLowerCase().includes('bike') ? (
+                          <Bike size={9} color={C.textSec} />
+                        ) : (
+                          <Bus size={9} color={C.textSec} />
+                        )}
+                        <Text style={[styles.capsuleText, { color: C.textSec }]} numberOfLines={1}>
+                          {transport}
+                        </Text>
+                      </View>
                     </View>
                   </View>
 
-                  {/* TRIP TITLE */}
-                  <Text style={styles.tripTitle}>{trip.title}</Text>
-
-                  {/* CITIES & DISTANCE META */}
-                  <View style={styles.metaRow}>
-                    <MapPin size={13} color={C.green} />
-                    <Text style={styles.metaText}>{trip.cities.join(' ➔ ')} ({trip.distanceKm} km total)</Text>
+                  {/* Price and Action Button row */}
+                  <View style={[styles.priceRow, { borderTopColor: C.border }]}>
+                    <View style={{ flex: 1, marginRight: 4 }}>
+                      <Text style={[styles.priceLabel, { color: C.textSec }]} numberOfLines={1}>Full Trip Cost</Text>
+                      <Text style={[styles.priceAmount, { color: C.amber }]} numberOfLines={1}>
+                        ₹{trip.pricePerPerson}
+                      </Text>
+                      <Text style={[styles.pricePer, { color: C.textSec, marginTop: -2 }]} numberOfLines={1}>
+                        {savings > 0 ? `Save ₹${savings}` : 'Fits Budget'}
+                      </Text>
+                    </View>
+                    <View style={{ gap: 4, flexShrink: 0, width: 120 }}>
+                      {!isMyTrip && (
+                        <TouchableOpacity
+                          style={styles.joinBtn}
+                          onPress={() => handleJoinTrip(trip)}
+                        >
+                          <Text style={styles.joinBtnText} numberOfLines={1}>Request to Join</Text>
+                          <ChevronRight size={11} color="#FFF" style={{ marginLeft: 2 }} />
+                        </TouchableOpacity>
+                      )}
+                    </View>
                   </View>
-
-                  <View style={styles.metaRow}>
-                    <Calendar size={13} color={C.purple} />
-                    <Text style={styles.metaText}>{trip.startDate} to {trip.endDate} • {trip.placesCoveredCount} Spots Covered</Text>
-                  </View>
-
-                  {/* JOIN BUTTON */}
-                  <TouchableOpacity
-                    style={styles.joinBtn}
-                    onPress={() => handleJoinTrip(trip)}
-                  >
-                    <Sparkles size={16} color={C.white} />
-                    <Text style={styles.joinBtnText}>Join Trip @ ₹{trip.pricePerPerson.toLocaleString('en-IN')}</Text>
-                  </TouchableOpacity>
-
                 </View>
-              </View>
+              </TouchableOpacity>
             );
           })
         ) : (
@@ -499,6 +597,14 @@ export default function BudgetTripsScreen() {
           <Text style={styles.toastText}>{toastMsg}</Text>
         </View>
       )}
+
+      <TripDetailModal
+        visible={showJoinModal}
+        trip={selectedTrip}
+        onClose={() => setShowJoinModal(false)}
+        requestedTrips={requestedTrips}
+        setRequestedTrips={setRequestedTrips}
+      />
     </SafeAreaView>
   );
 }
@@ -757,129 +863,146 @@ const styles = StyleSheet.create({
   },
 
   tripCard: {
-    backgroundColor: C.card,
-    borderRadius: 22,
-    marginBottom: 16,
+    flexDirection: 'row',
+    borderRadius: 16,
     overflow: 'hidden',
+    marginBottom: 16,
     borderWidth: 1,
-    borderColor: C.border,
+    minHeight: 200,
   },
-  tripImgWrap: {
-    height: 140,
+  tripImageContainer: {
+    width: 115,
+    alignSelf: 'stretch',
     position: 'relative',
+    backgroundColor: '#000',
   },
-  tripImg: {
+  tripImage: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    bottom: 0,
+    right: 0,
     width: '100%',
     height: '100%',
+    resizeMode: 'cover',
   },
-  priceTagBox: {
+  tripBadge: {
     position: 'absolute',
     top: 10,
     left: 10,
-    backgroundColor: 'rgba(6,8,20,0.85)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(245,158,11,0.3)',
-  },
-  priceTagText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: C.amber,
-  },
-  savingsTagText: {
-    fontSize: 8.5,
-    fontWeight: '800',
-    color: C.green,
-  },
-  orgBadgePill: {
-    position: 'absolute',
-    bottom: 10,
-    right: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(6,8,20,0.85)',
     paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    zIndex: 2,
   },
-  orgBadgeText: {
-    fontSize: 8.5,
-    fontWeight: '800',
-    color: C.blue,
-  },
-
-  tripCardBody: {
-    padding: 14,
-  },
-  orgRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 10,
-  },
-  orgAvatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-  },
-  orgName: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: C.white,
-  },
-  ratingSub: {
+  tripBadgeText: {
     fontSize: 9.5,
-    color: C.textSec,
+    fontWeight: '700',
+    color: '#FFF',
   },
-  seatsPill: {
+  tripContent: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    justifyContent: 'space-between',
+  },
+  tripHeaderRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 2,
     gap: 4,
-    backgroundColor: 'rgba(245,158,11,0.15)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
   },
-  seatsText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: C.amber,
+  tripName: {
+    fontSize: 15,
+    fontWeight: '700',
+    lineHeight: 19,
+    flex: 1,
   },
-
-  tripTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: C.white,
-    marginBottom: 8,
-  },
-  metaRow: {
+  verifiedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 6,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
+    gap: 3,
   },
-  metaText: {
+  verifiedText: {
+    fontSize: 8.5,
+    fontWeight: '700',
+  },
+  routeCities: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 2,
+    flexWrap: 'wrap',
+  },
+  cityText: {
     fontSize: 11,
-    color: C.textSec,
+    fontWeight: '700',
   },
-
+  routeArrow: {
+    fontSize: 10,
+    marginHorizontal: 3,
+  },
+  capsulesContainer: {
+    gap: 4,
+    marginVertical: 4,
+  },
+  capsulesRow: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  capsule: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 4.5,
+    borderRadius: 6,
+    gap: 3,
+  },
+  capsuleText: {
+    fontSize: 8.5,
+    fontWeight: '600',
+    flex: 1,
+  },
+  priceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 0.5,
+  },
+  priceLabel: {
+    fontSize: 9,
+    fontWeight: '600',
+    marginBottom: 1,
+  },
+  priceAmount: {
+    fontSize: 20,
+    fontWeight: '900',
+  },
+  pricePer: {
+    fontSize: 9.5,
+    fontWeight: '600',
+  },
   joinBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: C.blue,
-    paddingVertical: 12,
-    borderRadius: 14,
-    marginTop: 10,
+    backgroundColor: '#0066FF',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    gap: 3,
+    flexShrink: 0,
   },
   joinBtnText: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: C.white,
+    color: '#FFF',
+    fontSize: 11,
+    fontWeight: '700',
   },
 
   emptyCard: {

@@ -1,7 +1,9 @@
 import GlassCard from '@/components/ui/GlassCard';
+import DummyPaymentModal from '@/components/ui/DummyPaymentModal';
+import AuthScreen from './auth';
 import { useApp, UserRole } from '@/store/AppContext';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useRouter, useNavigation } from 'expo-router';
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -27,13 +29,14 @@ import {
   Settings,
   Share2,
   Shield,
+  ShieldCheck,
   Sliders,
   Sparkles,
   User,
   Wallet,
   X
 } from 'lucide-react-native';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Alert,
   Image,
@@ -110,6 +113,7 @@ const AVATAR_PRESETS = [
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const isDark = useColorScheme() === 'dark';
   const {
     currentRole,
@@ -119,7 +123,24 @@ export default function ProfileScreen() {
     walletTransactions,
     addWalletFunds,
     withdrawWalletFunds,
+    isLoggedIn,
+    login,
+    logout,
   } = useApp();
+
+  useEffect(() => {
+    console.log('[ProfileScreen] isLoggedIn:', isLoggedIn, 'profile.name:', profile?.name, 'showAuthModal:', showAuthModal);
+    if (isLoggedIn) {
+      setShowAuthModal(false);
+    }
+  }, [isLoggedIn]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      setShowAuthModal(false);
+    });
+    return unsubscribe;
+  }, [navigation]);
 
   // Navigation tab state
   const [activeTab, setActiveTab] = useState<'DETAILS' | 'HISTORY' | 'WALLET' | 'DASHBOARD' | 'SETTINGS'>('DETAILS');
@@ -129,6 +150,8 @@ export default function ProfileScreen() {
   const [aadhaarInput, setAadhaarInput] = useState('');
   const [fundingAmount, setFundingAmount] = useState('');
   const [withdrawalAmount, setWithdrawalAmount] = useState('');
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
   // Guide dashboard states
   const [hourlyRate, setHourlyRate] = useState('350');
@@ -243,9 +266,16 @@ export default function ProfileScreen() {
   };
 
   const handleLogout = () => {
-    Alert.alert('Log Out', 'Are you sure you want to log out of TravelStar?', [
+    Alert.alert('Sign Out of Account', 'Are you sure you want to sign out of TravelConnect?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Log Out', style: 'destructive', onPress: () => router.replace('/') },
+      {
+        text: 'Sign Out',
+        style: 'destructive',
+        onPress: () => {
+          logout();
+          setShowAuthModal(true);
+        },
+      },
     ]);
   };
 
@@ -271,8 +301,17 @@ export default function ProfileScreen() {
             style={StyleSheet.absoluteFill}
           />
 
-          {/* Top-Right Action Column: Notification, Edit (Pencil), Share */}
+          {/* Top-Right Action Column: Notification, Sign In / Auth, Edit (Pencil), Share */}
           <View style={styles.topRightActionCol}>
+            <TouchableOpacity
+              style={styles.topActionBtn}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              onPress={() => setShowAuthModal(true)}
+            >
+              <User size={16} color="#FFF" />
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={styles.topActionBtn}
               activeOpacity={0.7}
@@ -363,6 +402,91 @@ export default function ProfileScreen() {
             <Text style={styles.statLabel}>Star Points</Text>
           </View>
         </View>
+
+        {/* ════════════════════════════════════════════════
+            PROMINENT LOGIN / SIGN UP BANNER (only when not logged in)
+            ════════════════════════════════════════════════ */}
+        {!isLoggedIn ? (
+          <TouchableOpacity
+            style={{
+              marginHorizontal: 16,
+              marginTop: 12,
+              marginBottom: 4,
+              padding: 14,
+              borderRadius: 20,
+              backgroundColor: 'rgba(0, 102, 255, 0.15)',
+              borderWidth: 1.5,
+              borderColor: 'rgba(0, 102, 255, 0.4)',
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
+            activeOpacity={0.85}
+            onPress={() => setShowAuthModal(true)}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+              <View
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 20,
+                  backgroundColor: '#0066FF',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginRight: 12,
+                }}
+              >
+                <User size={20} color="#FFFFFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '800', color: '#FFFFFF' }}>
+                  Account & Authentication
+                </Text>
+                <Text style={{ fontSize: 11, color: '#60A5FA', marginTop: 2 }}>
+                  Sign In, Register, Switch Roles & Verify OTP
+                </Text>
+              </View>
+            </View>
+            <ChevronRight size={18} color="#60A5FA" />
+          </TouchableOpacity>
+        ) : (
+          <View
+            style={{
+              marginHorizontal: 16,
+              marginTop: 12,
+              marginBottom: 4,
+              padding: 14,
+              borderRadius: 20,
+              backgroundColor: 'rgba(16, 185, 129, 0.15)',
+              borderWidth: 1.5,
+              borderColor: 'rgba(16, 185, 129, 0.4)',
+              flexDirection: 'row',
+              alignItems: 'center',
+            }}
+          >
+            <View
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                backgroundColor: '#10B981',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginRight: 12,
+              }}
+            >
+              <ShieldCheck size={20} color="#FFFFFF" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 14, fontWeight: '800', color: '#FFFFFF' }}>
+                Signed In as {profile.name}
+              </Text>
+              <Text style={{ fontSize: 11, color: '#6EE7B7', marginTop: 2 }}>
+                Role: {currentRole} • Account Verified ✓
+              </Text>
+            </View>
+          </View>
+        )}
 
         {/* ════════════════════════════════════════════════
             5-TAB NAVIGATION BAR
@@ -653,6 +777,24 @@ export default function ProfileScreen() {
                   </TouchableOpacity>
                 </View>
               </View>
+
+              <TouchableOpacity
+                style={{
+                  marginTop: 14,
+                  paddingVertical: 12,
+                  borderRadius: 14,
+                  backgroundColor: '#0066FF',
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+                onPress={() => setShowPaymentModal(true)}
+              >
+                <Sparkles size={16} color="#FFF" style={{ marginRight: 6 }} />
+                <Text style={{ fontSize: 14, fontWeight: '700', color: '#FFF' }}>
+                  Test Dummy Payment Gateway Sheet
+                </Text>
+              </TouchableOpacity>
             </GlassCard>
 
             <Text style={[styles.transactionsHeader, { color: isDark ? '#94A3B8' : '#64748B' }]}>
@@ -909,13 +1051,18 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             </GlassCard>
 
-            {/* Logout Button */}
-            <TouchableOpacity style={styles.logoutBtn} activeOpacity={0.85} onPress={handleLogout}>
-              <LogOut size={18} color="#FFF" />
-              <Text style={styles.logoutBtnText}>Log Out of Account</Text>
-            </TouchableOpacity>
           </View>
         )}
+
+        {/* Main Bottom Sign Out Button */}
+        <TouchableOpacity
+          style={[styles.logoutBtn, { marginHorizontal: 16, marginTop: 20 }]}
+          activeOpacity={0.85}
+          onPress={handleLogout}
+        >
+          <LogOut size={18} color="#FFF" style={{ marginRight: 8 }} />
+          <Text style={styles.logoutBtnText}>Sign Out of Account</Text>
+        </TouchableOpacity>
 
         <View style={{ height: 60 }} />
       </ScrollView>
@@ -1173,6 +1320,36 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             </View>
           )}
+        </View>
+      </Modal>
+
+      <DummyPaymentModal
+        visible={showPaymentModal}
+        onClose={() => setShowPaymentModal(false)}
+        amount={1500}
+        title="Spiritual Vrindavan Tour Advance Booking"
+        onSuccess={(details) => {
+          addWalletFunds(details.amount);
+        }}
+      />
+
+      <Modal visible={showAuthModal} animationType="slide">
+        <View style={{ flex: 1, backgroundColor: '#050710' }}>
+          <AuthScreen />
+          <TouchableOpacity
+            style={{
+              position: 'absolute',
+              top: 50,
+              right: 20,
+              zIndex: 999,
+              padding: 8,
+              borderRadius: 20,
+              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+            }}
+            onPress={() => setShowAuthModal(false)}
+          >
+            <X size={22} color="#FFF" />
+          </TouchableOpacity>
         </View>
       </Modal>
     </SafeAreaView>

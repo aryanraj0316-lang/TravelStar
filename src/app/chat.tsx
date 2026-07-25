@@ -409,7 +409,7 @@ interface ChatRoom {
 export default function ChatScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { trips, guides, profile, sosAlerts, triggerSOS, resolveSOS, activeRoomId, setActiveRoomId } = useApp();
+  const { trips, guides, profile, sosAlerts, triggerSOS, resolveSOS, activeRoomId, setActiveRoomId, messages, sendMessage } = useApp();
 
   // Navigation States
   const selectedRoomId = activeRoomId;
@@ -451,6 +451,51 @@ export default function ChatScreen() {
   useEffect(() => {
     setActiveTab('chat');
   }, [activeRoomId]);
+
+  // Sync real-time socket messages from context to component's map state
+  useEffect(() => {
+    if (messages.length > 0) {
+      const latestMsg = messages[messages.length - 1];
+      const key = activeRoomId || 'trip-1';
+      
+      setTripMessages((prev) => {
+        const roomMsgs = prev[key] || [];
+        if (roomMsgs.some((m) => m.id === latestMsg.id)) {
+          return prev;
+        }
+        
+        const newMsg: CustomMessage = {
+          id: latestMsg.id,
+          senderName: latestMsg.senderName,
+          senderRole: latestMsg.senderRole,
+          avatar: latestMsg.senderName === profile.name ? profile.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
+          content: latestMsg.content,
+          timestamp: latestMsg.timestamp,
+          isMe: latestMsg.senderName === profile.name,
+          type: latestMsg.mediaType === 'IMAGE' ? 'image' : latestMsg.mediaType === 'VOICE' ? 'voice' : 'text',
+        };
+        
+        return {
+          ...prev,
+          [key]: [...roomMsgs, newMsg],
+        };
+      });
+      
+      setInboxRooms((prevRooms) =>
+        prevRooms.map((room) => {
+          if (room.id === key) {
+            return {
+              ...room,
+              latestMessage: `${latestMsg.senderName === profile.name ? 'You' : latestMsg.senderName}: ${latestMsg.content}`,
+              latestTime: latestMsg.timestamp,
+              unreadCount: 0,
+            };
+          }
+          return room;
+        })
+      );
+    }
+  }, [messages, activeRoomId]);
 
   // Filters for the Inbox List view
   const [inboxFilter, setInboxFilter] = useState<'ALL' | 'GROUPS' | 'GUIDES'>('ALL');
@@ -767,6 +812,11 @@ export default function ChatScreen() {
   // Core send message handler
   const sendNewMessage = (msgData: Partial<CustomMessage>) => {
     const key = selectedRoomId || selectedTripId;
+    const mediaType = msgData.type === 'image' ? 'IMAGE' : msgData.type === 'voice' ? 'VOICE' : 'NONE';
+    
+    // Call global websocket sender
+    sendMessage(msgData.content || '', mediaType);
+
     const newMsg: CustomMessage = {
       id: `msg-${Date.now()}`,
       senderName: profile.name,
@@ -1077,7 +1127,7 @@ export default function ChatScreen() {
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions ? ImagePicker.MediaTypeOptions.Images : 'images',
+        mediaTypes: ['images'],
         allowsEditing: true,
         quality: 0.8,
       });
