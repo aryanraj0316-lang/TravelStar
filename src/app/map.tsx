@@ -12,6 +12,7 @@ import {
   ChevronUp,
   Clock,
   Compass,
+  EyeOff,
   Layers,
   Locate,
   MapPin,
@@ -39,6 +40,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
+import * as Location from 'expo-location';
 
 // Coordinates registry for dynamic routes mapping
 const CITY_COORDS: Record<string, { latitude: number; longitude: number }> = {
@@ -212,8 +214,8 @@ function buildMapHTML(tileKey: string, routeCoords: typeof ROUTE_COORDS) {
         background: rgba(13, 17, 23, 0.95) !important;
         color: #F0F6FC !important;
         border: 1px solid rgba(0, 102, 255, 0.35);
-        border-radius: 14px !important;
-        box-shadow: 0 12px 40px rgba(0,0,0,0.6), 0 0 20px rgba(0, 102, 255, 0.15);
+        border-radius: 8px !important;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.5), 0 0 12px rgba(0, 102, 255, 0.1);
         padding: 0 !important;
         overflow: hidden;
       }
@@ -224,27 +226,27 @@ function buildMapHTML(tileKey: string, routeCoords: typeof ROUTE_COORDS) {
       }
       .leaflet-popup-content {
         margin: 0 !important;
-        min-width: 170px;
+        min-width: 125px;
       }
-      .popup-card { padding: 10px 12px; }
+      .popup-card { padding: 6px 8px; }
       .popup-badge {
         display: inline-block;
-        padding: 1.5px 6px; border-radius: 4px;
-        font-size: 8px; font-weight: 800;
-        letter-spacing: 0.6px; margin-bottom: 4px;
+        padding: 1px 4px; border-radius: 3px;
+        font-size: 7px; font-weight: 800;
+        letter-spacing: 0.5px; margin-bottom: 2px;
         text-transform: uppercase;
       }
       .popup-badge-guide { background: rgba(16, 185, 129, 0.15); color: #34D399; }
       .popup-badge-group { background: rgba(245, 158, 11, 0.15); color: #FBBF24; }
       .popup-badge-tourist { background: rgba(139, 92, 246, 0.15); color: #A78BFA; }
       .popup-badge-attraction { background: rgba(239, 68, 68, 0.15); color: #F87171; }
-      .popup-name { margin: 0 0 3px 0; font-size: 11.5px; color: #F0F6FC; font-weight: 700; }
-      .popup-detail { margin: 0; font-size: 9.5px; color: #8B949E; line-height: 1.35; }
+      .popup-name { margin: 0 0 1px 0; font-size: 10px; color: #F0F6FC; font-weight: 700; }
+      .popup-detail { margin: 0; font-size: 8px; color: #8B949E; line-height: 1.25; }
       .popup-cta {
         display: flex; align-items: center; justify-content: center;
-        margin-top: 8px; padding: 6px 0;
+        margin-top: 4px; padding: 4px 0;
         border-top: 1px solid rgba(255,255,255,0.06);
-        font-size: 9.5px; font-weight: 700; color: #0066FF;
+        font-size: 8px; font-weight: 700; color: #0066FF;
       }
 
       .current-loc-outer {
@@ -313,14 +315,30 @@ function buildMapHTML(tileKey: string, routeCoords: typeof ROUTE_COORDS) {
       .blinking-path {
         animation: blink 1.2s infinite ease-in-out;
       }
+      .current-loc-outer {
+        width: 28px; height: 28px; border-radius: 14px;
+        background: rgba(0, 102, 255, 0.15);
+        display: flex; align-items: center; justify-content: center;
+        animation: pulse-ring 2s ease-out infinite;
+      }
+      .current-loc-inner {
+        width: 12px; height: 12px; border-radius: 6px;
+        background: #0066FF; border: 2px solid #FFF;
+        box-shadow: 0 0 10px rgba(0, 102, 255, 0.6);
+      }
+      @keyframes pulse-ring {
+        0% { transform: scale(1); opacity: 1; }
+        100% { transform: scale(2.2); opacity: 0; }
+      }
     </style>
   </head>
   <body>
     <div id="map"></div>
     <script>
-      var pathPoints = ${JSON.stringify(routeCoords.map(c => [c.latitude, c.longitude]))};
-      var map = L.map('map', {
-        zoomControl: false,
+      (function() {
+        var pathPoints = ${JSON.stringify(routeCoords.map(c => [c.latitude, c.longitude]))};
+        var map = L.map('map', {
+          zoomControl: false,
         attributionControl: false,
         zoomAnimation: true,
         markerZoomAnimation: false,
@@ -578,7 +596,7 @@ function buildMapHTML(tileKey: string, routeCoords: typeof ROUTE_COORDS) {
 
         var marker = L.marker([pin.latitude, pin.longitude], { icon: icon })
           .addTo(map)
-          .bindPopup(popupHTML, { closeButton: false, minWidth: 200 });
+          .bindPopup(popupHTML, { closeButton: false, minWidth: 125 });
 
         markerInstances.push({ marker: marker, type: pin.type });
       });
@@ -613,10 +631,73 @@ function buildMapHTML(tileKey: string, routeCoords: typeof ROUTE_COORDS) {
         }
       }
 
+      var selfMarker = null;
+
+      function locateUser() {
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            function(position) {
+              var lat = position.coords.latitude;
+              var lng = position.coords.longitude;
+              
+              if (!lat || !lng || isNaN(lat) || isNaN(lng)) {
+                var payload = JSON.stringify({ type: 'GEOLOCATION_ERROR', message: "Invalid coordinates received." });
+                if (window.ReactNativeWebView) {
+                  window.ReactNativeWebView.postMessage(payload);
+                } else {
+                  window.parent.postMessage(payload, '*');
+                }
+                return;
+              }
+              
+              var selfLatLng = [lat, lng];
+
+              if (!selfMarker) {
+                var currentLocHtml = '<div class="current-loc-outer"><div class="current-loc-inner"></div></div>';
+                var selfIcon = L.divIcon({
+                  html: currentLocHtml,
+                  className: '',
+                  iconSize: [28, 28],
+                  iconAnchor: [14, 14]
+                });
+                selfMarker = L.marker(selfLatLng, { icon: selfIcon })
+                  .addTo(map)
+                  .bindPopup('<b>You are here</b><br>Live GPS Location');
+              } else {
+                selfMarker.setLatLng(selfLatLng);
+              }
+
+              // Slow cinematic zoom-in focus transition on self location
+              map.flyTo(selfLatLng, 15, {
+                animate: true,
+                duration: 2.2,
+                easeLinearity: 0.2
+              });
+            },
+            function(error) {
+              var errorMsg = "Unable to retrieve your location.";
+              if (error.code === error.PERMISSION_DENIED) {
+                errorMsg = "Location permission denied. Please allow location access in settings.";
+              }
+              var payload = JSON.stringify({ type: 'GEOLOCATION_ERROR', message: errorMsg });
+              if (window.ReactNativeWebView) {
+                window.ReactNativeWebView.postMessage(payload);
+              } else {
+                window.parent.postMessage(payload, '*');
+              }
+            },
+            { enableHighAccuracy: true, timeout: 8000 }
+          );
+        } else {
+          alert("Geolocation is not supported by this browser.");
+        }
+      }
+
       function handleMsg(event) {
         try {
           var data = JSON.parse(event.data);
           if (data.type === 'FILTER') applyFilter(data.filter);
+          if (data.type === 'LOCATE_SELF') locateUser();
           if (data.type === 'ZOOM_IN') map.zoomIn();
           if (data.type === 'ZOOM_OUT') map.zoomOut();
           if (data.type === 'RECENTER') {
@@ -645,6 +726,7 @@ function buildMapHTML(tileKey: string, routeCoords: typeof ROUTE_COORDS) {
       }
       document.addEventListener('message', handleMsg);
       window.addEventListener('message', handleMsg);
+      })();
     <\/script>
   </body>
   </html>
@@ -721,7 +803,7 @@ export default function MapScreen() {
   const { tripId } = useLocalSearchParams<{ tripId: string }>();
   const router = useRouter();
 
-  const [mapFilter, setMapFilter] = useState<'ALL' | 'GUIDES' | 'GROUPS' | 'TOURISTS' | 'ATTRACTIONS'>('ALL');
+  const [mapFilter, setMapFilter] = useState<'ALL' | 'GUIDES' | 'GROUPS' | 'TOURISTS' | 'ATTRACTIONS' | 'NONE'>('ALL');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [sosTriggered, setSosTriggered] = useState(false);
   const [tileLayer, setTileLayer] = useState<'roadmap' | 'satellite' | 'terrain' | 'dark'>('roadmap');
@@ -731,8 +813,28 @@ export default function MapScreen() {
   const [showNavigationOverlay, setShowNavigationOverlay] = useState(false);
   const [isBottomPanelCollapsed, setIsBottomPanelCollapsed] = useState(false);
   const [isMainPanelCollapsed, setIsMainPanelCollapsed] = useState(false);
+  const toggleItineraryDropdown = () => {
+    setIsDropdownOpen(false);
+    setIsItineraryOpen((prev) => !prev);
+  };
+
+  const toggleCategoryDropdown = () => {
+    setIsItineraryOpen(false);
+    setIsDropdownOpen((prev) => !prev);
+  };
+
   const webViewRef = useRef<WebView>(null);
   const sosPulse = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    (async () => {
+      try {
+        await Location.requestForegroundPermissionsAsync();
+      } catch (e) {
+        console.log('Error requesting location permission:', e);
+      }
+    })();
+  }, []);
 
   // Resolve dynamic route coords from the active trip or nearby place
   let activeTrip = trips.find((t) => t.id === tripId);
@@ -748,8 +850,22 @@ export default function MapScreen() {
     { value: 'GROUPS', label: 'Groups', icon: Users },
     { value: 'TOURISTS', label: 'Solo Tourists', icon: User },
     { value: 'ATTRACTIONS', label: 'Attractions', icon: Star },
+    { value: 'NONE', label: 'No Categories', icon: EyeOff },
   ];
   const activeOption = filterOptions.find((o) => o.value === mapFilter) || filterOptions[0];
+
+  const handleLocateSelf = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'Location permission is required to show your current position on the map. Please enable it in your device settings.');
+        return;
+      }
+    } catch (e) {
+      console.log('Location permission error:', e);
+    }
+    postMapMessage({ type: 'LOCATE_SELF' });
+  };
 
   if (tripId && (tripId.startsWith('place-') || tripId.startsWith('nearby-'))) {
     const names: Record<string, string> = {
@@ -870,11 +986,14 @@ export default function MapScreen() {
           style={StyleSheet.absoluteFill}
           javaScriptEnabled={true}
           domStorageEnabled={true}
+          geolocationEnabled={true}
           onMessage={(event) => {
             try {
               const data = JSON.parse(event.nativeEvent.data);
               if (data.type === 'CHECKPOINT_CLICKED') {
                 setSelectedLegIndex(data.index);
+              } else if (data.type === 'GEOLOCATION_ERROR') {
+                Alert.alert('Location Error', data.message);
               }
             } catch (err) { }
           }}
@@ -888,17 +1007,14 @@ export default function MapScreen() {
               onPress={() => router.back()}
               activeOpacity={0.8}
             >
-              <ArrowLeft size={22} color="#000" />
+              <ArrowLeft size={22} color="#000" strokeWidth={3} />
             </TouchableOpacity>
 
             {/* OPTION 1: ROUTE ITINERARY SELECTOR DROPDOWN */}
             <View style={styles.dropdownContainer}>
               <TouchableOpacity
                 style={styles.dropdownTrigger}
-                onPress={() => {
-                  setIsItineraryOpen(!isItineraryOpen);
-                  setIsDropdownOpen(false);
-                }}
+                onPress={toggleItineraryDropdown}
                 activeOpacity={0.9}
               >
                 <View style={styles.dropdownTriggerLeft}>
@@ -911,7 +1027,7 @@ export default function MapScreen() {
               </TouchableOpacity>
 
               {isItineraryOpen && (
-                <View style={styles.dropdownOptionsCard}>
+                <View style={styles.routeDropdownOptionsCard}>
                   <ScrollView style={{ maxHeight: 220 }} showsVerticalScrollIndicator={true}>
                     {/* Option 0: Entire Tour Route */}
                     <TouchableOpacity
@@ -969,7 +1085,7 @@ export default function MapScreen() {
             <View style={styles.dropdownContainer}>
               <TouchableOpacity
                 style={styles.dropdownTrigger}
-                onPress={() => setIsDropdownOpen(!isDropdownOpen)}
+                onPress={toggleCategoryDropdown}
                 activeOpacity={0.9}
               >
                 <View style={styles.dropdownTriggerLeft}>
@@ -980,7 +1096,7 @@ export default function MapScreen() {
               </TouchableOpacity>
 
               {isDropdownOpen && (
-                <View style={styles.dropdownOptionsCard}>
+                <View style={styles.categoryDropdownOptionsCard}>
                   {filterOptions.map((opt) => {
                     const isSelected = opt.value === mapFilter;
                     return (
@@ -1034,12 +1150,32 @@ export default function MapScreen() {
             <Minus size={17} color="#C9D1D9" />
           </TouchableOpacity>
 
+          {/* Entire Route Recenter */}
           <TouchableOpacity
             style={styles.mapControlBtn}
             onPress={handleRecenter}
             activeOpacity={0.8}
           >
+            <Route size={17} color="#C9D1D9" />
+          </TouchableOpacity>
+
+          {/* GPS Self Location */}
+          <TouchableOpacity
+            style={styles.mapControlBtn}
+            onPress={handleLocateSelf}
+            activeOpacity={0.8}
+          >
             <Locate size={17} color="#0066FF" />
+          </TouchableOpacity>
+
+          {/* SOS Emergency - Stable in control strip */}
+          <TouchableOpacity
+            style={styles.sosControlBtn}
+            onPress={handleSOS}
+            activeOpacity={0.85}
+          >
+            <ShieldAlert size={18} color="#FFF" />
+            <Text style={{ color: '#FFF', fontSize: 7, fontWeight: '900', marginTop: 1 }}>SOS</Text>
           </TouchableOpacity>
         </View>
 
@@ -1086,7 +1222,7 @@ export default function MapScreen() {
                   <Route size={14} color="#0066FF" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.bottomCardTitle}>{fromCity} ➔ {toCity}</Text>
+                  <Text style={styles.bottomCardTitle} numberOfLines={1} ellipsizeMode="tail">{fromCity} ➔ {toCity}</Text>
                   <Text style={styles.bottomCardSub}>{activeSegmentText}</Text>
                 </View>
                 <View style={styles.etaBadge}>
@@ -1243,7 +1379,12 @@ export default function MapScreen() {
                     </View>
 
                     {!isBottomPanelCollapsed && (
-                      <>
+                      <ScrollView
+                        style={{ maxHeight: 150, marginTop: 4 }}
+                        contentContainerStyle={{ gap: 8 }}
+                        showsVerticalScrollIndicator={true}
+                        nestedScrollEnabled={true}
+                      >
                         {/* Stats Grid: Duration, Distance, Transit Mode, Seats */}
                         <View style={styles.statsGridRow}>
                           <View style={styles.statsGridCol}>
@@ -1297,7 +1438,7 @@ export default function MapScreen() {
                             </View>
                           </View>
                         </View>
-                      </>
+                      </ScrollView>
                     )}
                   </>
                 );
@@ -1383,12 +1524,7 @@ export default function MapScreen() {
           </View>
         )}
 
-        {/* SOS BUTTON */}
-        <Animated.View style={[styles.sosButtonWrap, { bottom: sosBottomOffset, transform: [{ scale: sosPulse }] }]}>
-          <TouchableOpacity style={styles.sosButton} onPress={handleSOS} activeOpacity={0.85}>
-            <ShieldAlert size={22} color="#FFF" />
-          </TouchableOpacity>
-        </Animated.View>
+
 
         {/* SOS MODAL */}
         {sosTriggered && (
@@ -1486,14 +1622,30 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.3,
   },
-  dropdownOptionsCard: {
+  routeDropdownOptionsCard: {
     position: 'absolute',
     top: 38,
-    left: 0,
-    right: 0,
+    left: -46,
+    minWidth: 260,
     backgroundColor: 'rgba(13, 17, 23, 0.98)',
     borderRadius: 10,
-    padding: 2,
+    padding: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(48, 54, 61, 0.8)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  categoryDropdownOptionsCard: {
+    position: 'absolute',
+    top: 38,
+    right: 0,
+    minWidth: 155,
+    backgroundColor: 'rgba(13, 17, 23, 0.98)',
+    borderRadius: 10,
+    padding: 4,
     borderWidth: 1,
     borderColor: 'rgba(48, 54, 61, 0.8)',
     shadowColor: '#000',
@@ -1699,24 +1851,19 @@ const styles = StyleSheet.create({
   },
 
   // SOS button
-  sosButtonWrap: {
-    position: 'absolute',
-    bottom: 240, // Shifted up to clear the larger bottom card!
-    right: 16,
-    zIndex: 20,
-  },
-  sosButton: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+  sosControlBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: '#EF4444',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#EF4444',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
     elevation: 8,
+    marginTop: 6,
   },
 
   // SOS overlay
