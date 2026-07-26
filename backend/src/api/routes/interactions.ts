@@ -110,6 +110,11 @@ router.post('/join-request', async (req, res) => {
       return res.status(400).json({ status: 'error', message: 'No user found' });
     }
 
+    const trip = await prisma.trip.findUnique({ where: { id: tripId } });
+    if (trip && trip.creatorId === user.id) {
+      return res.status(400).json({ status: 'error', message: 'You cannot request to join your own trip.' });
+    }
+
     // Upsert join request
     const existing = await prisma.joinRequest.findUnique({
       where: {

@@ -26,6 +26,7 @@ const trips: any[] = [];
 // List Trips (with optional query filters)
 router.get('/', async (req, res) => {
   const { category, search, maxBudget } = req.query;
+  const tokenUserId = getUserIdFromReq(req);
   try {
     let dbTrips = await prisma.trip.findMany({
       include: {
@@ -63,6 +64,7 @@ router.get('/', async (req, res) => {
         name: t.name,
         creator: creatorName,
         creatorId: t.creatorId,
+        isMyTrip: tokenUserId ? t.creatorId === tokenUserId : false,
         cities: t.cities,
         startDate: t.startDate.toISOString().split('T')[0],
         endDate: t.endDate.toISOString().split('T')[0],
@@ -72,6 +74,8 @@ router.get('/', async (req, res) => {
         meetingPoint: t.meetingPoint,
         guideIncluded: t.guideIncluded,
         foodIncluded: t.foodIncluded,
+        hotelIncluded: t.hotelIncluded,
+        cabIncluded: t.cabIncluded,
         privacy: t.privacy,
         membersCount: t.totalSeats - t.availableSeats,
         coverImage: t.coverImage || (t.name.toLowerCase().includes('vrindavan') ? 'https://images.unsplash.com/photo-1548013146-72479768bada?w=600&q=80' :
@@ -141,6 +145,7 @@ router.get('/', async (req, res) => {
 // Get Trip by ID
 router.get('/:id', async (req, res) => {
   const { id } = req.params;
+  const tokenUserId = getUserIdFromReq(req);
   try {
     const t = await prisma.trip.findUnique({
       where: { id },
@@ -180,6 +185,7 @@ router.get('/:id', async (req, res) => {
       name: t.name,
       creator: creatorName,
       creatorId: t.creatorId,
+      isMyTrip: tokenUserId ? t.creatorId === tokenUserId : false,
       cities: t.cities,
       startDate: t.startDate.toISOString().split('T')[0],
       endDate: t.endDate.toISOString().split('T')[0],
@@ -189,6 +195,8 @@ router.get('/:id', async (req, res) => {
       meetingPoint: t.meetingPoint,
       guideIncluded: t.guideIncluded,
       foodIncluded: t.foodIncluded,
+      hotelIncluded: t.hotelIncluded,
+      cabIncluded: t.cabIncluded,
       privacy: t.privacy,
       membersCount: t.totalSeats - t.availableSeats,
       coverImage: t.coverImage || (t.name.toLowerCase().includes('vrindavan') ? 'https://images.unsplash.com/photo-1548013146-72479768bada?w=600&q=80' :
@@ -226,6 +234,8 @@ router.post('/', async (req, res) => {
     meetingPoint,
     guideIncluded,
     foodIncluded,
+    hotelIncluded,
+    cabIncluded,
     privacy,
     coverImage,
     category,
@@ -284,12 +294,14 @@ router.post('/', async (req, res) => {
         meetingPoint: meetingPoint || 'Central Station',
         guideIncluded: Boolean(guideIncluded),
         foodIncluded: Boolean(foodIncluded),
+        hotelIncluded: Boolean(hotelIncluded),
+        cabIncluded: Boolean(cabIncluded),
         privacy: (privacy || 'PUBLIC') as any,
         languages: ['Hindi', 'English'],
         coverImage: coverImage || null,
         category: category || null,
-      }
-    });
+      } as any
+    }) as any;
 
     const mappedTrip = {
       id: newTrip.id,
@@ -305,6 +317,8 @@ router.post('/', async (req, res) => {
       meetingPoint: newTrip.meetingPoint,
       guideIncluded: newTrip.guideIncluded,
       foodIncluded: newTrip.foodIncluded,
+      hotelIncluded: newTrip.hotelIncluded,
+      cabIncluded: newTrip.cabIncluded,
       privacy: newTrip.privacy,
       membersCount: 1,
       coverImage: newTrip.coverImage || 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&q=80',
@@ -331,6 +345,8 @@ router.post('/', async (req, res) => {
       meetingPoint: meetingPoint || 'Central Station',
       guideIncluded: Boolean(guideIncluded),
       foodIncluded: Boolean(foodIncluded),
+      hotelIncluded: Boolean(hotelIncluded),
+      cabIncluded: Boolean(cabIncluded),
       privacy: privacy || 'PUBLIC',
       membersCount: 1,
       coverImage: coverImage || 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&q=80',

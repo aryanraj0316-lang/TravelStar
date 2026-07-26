@@ -620,7 +620,10 @@ export default function SearchScreen() {
             const imageUri = trip.coverImage || 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=600&q=80';
             const imageSource = typeof imageUri === 'string' ? { uri: imageUri } : imageUri;
             const isLiked = likedTrips.has(trip.id);
-            const isMyTrip = isLoggedIn && !!(profile && profile.id && trip.creatorId && trip.creatorId === profile.id);
+            const isMyTrip = isLoggedIn && (trip.isMyTrip === true || !!(profile && profile.id && trip.creatorId && trip.creatorId === profile.id));
+            if (trip.isMyTrip !== undefined || (trip.creatorId && profile?.id)) {
+              console.log(`[Search] trip="${trip.name}" isMyTrip=${isMyTrip} trip.isMyTrip=${trip.isMyTrip} trip.creatorId=${trip.creatorId} profile.id=${profile?.id} isLoggedIn=${isLoggedIn}`);
+            }
 
             return (
               <TouchableOpacity

@@ -221,6 +221,8 @@ model Trip {
   hotelDetails   String?
   foodIncluded  Boolean        @default(false)
   guideIncluded Boolean        @default(false)
+  hotelIncluded Boolean        @default(false)
+  cabIncluded   Boolean        @default(false)
   privacy       PrivacySetting @default(PUBLIC)
   rules         String?
   requirements  String?

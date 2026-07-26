@@ -1338,11 +1338,15 @@ export default function MapScreen() {
                 }
 
                 // Determine facilities based on activeTrip
-                let facilities = ["Air Conditioning", "Mobile Charger", "First Aid Kit"];
+                let facilities: string[] = [];
                 if (activeTrip) {
                   if (activeTrip.guideIncluded) facilities.push("Certified Guide");
                   if (activeTrip.foodIncluded) facilities.push("Food/Drinks");
-                  if (activeTrip.budget > 2500) facilities.push("Wi-Fi Included");
+                  if (activeTrip.hotelIncluded !== false) facilities.push("Hotel Stays");
+                  if (activeTrip.cabIncluded !== false) {
+                    const isBike = activeTrip.name?.toLowerCase().includes('bike');
+                    facilities.push(isBike ? "Fuel/Bike" : "AC Vehicle");
+                  }
                 }
 
                 return (
@@ -1443,7 +1447,7 @@ export default function MapScreen() {
                           </Text>
 
                           <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 2 }}>
-                            <Text style={styles.dbDetailsLabel}>Amenities: </Text>
+                            <Text style={styles.dbDetailsLabel}>Service Inclusion: </Text>
                             <View style={styles.facilitiesChipsWrap}>
                               {facilities.map((fac, fIdx) => (
                                 <View key={fIdx} style={styles.facilityChip}>

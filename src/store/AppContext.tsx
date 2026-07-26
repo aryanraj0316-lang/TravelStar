@@ -33,6 +33,7 @@ export interface Trip {
   name: string;
   creator: string;
   creatorId?: string;
+  isMyTrip?: boolean;
   cities: string[];
   startDate: string;
   endDate: string;
@@ -42,6 +43,8 @@ export interface Trip {
   meetingPoint: string;
   guideIncluded: boolean;
   foodIncluded: boolean;
+  hotelIncluded?: boolean;
+  cabIncluded?: boolean;
   privacy: 'PUBLIC' | 'PRIVATE' | 'INVITE_ONLY';
   membersCount: number;
   coverImage?: string;
@@ -122,6 +125,7 @@ interface AppContextType {
   requestedTrips: Set<string>;
   setRequestedTrips: React.Dispatch<React.SetStateAction<Set<string>>>;
   reloadJoinRequests: () => void;
+  refreshTrips: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -410,7 +414,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const [navbarHidden, setNavbarHidden] = useState(false);
 
-  // Sync initial state from backend REST API & initialize WebSocket
+  // ── One-time mount: hydrate auth, profile, socket, guides, wallet, SOS, stories ──
   useEffect(() => {
     // Hydrate local auth status and saved profile safely
     try {
@@ -431,27 +435,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('[Storage Warning] Native module fallback:', e);
     }
 
-    socketService.connect();
-    if (activeRoomId) {
-      socketService.joinRoom(activeRoomId);
-    } else {
-      socketService.joinRoom('trip-1');
-    }
-
-    // Hydrate data from backend API
-    apiService.getTrips().then((remoteTrips) => {
-      if (remoteTrips && remoteTrips.length > 0) {
-        setTrips(remoteTrips);
-      }
-    });
-
-    reloadJoinRequests();
-
+    // Auto-sign-in from backend profile (only on initial load)
     apiService.getProfile().then((remoteProfile) => {
       if (remoteProfile) {
         setProfile((prev) => {
           const merged = { ...prev, ...remoteProfile };
-          // If profile is fetched from backend and contains registered user info, auto sign-in
           if (merged.email && merged.email !== 'aarav@example.com' && merged.name !== 'Guest Traveler') {
             setIsLoggedIn(true);
           }
@@ -486,6 +474,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setStoriesList(remoteStories);
       }
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Reactive: refresh trips, join requests, and socket when login/room changes ──
+  useEffect(() => {
+    socketService.connect();
+    if (activeRoomId) {
+      socketService.joinRoom(activeRoomId);
+    } else {
+      socketService.joinRoom('trip-1');
+    }
+
+    refreshTrips();
+    reloadJoinRequests();
 
     // Real-time socket subscriptions
     const unsubMsg = socketService.onMessage((data) => {
@@ -510,7 +512,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsubMsg();
       unsubSOS();
     };
-  }, [activeRoomId]);
+  }, [activeRoomId, isLoggedIn]);
 
   const reloadJoinRequests = () => {
     apiService.getJoinRequests().then((reqs) => {
@@ -519,6 +521,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setRequestedTrips(new Set(tripIds));
       } else {
         setRequestedTrips(new Set());
+      }
+    }).catch(() => {});
+  };
+
+  const refreshTrips = () => {
+    apiService.getTrips().then((remoteTrips) => {
+      if (remoteTrips && remoteTrips.length > 0) {
+        setTrips(remoteTrips);
       }
     }).catch(() => {});
   };
@@ -537,8 +547,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addTrip = (trip: Trip) => {
-    setTrips((prev) => [trip, ...prev]);
-    apiService.createTrip(trip);
+    const tripWithMeta = {
+      ...trip,
+      creatorId: profile?.id,
+      isMyTrip: true,
+    };
+    setTrips((prev) => [tripWithMeta, ...prev]);
+    apiService.createTrip(tripWithMeta).then(() => {
+      // Re-fetch all trips from backend so isMyTrip is correctly calculated server-side
+      refreshTrips();
+    }).catch(() => {});
   };
 
   const joinTrip = (tripId: string) => {
@@ -673,6 +691,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         requestedTrips,
         setRequestedTrips,
         reloadJoinRequests,
+        refreshTrips,
       }}
     >
       {children}
