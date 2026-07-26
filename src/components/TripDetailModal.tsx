@@ -34,8 +34,6 @@ export interface TripDetailModalProps {
   visible: boolean;
   trip: any;
   onClose: () => void;
-  requestedTrips: Set<string>;
-  setRequestedTrips: React.Dispatch<React.SetStateAction<Set<string>>>;
 }
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -56,12 +54,10 @@ export default function TripDetailModal({
   visible,
   trip,
   onClose,
-  requestedTrips,
-  setRequestedTrips,
 }: TripDetailModalProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { joinTrip, profile } = useApp();
+  const { joinTrip, profile, isLoggedIn, requestedTrips, setRequestedTrips } = useApp();
 
   const [midwayJoin, setMidwayJoin] = useState(false);
   const [startCity, setStartCity] = useState('');
@@ -73,7 +69,7 @@ export default function TripDetailModal({
   const tripName = trip.name || trip.title;
   const organizerName = trip.creator || trip.organizerName;
   const price = trip.budget !== undefined ? trip.budget : trip.pricePerPerson;
-  const isMyTrip = organizerName.includes('Aarav Sharma') || (profile && profile.name && organizerName.includes(profile.name));
+  const isMyTrip = isLoggedIn && !!(profile && profile.id && trip.creatorId && trip.creatorId === profile.id);
 
   const handleMidwayJoinSelect = (t: any) => {
     if (t.cities && t.cities.length > 2) {

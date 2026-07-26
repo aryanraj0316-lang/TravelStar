@@ -2,6 +2,7 @@ import GlassCard from '@/components/ui/GlassCard';
 import DummyPaymentModal from '@/components/ui/DummyPaymentModal';
 import AuthScreen from './auth';
 import { useApp, UserRole } from '@/store/AppContext';
+import { apiService } from '@/services/api';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useNavigation } from 'expo-router';
 import {
@@ -135,6 +136,36 @@ export default function ProfileScreen() {
     setNavbarHidden,
   } = useApp();
 
+  // Navigation tab state
+  const [activeTab, setActiveTab] = useState<'DETAILS' | 'HISTORY' | 'WALLET' | 'DASHBOARD' | 'SETTINGS'>('DETAILS');
+  const [historyFilter, setHistoryFilter] = useState<'ALL' | 'UPCOMING' | 'COMPLETED'>('ALL');
+
+  // Input states
+  const [aadhaarInput, setAadhaarInput] = useState('');
+  const [fundingAmount, setFundingAmount] = useState('');
+  const [withdrawalAmount, setWithdrawalAmount] = useState('');
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showSavedPlacesModal, setShowSavedPlacesModal] = useState(false);
+  const [savedPlaces, setSavedPlaces] = useState<any[]>([]);
+
+  // Language settings state
+  const [showLanguageModal, setShowLanguageModal] = useState(false);
+  const [selectedLanguage, setSelectedLanguage] = useState('English');
+  const [pushNotifications, setPushNotifications] = useState(true);
+  const [locationSharing, setLocationSharing] = useState(true);
+
+  // Edit Profile Modal states
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editAvatar, setEditAvatar] = useState(profile.avatar || AVATAR_PRESETS[0]);
+  const [editName, setEditName] = useState(profile.name || 'Aarav Sharma');
+  const [editGender, setEditGender] = useState(profile.gender || 'Male');
+  const [editBio, setEditBio] = useState('Backpacker & Mountain Enthusiast 🏔️ | Exploring Incredible India 🇮🇳');
+  const [editPhone, setEditPhone] = useState('+91 98765 43210');
+  const [editEmergencyPhone, setEditEmergencyPhone] = useState('+91 98111 22334');
+  const [editLanguages, setEditLanguages] = useState('Hindi, English, Punjabi');
+  const [editStyles, setEditStyles] = useState('Mountains, Backpacking, Photography');
+
   useEffect(() => {
     console.log('[ProfileScreen] isLoggedIn:', isLoggedIn, 'profile.name:', profile?.name, 'showAuthModal:', showAuthModal);
     if (isLoggedIn) {
@@ -142,9 +173,21 @@ export default function ProfileScreen() {
     }
   }, [isLoggedIn]);
 
+  const [unreadNotif, setUnreadNotif] = useState(false);
+
+  const checkUnreadNotifications = async () => {
+    try {
+      const data = await apiService.getNotifications();
+      if (data) {
+        setUnreadNotif(data.some((n: any) => n.unread));
+      }
+    } catch (e) {}
+  };
+
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
       setShowAuthModal(false);
+      checkUnreadNotifications();
     });
     return unsubscribe;
   }, [navigation]);
@@ -170,18 +213,6 @@ export default function ProfileScreen() {
     }
   }, [showEditModal, profile]);
 
-  // Navigation tab state
-  const [activeTab, setActiveTab] = useState<'DETAILS' | 'HISTORY' | 'WALLET' | 'DASHBOARD' | 'SETTINGS'>('DETAILS');
-  const [historyFilter, setHistoryFilter] = useState<'ALL' | 'UPCOMING' | 'COMPLETED'>('ALL');
-
-  // Input states
-  const [aadhaarInput, setAadhaarInput] = useState('');
-  const [fundingAmount, setFundingAmount] = useState('');
-  const [withdrawalAmount, setWithdrawalAmount] = useState('');
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [showAuthModal, setShowAuthModal] = useState(false);
-  const [showSavedPlacesModal, setShowSavedPlacesModal] = useState(false);
-  const [savedPlaces, setSavedPlaces] = useState<any[]>([]);
 
   useEffect(() => {
     if (profile.savedPlaces && Array.isArray(profile.savedPlaces)) {
@@ -216,23 +247,25 @@ export default function ProfileScreen() {
     }
   }, [profile.savedPlaces]);
 
-  const [showLanguageModal, setShowLanguageModal] = useState(false);
-  const [selectedLanguage, setSelectedLanguage] = useState('English');
+
+  useEffect(() => {
+    if (profile) {
+      if (profile.selectedLanguage) {
+        setSelectedLanguage(profile.selectedLanguage);
+      }
+      if (profile.pushNotifications !== undefined) {
+        setPushNotifications(profile.pushNotifications);
+      }
+      if (profile.locationSharing !== undefined) {
+        setLocationSharing(profile.locationSharing);
+      }
+    }
+  }, [profile]);
 
   // Guide dashboard states
   const [hourlyRate, setHourlyRate] = useState('350');
   const [dailyRate, setDailyRate] = useState('2200');
 
-  // Edit Profile Modal states
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [editAvatar, setEditAvatar] = useState(profile.avatar || AVATAR_PRESETS[0]);
-  const [editName, setEditName] = useState(profile.name || 'Aarav Sharma');
-  const [editGender, setEditGender] = useState(profile.gender || 'Male');
-  const [editBio, setEditBio] = useState('Backpacker & Mountain Enthusiast 🏔️ | Exploring Incredible India 🇮🇳');
-  const [editPhone, setEditPhone] = useState('+91 98765 43210');
-  const [editEmergencyPhone, setEditEmergencyPhone] = useState('+91 98111 22334');
-  const [editLanguages, setEditLanguages] = useState('Hindi, English, Punjabi');
-  const [editStyles, setEditStyles] = useState('Mountains, Backpacking, Photography');
 
   // Device image pickers
   const pickImageFromDevice = async () => {
@@ -291,10 +324,6 @@ export default function ProfileScreen() {
   // Ticket Modal state
   const [selectedTicket, setSelectedTicket] = useState<any>(null);
   const [showTicketModal, setShowTicketModal] = useState(false);
-
-  // Settings Toggles
-  const [pushNotifications, setPushNotifications] = useState(true);
-  const [locationSharing, setLocationSharing] = useState(true);
 
   // Handlers
   const handleAadhaarVerify = () => {
@@ -400,7 +429,7 @@ export default function ProfileScreen() {
               onPress={() => router.push('/notifications')}
             >
               <Bell size={16} color="#FFF" />
-              <View style={styles.topNotifDot} />
+              {unreadNotif && <View style={styles.topNotifDot} />}
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -539,11 +568,69 @@ export default function ProfileScreen() {
 
             <View style={styles.menuDivider} />
 
+            {/* Push Notifications Toggle */}
+            <View style={styles.menuItem}>
+              <View style={styles.menuItemLeft}>
+                <Bell size={17} color="#FFF" style={{ opacity: 0.8 }} />
+                <Text style={styles.menuItemText}>Push Notifications</Text>
+              </View>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => {
+                  const newValue = !pushNotifications;
+                  setPushNotifications(newValue);
+                  updateProfile({ pushNotifications: newValue });
+                }}
+                style={[
+                  styles.switchTrack,
+                  { backgroundColor: pushNotifications ? '#0066FF' : '#2C2F48' }
+                ]}
+              >
+                <View
+                  style={[
+                    styles.switchThumb,
+                    pushNotifications ? styles.switchThumbOn : styles.switchThumbOff
+                  ]}
+                />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.menuDivider} />
+
+            {/* Location Sharing Toggle */}
+            <View style={styles.menuItem}>
+              <View style={styles.menuItemLeft}>
+                <MapPin size={17} color="#FFF" style={{ opacity: 0.8 }} />
+                <Text style={styles.menuItemText}>Location Sharing</Text>
+              </View>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => {
+                  const newValue = !locationSharing;
+                  setLocationSharing(newValue);
+                  updateProfile({ locationSharing: newValue });
+                }}
+                style={[
+                  styles.switchTrack,
+                  { backgroundColor: locationSharing ? '#0066FF' : '#2C2F48' }
+                ]}
+              >
+                <View
+                  style={[
+                    styles.switchThumb,
+                    locationSharing ? styles.switchThumbOn : styles.switchThumbOff
+                  ]}
+                />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.menuDivider} />
+
             {/* Customer Support */}
             <TouchableOpacity 
               style={styles.menuItem} 
               activeOpacity={0.7}
-              onPress={() => Alert.alert("Customer Support", "Support desk is active 24/7 at support@travelstar.app")}
+              onPress={() => router.push('/support')}
             >
               <View style={styles.menuItemLeft}>
                 <LifeBuoy size={17} color="#FFF" style={{ opacity: 0.8 }} />
@@ -558,7 +645,7 @@ export default function ProfileScreen() {
             <TouchableOpacity 
               style={styles.menuItem} 
               activeOpacity={0.7}
-              onPress={() => Alert.alert("About TravelStar", "TravelStar v1.4.2\nPartnering with travelers across Incredible India.")}
+              onPress={() => router.push('/about')}
             >
               <View style={styles.menuItemLeft}>
                 <HelpCircle size={17} color="#FFF" style={{ opacity: 0.8 }} />
@@ -980,6 +1067,7 @@ export default function ProfileScreen() {
                       ]}
                       onPress={() => {
                         setSelectedLanguage(lang.label);
+                        updateProfile({ selectedLanguage: lang.label });
                         setShowLanguageModal(false);
                         setNavbarHidden(false);
                       }}

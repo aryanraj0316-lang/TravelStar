@@ -1,7 +1,8 @@
 import { useApp } from '@/store/AppContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
+import { apiService } from '@/services/api';
 import {
   AlertCircle,
   ArrowLeft,
@@ -22,6 +23,7 @@ import {
   Route,
   ShieldAlert,
   Star,
+  Check,
   User,
   Users,
   X,
@@ -797,9 +799,17 @@ const getNavigationSteps = (startIndex: number, coords: any[]) => {
 };
 
 export default function MapScreen() {
-  const { triggerSOS, trips, joinTrip, profile } = useApp();
+  const { triggerSOS, trips, joinTrip, profile, isLoggedIn, requestedTrips, reloadJoinRequests } = useApp();
   const { tripId } = useLocalSearchParams<{ tripId: string }>();
   const router = useRouter();
+  const navigation = useNavigation();
+
+  // Reload requested trips on focus
+  useEffect(() => {
+    reloadJoinRequests();
+    const unsubscribe = navigation.addListener('focus', reloadJoinRequests);
+    return unsubscribe;
+  }, [navigation]);
 
   const [mapFilter, setMapFilter] = useState<'ALL' | 'GUIDES' | 'GROUPS' | 'TOURISTS' | 'ATTRACTIONS' | 'NONE'>('ALL');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -966,7 +976,7 @@ export default function MapScreen() {
   const activeSegmentText = activeTrip ? `Route with ${stopCount} cities` : 'Active segment • 2 of 4 stops';
   const distanceVal = activeTrip ? activeTrip.cities.length * 115 : 145;
   const nextStopName = activeTrip ? (activeTrip.cities[1] || activeTrip.cities[0]) : 'Mathura';
-  const isMyTrip = activeTrip && (activeTrip.creator.includes('Aarav Sharma') || (profile && profile.name && activeTrip.creator.includes(profile.name)));
+  const isMyTrip = isLoggedIn && !!(activeTrip && profile && profile.id && activeTrip.creatorId && activeTrip.creatorId === profile.id);
 
   const webViewSource = useMemo(() => {
     return { html: buildMapHTML(tileLayer, activeRouteCoords) };
@@ -1280,20 +1290,27 @@ export default function MapScreen() {
                   </View>
 
                   {!isMyTrip && activeTrip && (
-                    <TouchableOpacity
-                      style={styles.joinTripBtn}
-                      activeOpacity={0.8}
-                      onPress={() => {
-                        if (activeTrip.availableSeats <= 0) {
-                          Alert.alert('⚠️ No Seats Available', 'Sorry, this trip has no seats left.');
-                          return;
-                        }
-                        joinTrip(activeTrip.id);
-                        Alert.alert('🎉 Seat Requested!', `You have requested to join "${activeTrip.name}". Status synced to database.`);
-                      }}
-                    >
-                      <Text style={styles.joinTripBtnText}>Request to Join Trip</Text>
-                    </TouchableOpacity>
+                    requestedTrips.has(activeTrip.id) ? (
+                      <View style={[styles.joinTripBtn, styles.joinTripBtnRequested]}>
+                        <Check size={13} color="#2ECC71" style={{ marginRight: 6 }} />
+                        <Text style={styles.joinTripBtnRequestedText}>Requested</Text>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.joinTripBtn}
+                        activeOpacity={0.8}
+                        onPress={() => {
+                          if (activeTrip.availableSeats <= 0) {
+                            Alert.alert('⚠️ No Seats Available', 'Sorry, this trip has no seats left.');
+                            return;
+                          }
+                          joinTrip(activeTrip.id);
+                          Alert.alert('🎉 Seat Requested!', `You have requested to join "${activeTrip.name}". Status synced to database.`);
+                        }}
+                      >
+                        <Text style={styles.joinTripBtnText}>Request to Join Trip</Text>
+                      </TouchableOpacity>
+                    )
                   )}
                 </>
               )}
@@ -1844,6 +1861,22 @@ const styles = StyleSheet.create({
   },
   joinTripBtnText: {
     color: '#FFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  joinTripBtnRequested: {
+    backgroundColor: '#21262D',
+    borderColor: '#30363D',
+    borderWidth: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    marginTop: 12,
+  },
+  joinTripBtnRequestedText: {
+    color: '#8B949E',
     fontSize: 12,
     fontWeight: '700',
   },

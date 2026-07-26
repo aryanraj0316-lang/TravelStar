@@ -206,6 +206,8 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
     currentRouteName === 'monsoon-advisory' ||
     currentRouteName === 'auth' ||
     currentRouteName === 'map' ||
+    currentRouteName === 'support' ||
+    currentRouteName === 'about' ||
     (currentRouteName !== 'index' && navbarHidden)
   ) {
     return null;

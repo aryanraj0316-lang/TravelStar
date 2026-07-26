@@ -1,203 +1,214 @@
 import { Router } from 'express';
+import jwt from 'jsonwebtoken';
 import { RecommendationService } from '../../services/recommendation';
 import prisma from '../../services/db';
 
 const router = Router();
+const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_jwt_key_travelconnect_12345';
 
-// Persistent Mock Trips Data Store
-const trips = [
-  {
-    id: 'trip-1',
-    name: 'Ranchi to Vrindavan Spiritual Journey',
-    creator: 'Vikram Singh (Organizer)',
-    cities: ['Ranchi', 'Delhi', 'Mathura', 'Vrindavan'],
-    startDate: '2026-08-12',
-    endDate: '2026-08-17',
-    budget: 8500,
-    availableSeats: 5,
-    totalSeats: 15,
-    meetingPoint: 'Ranchi Junction Platform 1',
-    guideIncluded: true,
-    foodIncluded: true,
-    privacy: 'PUBLIC',
-    membersCount: 10,
-    languages: ['Hindi', 'English'],
-    travelStyle: 'RELIGIOUS',
-    category: 'Religious',
-  },
-  {
-    id: 'trip-2',
-    name: 'Leh Ladakh Bike Expedition',
-    creator: 'Aditya Sen',
-    cities: ['Manali', 'Sarchu', 'Leh', 'Nubra Valley', 'Pangong Tso'],
-    startDate: '2026-09-05',
-    endDate: '2026-09-14',
-    budget: 28000,
-    availableSeats: 4,
-    totalSeats: 8,
-    meetingPoint: 'Manali Mall Road',
-    guideIncluded: true,
-    foodIncluded: false,
-    privacy: 'PUBLIC',
-    membersCount: 4,
-    languages: ['English', 'Hindi', 'Tibetan'],
-    travelStyle: 'ADVENTURE',
-    category: 'Adventure',
-  },
-  {
-    id: 'trip-3',
-    name: 'Kerala Backwaters & Hills',
-    creator: 'Priya Nair',
-    cities: ['Kochi', 'Munnar', 'Alleppey'],
-    startDate: '2026-08-25',
-    endDate: '2026-08-30',
-    budget: 15000,
-    availableSeats: 6,
-    totalSeats: 10,
-    meetingPoint: 'Kochi Airport Terminal 1',
-    guideIncluded: false,
-    foodIncluded: true,
-    privacy: 'PUBLIC',
-    membersCount: 4,
-    languages: ['English', 'Malayalam'],
-    travelStyle: 'NATURE',
-    category: 'Nature',
-  },
-  {
-    id: 'creation-1',
-    name: 'Taj Mahal Heritage Getaway',
-    creator: 'Aarav Sharma (Organizer)',
-    cities: ['Delhi', 'Agra', 'Fatehpur Sikri'],
-    startDate: '2026-08-10',
-    endDate: '2026-08-12',
-    budget: 6500,
-    availableSeats: 12,
-    totalSeats: 15,
-    meetingPoint: 'Delhi Aerocity Metro Stn',
-    guideIncluded: true,
-    foodIncluded: true,
-    privacy: 'PUBLIC',
-    membersCount: 3,
-    coverImage: 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1000&q=80',
-    category: 'Heritage',
-    languages: ['Hindi', 'English'],
-    travelStyle: 'HERITAGE',
-  },
-  {
-    id: 'creation-2',
-    name: 'Golden Triangle Scenic Tour',
-    creator: 'Aarav Sharma (Organizer)',
-    cities: ['Delhi', 'Agra', 'Jaipur'],
-    startDate: '2026-08-20',
-    endDate: '2026-08-25',
-    budget: 9800,
-    availableSeats: 8,
-    totalSeats: 12,
-    meetingPoint: 'New Delhi Rly Station PF 1',
-    guideIncluded: true,
-    foodIncluded: true,
-    privacy: 'PUBLIC',
-    membersCount: 4,
-    coverImage: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=800&q=80',
-    category: 'Adventure',
-    languages: ['Hindi', 'English'],
-    travelStyle: 'ADVENTURE',
-  },
-  {
-    id: 'bt-2',
-    name: 'Varanasi Spiritual Ghats & Sarnath Heritage Tour',
-    creator: 'Anjali Sharma (Local Guide)',
-    cities: ['Varanasi', 'Sarnath'],
-    startDate: '2026-08-18',
-    endDate: '2026-08-20',
-    budget: 6500,
-    availableSeats: 6,
-    totalSeats: 12,
-    meetingPoint: 'Dashashwamedh Ghat Varanasi',
-    guideIncluded: true,
-    foodIncluded: true,
-    privacy: 'PUBLIC',
-    membersCount: 6,
-    languages: ['Hindi', 'English'],
-    travelStyle: 'RELIGIOUS',
-    category: 'Religious',
-  },
-  {
-    id: 'bt-4',
-    name: 'Kashmir Backpacking (Srinagar, Gulmarg & Pahalgam)',
-    creator: 'Aarav Sharma (Solo Traveler/User)',
-    cities: ['Srinagar', 'Gulmarg', 'Pahalgam'],
-    startDate: '2026-09-01',
-    endDate: '2026-09-06',
-    budget: 14500,
-    availableSeats: 3,
-    totalSeats: 8,
-    meetingPoint: 'Srinagar Airport Gate 1',
-    guideIncluded: false,
-    foodIncluded: true,
-    privacy: 'PUBLIC',
-    membersCount: 5,
-    languages: ['Hindi', 'English', 'Kashmiri'],
-    travelStyle: 'ADVENTURE',
-    category: 'Adventure',
-  },
-  {
-    id: 'bt-5',
-    name: 'Goa Beach Hopping & Dudhsagar Waterfalls Road Trip',
-    creator: 'Priya & Friends (Tourist Group)',
-    cities: ['North Goa', 'South Goa', 'Dudhsagar'],
-    startDate: '2026-08-28',
-    endDate: '2026-09-01',
-    budget: 9800,
-    availableSeats: 2,
-    totalSeats: 8,
-    meetingPoint: 'Mapusa Bus Terminal Goa',
-    guideIncluded: false,
-    foodIncluded: true,
-    privacy: 'PUBLIC',
-    membersCount: 6,
-    languages: ['English', 'Hindi', 'Konkani'],
-    travelStyle: 'NATURE',
-    category: 'Nature',
-  },
-];
-
-// List Trips (with optional query filters)
-router.get('/', (req, res) => {
-  const { category, search, maxBudget } = req.query;
-  let filtered = [...trips];
-
-  if (category && typeof category === 'string' && category !== 'All') {
-    filtered = filtered.filter((t) => t.category?.toLowerCase() === category.toLowerCase());
-  }
-
-  if (search && typeof search === 'string') {
-    const q = search.toLowerCase();
-    filtered = filtered.filter(
-      (t) =>
-        t.name.toLowerCase().includes(q) ||
-        t.cities.some((c) => c.toLowerCase().includes(q)) ||
-        t.creator.toLowerCase().includes(q)
-    );
-  }
-
-  if (maxBudget) {
-    const limit = parseFloat(maxBudget as string);
-    if (!isNaN(limit)) {
-      filtered = filtered.filter((t) => t.budget <= limit);
+const getUserIdFromReq = (req: any): string | null => {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded: any = jwt.verify(token, JWT_SECRET);
+      return decoded.id || decoded.userId;
+    } catch (e) {
+      return null;
     }
   }
+  return null;
+};
 
-  res.status(200).json({ status: 'success', data: filtered });
+// Persistent Mock Trips Data Store
+const trips: any[] = [];
+
+// List Trips (with optional query filters)
+router.get('/', async (req, res) => {
+  const { category, search, maxBudget } = req.query;
+  try {
+    let dbTrips = await prisma.trip.findMany({
+      include: {
+        creator: {
+          include: { profile: true }
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    // Map database trips to frontend shape
+    const mapped = dbTrips.map((t) => {
+      const creatorName = t.creator?.profile
+        ? `${t.creator.profile.firstName} ${t.creator.profile.lastName} (${t.creator.role === 'GUIDE' ? 'Guide' : 'Organizer'})`
+        : 'Aarav Sharma (Organizer)';
+      
+      // Determine travelStyle and category
+      let travelStyle = 'ADVENTURE';
+      let categoryVal = 'Adventure';
+      if (t.name.toLowerCase().includes('spiritual') || t.name.toLowerCase().includes('vrindavan') || t.name.toLowerCase().includes('varanasi')) {
+        travelStyle = 'RELIGIOUS';
+        categoryVal = 'Religious';
+      } else if (t.name.toLowerCase().includes('kerala') || t.name.toLowerCase().includes('backwaters') || t.name.toLowerCase().includes('nature')) {
+        travelStyle = 'NATURE';
+        categoryVal = 'Nature';
+      } else if (t.name.toLowerCase().includes('heritage') || t.name.toLowerCase().includes('taj mahal')) {
+        travelStyle = 'HERITAGE';
+        categoryVal = 'Heritage';
+      }
+
+      return {
+        id: t.id,
+        name: t.name,
+        creator: creatorName,
+        creatorId: t.creatorId,
+        cities: t.cities,
+        startDate: t.startDate.toISOString().split('T')[0],
+        endDate: t.endDate.toISOString().split('T')[0],
+        budget: t.budget,
+        availableSeats: t.availableSeats,
+        totalSeats: t.totalSeats,
+        meetingPoint: t.meetingPoint,
+        guideIncluded: t.guideIncluded,
+        foodIncluded: t.foodIncluded,
+        privacy: t.privacy,
+        membersCount: t.totalSeats - t.availableSeats,
+        coverImage: t.coverImage || (t.name.toLowerCase().includes('vrindavan') ? 'https://images.unsplash.com/photo-1548013146-72479768bada?w=600&q=80' :
+                    t.name.toLowerCase().includes('ladakh') ? 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=600&q=80' :
+                    t.name.toLowerCase().includes('kerala') ? 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=600&q=80' :
+                    t.name.toLowerCase().includes('taj mahal') ? 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1000&q=80' :
+                    t.name.toLowerCase().includes('golden triangle') ? 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=800&q=80' :
+                    'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&q=80'),
+        category: t.category || categoryVal,
+        languages: t.languages,
+        travelStyle: travelStyle,
+      };
+    });
+
+    let filtered = [...mapped];
+
+    if (category && typeof category === 'string' && category !== 'All') {
+      filtered = filtered.filter((t) => t.category?.toLowerCase() === category.toLowerCase());
+    }
+
+    if (search && typeof search === 'string') {
+      const q = search.toLowerCase();
+      filtered = filtered.filter(
+        (t) =>
+          t.name.toLowerCase().includes(q) ||
+          t.cities.some((c) => c.toLowerCase().includes(q)) ||
+          t.creator.toLowerCase().includes(q)
+      );
+    }
+
+    if (maxBudget) {
+      const limit = parseFloat(maxBudget as string);
+      if (!isNaN(limit)) {
+        filtered = filtered.filter((t) => t.budget <= limit);
+      }
+    }
+
+    return res.status(200).json({ status: 'success', data: filtered });
+  } catch (err) {
+    console.warn('[Trips] DB error, returning memory trips:', err);
+    let filtered = [...trips];
+
+    if (category && typeof category === 'string' && category !== 'All') {
+      filtered = filtered.filter((t) => t.category?.toLowerCase() === category.toLowerCase());
+    }
+
+    if (search && typeof search === 'string') {
+      const q = search.toLowerCase();
+      filtered = filtered.filter(
+        (t) =>
+          t.name.toLowerCase().includes(q) ||
+          t.cities.some((c: string) => c.toLowerCase().includes(q)) ||
+          t.creator.toLowerCase().includes(q)
+      );
+    }
+
+    if (maxBudget) {
+      const limit = parseFloat(maxBudget as string);
+      if (!isNaN(limit)) {
+        filtered = filtered.filter((t) => t.budget <= limit);
+      }
+    }
+    return res.status(200).json({ status: 'success', data: filtered });
+  }
 });
 
 // Get Trip by ID
-router.get('/:id', (req, res) => {
-  const trip = trips.find((t) => t.id === req.params.id);
-  if (!trip) {
+router.get('/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const t = await prisma.trip.findUnique({
+      where: { id },
+      include: {
+        creator: {
+          include: { profile: true }
+        }
+      }
+    });
+    if (!t) {
+      const fallback = trips.find((item) => item.id === id);
+      if (fallback) {
+        return res.status(200).json({ status: 'success', data: fallback });
+      }
+      return res.status(404).json({ status: 'error', message: 'Trip not found' });
+    }
+
+    const creatorName = t.creator?.profile
+      ? `${t.creator.profile.firstName} ${t.creator.profile.lastName} (${t.creator.role === 'GUIDE' ? 'Guide' : 'Organizer'})`
+      : 'Aarav Sharma (Organizer)';
+
+    let travelStyle = 'ADVENTURE';
+    let categoryVal = 'Adventure';
+    if (t.name.toLowerCase().includes('spiritual') || t.name.toLowerCase().includes('vrindavan') || t.name.toLowerCase().includes('varanasi')) {
+      travelStyle = 'RELIGIOUS';
+      categoryVal = 'Religious';
+    } else if (t.name.toLowerCase().includes('kerala') || t.name.toLowerCase().includes('backwaters') || t.name.toLowerCase().includes('nature')) {
+      travelStyle = 'NATURE';
+      categoryVal = 'Nature';
+    } else if (t.name.toLowerCase().includes('heritage') || t.name.toLowerCase().includes('taj mahal')) {
+      travelStyle = 'HERITAGE';
+      categoryVal = 'Heritage';
+    }
+
+    const mapped = {
+      id: t.id,
+      name: t.name,
+      creator: creatorName,
+      creatorId: t.creatorId,
+      cities: t.cities,
+      startDate: t.startDate.toISOString().split('T')[0],
+      endDate: t.endDate.toISOString().split('T')[0],
+      budget: t.budget,
+      availableSeats: t.availableSeats,
+      totalSeats: t.totalSeats,
+      meetingPoint: t.meetingPoint,
+      guideIncluded: t.guideIncluded,
+      foodIncluded: t.foodIncluded,
+      privacy: t.privacy,
+      membersCount: t.totalSeats - t.availableSeats,
+      coverImage: t.coverImage || (t.name.toLowerCase().includes('vrindavan') ? 'https://images.unsplash.com/photo-1548013146-72479768bada?w=600&q=80' :
+                  t.name.toLowerCase().includes('ladakh') ? 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=600&q=80' :
+                  t.name.toLowerCase().includes('kerala') ? 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=600&q=80' :
+                  t.name.toLowerCase().includes('taj mahal') ? 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1000&q=80' :
+                  t.name.toLowerCase().includes('golden triangle') ? 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=800&q=80' :
+                  'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&q=80'),
+      category: t.category || categoryVal,
+      languages: t.languages,
+      travelStyle: travelStyle,
+    };
+    return res.status(200).json({ status: 'success', data: mapped });
+  } catch (e) {
+    const fallback = trips.find((item) => item.id === id);
+    if (fallback) {
+      return res.status(200).json({ status: 'success', data: fallback });
+    }
     return res.status(404).json({ status: 'error', message: 'Trip not found' });
   }
-  res.status(200).json({ status: 'success', data: trip });
 });
 
 // Create Trip
@@ -206,6 +217,7 @@ router.post('/', async (req, res) => {
     id,
     name,
     creator,
+    creatorId,
     cities,
     startDate,
     endDate,
@@ -221,10 +233,22 @@ router.post('/', async (req, res) => {
   } = req.body;
 
   try {
-    // Get or create organizer user (e.g. active profile user or fallback)
-    let user = await prisma.user.findFirst({
-      include: { profile: true }
-    });
+    // Get organizer user dynamically via creatorId or token
+    let user;
+    const tokenUserId = getUserIdFromReq(req);
+    const targetUserId = tokenUserId || creatorId;
+    if (targetUserId) {
+      user = await prisma.user.findUnique({
+        where: { id: targetUserId },
+        include: { profile: true }
+      });
+    }
+
+    if (!user) {
+      user = await prisma.user.findFirst({
+        include: { profile: true }
+      });
+    }
 
     if (!user) {
       user = await prisma.user.create({
@@ -262,13 +286,16 @@ router.post('/', async (req, res) => {
         foodIncluded: Boolean(foodIncluded),
         privacy: (privacy || 'PUBLIC') as any,
         languages: ['Hindi', 'English'],
+        coverImage: coverImage || null,
+        category: category || null,
       }
     });
 
     const mappedTrip = {
       id: newTrip.id,
       name: newTrip.name,
-      creator: `${user.profile?.firstName} ${user.profile?.lastName} (Organizer)`,
+      creator: user.profile ? `${user.profile.firstName} ${user.profile.lastName} (Organizer)` : `${user.email} (Organizer)`,
+      creatorId: user.id,
       cities: newTrip.cities,
       startDate: newTrip.startDate.toISOString().split('T')[0],
       endDate: newTrip.endDate.toISOString().split('T')[0],
@@ -280,8 +307,8 @@ router.post('/', async (req, res) => {
       foodIncluded: newTrip.foodIncluded,
       privacy: newTrip.privacy,
       membersCount: 1,
-      coverImage: coverImage || 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&q=80',
-      category: category || 'Adventure',
+      coverImage: newTrip.coverImage || 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&q=80',
+      category: newTrip.category || 'Adventure',
       languages: ['Hindi', 'English'],
       travelStyle: 'ADVENTURE',
       coordinates: coordinates || [],

@@ -1,3 +1,4 @@
+import { safeStorage } from './storage';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { Guide, SOSAlert, Trip, UserProfile } from '../store/AppContext';
@@ -17,21 +18,40 @@ const getApiBaseUrl = () => `${getHostUrl()}/api/v1`;
 async function request<T>(endpoint: string, options?: RequestInit): Promise<T | null> {
   const url = `${getApiBaseUrl()}${endpoint}`;
   try {
+    const token = await safeStorage.getItem('userToken');
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
     const res = await fetch(url, {
-      headers: {
-        'Content-Type': 'application/json',
-      },
       ...options,
+      headers: {
+        ...headers,
+        ...(options?.headers as Record<string, string>),
+      },
     });
+
+    let json: any = null;
+    try {
+      json = await res.json();
+    } catch (e) {
+      // not JSON
+    }
+
     if (!res.ok) {
       console.warn(`[API] HTTP Error ${res.status} for ${endpoint}`);
-      return null;
+      throw new Error(json?.message || `Request failed with status ${res.status}`);
     }
-    const json = await res.json();
+
     return json.data !== undefined ? json.data : json;
   } catch (err) {
     console.warn(`[API] Request failed for ${endpoint} (${url}):`, err);
-    return null;
+    throw err;
   }
 }
 
@@ -178,5 +198,79 @@ export const apiService = {
 
   async getMonsoonAdvisories() {
     return request('/safety/monsoon-advisory');
+  },
+
+  async getNotifications(): Promise<any[] | null> {
+    return request<any[]>('/notifications');
+  },
+
+  async markNotificationsRead(): Promise<any> {
+    return request('/notifications/read-all', {
+      method: 'POST',
+    });
+  },
+
+  // Homepage — Destinations
+  async getDestinations(): Promise<any[] | null> {
+    return request<any[]>('/destinations');
+  },
+
+  async createDestination(data: any): Promise<any> {
+    return request('/destinations', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Homepage — Weather
+  async getWeatherLocations(): Promise<any[] | null> {
+    return request<any[]>('/weather');
+  },
+
+  // Homepage — Alerts
+  async getAlerts(): Promise<any[] | null> {
+    return request<any[]>('/alerts');
+  },
+
+  async createAlert(data: any): Promise<any> {
+    return request('/alerts', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // ── Interactions (Likes, Join Requests, Unread Count) ──────
+
+  async toggleLikeTrip(tripId: string, userId?: string): Promise<any> {
+    return request('/interactions/like', {
+      method: 'POST',
+      body: JSON.stringify({ tripId, userId }),
+    });
+  },
+
+  async getLikedTrips(userId?: string): Promise<string[] | null> {
+    const qs = userId ? `?userId=${encodeURIComponent(userId)}` : '';
+    return request<string[]>(`/interactions/likes${qs}`);
+  },
+
+  async createJoinRequest(tripId: string, opts?: { midway?: boolean; fromCity?: string; toCity?: string; adjustedPrice?: number }): Promise<any> {
+    return request('/interactions/join-request', {
+      method: 'POST',
+      body: JSON.stringify({ tripId, ...opts }),
+    });
+  },
+
+  async getJoinRequests(): Promise<any[] | null> {
+    return request<any[]>('/interactions/join-requests');
+  },
+
+  async cancelJoinRequest(tripId: string): Promise<any> {
+    return request(`/interactions/join-request/${tripId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  async getUnreadNotificationCount(): Promise<{ count: number } | null> {
+    return request<{ count: number }>('/interactions/unread-count');
   },
 };

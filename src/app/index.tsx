@@ -1,4 +1,4 @@
-import { MONSOON_ALERTS } from '@/constants/alerts';
+import { apiService } from '@/services/api';
 import { useApp, UserRole } from '@/store/AppContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -76,196 +76,37 @@ const quickAccessItems: { label: string; Icon: typeof MapPin; gradient: [string,
   { label: 'Budget Tracker', Icon: Wallet, gradient: ['#111322', '#1B1E30'], iconColor: '#F59E0B', isNew: true, route: '/budget-tracker' },
 ];
 
-const storyData = [
-  { id: 1, name: 'Sikkim', image: 'https://images.unsplash.com/photo-1548013146-72479768bada?w=150&q=80', hasReel: true },
-  { id: 2, name: 'Jaipur', image: 'https://images.unsplash.com/photo-1599661046289-e31897846e41?w=150&q=80', hasReel: false },
-  { id: 3, name: 'Goa', image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=150&q=80', hasReel: false },
-  { id: 4, name: 'Manali', image: 'https://images.unsplash.com/photo-1605649487212-47bdab064df7?w=150&q=80', hasReel: true },
-  { id: 5, name: 'Munnar', image: 'https://images.unsplash.com/photo-1593693397690-362cb9666fc2?w=150&q=80', hasReel: false },
+const DEFAULT_STORIES = [
+  { id: 'ds-1', location: 'Sikkim', coverImg: 'https://images.unsplash.com/photo-1548013146-72479768bada?w=150&q=80', hasReel: true, title: 'Sikkim' },
+  { id: 'ds-2', location: 'Jaipur', coverImg: 'https://images.unsplash.com/photo-1599661046289-e31897846e41?w=150&q=80', hasReel: false, title: 'Jaipur' },
+  { id: 'ds-3', location: 'Goa', coverImg: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=150&q=80', hasReel: false, title: 'Goa' },
+  { id: 'ds-4', location: 'Manali', coverImg: 'https://images.unsplash.com/photo-1605649487212-47bdab064df7?w=150&q=80', hasReel: true, title: 'Manali' },
+  { id: 'ds-5', location: 'Munnar', coverImg: 'https://images.unsplash.com/photo-1593693397690-362cb9666fc2?w=150&q=80', hasReel: false, title: 'Munnar' },
 ];
 
-const trendingDests = [
-  {
-    id: 1,
-    name: 'Ladakh',
-    tags: 'Adventure • Mountains',
-    rating: 4.8,
-    image: 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=400&q=80',
-  },
-  {
-    id: 2,
-    name: 'Andaman',
-    tags: 'Beaches • Relaxation',
-    rating: 4.7,
-    image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=400&q=80',
-  },
-  {
-    id: 3,
-    name: 'Goa',
-    tags: 'Nightlife • Beaches',
-    rating: 4.6,
-    image: 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=400&q=80',
-  },
-  {
-    id: 4,
-    name: 'Kerala',
-    tags: 'Nature • Backwaters',
-    rating: 4.9,
-    image: 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=400&q=80',
-  },
-  {
-    id: 5,
-    name: 'Manali',
-    tags: 'Snow • Hill Station',
-    rating: 4.8,
-    image: 'https://images.unsplash.com/photo-1605649487212-47bdab064df7?w=400&q=80',
-  },
-  {
-    id: 6,
-    name: 'Varanasi',
-    tags: 'Ghats • Ganga River',
-    rating: 4.9,
-    image: 'https://images.unsplash.com/photo-1571536802807-30451e3955d8?w=500&q=80',
-  },
-  {
-    id: 7,
-    name: 'Udaipur',
-    tags: 'Palaces • Romance',
-    rating: 4.9,
-    image: 'https://images.unsplash.com/photo-1615836245337-f5b9b2303f10?w=400&q=80',
-  },
-  {
-    id: 8,
-    name: 'Darjeeling',
-    tags: 'Tea Gardens • Views',
-    rating: 4.6,
-    image: 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=400&q=80',
-  },
+const DEFAULT_DESTINATIONS = [
+  { id: 'dd-1', name: 'Ladakh', tags: 'Adventure • Mountains', rating: 4.8, image: 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=400&q=80', rank: 1 },
+  { id: 'dd-2', name: 'Andaman', tags: 'Beaches • Relaxation', rating: 4.7, image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=400&q=80', rank: 2 },
+  { id: 'dd-3', name: 'Goa', tags: 'Nightlife • Beaches', rating: 4.6, image: 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=400&q=80', rank: 3 },
+  { id: 'dd-4', name: 'Kerala', tags: 'Nature • Backwaters', rating: 4.9, image: 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=400&q=80', rank: 4 },
+  { id: 'dd-5', name: 'Manali', tags: 'Snow • Hill Station', rating: 4.8, image: 'https://images.unsplash.com/photo-1605649487212-47bdab064df7?w=400&q=80', rank: 5 },
+  { id: 'dd-6', name: 'Varanasi', tags: 'Ghats • Ganga River', rating: 4.9, image: 'https://images.unsplash.com/photo-1571536802807-30451e3955d8?w=500&q=80', rank: 6 },
+  { id: 'dd-7', name: 'Udaipur', tags: 'Palaces • Romance', rating: 4.9, image: 'https://images.unsplash.com/photo-1615836245337-f5b9b2303f10?w=400&q=80', rank: 7 },
+  { id: 'dd-8', name: 'Darjeeling', tags: 'Tea Gardens • Views', rating: 4.6, image: 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=400&q=80', rank: 8 },
 ];
 
-const infiniteTrendingDests = [...trendingDests, ...trendingDests];
+const DEFAULT_WEATHER = [
+  { id: 'dw-1', name: 'New Delhi', place: 'India Gate', temp: '32°C', condition: 'Partly Sunny', aqi: 'Good AQI • 42', humidity: '48%', image: 'https://images.unsplash.com/photo-1587474260584-136574528ed5?w=500&q=80' },
+  { id: 'dw-2', name: 'Agra', place: 'Taj Mahal', temp: '34°C', condition: 'Sunny & Clear', aqi: 'Moderate AQI • 58', humidity: '42%', image: 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=500&q=80' },
+  { id: 'dw-3', name: 'Jaipur', place: 'Hawa Mahal', temp: '35°C', condition: 'Warm & Sunny', aqi: 'Moderate AQI • 65', humidity: '35%', image: 'https://images.unsplash.com/photo-1599661046289-e31897846e41?w=500&q=80' },
+  { id: 'dw-4', name: 'Srinagar', place: 'Dal Lake', temp: '21°C', condition: 'Pleasant Breeze', aqi: 'Excellent AQI • 18', humidity: '60%', image: 'https://images.unsplash.com/photo-1598091383021-15ddea10925d?w=500&q=80' },
+  { id: 'dw-5', name: 'Varanasi', place: 'Kashi Ghats', temp: '30°C', condition: 'Clear Sky', aqi: 'Good AQI • 45', humidity: '52%', image: 'https://images.unsplash.com/photo-1571536802807-30451e3955d8?w=500&q=80' },
+  { id: 'dw-6', name: 'Munnar', place: 'Tea Gardens', temp: '22°C', condition: 'Mist & Clouds', aqi: 'Pure AQI • 12', humidity: '75%', image: 'https://images.unsplash.com/photo-1593693397690-362cb9666fc2?w=500&q=80' },
+];
 
-const TOURIST_WEATHER_LOCATIONS = [
-  {
-    id: 1,
-    name: 'New Delhi',
-    place: 'India Gate',
-    temp: '32°C',
-    condition: 'Partly Sunny',
-    aqi: 'Good AQI • 42',
-    humidity: '48%',
-    image: 'https://images.unsplash.com/photo-1587474260584-136574528ed5?w=500&q=80',
-  },
-  {
-    id: 2,
-    name: 'Agra',
-    place: 'Taj Mahal',
-    temp: '34°C',
-    condition: 'Sunny & Clear',
-    aqi: 'Moderate AQI • 58',
-    humidity: '42%',
-    image: 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=500&q=80',
-  },
-  {
-    id: 3,
-    name: 'Jaipur',
-    place: 'Hawa Mahal',
-    temp: '35°C',
-    condition: 'Warm & Sunny',
-    aqi: 'Moderate AQI • 65',
-    humidity: '35%',
-    image: 'https://images.unsplash.com/photo-1599661046289-e31897846e41?w=500&q=80',
-  },
-  {
-    id: 4,
-    name: 'Srinagar',
-    place: 'Dal Lake',
-    temp: '21°C',
-    condition: 'Pleasant Breeze',
-    aqi: 'Excellent AQI • 18',
-    humidity: '60%',
-    image: 'https://images.unsplash.com/photo-1598091383021-15ddea10925d?w=500&q=80',
-  },
-  {
-    id: 5,
-    name: 'Varanasi',
-    place: 'Kashi Ghats',
-    temp: '30°C',
-    condition: 'Clear Sky',
-    aqi: 'Good AQI • 45',
-    humidity: '52%',
-    image: 'https://images.unsplash.com/photo-1571536802807-30451e3955d8?w=500&q=80',
-  },
-  {
-    id: 6,
-    name: 'Munnar',
-    place: 'Tea Gardens',
-    temp: '22°C',
-    condition: 'Mist & Clouds',
-    aqi: 'Pure AQI • 12',
-    humidity: '75%',
-    image: 'https://images.unsplash.com/photo-1593693397690-362cb9666fc2?w=500&q=80',
-  },
-  {
-    id: 7,
-    name: 'Mumbai',
-    place: 'Gateway of India',
-    temp: '29°C',
-    condition: 'Sea Breeze',
-    aqi: 'Moderate AQI • 55',
-    humidity: '70%',
-    image: 'https://images.unsplash.com/photo-1570168007204-dfb528c6958f?w=500&q=80',
-  },
-  {
-    id: 8,
-    name: 'Leh-Ladakh',
-    place: 'Pangong Tso',
-    temp: '14°C',
-    condition: 'Chilly & Sunny',
-    aqi: 'Pure AQI • 10',
-    humidity: '25%',
-    image: 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=500&q=80',
-  },
-  {
-    id: 9,
-    name: 'Goa',
-    place: 'Baga Beach',
-    temp: '31°C',
-    condition: 'Tropical Sun',
-    aqi: 'Good AQI • 35',
-    humidity: '68%',
-    image: 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=500&q=80',
-  },
-  {
-    id: 10,
-    name: 'Shimla',
-    place: 'The Ridge',
-    temp: '18°C',
-    condition: 'Cool Mountain Air',
-    aqi: 'Excellent AQI • 15',
-    humidity: '55%',
-    image: 'https://images.unsplash.com/photo-1605649487212-47bdab064df7?w=500&q=80',
-  },
-  {
-    id: 11,
-    name: 'Rishikesh',
-    place: 'Laxman Jhula',
-    temp: '26°C',
-    condition: 'Pleasant & Calm',
-    aqi: 'Good AQI • 28',
-    humidity: '50%',
-    image: 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=500&q=80',
-  },
-  {
-    id: 12,
-    name: 'Udaipur',
-    place: 'Lake Pichola',
-    temp: '33°C',
-    condition: 'Sunny Horizon',
-    aqi: 'Moderate AQI • 48',
-    humidity: '38%',
-    image: 'https://images.unsplash.com/photo-1615836245337-f5b9b2303f10?w=500&q=80',
-  },
+const DEFAULT_ALERTS = [
+  { id: 'da-1', severity: 'CRITICAL', title: 'Monsoon Warning (Ladakh Routes)', category: 'FLOOD & RAIN', desc: 'Heavy monsoon rain warning along Ladakh routes.', image: 'https://images.unsplash.com/photo-1518156677180-95a2893f3e9f?w=600&q=80' },
+  { id: 'da-2', severity: 'WARNING', title: 'Cloudburst Warning (North Sikkim)', category: 'CLOUDBURST', desc: 'Met office predicts high risk of localized cloudbursts.', image: 'https://images.unsplash.com/photo-1534274988757-a28bf1a57c17?w=600&q=80' },
 ];
 
 // ─── Apple-Style Live Character Formation Greeting Component ────────
@@ -336,7 +177,7 @@ function AppleMultilingualGreeting() {
   );
 }
 
-function FloatingTouristWeatherCard() {
+function FloatingTouristWeatherCard({ locations }: { locations: any[] }) {
   // Base image: always static at (0,0), fully visible
   const [baseIndex, setBaseIndex] = useState(0);
   // Sliding image: only exists while animating, starts off-screen and slides to (0,0)
@@ -346,11 +187,12 @@ function FloatingTouristWeatherCard() {
   const isAnimatingRef = useRef(false);
 
   useEffect(() => {
+    if (locations.length <= 1) return;
     const interval = setInterval(() => {
       if (isAnimatingRef.current) return; // guard against overlap
       isAnimatingRef.current = true;
 
-      const nextIdx = (baseIndexRef.current + 1) % TOURIST_WEATHER_LOCATIONS.length;
+      const nextIdx = (baseIndexRef.current + 1) % locations.length;
 
       // 1. Add the sliding layer (starts off-screen because slideAnim is 0)
       slideAnim.setValue(0);
@@ -391,7 +233,7 @@ function FloatingTouristWeatherCard() {
     outputRange: dir === 1 ? [-200, 0] : dir === 3 ? [200, 0] : [0, 0],
   });
 
-  const renderWeatherContent = (loc: typeof TOURIST_WEATHER_LOCATIONS[0]) => (
+  const renderWeatherContent = (loc: any) => (
     <>
       <Image source={{ uri: loc.image }} style={StyleSheet.absoluteFill} resizeMode="cover" />
       <LinearGradient
@@ -421,8 +263,9 @@ function FloatingTouristWeatherCard() {
     </>
   );
 
-  const baseItem = TOURIST_WEATHER_LOCATIONS[baseIndex];
-  const slidingItem = slidingIndex !== null ? TOURIST_WEATHER_LOCATIONS[slidingIndex] : null;
+  if (locations.length === 0) return <View style={styles.weatherCard} />;
+  const baseItem = locations[baseIndex % locations.length];
+  const slidingItem = slidingIndex !== null ? locations[slidingIndex % locations.length] : null;
 
   return (
     <View style={styles.weatherCard}>
@@ -449,13 +292,14 @@ function FloatingTouristWeatherCard() {
   );
 }
 
-function RotatingMonsoonAlertCard() {
+function RotatingMonsoonAlertCard({ alerts }: { alerts: any[] }) {
   const router = useRouter();
   const [alertIndex, setAlertIndex] = useState(0);
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const isAnimatingRef = useRef(false);
 
   useEffect(() => {
+    if (alerts.length <= 1) return;
     const timer = setInterval(() => {
       if (isAnimatingRef.current) return;
       isAnimatingRef.current = true;
@@ -468,7 +312,7 @@ function RotatingMonsoonAlertCard() {
       }).start(({ finished }) => {
         if (finished) {
           // 2. Change content
-          setAlertIndex((prev) => (prev + 1) % MONSOON_ALERTS.length);
+          setAlertIndex((prev) => (prev + 1) % alerts.length);
 
           // 3. Fade back in
           Animated.timing(fadeAnim, {
@@ -485,7 +329,8 @@ function RotatingMonsoonAlertCard() {
     return () => clearInterval(timer);
   }, []);
 
-  const activeAlert = MONSOON_ALERTS[alertIndex];
+  if (alerts.length === 0) return <View style={{ flex: 1 }} />;
+  const activeAlert = alerts[alertIndex % alerts.length];
 
   const getCategoryIcon = (category: string, severity: string) => {
     const iconColor = severity === 'CRITICAL' ? '#EF4444' : severity === 'WARNING' ? '#F59E0B' : '#0066FF';
@@ -730,10 +575,38 @@ export default function HomeScreen() {
   const lastScrollYRef = useRef(0);
   const navbarHiddenRef = useRef(false);
 
+  // ── Dynamic DB state ──────────────────────────────────────────────
+  const [stories, setStories] = useState<any[]>(DEFAULT_STORIES);
+  const [destinations, setDestinations] = useState<any[]>(DEFAULT_DESTINATIONS);
+  const [weatherLocations, setWeatherLocations] = useState<any[]>(DEFAULT_WEATHER);
+  const [alerts, setAlerts] = useState<any[]>(DEFAULT_ALERTS);
+  const [unreadNotif, setUnreadNotif] = useState(false);
+
+  useEffect(() => {
+    // Fetch all homepage data from backend database
+    apiService.getStories().then((data) => {
+      if (data && data.length > 0) setStories(data);
+    });
+    apiService.getDestinations().then((data) => {
+      if (data && data.length > 0) setDestinations(data);
+    });
+    apiService.getWeatherLocations().then((data) => {
+      if (data && data.length > 0) setWeatherLocations(data);
+    });
+    apiService.getAlerts().then((data) => {
+      if (data && data.length > 0) setAlerts(data);
+    });
+    apiService.getNotifications().then((data) => {
+      if (data) setUnreadNotif(data.some((n: any) => n.unread));
+    });
+  }, []);
+
+  const infiniteTrendingDests = [...destinations, ...destinations];
+
   useEffect(() => {
     let animFrameId: number;
     const itemWidth = TRENDING_CARD_WIDTH + 12;
-    const singleSetWidth = itemWidth * trendingDests.length;
+    const singleSetWidth = itemWidth * destinations.length;
 
     const animate = () => {
       if (!isInteractingRef.current) {
@@ -743,7 +616,7 @@ export default function HomeScreen() {
         }
         trendingRef.current?.scrollTo({ x: scrollXRef.current, animated: false });
 
-        const currentDot = Math.floor(scrollXRef.current / itemWidth) % trendingDests.length;
+        const currentDot = Math.floor(scrollXRef.current / itemWidth) % destinations.length;
         setActiveDot(currentDot);
       }
       animFrameId = requestAnimationFrame(animate);
@@ -751,7 +624,7 @@ export default function HomeScreen() {
 
     animFrameId = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(animFrameId);
-  }, []);
+  }, [destinations]);
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
@@ -815,7 +688,7 @@ export default function HomeScreen() {
               onPress={() => router.push('/notifications')}
             >
               <Bell size={16} color={C.white} strokeWidth={1.8} />
-              <View style={styles.bellDot} />
+              {unreadNotif && <View style={styles.bellDot} />}
             </TouchableOpacity>
             <TouchableOpacity
               activeOpacity={0.85}
@@ -901,7 +774,7 @@ export default function HomeScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.storiesRow}
         >
-          {storyData.map((story) => (
+          {stories.map((story: any) => (
             <TouchableOpacity
               key={story.id}
               style={styles.storyItem}
@@ -909,7 +782,7 @@ export default function HomeScreen() {
               onPress={() => {
                 router.push({
                   pathname: '/stories',
-                  params: { location: story.name }
+                  params: { location: story.location || story.title }
                 });
               }}
             >
@@ -920,7 +793,7 @@ export default function HomeScreen() {
                 style={styles.storyBorder}
               >
                 <View style={styles.storyInner}>
-                  <Image source={{ uri: story.image }} style={styles.storyImage} />
+                  <Image source={{ uri: story.coverImg }} style={styles.storyImage} />
                 </View>
               </LinearGradient>
               {story.hasReel && (
@@ -928,7 +801,7 @@ export default function HomeScreen() {
                   <Text style={styles.reelBadgeText}>▶ REEL</Text>
                 </View>
               )}
-              <Text style={styles.storyName}>{story.name}</Text>
+              <Text style={styles.storyName}>{story.location || story.title}</Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
@@ -978,12 +851,12 @@ export default function HomeScreen() {
             ════════════════════════════════════════════════ */}
         <View style={styles.weatherAlertRow}>
           {/* Animated Floating Weather Card */}
-          <FloatingTouristWeatherCard />
+          <FloatingTouristWeatherCard locations={weatherLocations} />
 
           {/* Alerts Stack — Stretched Monsoon Card */}
           <View style={styles.alertsColumn}>
             {/* Monsoon Warning (Full Height in Column) */}
-            <RotatingMonsoonAlertCard />
+            <RotatingMonsoonAlertCard alerts={alerts} />
           </View>
         </View>
 
@@ -1079,7 +952,7 @@ export default function HomeScreen() {
         </ScrollView>
         {/* Pagination Dots */}
         <View style={styles.dotsRow}>
-          {trendingDests.map((_, idx) => (
+          {destinations.map((_: any, idx: number) => (
             <View
               key={idx}
               style={[

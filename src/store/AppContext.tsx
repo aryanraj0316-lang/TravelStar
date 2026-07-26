@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { safeStorage } from '@/services/storage';
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { apiService } from '../services/api';
 import { socketService } from '../services/socket';
@@ -6,6 +6,7 @@ import { socketService } from '../services/socket';
 export type UserRole = 'TOURIST' | 'GUIDE' | 'ORGANIZER' | 'FAMILY_TRAVELER' | 'ADMIN';
 
 export interface UserProfile {
+  id?: string;
   name: string;
   avatar: string;
   gender?: string;
@@ -22,12 +23,16 @@ export interface UserProfile {
   languages?: string;
   travelStyles?: string;
   savedPlaces?: any[];
+  selectedLanguage?: string;
+  pushNotifications?: boolean;
+  locationSharing?: boolean;
 }
 
 export interface Trip {
   id: string;
   name: string;
   creator: string;
+  creatorId?: string;
   cities: string[];
   startDate: string;
   endDate: string;
@@ -114,12 +119,16 @@ interface AppContextType {
   setNavbarHidden: (hidden: boolean) => void;
   storiesList: Story[];
   addStory: (storyData: any) => void;
+  requestedTrips: Set<string>;
+  setRequestedTrips: React.Dispatch<React.SetStateAction<Set<string>>>;
+  reloadJoinRequests: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentRole, setCurrentRole] = useState<UserRole>('TOURIST');
+  const [requestedTrips, setRequestedTrips] = useState<Set<string>>(new Set());
   const [profile, setProfile] = useState<UserProfile>({
     name: 'Aarav Sharma',
     avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
@@ -136,7 +145,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const login = () => {
     setIsLoggedIn(true);
     try {
-      AsyncStorage.setItem('isLoggedIn', 'true').catch(() => { });
+      safeStorage.setItem('isLoggedIn', 'true').catch(() => { });
     } catch (e) { }
   };
   const logout = () => {
@@ -151,12 +160,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         aadhaarStatus: 'NONE' as const,
       };
       try {
-        AsyncStorage.setItem('savedProfile', JSON.stringify(nextProfile)).catch(() => { });
+        safeStorage.setItem('savedProfile', JSON.stringify(nextProfile)).catch(() => { });
       } catch (e) { }
       return nextProfile;
     });
     try {
-      AsyncStorage.removeItem('isLoggedIn').catch(() => { });
+      safeStorage.removeItem('isLoggedIn').catch(() => { });
+      safeStorage.removeItem('userToken').catch(() => { });
     } catch (e) { }
   };
 
@@ -404,13 +414,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     // Hydrate local auth status and saved profile safely
     try {
-      AsyncStorage.getItem('isLoggedIn').then((val) => {
+      safeStorage.getItem('isLoggedIn').then((val) => {
         if (val === 'true') {
           setIsLoggedIn(true);
         }
       }).catch(() => { });
 
-      AsyncStorage.getItem('savedProfile').then((val) => {
+      safeStorage.getItem('savedProfile').then((val) => {
         if (val) {
           try {
             setProfile(JSON.parse(val));
@@ -418,7 +428,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       }).catch(() => { });
     } catch (e) {
-      console.warn('[AsyncStorage Warning] Native module fallback:', e);
+      console.warn('[Storage Warning] Native module fallback:', e);
     }
 
     socketService.connect();
@@ -435,6 +445,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     });
 
+    reloadJoinRequests();
+
     apiService.getProfile().then((remoteProfile) => {
       if (remoteProfile) {
         setProfile((prev) => {
@@ -444,7 +456,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             setIsLoggedIn(true);
           }
           try {
-            AsyncStorage.setItem('savedProfile', JSON.stringify(merged)).catch(() => { });
+            safeStorage.setItem('savedProfile', JSON.stringify(merged)).catch(() => { });
           } catch (e) { }
           return merged;
         });
@@ -500,10 +512,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [activeRoomId]);
 
+  const reloadJoinRequests = () => {
+    apiService.getJoinRequests().then((reqs) => {
+      if (reqs && reqs.length > 0) {
+        const tripIds = reqs.filter((r: any) => r.status === 'PENDING' || r.status === 'APPROVED').map((r: any) => r.tripId);
+        setRequestedTrips(new Set(tripIds));
+      } else {
+        setRequestedTrips(new Set());
+      }
+    }).catch(() => {});
+  };
+
+  useEffect(() => {
+    reloadJoinRequests();
+  }, [isLoggedIn, profile?.id]);
+
   const updateProfile = (updated: Partial<UserProfile>) => {
     setProfile((prev) => {
       const next = { ...prev, ...updated };
-      AsyncStorage.setItem('savedProfile', JSON.stringify(next)).catch(() => { });
+      safeStorage.setItem('savedProfile', JSON.stringify(next)).catch(() => { });
       return next;
     });
     apiService.updateProfile(updated);
@@ -527,7 +554,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return t;
       })
     );
+    setRequestedTrips((prev) => {
+      const next = new Set(prev);
+      next.add(tripId);
+      return next;
+    });
     apiService.joinTrip(tripId);
+    apiService.createJoinRequest(tripId).catch(() => {});
   };
 
   const sendMessage = (content: string, mediaType: 'NONE' | 'IMAGE' | 'VOICE' = 'NONE') => {
@@ -637,6 +670,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setNavbarHidden,
         storiesList,
         addStory,
+        requestedTrips,
+        setRequestedTrips,
+        reloadJoinRequests,
       }}
     >
       {children}

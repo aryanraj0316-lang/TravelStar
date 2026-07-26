@@ -6,11 +6,11 @@ const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_jwt_key_travelconnect_12345';
 
 // Default In-Memory Profile Fallback
-let activeProfile = {
+let activeProfile: any = {
   id: 'user-1',
   name: 'Aarav Sharma',
   email: 'aarav@example.com',
-  phoneNumber: '+919876543210',
+  phoneNumber: '+91 98765 43210',
   avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
   role: 'TOURIST',
   isVerified: true,
@@ -18,6 +18,14 @@ let activeProfile = {
   guideLicenseStatus: 'NONE',
   walletBalance: 2450.0,
   rewardPoints: 120,
+  gender: 'Male',
+  bio: 'Backpacker & Mountain Enthusiast 🏔️ | Exploring Incredible India 🇮🇳',
+  emergencyContact: '+91 98111 22334',
+  languages: 'Hindi, English, Punjabi',
+  travelStyles: 'Mountains, Backpacking, Photography',
+  pushNotifications: true,
+  locationSharing: true,
+  selectedLanguage: 'English',
 };
 
 // Register New User (PostgreSQL + Prisma)
@@ -73,9 +81,17 @@ router.post('/register', async (req, res) => {
       guideLicenseStatus: (role || user.role) === 'GUIDE' ? 'VERIFIED' : 'NONE',
       walletBalance: user.wallet?.balance || 500.0,
       rewardPoints: user.wallet?.rewardPoints || 50,
+      gender: user.profile?.gender || activeProfile.gender,
+      bio: user.profile?.bio || activeProfile.bio,
+      emergencyContact: '',
+      languages: user.profile?.languages ? user.profile.languages.join(', ') : activeProfile.languages,
+      travelStyles: user.profile?.travelStyle ? user.profile.travelStyle.join(', ') : activeProfile.travelStyles,
+      pushNotifications: user.profile?.pushNotifications !== undefined ? user.profile.pushNotifications : activeProfile.pushNotifications,
+      locationSharing: user.profile?.locationSharing !== undefined ? user.profile.locationSharing : activeProfile.locationSharing,
+      selectedLanguage: user.profile?.selectedLanguage || activeProfile.selectedLanguage,
     };
 
-    const token = jwt.sign({ userId: user.id, role: activeProfile.role }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ id: user.id, userId: user.id, role: activeProfile.role }, JWT_SECRET, { expiresIn: '7d' });
 
     return res.status(200).json({
       status: 'success',
@@ -84,22 +100,8 @@ router.post('/register', async (req, res) => {
       message: 'Account created & saved to PostgreSQL DB',
     });
   } catch (err) {
-    console.warn('[Postgres DB Warn] Registration fallback used:', err);
-    activeProfile = {
-      ...activeProfile,
-      id: `user-${Date.now()}`,
-      name: name || activeProfile.name,
-      email: userEmail,
-      role: role || 'TOURIST',
-      isVerified: true,
-    };
-
-    const token = jwt.sign(activeProfile, JWT_SECRET, { expiresIn: '7d' });
-    return res.status(200).json({
-      status: 'success',
-      token,
-      user: activeProfile,
-    });
+    console.warn('[Postgres DB Warn] Registration failed:', err);
+    return res.status(500).json({ status: 'error', message: 'Registration failed due to database connection issue. Please try again.' });
   }
 });
 
@@ -110,10 +112,14 @@ router.post('/login', async (req, res) => {
   try {
     const user = await prisma.user.findFirst({
       where: { email },
-      include: { profile: true, wallet: true },
+      include: { profile: true, wallet: true, emergencyContacts: true },
     });
 
     if (user) {
+      if (user.passwordHash && user.passwordHash !== password) {
+        return res.status(401).json({ status: 'error', message: 'Invalid password. Please try again.' });
+      }
+
       activeProfile = {
         id: user.id,
         name: user.profile ? `${user.profile.firstName} ${user.profile.lastName}`.trim() : activeProfile.name,
@@ -126,49 +132,109 @@ router.post('/login', async (req, res) => {
         guideLicenseStatus: user.role === 'GUIDE' ? 'VERIFIED' : 'NONE',
         walletBalance: user.wallet?.balance || activeProfile.walletBalance,
         rewardPoints: user.wallet?.rewardPoints || activeProfile.rewardPoints,
+        gender: user.profile?.gender || activeProfile.gender,
+        bio: user.profile?.bio || activeProfile.bio,
+        languages: user.profile?.languages ? user.profile.languages.join(', ') : activeProfile.languages,
+        travelStyles: user.profile?.travelStyle ? user.profile.travelStyle.join(', ') : activeProfile.travelStyles,
+        emergencyContact: user.emergencyContacts?.[0]?.phoneNumber || activeProfile.emergencyContact,
+        pushNotifications: user.profile?.pushNotifications !== undefined ? user.profile.pushNotifications : activeProfile.pushNotifications,
+        locationSharing: user.profile?.locationSharing !== undefined ? user.profile.locationSharing : activeProfile.locationSharing,
+        selectedLanguage: user.profile?.selectedLanguage || activeProfile.selectedLanguage,
       };
 
-      const token = jwt.sign({ userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+      const token = jwt.sign({ id: user.id, userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
       return res.status(200).json({
         status: 'success',
         token,
         user: activeProfile,
       });
+    } else {
+      return res.status(404).json({ status: 'error', message: 'This email is not registered. Please create an account first.' });
     }
   } catch (err) {
-    console.warn('[Postgres DB Warn] Login fallback used:', err);
+    console.warn('[Postgres DB Warn] Login failed:', err);
+    return res.status(500).json({ status: 'error', message: 'Database connection issue. Please try again.' });
   }
-
-  if (email) {
-    activeProfile.email = email;
-  }
-  const token = jwt.sign(activeProfile, JWT_SECRET, { expiresIn: '7d' });
-  return res.status(200).json({
-    status: 'success',
-    token,
-    user: activeProfile,
-  });
 });
 
 // Get User Profile
 router.get('/profile', async (req, res) => {
-  res.status(200).json({ status: 'success', data: activeProfile });
+  let userId: string | null = null;
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded: any = jwt.verify(token, JWT_SECRET);
+      userId = decoded.id || decoded.userId;
+    } catch (e) {
+      // Invalid token, ignore
+    }
+  }
+
+  if (userId) {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { profile: true, wallet: true, emergencyContacts: true },
+      });
+      if (user) {
+        const userProfile = {
+          id: user.id,
+          name: user.profile ? `${user.profile.firstName} ${user.profile.lastName}`.trim() : activeProfile.name,
+          email: user.email || activeProfile.email,
+          phoneNumber: user.phoneNumber || '',
+          avatar: user.profile?.avatarUrl || activeProfile.avatar,
+          role: user.role as any,
+          isVerified: true,
+          aadhaarStatus: 'VERIFIED',
+          guideLicenseStatus: user.role === 'GUIDE' ? 'VERIFIED' : 'NONE',
+          walletBalance: user.wallet?.balance || activeProfile.walletBalance,
+          rewardPoints: user.wallet?.rewardPoints || activeProfile.rewardPoints,
+          gender: user.profile?.gender || activeProfile.gender,
+          bio: user.profile?.bio || activeProfile.bio,
+          languages: user.profile?.languages ? user.profile.languages.join(', ') : activeProfile.languages,
+          travelStyles: user.profile?.travelStyle ? user.profile.travelStyle.join(', ') : activeProfile.travelStyles,
+          emergencyContact: user.emergencyContacts?.[0]?.phoneNumber || activeProfile.emergencyContact,
+          pushNotifications: user.profile?.pushNotifications !== undefined ? user.profile.pushNotifications : activeProfile.pushNotifications,
+          locationSharing: user.profile?.locationSharing !== undefined ? user.profile.locationSharing : activeProfile.locationSharing,
+          selectedLanguage: user.profile?.selectedLanguage || activeProfile.selectedLanguage,
+        };
+        // Sync activeProfile fallback for non-token paths
+        activeProfile = userProfile;
+        return res.status(200).json({ status: 'success', data: userProfile });
+      }
+    } catch (err) {
+      console.warn('[Postgres DB Warn] Get profile failed:', err);
+    }
+  }
+  return res.status(200).json({ status: 'success', data: activeProfile });
 });
 
 // Update User Profile
 router.put('/profile', async (req, res) => {
   const updates = req.body;
-  
-  // 1. Update in-memory activeProfile fallback
+  let userId: string | null = null;
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded: any = jwt.verify(token, JWT_SECRET);
+      userId = decoded.id || decoded.userId;
+    } catch (e) {
+      // Invalid token, ignore
+    }
+  }
+
+  // Update in-memory activeProfile fallback
   activeProfile = {
     ...activeProfile,
     ...updates,
   };
 
-  // 2. Try to update PostgreSQL Database using Prisma if applicable
-  try {
-    const userId = activeProfile.id;
-    if (userId && !userId.startsWith('user-')) {
+  const targetUserId = userId || (activeProfile.id && !activeProfile.id.startsWith('user-') ? activeProfile.id : null);
+
+  if (targetUserId) {
+    try {
       // Split name into firstName and lastName
       const nameParts = (updates.name || activeProfile.name).split(' ');
       const firstName = nameParts[0] || 'Aarav';
@@ -182,7 +248,7 @@ router.put('/profile', async (req, res) => {
 
       if (Object.keys(userUpdateData).length > 0) {
         await prisma.user.update({
-          where: { id: userId },
+          where: { id: targetUserId },
           data: userUpdateData,
         });
       }
@@ -213,15 +279,25 @@ router.put('/profile', async (req, res) => {
           : updates.travelStyles;
       }
 
+      if (updates.pushNotifications !== undefined) {
+        profileUpdateData.pushNotifications = updates.pushNotifications;
+      }
+      if (updates.locationSharing !== undefined) {
+        profileUpdateData.locationSharing = updates.locationSharing;
+      }
+      if (updates.selectedLanguage !== undefined) {
+        profileUpdateData.selectedLanguage = updates.selectedLanguage;
+      }
+
       await prisma.profile.update({
-        where: { userId: userId },
+        where: { userId: targetUserId },
         data: profileUpdateData,
       });
 
       // Update Emergency contact inside EmergencyContact table if provided
       if (updates.emergencyContact) {
         const contact = await prisma.emergencyContact.findFirst({
-          where: { userId: userId },
+          where: { userId: targetUserId },
         });
         if (contact) {
           await prisma.emergencyContact.update({
@@ -231,7 +307,7 @@ router.put('/profile', async (req, res) => {
         } else {
           await prisma.emergencyContact.create({
             data: {
-              userId: userId,
+              userId: targetUserId,
               name: 'Emergency SOS Contact',
               relation: 'SOS',
               phoneNumber: updates.emergencyContact,
@@ -239,9 +315,38 @@ router.put('/profile', async (req, res) => {
           });
         }
       }
+
+      // Load updated user details
+      const user = await prisma.user.findUnique({
+        where: { id: targetUserId },
+        include: { profile: true, wallet: true, emergencyContacts: true },
+      });
+      if (user) {
+        activeProfile = {
+          id: user.id,
+          name: user.profile ? `${user.profile.firstName} ${user.profile.lastName}`.trim() : activeProfile.name,
+          email: user.email || activeProfile.email,
+          phoneNumber: user.phoneNumber || '',
+          avatar: user.profile?.avatarUrl || activeProfile.avatar,
+          role: user.role as any,
+          isVerified: true,
+          aadhaarStatus: 'VERIFIED',
+          guideLicenseStatus: user.role === 'GUIDE' ? 'VERIFIED' : 'NONE',
+          walletBalance: user.wallet?.balance || activeProfile.walletBalance,
+          rewardPoints: user.wallet?.rewardPoints || activeProfile.rewardPoints,
+          gender: user.profile?.gender || activeProfile.gender,
+          bio: user.profile?.bio || activeProfile.bio,
+          languages: user.profile?.languages ? user.profile.languages.join(', ') : activeProfile.languages,
+          travelStyles: user.profile?.travelStyle ? user.profile.travelStyle.join(', ') : activeProfile.travelStyles,
+          emergencyContact: user.emergencyContacts?.[0]?.phoneNumber || activeProfile.emergencyContact,
+          pushNotifications: user.profile?.pushNotifications !== undefined ? user.profile.pushNotifications : activeProfile.pushNotifications,
+          locationSharing: user.profile?.locationSharing !== undefined ? user.profile.locationSharing : activeProfile.locationSharing,
+          selectedLanguage: user.profile?.selectedLanguage || activeProfile.selectedLanguage,
+        };
+      }
+    } catch (err) {
+      console.warn('[Postgres DB Warn] Profile database update failed:', err);
     }
-  } catch (err) {
-    console.warn('[Postgres DB Warn] Profile database update failed:', err);
   }
 
   res.status(200).json({ status: 'success', data: activeProfile });

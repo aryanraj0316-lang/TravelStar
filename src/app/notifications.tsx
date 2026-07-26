@@ -23,6 +23,7 @@ import {
   Waves,
 } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
+import { apiService } from '../services/api';
 import {
   Animated,
   Dimensions,
@@ -208,6 +209,7 @@ export default function NotificationsScreen() {
   const [activeTab, setActiveTab] = useState<TabType>('ALL');
   const [unreadCount, setUnreadCount] = useState(5);
   const [secondsLeft, setSecondsLeft] = useState(8140);
+  const [notifications, setNotifications] = useState<any[]>([]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -216,13 +218,151 @@ export default function NotificationsScreen() {
     return () => clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    loadNotifications();
+  }, []);
+
+  const loadNotifications = async () => {
+    const data = await apiService.getNotifications();
+    if (data && data.length > 0) {
+      setNotifications(data);
+      const unreads = data.filter((n: any) => n.unread).length;
+      setUnreadCount(unreads);
+    }
+  };
+
+  const handleMarkAllRead = async () => {
+    await apiService.markNotificationsRead();
+    setUnreadCount(0);
+    loadNotifications();
+  };
+
   const hours = String(Math.floor(secondsLeft / 3600)).padStart(2, '0');
   const minutes = String(Math.floor((secondsLeft % 3600) / 60)).padStart(2, '0');
   const seconds = String(secondsLeft % 60).padStart(2, '0');
 
-  const handleMarkAllRead = () => {
-    setUnreadCount(0);
-  };
+  // Filter & Map from database or fallback to static mocks if empty
+  const dbHazards = notifications.filter(n => n.type === 'HAZARD');
+  const mappedHazards = dbHazards.length > 0 ? dbHazards.map((h, i) => {
+    const defaultMocks = [
+      {
+        severity: 'CRITICAL',
+        category: 'LANDSLIDE',
+        location: 'Ladakh - Srinagar Highway',
+        icon: Mountain,
+        iconColor: C.red,
+        bgColor: 'rgba(239, 68, 68, 0.12)',
+        borderColor: 'rgba(239, 68, 68, 0.4)',
+        affectedRoute: 'Srinagar ➔ Leh Route',
+      },
+      {
+        severity: 'CRITICAL',
+        category: 'FLOOD & RAIN',
+        location: 'Wayanad & Idukki Districts, Kerala',
+        icon: Waves,
+        iconColor: C.red,
+        bgColor: 'rgba(239, 68, 68, 0.12)',
+        borderColor: 'rgba(239, 68, 68, 0.4)',
+        affectedRoute: 'Kochi ➔ Munnar Road',
+      },
+      {
+        severity: 'WARNING',
+        category: 'SNOWFALL',
+        location: 'Rohtang Pass, Himachal Pradesh',
+        icon: CloudSnow,
+        iconColor: C.orange,
+        bgColor: 'rgba(245, 158, 11, 0.12)',
+        borderColor: 'rgba(245, 158, 11, 0.4)',
+        affectedRoute: 'Manali ➔ Keylong Route',
+      },
+      {
+        severity: 'WARNING',
+        category: 'TRAFFIC RUSH',
+        location: 'Shimla - Solan Highway (NH-5)',
+        icon: Car,
+        iconColor: C.orange,
+        bgColor: 'rgba(245, 158, 11, 0.12)',
+        borderColor: 'rgba(245, 158, 11, 0.4)',
+        affectedRoute: 'Chandigarh ➔ Shimla Route',
+      }
+    ];
+    const mock = defaultMocks[i % defaultMocks.length];
+    return {
+      id: h.id,
+      severity: mock.severity,
+      category: mock.category,
+      location: mock.location,
+      title: h.title,
+      icon: mock.icon,
+      iconColor: mock.iconColor,
+      bgColor: h.unread ? mock.bgColor : C.card,
+      borderColor: h.unread ? mock.borderColor : C.border,
+      affectedRoute: mock.affectedRoute,
+      desc: h.content,
+      time: h.time,
+    };
+  }) : HAZARD_DISASTER_ALERTS;
+
+  const dbTrips = notifications.filter(n => n.type === 'TRIP');
+  const mappedTrips = dbTrips.length > 0 ? dbTrips.map((t, i) => {
+    const defaultMocks = [
+      {
+        status: 'UPCOMING',
+        route: 'Ranchi ➔ Vrindavan',
+        date: 'Starts Today • 03:30 PM',
+        passenger: 'Aarav Sharma (Seat 42B)',
+        image: 'https://images.unsplash.com/photo-1599661046289-e31897846e41?w=800&q=80',
+        initialSeconds: 8140,
+        monsoonNotice: 'Monsoon weather advisory in effect for UP region',
+      }
+    ];
+    const mock = defaultMocks[i % defaultMocks.length];
+    return {
+      id: t.id,
+      title: t.title,
+      status: mock.status,
+      route: mock.route,
+      date: mock.date,
+      passenger: mock.passenger,
+      image: mock.image,
+      initialSeconds: mock.initialSeconds,
+      monsoonNotice: mock.monsoonNotice,
+    };
+  }) : TRIP_NOTIFICATIONS;
+
+  const dbSeasonal = notifications.filter(n => n.type === 'SEASONAL');
+  const mappedSeasonal = dbSeasonal.length > 0 ? dbSeasonal.map((s, i) => {
+    const defaultMocks = [
+      {
+        tag: 'JULY BEST PICK',
+        season: 'Peak Monsoon Bloom (July - August)',
+        temp: '20°C',
+        weather: 'Mist & Alpine Flora',
+        aqi: 'Pure AQI • 10',
+        image: 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=800&q=80',
+      },
+      {
+        tag: 'MONSOON HEAVEN',
+        season: 'Refreshing Rain Season',
+        temp: '19°C',
+        weather: 'Lush Greenery & Clouds',
+        aqi: 'Pure AQI • 12',
+        image: 'https://images.unsplash.com/photo-1593693397690-362cb9666fc2?w=800&q=80',
+      }
+    ];
+    const mock = defaultMocks[i % defaultMocks.length];
+    return {
+      id: s.id,
+      tag: mock.tag,
+      title: s.title,
+      season: mock.season,
+      temp: mock.temp,
+      weather: mock.weather,
+      aqi: mock.aqi,
+      image: mock.image,
+      reason: s.content,
+    };
+  }) : SEASONAL_RECOMMENDATIONS;
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
@@ -313,7 +453,7 @@ export default function NotificationsScreen() {
               </View>
             </View>
 
-            {HAZARD_DISASTER_ALERTS.map((alert) => {
+            {mappedHazards.map((alert: any) => {
               const IconComponent = alert.icon;
               return (
                 <View
@@ -369,7 +509,7 @@ export default function NotificationsScreen() {
               </View>
             </View>
 
-            {TRIP_NOTIFICATIONS.map((trip) => (
+            {mappedTrips.map((trip: any) => (
               <TouchableOpacity key={trip.id} style={styles.fullCardWrap} activeOpacity={0.9}>
                 {/* Full Tourist Location Background Image */}
                 <Image source={{ uri: trip.image }} style={StyleSheet.absoluteFill} resizeMode="cover" />
@@ -448,7 +588,7 @@ export default function NotificationsScreen() {
               <Text style={styles.monthBadge}>JULY RECS</Text>
             </View>
 
-            {SEASONAL_RECOMMENDATIONS.map((item) => (
+            {mappedSeasonal.map((item: any) => (
               <View key={item.id} style={styles.fullSeasonalCardWrap}>
                 {/* Full Tourist Destination Background Image */}
                 <Image source={{ uri: item.image }} style={StyleSheet.absoluteFill} resizeMode="cover" />

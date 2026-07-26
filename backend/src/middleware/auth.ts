@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_jwt_key_12345';
+const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_jwt_key_travelconnect_12345';
 
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -26,7 +26,7 @@ export const authenticateJWT = (
         return res.status(403).json({ status: 'error', message: 'Forbidden: Invalid token' });
       }
       req.user = {
-        id: decoded.id,
+        id: decoded.id || decoded.userId,
         role: decoded.role,
         email: decoded.email,
       };

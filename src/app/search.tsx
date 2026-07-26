@@ -1,7 +1,9 @@
 import { useApp } from '@/store/AppContext';
+import { apiService } from '@/services/api';
 import TripDetailModal from '@/components/TripDetailModal';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useRouter, useNavigation } from 'expo-router';
+import { BlurView } from 'expo-blur';
 import {
   BadgePercent,
   Bell,
@@ -69,45 +71,49 @@ const QUICK_ACCESS = [
   { key: 'top', label: 'Top Reviewed', Icon: Flame, sub: 'Highly rated', color: '#FF3B30' },
 ];
 
-// Trip images mapping
-const TRIP_IMAGES: Record<string, any> = {
-  'trip-1': require('@/assets/images/spiritual-journey.png'),
-  'trip-2': require('@/assets/images/leh-expedition.jpg'),
-  'trip-3': require('@/assets/images/kerala.jpg'),
+// Helper: derive a badge from trip category or travelStyle (DB-driven)
+const getCategoryBadge = (trip: any): { label: string; color: string; bg: string } | null => {
+  const cat = (trip.category || trip.travelStyle || '').toLowerCase();
+  if (cat.includes('religious') || cat.includes('spiritual')) return { label: 'Popular', color: '#FFFFFF', bg: '#6C5CE7' };
+  if (cat.includes('adventure') || cat.includes('bike')) return { label: 'Adventure', color: '#FFFFFF', bg: '#2ECC71' };
+  if (cat.includes('nature') || cat.includes('scenic')) return { label: 'Scenic', color: '#FFFFFF', bg: '#00B894' };
+  if (cat.includes('heritage')) return { label: 'Heritage', color: '#FFFFFF', bg: '#E17055' };
+  if (cat.includes('family')) return { label: 'Family', color: '#FFFFFF', bg: '#0984E3' };
+  return null;
 };
 
-const TRIP_BADGES: Record<string, { label: string; color: string; bg: string }> = {
-  'trip-1': { label: 'Popular', color: '#FFFFFF', bg: '#6C5CE7' },
-  'trip-2': { label: 'Adventure', color: '#FFFFFF', bg: '#2ECC71' },
-  'trip-3': { label: 'Scenic', color: '#FFFFFF', bg: '#00B894' },
+// Helper: format date string for display
+const formatTripDate = (dateStr: string | undefined): string => {
+  if (!dateStr) return 'TBD';
+  try {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  } catch {
+    return dateStr;
+  }
 };
 
-// Exact details for each trip matching the screenshot
-const TRIP_EXTRA: Record<string, { duration: string; transport: string; displayCities: string[]; displayPrice: number; displayMeeting: string; displayDate: string }> = {
-  'trip-1': {
-    duration: '7 Nights / 8 Days',
-    transport: 'AC Transport',
-    displayCities: ['Ranchi', 'Delhi', 'Mathura', 'Vrindavan'],
-    displayPrice: 8500,
-    displayMeeting: 'Ranchi Jn. PF 1',
-    displayDate: '25 May 2025',
-  },
-  'trip-2': {
-    duration: '10 Nights / 11 Days',
-    transport: 'Bike + Fuel + Stay',
-    displayCities: ['Delhi', 'Manali', 'Leh', 'Pangong', 'Nubra'],
-    displayPrice: 16500,
-    displayMeeting: 'Delhi Aerocity',
-    displayDate: '10 Jun 2025',
-  },
-  'trip-3': {
-    duration: '5 Nights / 6 Days',
-    transport: 'AC Bus + Houseboat',
-    displayCities: ['Kochi', 'Munnar', 'Alleppey'],
-    displayPrice: 15000,
-    displayMeeting: 'Kochi Airport T1',
-    displayDate: '25 Aug 2025',
-  },
+// Helper: compute duration text from start/end dates
+const computeDuration = (startDate: string | undefined, endDate: string | undefined): string => {
+  if (!startDate || !endDate) return 'Multi-Day';
+  try {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const diffMs = end.getTime() - start.getTime();
+    const days = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)));
+    const nights = Math.max(0, days - 1);
+    return `${nights} Night${nights !== 1 ? 's' : ''} / ${days} Day${days !== 1 ? 's' : ''}`;
+  } catch {
+    return 'Multi-Day';
+  }
+};
+
+// Helper: derive transport label from trip name / category
+const deriveTransport = (trip: any): string => {
+  const name = (trip.name || '').toLowerCase();
+  if (name.includes('bike') || name.includes('expedition')) return 'Bike + Fuel + Stay';
+  if (name.includes('houseboat') || name.includes('backwaters')) return 'AC Bus + Houseboat';
+  return 'AC Transport';
 };
 
 // Color theme system matching dark/light mode
@@ -149,15 +155,43 @@ const LIGHT = {
 
 export default function SearchScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const scheme = useColorScheme();
   const isDark = scheme === 'dark';
   const C = isDark ? DARK : LIGHT;
-  const { trips, joinTrip, setActiveRoomId, profile } = useApp();
+  const { trips, joinTrip, setActiveRoomId, profile, isLoggedIn, requestedTrips, setRequestedTrips, reloadJoinRequests } = useApp();
   const insets = useSafeAreaInsets();
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [likedTrips, setLikedTrips] = useState<Set<string>>(new Set());
-  const [requestedTrips, setRequestedTrips] = useState<Set<string>>(new Set());
+  const [hasUnreadNotifs, setHasUnreadNotifs] = useState(false);
+
+  // Load liked trips, join requests, and notification dot on focus / mount
+  useEffect(() => {
+    const fetchStates = () => {
+      apiService.getLikedTrips().then((ids) => {
+        if (ids && ids.length > 0) {
+          setLikedTrips(new Set(ids));
+        } else {
+          setLikedTrips(new Set());
+        }
+      });
+
+      reloadJoinRequests();
+
+      apiService.getUnreadNotificationCount().then((res) => {
+        if (res && res.count > 0) {
+          setHasUnreadNotifs(true);
+        } else {
+          setHasUnreadNotifs(false);
+        }
+      });
+    };
+
+    fetchStates();
+    const unsubscribe = navigation.addListener('focus', fetchStates);
+    return unsubscribe;
+  }, [navigation]);
 
   // Join modal state
   const [selectedTrip, setSelectedTrip] = useState<any>(null);
@@ -191,6 +225,8 @@ export default function SearchScreen() {
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
+    // Persist to backend
+    apiService.toggleLikeTrip(id);
   };
 
   const handleMidwayJoinSelect = (trip: any) => {
@@ -217,6 +253,13 @@ export default function SearchScreen() {
         next.add(selectedTrip.id);
         return next;
       });
+      // Persist join request to DB
+      apiService.createJoinRequest(selectedTrip.id, {
+        midway: midwayJoin,
+        fromCity: midwayJoin ? startCity : undefined,
+        toCity: midwayJoin ? endCity : undefined,
+        adjustedPrice: midwayJoin ? calculateMidwayPrice(selectedTrip) : undefined,
+      });
     }
     setJoinedMsg(true);
     setTimeout(() => {
@@ -234,6 +277,8 @@ export default function SearchScreen() {
         next.delete(selectedTrip.id);
         return next;
       });
+      // Remove from DB
+      apiService.cancelJoinRequest(selectedTrip.id);
     }
     setShowJoinModal(false);
     setSelectedTrip(null);
@@ -279,15 +324,7 @@ export default function SearchScreen() {
 
   const filteredTrips = trips
     .filter((t) => {
-      const extra = TRIP_EXTRA[t.id] || {
-        duration: '5 Nights / 6 Days',
-        transport: 'AC Transport',
-        displayCities: t.cities,
-        displayPrice: t.budget,
-        displayMeeting: t.meetingPoint,
-        displayDate: t.startDate,
-      };
-      const price = extra.displayPrice || t.budget;
+      const price = t.budget;
 
       // Search Query Filter
       if (searchQuery.trim() !== '') {
@@ -299,35 +336,42 @@ export default function SearchScreen() {
         if (!matchName && !matchCities && !matchCreator && !matchMeeting) return false;
       }
 
-      // Category Chip Filter
+      // Category Chip Filter — uses trip.category from DB
       if (selectedCategory !== 'All') {
-        if (selectedCategory === 'Religious' && !t.name.toLowerCase().includes('spiritual')) return false;
-        if (selectedCategory === 'Adventure' && !t.name.toLowerCase().includes('bike')) return false;
-        if (selectedCategory === 'Family Friendly' && !t.cities.includes('Vrindavan')) return false;
-        if (selectedCategory === 'Bike' && !t.name.toLowerCase().includes('bike')) return false;
+        const tripCat = (t.category || '').toLowerCase();
+        const tripName = (t.name || '').toLowerCase();
+        if (selectedCategory === 'Religious') {
+          if (!tripCat.includes('religious') && !tripName.includes('spiritual') && !tripName.includes('varanasi')) return false;
+        } else if (selectedCategory === 'Adventure') {
+          if (!tripCat.includes('adventure') && !tripName.includes('bike') && !tripName.includes('expedition')) return false;
+        } else if (selectedCategory === 'Family Friendly') {
+          if (!tripCat.includes('family') && !tripCat.includes('heritage') && !tripCat.includes('nature')) return false;
+        } else if (selectedCategory === 'Bike') {
+          if (!tripName.includes('bike') && !tripName.includes('expedition')) return false;
+        }
       }
 
       // Max Budget Filter
       if (maxBudget < 50000 && price > maxBudget) return false;
 
-      // Verified Organizers Filter
-      if (verifiedOnly && t.creator !== 'Aarav Sharma' && t.creator !== 'Rajesh Kumar') return false;
+      // Verified Organizers Filter — check for (Organizer) tag from DB
+      if (verifiedOnly && !t.creator.includes('Organizer') && !t.creator.includes('Guide')) return false;
 
       // Guide Included Filter
       if (guideRequired && !t.guideIncluded) return false;
 
-      // Duration Filter
-      if (selectedDuration === 'SHORT') {
-        if (extra.duration.includes('7') || extra.duration.includes('10') || extra.duration.includes('8') || extra.duration.includes('11')) return false;
-      } else if (selectedDuration === 'MEDIUM') {
-        if (extra.duration.includes('10') || extra.duration.includes('11') || extra.duration.includes('8')) return false;
-      } else if (selectedDuration === 'LONG') {
-        if (!extra.duration.includes('10') && !extra.duration.includes('11') && !extra.duration.includes('8')) return false;
-      }
+      // Duration Filter — compute from dates
+      const duration = computeDuration(t.startDate, t.endDate);
+      const dayMatch = duration.match(/(\d+)\s*Day/);
+      const totalDays = dayMatch ? parseInt(dayMatch[1], 10) : 5;
+      if (selectedDuration === 'SHORT' && totalDays > 3) return false;
+      if (selectedDuration === 'MEDIUM' && (totalDays < 4 || totalDays > 7)) return false;
+      if (selectedDuration === 'LONG' && totalDays < 8) return false;
 
       // Transport Mode Filter
-      if (selectedTransport === 'BIKE' && !extra.transport.toLowerCase().includes('bike')) return false;
-      if (selectedTransport === 'BUS' && !extra.transport.toLowerCase().includes('bus') && !extra.transport.toLowerCase().includes('ac')) return false;
+      const transport = deriveTransport(t);
+      if (selectedTransport === 'BIKE' && !transport.toLowerCase().includes('bike')) return false;
+      if (selectedTransport === 'BUS' && !transport.toLowerCase().includes('bus') && !transport.toLowerCase().includes('ac')) return false;
 
       // Midway Join Filter
       if (midwayOnly && t.cities.length < 3) return false;
@@ -335,10 +379,8 @@ export default function SearchScreen() {
       return true;
     })
     .sort((a, b) => {
-      const extraA = TRIP_EXTRA[a.id] || { displayPrice: a.budget };
-      const extraB = TRIP_EXTRA[b.id] || { displayPrice: b.budget };
-      const priceA = extraA.displayPrice || a.budget;
-      const priceB = extraB.displayPrice || b.budget;
+      const priceA = a.budget;
+      const priceB = b.budget;
 
       if (sortOption === 'price_low') {
         return priceA - priceB;
@@ -352,10 +394,9 @@ export default function SearchScreen() {
       const scoreB = getPopularityScore(b);
       
       if (scoreA !== scoreB) {
-        return scoreA - scoreB; // Ascending order of popularity (filling rate)
+        return scoreA - scoreB;
       }
       
-      // Secondary sort: keep lower membersCount at the bottom to maintain ascending trend
       return (a.membersCount || 0) - (b.membersCount || 0);
     });
 
@@ -394,7 +435,7 @@ export default function SearchScreen() {
             onPress={() => router.push('/notifications')}
           >
             <Bell size={20} color={C.textSecondary} />
-            <View style={styles.notifDot} />
+            {hasUnreadNotifs && <View style={styles.notifDot} />}
           </TouchableOpacity>
         </View>
 
@@ -567,40 +608,38 @@ export default function SearchScreen() {
 
           {/* ─── TRIP CARDS (MATCHING THE SCREENSHOT EXACTLY) ───── */}
           {filteredTrips.map((trip) => {
-            const extra = TRIP_EXTRA[trip.id] || {
-              duration: '5 Nights / 6 Days',
-              transport: 'AC Transport',
-              displayCities: trip.cities,
-              displayPrice: trip.budget,
-              displayMeeting: trip.meetingPoint,
-              displayDate: trip.startDate,
-            };
-            const badge = TRIP_BADGES[trip.id];
-            // Prefer the cover image stored on the trip (set from Create/CustomTrip),
-            // then fall back to the static TRIP_IMAGES map, then a generic fallback
-            const imageUri = trip.coverImage || TRIP_IMAGES[trip.id] || 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=600&q=80';
+            // All display data comes from the trip object (populated from DB)
+            const duration = computeDuration(trip.startDate, trip.endDate);
+            const transport = deriveTransport(trip);
+            const displayCities = trip.cities;
+            const displayPrice = trip.budget;
+            const displayMeeting = trip.meetingPoint;
+            const displayDate = formatTripDate(trip.startDate);
+            const badge = getCategoryBadge(trip);
+            // Use coverImage from DB, fallback to generic scenic photo
+            const imageUri = trip.coverImage || 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=600&q=80';
             const imageSource = typeof imageUri === 'string' ? { uri: imageUri } : imageUri;
             const isLiked = likedTrips.has(trip.id);
-            const isMyTrip = trip.creator.includes('Aarav Sharma') || (profile && profile.name && trip.creator.includes(profile.name));
+            const isMyTrip = isLoggedIn && !!(profile && profile.id && trip.creatorId && trip.creatorId === profile.id);
 
             return (
               <TouchableOpacity
                 key={trip.id}
-                activeOpacity={0.85}
+                activeOpacity={isMyTrip ? 1 : 0.85}
+                disabled={isMyTrip}
                 onPress={() => {
-                  if (isMyTrip) return;
                   setSelectedTrip(trip);
                   setShowJoinModal(true);
                 }}
                 style={[
                   styles.tripCard,
                   { backgroundColor: C.card, borderColor: C.cardBorder },
-                  isMyTrip && { backgroundColor: 'transparent', borderColor: 'transparent', borderWidth: 0 }
+                  isMyTrip && { opacity: 0.65 }
                 ]}
               >
                 {isMyTrip && (
                   <LinearGradient
-                    colors={['#3B0764', '#13042A', '#06010F']}
+                    colors={isDark ? ['#141629', '#101220', '#0A0B14'] : ['#F2F5FA', '#FAFBFD', '#FFFFFF']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={[StyleSheet.absoluteFill, { borderRadius: 16 }]}
@@ -616,22 +655,28 @@ export default function SearchScreen() {
                     style={StyleSheet.absoluteFill}
                   />
                   {/* Pill Badge */}
-                  {badge && (
+                  {isMyTrip ? (
+                    <View style={[styles.tripBadge, { backgroundColor: C.accent }]}>
+                      <Text style={[styles.tripBadgeText, { color: '#FFF', fontWeight: '800' }]}>Yours</Text>
+                    </View>
+                  ) : badge && (
                     <View style={[styles.tripBadge, { backgroundColor: badge.bg }]}>
                       <Text style={styles.tripBadgeText}>{badge.label}</Text>
                     </View>
                   )}
                   {/* Heart button */}
-                  <TouchableOpacity
-                    style={[styles.heartBtn, { backgroundColor: C.heartBg }]}
-                    onPress={() => toggleLike(trip.id)}
-                  >
-                    <Heart
-                      size={14}
-                      color={isLiked ? '#FF3B30' : '#FFF'}
-                      fill={isLiked ? '#FF3B30' : 'transparent'}
-                    />
-                  </TouchableOpacity>
+                  {!isMyTrip && (
+                    <TouchableOpacity
+                      style={[styles.heartBtn, { backgroundColor: C.heartBg }]}
+                      onPress={() => toggleLike(trip.id)}
+                    >
+                      <Heart
+                        size={14}
+                        color={isLiked ? '#FF3B30' : '#FFF'}
+                        fill={isLiked ? '#FF3B30' : 'transparent'}
+                      />
+                    </TouchableOpacity>
+                  )}
                 </View>
 
                 {/* Right side: Detailed trip content */}
@@ -644,19 +689,19 @@ export default function SearchScreen() {
                   </View>
 
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2, marginBottom: 4 }}>
-                    <View style={[styles.verifiedBadge, { backgroundColor: C.accentLight, marginTop: 0, marginBottom: 0 }]}>
-                      <Check size={9} color={C.accent} strokeWidth={3} />
-                      <Text style={[styles.verifiedText, { color: C.accent }]}>Verified Route</Text>
+                    <View style={[styles.verifiedBadge, { backgroundColor: isMyTrip ? C.capsuleBg : C.accentLight, marginTop: 0, marginBottom: 0 }]}>
+                      <Check size={9} color={isMyTrip ? C.textSecondary : C.accent} strokeWidth={3} />
+                      <Text style={[styles.verifiedText, { color: isMyTrip ? C.textSecondary : C.accent }]}>Verified Route</Text>
                     </View>
-                    <Text style={{ fontSize: 9.5, fontWeight: '600', color: '#10B981' }}>{trip.availableSeats} left</Text>
+                    <Text style={{ fontSize: 9.5, fontWeight: '600', color: isMyTrip ? C.textSecondary : '#10B981' }}>{trip.availableSeats ?? 0} left</Text>
                   </View>
 
                   {/* Route cities with arrow */}
                   <View style={styles.routeCities}>
-                    {extra.displayCities.map((city, i) => (
+                    {displayCities.map((city, i) => (
                       <React.Fragment key={city}>
-                        <Text style={[styles.cityText, { color: C.routeColor }]}>{city}</Text>
-                        {i < extra.displayCities.length - 1 && (
+                        <Text style={[styles.cityText, { color: isMyTrip ? C.textSecondary : C.routeColor }]}>{city}</Text>
+                        {i < displayCities.length - 1 && (
                           <Text style={[styles.routeArrow, { color: C.textSecondary }]}>→</Text>
                         )}
                       </React.Fragment>
@@ -669,13 +714,13 @@ export default function SearchScreen() {
                       <View style={[styles.capsule, { backgroundColor: C.capsuleBg }]}>
                         <MapPin size={9} color={C.textSecondary} />
                         <Text style={[styles.capsuleText, { color: C.textSecondary }]} numberOfLines={1}>
-                          {extra.displayMeeting}
+                          {displayMeeting}
                         </Text>
                       </View>
                       <View style={[styles.capsule, { backgroundColor: C.capsuleBg }]}>
                         <Calendar size={9} color={C.textSecondary} />
                         <Text style={[styles.capsuleText, { color: C.textSecondary }]} numberOfLines={1}>
-                          {extra.displayDate}
+                          {displayDate}
                         </Text>
                       </View>
                     </View>
@@ -683,7 +728,7 @@ export default function SearchScreen() {
                       <View style={[styles.capsule, { backgroundColor: C.capsuleBg }]}>
                         <Clock size={9} color={C.textSecondary} />
                         <Text style={[styles.capsuleText, { color: C.textSecondary }]} numberOfLines={1}>
-                          {extra.duration}
+                          {duration}
                         </Text>
                       </View>
                       <View style={[styles.capsule, { backgroundColor: C.capsuleBg }]}>
@@ -693,7 +738,7 @@ export default function SearchScreen() {
                           <Bus size={9} color={C.textSecondary} />
                         )}
                         <Text style={[styles.capsuleText, { color: C.textSecondary }]} numberOfLines={1}>
-                          {extra.transport}
+                          {transport}
                         </Text>
                       </View>
                     </View>
@@ -703,36 +748,46 @@ export default function SearchScreen() {
                   <View style={[styles.priceRow, { borderTopColor: C.divider }]}>
                     <View style={{ flex: 1, marginRight: 4 }}>
                       <Text style={[styles.priceLabel, { color: C.textSecondary }]} numberOfLines={1}>Full Trip Cost</Text>
-                      <Text style={[styles.priceAmount, { color: C.priceColor }]} numberOfLines={1}>
-                        ₹{extra.displayPrice}
+                      <Text style={[styles.priceAmount, { color: isMyTrip ? C.textSecondary : C.priceColor }]} numberOfLines={1}>
+                        ₹{displayPrice}
                       </Text>
                       <Text style={[styles.pricePer, { color: C.textSecondary, marginTop: -2 }]} numberOfLines={1}>per person</Text>
                     </View>
                     <View style={{ gap: 4, flexShrink: 0, width: 120 }}>
-                      {!isMyTrip && (
-                        requestedTrips.has(trip.id) ? (
-                          <View style={[styles.joinBtn, styles.joinBtnRequested]}>
-                            <Check size={11} color="#2ECC71" style={{ marginRight: 4 }} />
-                            <Text style={[styles.joinBtnText, styles.joinBtnRequestedText]} numberOfLines={1}>
-                              Requested
-                            </Text>
-                          </View>
-                        ) : (
-                          <TouchableOpacity
-                            style={styles.joinBtn}
-                            onPress={() => {
-                              setSelectedTrip(trip);
-                              setShowJoinModal(true);
-                            }}
-                          >
-                            <Text style={styles.joinBtnText} numberOfLines={1}>Request to Join</Text>
-                            <ChevronRight size={11} color="#FFF" style={{ marginLeft: 2 }} />
-                          </TouchableOpacity>
-                        )
+                      {isMyTrip ? (
+                        <View style={[styles.myTripBadge, { backgroundColor: isDark ? 'rgba(0, 102, 255, 0.12)' : 'rgba(0, 102, 255, 0.06)', borderColor: isDark ? 'rgba(0, 102, 255, 0.35)' : 'rgba(0, 102, 255, 0.22)' }]}>
+                          <Sparkles size={11} color={C.accent} style={{ marginRight: 4 }} />
+                          <Text style={[styles.myTripBadgeText, { color: C.accent, fontWeight: '800' }]}>Your Creation</Text>
+                        </View>
+                      ) : requestedTrips.has(trip.id) ? (
+                        <View style={[styles.joinBtn, styles.joinBtnRequested]}>
+                          <Check size={11} color="#2ECC71" style={{ marginRight: 4 }} />
+                          <Text style={[styles.joinBtnText, styles.joinBtnRequestedText]} numberOfLines={1}>
+                            Requested
+                          </Text>
+                        </View>
+                      ) : (
+                        <TouchableOpacity
+                          style={styles.joinBtn}
+                          onPress={() => {
+                            setSelectedTrip(trip);
+                            setShowJoinModal(true);
+                          }}
+                        >
+                          <Text style={styles.joinBtnText} numberOfLines={1}>Request to Join</Text>
+                          <ChevronRight size={11} color="#FFF" style={{ marginLeft: 2 }} />
+                        </TouchableOpacity>
                       )}
                     </View>
                   </View>
                 </View>
+                {isMyTrip && (
+                  <BlurView
+                    intensity={isDark ? 55 : 45}
+                    tint={isDark ? "dark" : "light"}
+                    style={[styles.myTripOverlay, { backgroundColor: isDark ? 'rgba(10, 12, 22, 0.35)' : 'rgba(255, 255, 255, 0.4)' }]}
+                  />
+                )}
               </TouchableOpacity>
             );
           })}
@@ -798,8 +853,6 @@ export default function SearchScreen() {
         visible={showJoinModal}
         trip={selectedTrip}
         onClose={() => setShowJoinModal(false)}
-        requestedTrips={requestedTrips}
-        setRequestedTrips={setRequestedTrips}
       />
 
       {/* ─── FILTER & PREFERENCES MODAL ───────────────────────── */}
@@ -1068,6 +1121,30 @@ export default function SearchScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
+  },
+  myTripBadge: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 120,
+    alignSelf: 'flex-end',
+  },
+  myTripBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  myTripOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 16,
   },
 
   // Search input bar row

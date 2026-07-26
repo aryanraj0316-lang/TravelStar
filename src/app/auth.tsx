@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { safeStorage } from '@/services/storage';
 import {
   View,
   Text,
@@ -60,18 +61,22 @@ export default function AuthScreen() {
       setLoading(true);
       try {
         const response = await apiService.login(email, password);
-        const userObj = response?.user || { name: email.split('@')[0], email, role: selectedRole };
+        if (!response) {
+          Alert.alert('Login Failed ❌', 'Invalid response from server.');
+          return;
+        }
+        if (response.token) {
+          await safeStorage.setItem('userToken', response.token);
+        }
+        const userObj = response.user;
         setCurrentRole(userObj.role || selectedRole);
         updateProfile(userObj);
         login();
-        Alert.alert('Welcome Back! 👋', 'Signed in successfully', [
+        Alert.alert('Welcome Back! 👋', 'Logged in successfully', [
           { text: 'Continue', onPress: () => router.replace('/') },
         ]);
-      } catch (err) {
-        setCurrentRole(selectedRole);
-        updateProfile({ email, role: selectedRole });
-        login();
-        router.replace('/');
+      } catch (err: any) {
+        Alert.alert('Login Failed ❌', err?.message || 'An error occurred during login.');
       } finally {
         setLoading(false);
       }
@@ -89,8 +94,15 @@ export default function AuthScreen() {
           password,
           role: selectedRole,
         });
+        if (!response) {
+          Alert.alert('Signup Failed ❌', 'Invalid response from server.');
+          return;
+        }
+        if (response.token) {
+          await safeStorage.setItem('userToken', response.token);
+        }
 
-        const userObj = response?.user || { name: fullName, email, role: selectedRole };
+        const userObj = response.user;
         setCurrentRole(selectedRole);
         updateProfile(userObj);
         login();
@@ -98,11 +110,8 @@ export default function AuthScreen() {
         Alert.alert('Account Created 🎉', 'Welcome to TravelConnect India!', [
           { text: 'Start Exploring', onPress: () => router.replace('/') },
         ]);
-      } catch (err) {
-        setCurrentRole(selectedRole);
-        updateProfile({ name: fullName, email, role: selectedRole });
-        login();
-        router.replace('/');
+      } catch (err: any) {
+        Alert.alert('Signup Failed ❌', err?.message || 'An error occurred during registration.');
       } finally {
         setLoading(false);
       }
@@ -152,7 +161,7 @@ export default function AuthScreen() {
             </Text>
             <Text style={styles.heroSub}>
               {mode === 'LOGIN'
-                ? 'Sign in to access your trips, wallet & live chats'
+                ? 'Log in to access your trips, wallet & live chats'
                 : 'Connect with 50,000+ travelers & guides across India'}
             </Text>
           </View>
@@ -165,7 +174,7 @@ export default function AuthScreen() {
               activeOpacity={0.85}
             >
               <Text style={[styles.modeText, mode === 'LOGIN' && styles.modeTextActive]}>
-                Sign In
+                Log In
               </Text>
             </TouchableOpacity>
 
@@ -282,7 +291,7 @@ export default function AuthScreen() {
                   <>
                     <ShieldCheck size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
                     <Text style={styles.submitBtnText}>
-                      {mode === 'LOGIN' ? 'Sign In to Account' : 'Create Account'}
+                      {mode === 'LOGIN' ? 'Log In' : 'Create Account'}
                     </Text>
                   </>
                 )}
@@ -298,7 +307,7 @@ export default function AuthScreen() {
                 onPress={() => setMode(mode === 'LOGIN' ? 'SIGNUP' : 'LOGIN')}
               >
                 <Text style={styles.footerLink}>
-                  {mode === 'LOGIN' ? 'Create one now' : 'Sign In'}
+                  {mode === 'LOGIN' ? 'Create one now' : 'Log In'}
                 </Text>
               </TouchableOpacity>
             </View>

@@ -165,6 +165,9 @@ model Profile {
   faceVerificationImg String?
   selfieVerification String?
 
+  pushNotifications   Boolean            @default(true)
+  locationSharing     Boolean            @default(true)
+  selectedLanguage    String             @default("English")
   updatedAt        DateTime           @updatedAt
 }
 
@@ -224,6 +227,8 @@ model Trip {
   ageLimitMin   Int?
   ageLimitMax   Int?
   genderPref    String?        // 'Any', 'MaleOnly', 'FemaleOnly'
+  coverImage    String?
+  category      String?
   languages     String[]
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
@@ -617,4 +622,77 @@ model MapPin {
   detail    String
   targetId  String?
   createdAt DateTime @default(now())
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String?
+  type      String   // 'TRIP', 'SEASONAL', 'HAZARD'
+  title     String
+  content   String
+  time      String
+  unread    Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model Destination {
+  id        String   @id @default(uuid())
+  name      String
+  tags      String
+  rating    Float    @default(4.5)
+  image     String
+  rank      Int      @default(0)
+  featured  Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model WeatherLocation {
+  id        String   @id @default(uuid())
+  name      String
+  place     String
+  temp      String
+  condition String
+  aqi       String
+  humidity  String
+  image     String
+  createdAt DateTime @default(now())
+}
+
+model Alert {
+  id            String   @id @default(uuid())
+  severity      String   // 'CRITICAL', 'WARNING', 'ADVISORY'
+  title         String
+  category      String   // 'LANDSLIDE', 'FLOOD & RAIN', etc.
+  location      String
+  time          String
+  desc          String
+  affectedRoute String
+  precautions   String[]
+  image         String
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+}
+
+model TravelStory {
+  id           String   @id @default(uuid())
+  authorName   String
+  authorAvatar String
+  title        String
+  content      String
+  coverImg     String
+  likesCount   Int      @default(0)
+  location     String
+  hasReel      Boolean  @default(false)
+  createdAt    DateTime @default(now())
+}
+
+model TripLike {
+  id        String   @id @default(uuid())
+  tripId    String
+  
+  /// Client-side device identifier (or user email) for tracking likes
+  userId    String   @default("default-user")
+  createdAt DateTime @default(now())
+
+  @@unique([tripId, userId])
 }

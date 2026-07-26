@@ -74,6 +74,7 @@ export interface BudgetTripItem {
   dealTagline?: string;
   meetingPoint: string;
   rating: number;
+  creatorId?: string;
 }
 
 const TRIP_IMAGES: Record<string, any> = {
@@ -192,7 +193,7 @@ const BUDGET_TRIPS_DATA: BudgetTripItem[] = [
 
 export default function BudgetTripsScreen() {
   const router = useRouter();
-  const { trips, joinTrip, profile } = useApp();
+  const { trips, joinTrip, profile, isLoggedIn } = useApp();
 
   const [userMaxBudget, setUserMaxBudget] = useState<number>(50000);
   const [budgetTextInput, setBudgetTextInput] = useState<string>('50000');
@@ -200,7 +201,6 @@ export default function BudgetTripsScreen() {
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [selectedTrip, setSelectedTrip] = useState<any | null>(null);
   const [showJoinModal, setShowJoinModal] = useState(false);
-  const [requestedTrips, setRequestedTrips] = useState<Set<string>>(new Set());
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -228,7 +228,7 @@ export default function BudgetTripsScreen() {
     else if (t.id === 'creation-2') staticId = 'bt-1';
 
     const staticItem = BUDGET_TRIPS_DATA.find((item) => item.id === staticId);
-    const isUserCreation = t.creator.includes('Aarav Sharma') || (profile && profile.name && t.creator.includes(profile.name));
+    const isUserCreation = isLoggedIn && !!(profile && profile.id && t.creatorId && t.creatorId === profile.id);
 
     if (staticItem) {
       return {
@@ -236,6 +236,7 @@ export default function BudgetTripsScreen() {
         id: t.id,
         title: t.name,
         organizerName: t.creator,
+        creatorId: t.creatorId,
         organizerType: isUserCreation ? 'INDIVIDUAL_TOURIST' : staticItem.organizerType,
         pricePerPerson: t.budget,
         availableSeats: t.availableSeats,
@@ -248,6 +249,7 @@ export default function BudgetTripsScreen() {
       id: t.id,
       title: t.name,
       organizerName: t.creator,
+      creatorId: t.creatorId,
       organizerType: isUserCreation
         ? 'INDIVIDUAL_TOURIST'
         : t.guideIncluded
@@ -447,7 +449,7 @@ export default function BudgetTripsScreen() {
         {filteredTrips.length > 0 ? (
           filteredTrips.map((trip) => {
             const savings = userMaxBudget - trip.pricePerPerson;
-            const isMyTrip = trip.organizerName.includes('Aarav Sharma') || (profile && profile.name && trip.organizerName.includes(profile.name));
+            const isMyTrip = isLoggedIn && !!(profile && profile.id && trip.creatorId && trip.creatorId === profile.id);
             const imageSource = typeof trip.imageUrl === 'string' ? { uri: trip.imageUrl } : trip.imageUrl;
             
             const duration = '5 Nights / 6 Days';
@@ -602,8 +604,6 @@ export default function BudgetTripsScreen() {
         visible={showJoinModal}
         trip={selectedTrip}
         onClose={() => setShowJoinModal(false)}
-        requestedTrips={requestedTrips}
-        setRequestedTrips={setRequestedTrips}
       />
     </SafeAreaView>
   );

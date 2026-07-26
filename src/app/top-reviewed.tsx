@@ -517,8 +517,6 @@ export default function TopReviewedScreen() {
         visible={showJoinModal}
         trip={selectedTrip}
         onClose={() => setShowJoinModal(false)}
-        requestedTrips={requestedTrips}
-        setRequestedTrips={setRequestedTrips}
       />
     </SafeAreaView>
   );

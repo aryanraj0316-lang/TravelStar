@@ -1,4 +1,5 @@
 import { useApp } from '@/store/AppContext';
+import { apiService } from '@/services/api';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
@@ -137,8 +138,25 @@ export default function StoriesScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const locationParam = (params.location as string) ?? 'Sikkim';
+  const { storiesList } = useApp();
 
-  const activeStoriesList = STORIES_DATABASE[locationParam] ?? STORIES_DATABASE['Sikkim'];
+  const [activeStoriesList, setActiveStoriesList] = useState<any[]>([]);
+
+  useEffect(() => {
+    // Dynamically filter stories from DB based on location
+    const matched = storiesList.filter(
+      (s) =>
+        s.location?.toLowerCase().includes(locationParam.toLowerCase()) ||
+        s.title?.toLowerCase().includes(locationParam.toLowerCase())
+    );
+    if (matched.length > 0) {
+      setActiveStoriesList(matched);
+    } else {
+      // Fallback to static stories database
+      const fallback = STORIES_DATABASE[locationParam] ?? STORIES_DATABASE['Sikkim'];
+      setActiveStoriesList(fallback);
+    }
+  }, [locationParam, storiesList]);
 
   const insets = useSafeAreaInsets();
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -173,9 +191,10 @@ export default function StoriesScreen() {
       onShow.remove();
       onHide.remove();
     };
-  }, [currentIdx]);
+  }, [currentIdx, activeStoriesList]);
 
   const startStoryTimer = (startFrom = 0) => {
+    if (activeStoriesList.length === 0) return;
     progressAnim.setValue(startFrom);
 
     // Stop any existing timers
@@ -211,13 +230,30 @@ export default function StoriesScreen() {
 
   // Reset and restart animation whenever story changes
   useEffect(() => {
-    startStoryTimer(0);
+    if (activeStoriesList.length > 0) {
+      startStoryTimer(0);
+    }
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [currentIdx]);
+  }, [currentIdx, activeStoriesList]);
+
+  if (activeStoriesList.length === 0) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
+        <Text style={{ color: '#FFF' }}>Loading stories...</Text>
+      </View>
+    );
+  }
 
   const activeStory = activeStoriesList[currentIdx];
+
+  // Helper getters to unify shapes of static vs DB stories
+  const storyImage = activeStory.coverImg || activeStory.image || 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1000&q=80';
+  const storyCaption = activeStory.content || activeStory.caption || '';
+  const storyCreator = activeStory.authorName || activeStory.creator || 'Traveler';
+  const storyCreatorAvatar = activeStory.authorAvatar || activeStory.creatorAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80';
+  const storyLocation = activeStory.location || activeStory.location || 'India';
 
   const handleSendReply = () => {
     if (!inputText.trim()) return;
@@ -225,11 +261,14 @@ export default function StoriesScreen() {
     Keyboard.dismiss();
   };
 
-  const handleToggleLike = () => {
+  const handleToggleLike = async () => {
     setIsLiked(prev => ({
       ...prev,
       [activeStory.id]: !prev[activeStory.id]
     }));
+    try {
+      await apiService.likeStory(activeStory.id);
+    } catch (e) {}
   };
 
   return (
@@ -238,7 +277,7 @@ export default function StoriesScreen() {
 
       {/* Slide Images */}
       <View style={styles.storyImageContainer}>
-        <Image source={{ uri: activeStory.image }} style={styles.storyImg} resizeMode="cover" />
+        <Image source={{ uri: storyImage }} style={styles.storyImg} resizeMode="cover" />
         <LinearGradient
           colors={['rgba(0,0,0,0.6)', 'transparent', 'rgba(0,0,0,0.75)']}
           style={StyleSheet.absoluteFill}
@@ -279,10 +318,10 @@ export default function StoriesScreen() {
       {/* Top Header info (Creator details + Close Button) */}
       <View style={styles.storyHeader}>
         <View style={styles.creatorMeta}>
-          <Image source={{ uri: activeStory.creatorAvatar }} style={styles.creatorAvatar} />
+          <Image source={{ uri: storyCreatorAvatar }} style={styles.creatorAvatar} />
           <View>
-            <Text style={styles.creatorName}>{activeStory.creator}</Text>
-            <Text style={styles.locationText}>{activeStory.location}</Text>
+            <Text style={styles.creatorName}>{storyCreator}</Text>
+            <Text style={styles.locationText}>{storyLocation}</Text>
           </View>
         </View>
         <TouchableOpacity style={styles.closeBtn} onPress={() => router.back()}>
@@ -299,7 +338,7 @@ export default function StoriesScreen() {
       {/* Bottom overlay: Caption + Send Message Reply Box */}
       <Animated.View style={[styles.bottomController, { bottom: keyboardHeight > 0 ? keyboardHeight : Math.max(insets.bottom, 16) }]}>
         <View style={styles.captionPanel}>
-          <Text style={styles.captionText}>{activeStory.caption}</Text>
+          <Text style={styles.captionText}>{storyCaption}</Text>
         </View>
 
         <View style={styles.replyBoxRow}>

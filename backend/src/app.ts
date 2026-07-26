@@ -9,6 +9,11 @@ import paymentRoutes from './api/routes/payments';
 import safetyRoutes from './api/routes/safety';
 import storyRoutes from './api/routes/stories';
 import tripRoutes from './api/routes/trips';
+import notificationRoutes from './api/routes/notifications';
+import destinationRoutes from './api/routes/destinations';
+import weatherRoutes from './api/routes/weather';
+import alertRoutes from './api/routes/alerts';
+import interactionRoutes from './api/routes/interactions';
 import { errorHandler } from './middleware/error';
 
 dotenv.config();
@@ -42,6 +47,11 @@ app.use('/api/v1/guides', guideRoutes);
 app.use('/api/v1/payments', paymentRoutes);
 app.use('/api/v1/safety', safetyRoutes);
 app.use('/api/v1/stories', storyRoutes);
+app.use('/api/v1/notifications', notificationRoutes);
+app.use('/api/v1/destinations', destinationRoutes);
+app.use('/api/v1/weather', weatherRoutes);
+app.use('/api/v1/alerts', alertRoutes);
+app.use('/api/v1/interactions', interactionRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

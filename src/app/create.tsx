@@ -265,7 +265,7 @@ const TRIP_CATEGORIES = ['Adventure', 'Religious', 'Family', 'Road Trip', 'Beach
 
 export default function CreateTripScreen() {
   const router = useRouter();
-  const { trips, addTrip } = useApp();
+  const { trips, addTrip, profile } = useApp();
   const scrollRef = useRef<ScrollView>(null);
 
   const [tripName, setTripName] = useState('');
@@ -456,7 +456,8 @@ export default function CreateTripScreen() {
     const newTrip = {
       id: `trip-${Date.now()}`,
       name: tripName,
-      creator: 'Aarav Sharma (Organizer)',
+      creator: `${profile?.name || 'Aarav Sharma'} (Organizer)`,
+      creatorId: profile?.id,
       cities: parsedCities,
       startDate,
       endDate: endDate || startDate,
@@ -505,7 +506,8 @@ export default function CreateTripScreen() {
     const newTrip = {
       id: `draft-${Date.now()}`,
       name: `[DRAFT] ${tripName}`,
-      creator: 'Aarav Sharma (Organizer)',
+      creator: `${profile?.name || 'Aarav Sharma'} (Organizer)`,
+      creatorId: profile?.id,
       cities: parsedCities.length > 0 ? parsedCities : ['Delhi', 'Destination'],
       startDate,
       endDate: endDate || startDate,
@@ -619,7 +621,7 @@ export default function CreateTripScreen() {
 
           {/* ─── ORGANIZER CREATIONS NOTIFICATION BANNER (TOP LEVEL) ─── */}
           {(() => {
-            const myTrips = trips.filter(t => t.creator.includes('Aarav Sharma'));
+            const myTrips = trips.filter(t => !!(profile && profile.id && t.creatorId === profile.id));
             const pendingCount = joinRequests.length;
             const hasAlert = pendingCount > 0;
 
@@ -1514,7 +1516,7 @@ export default function CreateTripScreen() {
 
               {/* List */}
               {(() => {
-                const myTrips = trips.filter(t => t.creator.includes('Aarav Sharma'));
+                const myTrips = trips.filter(t => !!(profile && profile.id && t.creatorId === profile.id));
                 if (myTrips.length === 0) {
                   return (
                     <View style={styles.emptyCreations}>
