@@ -149,10 +149,7 @@ export default function ProfileScreen() {
     return unsubscribe;
   }, [navigation]);
 
-  useEffect(() => {
-    console.log('[ProfileScreen] Toggling navbarHidden:', showSavedPlacesModal || showLanguageModal);
-    setNavbarHidden(showSavedPlacesModal || showLanguageModal);
-  }, [showSavedPlacesModal, showLanguageModal]);
+
 
   useEffect(() => {
     return () => {
@@ -493,7 +490,10 @@ export default function ProfileScreen() {
             <TouchableOpacity 
               style={styles.menuItem} 
               activeOpacity={0.7}
-              onPress={() => setShowSavedPlacesModal(true)}
+              onPress={() => {
+                setShowSavedPlacesModal(true);
+                setNavbarHidden(true);
+              }}
             >
               <View style={styles.menuItemLeft}>
                 <Bookmark size={17} color="#FFF" style={{ opacity: 0.8 }} />
@@ -525,7 +525,10 @@ export default function ProfileScreen() {
             <TouchableOpacity 
               style={styles.menuItem} 
               activeOpacity={0.7}
-              onPress={() => setShowLanguageModal(true)}
+              onPress={() => {
+                setShowLanguageModal(true);
+                setNavbarHidden(true);
+              }}
             >
               <View style={styles.menuItemLeft}>
                 <Globe size={17} color="#FFF" style={{ opacity: 0.8 }} />
@@ -880,7 +883,10 @@ export default function ProfileScreen() {
           <TouchableOpacity 
             style={StyleSheet.absoluteFill} 
             activeOpacity={1}
-            onPress={() => setShowSavedPlacesModal(false)}
+            onPress={() => {
+              setShowSavedPlacesModal(false);
+              setNavbarHidden(false);
+            }}
           >
             <View style={{ flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)' }} />
           </TouchableOpacity>
@@ -891,7 +897,7 @@ export default function ProfileScreen() {
                 <Text style={{ fontSize: 16 }}>❤️</Text>
                 <Text style={styles.bottomSheetTitle}>Saved Places</Text>
               </View>
-              <TouchableOpacity onPress={() => setShowSavedPlacesModal(false)} style={styles.bottomSheetCloseBtn}>
+              <TouchableOpacity onPress={() => { setShowSavedPlacesModal(false); setNavbarHidden(false); }} style={styles.bottomSheetCloseBtn}>
                 <X size={20} color="#FFF" />
               </TouchableOpacity>
             </View>
@@ -935,7 +941,10 @@ export default function ProfileScreen() {
           <TouchableOpacity 
             style={StyleSheet.absoluteFill} 
             activeOpacity={1}
-            onPress={() => setShowLanguageModal(false)}
+            onPress={() => {
+              setShowLanguageModal(false);
+              setNavbarHidden(false);
+            }}
           >
             <View style={{ flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)' }} />
           </TouchableOpacity>
@@ -946,7 +955,7 @@ export default function ProfileScreen() {
                 <Text style={{ fontSize: 16 }}>🌐</Text>
                 <Text style={styles.bottomSheetTitle}>Select Language / भाषा</Text>
               </View>
-              <TouchableOpacity onPress={() => setShowLanguageModal(false)} style={styles.bottomSheetCloseBtn}>
+              <TouchableOpacity onPress={() => { setShowLanguageModal(false); setNavbarHidden(false); }} style={styles.bottomSheetCloseBtn}>
                 <X size={20} color="#FFF" />
               </TouchableOpacity>
             </View>
@@ -972,6 +981,7 @@ export default function ProfileScreen() {
                       onPress={() => {
                         setSelectedLanguage(lang.label);
                         setShowLanguageModal(false);
+                        setNavbarHidden(false);
                       }}
                     >
                       <Text style={[styles.langText, isSelected && { color: '#00D1FF', fontWeight: '700' }]}>
