@@ -214,4 +214,211 @@ router.get('/unread-count', async (req, res) => {
   }
 });
 
+// Get all incoming join requests for trips created by the logged-in user
+router.get('/incoming-requests', async (req, res) => {
+  try {
+    const tokenUserId = getUserIdFromReq(req);
+    if (!tokenUserId) {
+      return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    }
+
+    const requests = await prisma.joinRequest.findMany({
+      where: {
+        trip: {
+          creatorId: tokenUserId,
+        },
+      },
+      include: {
+        trip: true,
+        user: {
+          include: {
+            profile: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const mapped = requests.map((r) => {
+      const applicantName = r.user.profile
+        ? `${r.user.profile.firstName} ${r.user.profile.lastName}`.trim()
+        : (r.user.email ? r.user.email.split('@')[0] : 'Traveler');
+      const applicantAvatar = r.user.profile?.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150';
+
+      return {
+        id: r.id,
+        tripId: r.tripId,
+        tripName: r.trip.name,
+        userId: r.userId,
+        applicantName,
+        applicantAvatar,
+        status: r.status,
+        fromCity: r.fromCity,
+        toCity: r.toCity,
+        adjustedPrice: r.adjustedPrice,
+        createdAt: r.createdAt,
+      };
+    });
+
+    return res.status(200).json({ status: 'success', data: mapped });
+  } catch (err) {
+    console.warn('[Interactions] Get incoming requests error:', err);
+    return res.status(500).json({ status: 'error', message: 'Failed to fetch incoming requests' });
+  }
+});
+
+// Update join request status (Accept/Decline)
+router.post('/join-request/:id/status', async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body; // 'APPROVED' or 'REJECTED'
+
+  if (!status || (status !== 'APPROVED' && status !== 'REJECTED')) {
+    return res.status(400).json({ status: 'error', message: 'Invalid status. Must be APPROVED or REJECTED.' });
+  }
+
+  try {
+    const tokenUserId = getUserIdFromReq(req);
+    if (!tokenUserId) {
+      return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    }
+
+    const request = await prisma.joinRequest.findUnique({
+      where: { id },
+      include: { trip: true },
+    });
+
+    if (!request) {
+      return res.status(404).json({ status: 'error', message: 'Join request not found' });
+    }
+
+    if (request.trip.creatorId !== tokenUserId) {
+      return res.status(403).json({ status: 'error', message: 'Forbidden. You are not the creator of this trip.' });
+    }
+
+    let targetChatRoomId: string | null = null;
+
+    const updated = await prisma.joinRequest.update({
+      where: { id },
+      data: { status },
+    });
+
+    if (status === 'APPROVED') {
+      await prisma.tripMember.upsert({
+        where: {
+          tripId_userId: {
+            tripId: request.tripId,
+            userId: request.userId,
+          },
+        },
+        create: {
+          tripId: request.tripId,
+          userId: request.userId,
+          role: 'MEMBER',
+        },
+        update: {},
+      });
+
+      if (request.trip.availableSeats > 0) {
+        await prisma.trip.update({
+          where: { id: request.tripId },
+          data: {
+            availableSeats: {
+              decrement: 1,
+            },
+          },
+        });
+      }
+
+      targetChatRoomId = request.trip.chatRoomId;
+      if (!targetChatRoomId) {
+        const room = await prisma.chatRoom.create({
+          data: {
+            isGroup: true,
+            name: request.trip.name,
+          },
+        });
+        await prisma.chatRoomMember.create({
+          data: {
+            chatRoomId: room.id,
+            userId: request.trip.creatorId,
+          },
+        });
+        await prisma.trip.update({
+          where: { id: request.tripId },
+          data: { chatRoomId: room.id },
+        });
+        targetChatRoomId = room.id;
+      }
+
+      await prisma.chatRoomMember.upsert({
+        where: {
+          chatRoomId_userId: {
+            chatRoomId: targetChatRoomId,
+            userId: request.userId,
+          },
+        },
+        create: {
+          chatRoomId: targetChatRoomId,
+          userId: request.userId,
+        },
+        update: {},
+      });
+
+      // Get applicant details to use their name in the message
+      const applicantUser = await prisma.user.findUnique({
+        where: { id: request.userId },
+        include: { profile: true },
+      });
+      const applicantName = applicantUser?.profile
+        ? `${applicantUser.profile.firstName} ${applicantUser.profile.lastName}`.trim()
+        : (applicantUser?.email ? applicantUser.email.split('@')[0] : 'Traveler');
+
+      const systemMsgContent = `${applicantName} has been added to the group chat.`;
+
+      // Save system message to database
+      await prisma.message.create({
+        data: {
+          chatRoomId: targetChatRoomId,
+          senderId: request.trip.creatorId,
+          content: systemMsgContent,
+          mediaType: 'NONE',
+        },
+      });
+
+      // Emit new message event to all active socket connections
+      const io = req.app.get('socketio');
+      if (io) {
+        io.to(targetChatRoomId).emit('messageReceived', {
+          roomId: targetChatRoomId,
+          message: {
+            id: `sys-${Date.now()}`,
+            senderName: 'System',
+            senderRole: 'Organizer',
+            content: systemMsgContent,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            mediaType: 'NONE',
+          }
+        });
+      }
+
+      await prisma.notification.create({
+        data: {
+          userId: request.userId,
+          type: 'JOIN_ACCEPTED',
+          title: 'Join Request Accepted 🎉',
+          content: `You've been added to "${request.trip.name}". Your group chat is ready!`,
+          time: 'Just now',
+          unread: true,
+          chatRoomId: targetChatRoomId,
+        },
+      });
+    }
+
+    return res.status(200).json({ status: 'success', data: updated, chatRoomId: targetChatRoomId });
+  } catch (err) {
+    console.warn('[Interactions] Update join request status error:', err);
+    return res.status(500).json({ status: 'error', message: 'Failed to update join request status' });
+  }
+});
+
 export default router;

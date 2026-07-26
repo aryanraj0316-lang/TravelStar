@@ -189,6 +189,7 @@ model GuideProfile {
   packages         GuidePackage[]
   bookings         Booking[]          @relation("GuideBookings")
   reviews          Review[]
+  reels            GuideReel[]
 }
 
 model GuidePackage {
@@ -200,6 +201,18 @@ model GuidePackage {
   price          Float
   durationDays   Int
   citiesIncluded String[]
+  createdAt      DateTime     @default(now())
+}
+
+model GuideReel {
+  id             String       @id @default(uuid())
+  guideProfileId String
+  guide          GuideProfile @relation(fields: [guideProfileId], references: [id], onDelete: Cascade)
+  videoUrl       String
+  thumbnailUrl   String?
+  caption        String?
+  viewsCount     Int          @default(0)
+  likesCount     Int          @default(0)
   createdAt      DateTime     @default(now())
 }
 
@@ -234,6 +247,8 @@ model Trip {
   languages     String[]
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
+  chatRoomId    String?        @unique
+  chatRoom      ChatRoom?      @relation(fields: [chatRoomId], references: [id])
 
   members       TripMember[]
   requests      JoinRequest[]
@@ -457,6 +472,7 @@ model ChatRoom {
   createdAt DateTime         @default(now())
   members   ChatRoomMember[]
   messages  Message[]
+  trip      Trip?
 }
 
 model ChatRoomMember {
@@ -627,14 +643,15 @@ model MapPin {
 }
 
 model Notification {
-  id        String   @id @default(uuid())
-  userId    String?
-  type      String   // 'TRIP', 'SEASONAL', 'HAZARD'
-  title     String
-  content   String
-  time      String
-  unread    Boolean  @default(true)
-  createdAt DateTime @default(now())
+  id         String   @id @default(uuid())
+  userId     String?
+  type       String   // 'TRIP', 'SEASONAL', 'HAZARD'
+  title      String
+  content    String
+  time       String
+  unread     Boolean  @default(true)
+  chatRoomId String?
+  createdAt  DateTime @default(now())
 }
 
 model Destination {

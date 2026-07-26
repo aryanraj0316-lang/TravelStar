@@ -436,11 +436,8 @@ function FeaturedTripsCarousel() {
     return 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&q=80';
   };
 
-  const getRoomId = (id: string) => {
-    if (id === 'trip-1') return 'room-vrindavan-group';
-    if (id === 'trip-2') return 'room-ladakh-group';
-    if (id === 'trip-3') return 'room-kerala-group';
-    return `room-${id}`;
+  const getRoomId = (trip: any) => {
+    return trip?.chatRoomId || `room-${trip.id}`;
   };
 
   return (
@@ -546,7 +543,7 @@ function FeaturedTripsCarousel() {
                     <TouchableOpacity
                       style={[styles.joinBtn, { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#0066FF', paddingVertical: 4 }]}
                       onPress={() => {
-                        setActiveRoomId(getRoomId(trip.id));
+                        setActiveRoomId(getRoomId(trip));
                         router.push('/chat');
                       }}
                     >

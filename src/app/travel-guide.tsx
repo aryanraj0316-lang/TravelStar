@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ScrollView,
   StyleSheet,
@@ -16,6 +16,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useApp } from '@/store/AppContext';
+import { apiService } from '@/services/api';
+import * as ImagePicker from 'expo-image-picker';
 import {
   ArrowLeft,
   Search,
@@ -125,6 +127,23 @@ export default function TravelGuideScreen() {
   const { profile, withdrawWalletFunds } = useApp();
 
   const [activeTab, setActiveTab] = useState<'leads' | 'upload' | 'planning' | 'weather' | 'safety'>('leads');
+  const [guideProfile, setGuideProfile] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [earnings, setEarnings] = useState<any>(null);
+  const [packages, setPackages] = useState<any[]>([]);
+  const [reels, setReels] = useState<any[]>([]);
+  const [liveStatus, setLiveStatus] = useState<any>(null);
+  const [isBroadcasting, setIsBroadcasting] = useState(false);
+  const [selectedVideoUri, setSelectedVideoUri] = useState<string | null>(null);
+
+  // CRUD state variables for packages modal
+  const [pkgModalVisible, setPkgModalVisible] = useState(false);
+  const [editingPackage, setEditingPackage] = useState<any>(null);
+  const [pkgTitle, setPkgTitle] = useState('');
+  const [pkgDesc, setPkgDesc] = useState('');
+  const [pkgPrice, setPkgPrice] = useState('');
+  const [pkgDuration, setPkgDuration] = useState('');
+  const [pkgCities, setPkgCities] = useState('');
 
   // ────────────────────────────────────────────────────────
   // TABS 1: LEADS & EARNINGS STATE
@@ -134,6 +153,175 @@ export default function TravelGuideScreen() {
   const [searchLeadQuery, setSearchLeadQuery] = useState('');
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [quoteInputs, setQuoteInputs] = useState<Record<string, string>>({});
+
+  const loadGuideProfile = async () => {
+    try {
+      setLoading(true);
+      const res = await apiService.getMyGuideProfile();
+      if (res && res.data) {
+        const guide = res.data;
+        setGuideProfile(guide);
+        fetchEarnings(guide.id);
+        fetchPackages(guide.id);
+        fetchReels(guide.id);
+        fetchLiveStatus(guide.id);
+      }
+    } catch (e) {
+      console.warn('[TravelGuide] Load profile failed:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchEarnings = async (guideId: string) => {
+    try {
+      const res = await apiService.getEarnings(guideId);
+      if (res && res.data) {
+        setEarnings(res.data);
+      }
+    } catch (e) {
+      console.warn('[TravelGuide] Fetch earnings failed:', e);
+    }
+  };
+
+  const fetchPackages = async (guideId: string) => {
+    try {
+      const res: any = await apiService.getGuidePackages(guideId);
+      if (res && res.data) {
+        setPackages(res.data);
+      }
+    } catch (e) {
+      console.warn('[TravelGuide] Fetch packages failed:', e);
+    }
+  };
+
+  const fetchReels = async (guideId: string) => {
+    try {
+      const res: any = await apiService.getGuideReels(guideId);
+      if (res && res.data) {
+        setReels(res.data);
+      }
+    } catch (e) {
+      console.warn('[TravelGuide] Fetch reels failed:', e);
+    }
+  };
+
+  const fetchLiveStatus = async (guideId: string) => {
+    try {
+      const res = await apiService.getGuideLiveStatus(guideId);
+      if (res && res.data) {
+        setLiveStatus(res.data);
+      }
+    } catch (e) {
+      console.warn('[TravelGuide] Fetch live status failed:', e);
+    }
+  };
+
+  const triggerLiveBroadcast = async () => {
+    if (!guideProfile) return;
+    const lat = 26.9124 + (Math.random() - 0.5) * 0.01;
+    const lon = 75.7873 + (Math.random() - 0.5) * 0.01;
+    try {
+      const res = await apiService.updateGuideLiveStatus(guideProfile.id, { latitude: lat, longitude: lon });
+      if (res && res.data) {
+        setLiveStatus((prev: any) => ({ ...prev, location: res.data }));
+      }
+    } catch (e) {
+      console.warn('Failed to broadcast live location:', e);
+    }
+  };
+
+  const handleSavePackage = async () => {
+    if (!pkgTitle || !pkgPrice || !pkgDuration) {
+      Alert.alert('Missing Fields', 'Title, Price, and Duration are required fields.');
+      return;
+    }
+    if (!guideProfile) return;
+
+    const payload = {
+      title: pkgTitle,
+      description: pkgDesc,
+      price: parseFloat(pkgPrice),
+      durationDays: parseInt(pkgDuration),
+      citiesIncluded: pkgCities.split(',').map(c => c.trim()).filter(Boolean),
+    };
+
+    try {
+      if (editingPackage) {
+        await apiService.updateGuidePackage(guideProfile.id, editingPackage.id, payload);
+        Alert.alert('Success', 'Package updated successfully!');
+      } else {
+        await apiService.createGuidePackage(guideProfile.id, payload);
+        Alert.alert('Success', 'Package created successfully!');
+      }
+      setPkgModalVisible(false);
+      fetchPackages(guideProfile.id);
+    } catch (e) {
+      Alert.alert('Error', 'Failed to save package details.');
+    }
+  };
+
+  const handleDeletePackage = async (pkgId: string) => {
+    if (!guideProfile) return;
+    Alert.alert(
+      'Delete Package',
+      'Are you sure you want to delete this package permanently?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+               await apiService.deleteGuidePackage(guideProfile.id, pkgId);
+               fetchPackages(guideProfile.id);
+            } catch (e) {
+               Alert.alert('Error', 'Failed to delete package.');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handlePickVideo = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission Required', 'Please allow photo library access to upload reels.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['videos'],
+        allowsEditing: true,
+        quality: 1,
+      });
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setSelectedVideoUri(result.assets[0].uri);
+        setSelectedMockImage(result.assets[0].uri || 'https://images.unsplash.com/photo-1548013146-72479768bada?w=300');
+        Alert.alert('Video selected!', 'Click Publish Broadcast to upload your travel reel.');
+      }
+    } catch (e) {
+      console.warn('Video pick error:', e);
+    }
+  };
+
+  useEffect(() => {
+    loadGuideProfile();
+  }, []);
+
+  useEffect(() => {
+    let intervalId: any;
+    if (isBroadcasting && guideProfile) {
+      intervalId = setInterval(() => {
+        triggerLiveBroadcast();
+      }, 5000);
+    }
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [isBroadcasting, guideProfile]);
+
 
   const [leads, setLeads] = useState<CustomerLead[]>([
     {
@@ -602,7 +790,9 @@ export default function TravelGuideScreen() {
                   <Text style={styles.walletLabel}>TOTAL WALLET BALANCE</Text>
                   <View style={styles.amountRow}>
                     <Text style={styles.rupeeSign}>₹</Text>
-                    <Text style={styles.walletBalance}>{profile.walletBalance.toLocaleString('en-IN')}</Text>
+                    <Text style={styles.walletBalance}>
+                      {earnings ? earnings.walletBalance.toLocaleString('en-IN') : profile.walletBalance.toLocaleString('en-IN')}
+                    </Text>
                   </View>
                 </View>
                 <TouchableOpacity
@@ -626,36 +816,38 @@ export default function TravelGuideScreen() {
               <View style={styles.statsRow}>
                 <View style={styles.statBox}>
                   <Text style={styles.statLabel}>Active Leads</Text>
-                  <Text style={[styles.statValue, { color: C.cyan }]}>{leads.length}</Text>
+                  <Text style={[styles.statValue, { color: C.cyan }]}>{earnings ? earnings.activeLeadsCount : leads.length}</Text>
                 </View>
                 <View style={styles.statBoxVerticalDivider} />
                 <View style={styles.statBox}>
                   <Text style={styles.statLabel}>Rating</Text>
-                  <Text style={[styles.statValue, { color: C.amberGlow }]}>4.9 ★</Text>
+                  <Text style={[styles.statValue, { color: C.amberGlow }]}>
+                    {guideProfile ? `${guideProfile.rating} ★` : '4.9 ★'}
+                  </Text>
                 </View>
                 <View style={styles.statBoxVerticalDivider} />
                 <View style={styles.statBox}>
                   <Text style={styles.statLabel}>Completed Trips</Text>
-                  <Text style={[styles.statValue, { color: C.greenGlow }]}>28</Text>
+                  <Text style={[styles.statValue, { color: C.greenGlow }]}>{earnings ? earnings.completedTripsCount : 28}</Text>
                 </View>
               </View>
 
               {/* Earnings Mini Chart Graphic */}
               <Text style={styles.sectionLabelInline}>Weekly Earnings Progress</Text>
               <View style={styles.chartContainer}>
-                {[
-                  { day: 'Mon', amt: '₹1.5k', height: 40 },
-                  { day: 'Tue', amt: '₹2.2k', height: 65 },
-                  { day: 'Wed', amt: '₹0', height: 5 },
-                  { day: 'Thu', amt: '₹3.5k', height: 95 },
-                  { day: 'Fri', amt: '₹1.8k', height: 50 },
-                  { day: 'Sat', amt: '₹4.2k', height: 110 },
-                  { day: 'Sun', amt: '₹2.8k', height: 80 },
-                ].map((item, idx) => {
+                {(earnings?.chartData || [
+                  { day: 'Mon', amtText: '₹1.5k', height: 40 },
+                  { day: 'Tue', amtText: '₹2.2k', height: 65 },
+                  { day: 'Wed', amtText: '₹0', height: 5 },
+                  { day: 'Thu', amtText: '₹3.5k', height: 95 },
+                  { day: 'Fri', amtText: '₹1.8k', height: 50 },
+                  { day: 'Sat', amtText: '₹4.2k', height: 110 },
+                  { day: 'Sun', amtText: '₹2.8k', height: 80 },
+                ]).map((item: any, idx: number) => {
                   const isWeekend = idx === 5 || idx === 6;
                   return (
                     <View key={idx} style={styles.chartCol}>
-                      <Text style={styles.chartBarValue}>{item.amt}</Text>
+                      <Text style={styles.chartBarValue}>{item.amtText || item.amt}</Text>
                       <LinearGradient
                         colors={isWeekend ? [C.purpleGlow, C.purple] : [C.blueGlow, C.blue]}
                         style={[styles.chartBar, { height: item.height }]}
@@ -862,6 +1054,15 @@ export default function TravelGuideScreen() {
               {/* Simulated media selection gallery */}
               <Text style={styles.formInputLabel}>Select Gallery Media</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.galleryPreviewScroll}>
+                <TouchableOpacity
+                  style={[styles.galleryItemBtn, { justifyContent: 'center', alignItems: 'center', backgroundColor: C.cardAlt }]}
+                  onPress={handlePickVideo}
+                  activeOpacity={0.8}
+                >
+                  <Video size={24} color={C.blueGlow} style={{ alignSelf: 'center' }} />
+                  <Text style={{ fontSize: 9, color: C.textSec, marginTop: 4, textAlign: 'center' }}>Pick Video</Text>
+                </TouchableOpacity>
+
                 {mockGallery.map((imgUrl, idx) => {
                   const isSel = selectedMockImage === imgUrl;
                   return (
@@ -895,7 +1096,16 @@ export default function TravelGuideScreen() {
             {/* Active Feed Uploads */}
             <Text style={styles.subTitle}>Live Stories Feed</Text>
             <View style={styles.uploadsGrid}>
-              {activeMedia.map((media) => (
+              {(reels.length > 0 ? reels.map(r => ({
+                id: r.id,
+                type: 'REEL',
+                title: r.caption || 'Travel Reel Vlog',
+                image: r.thumbnailUrl || 'https://images.unsplash.com/photo-1548013146-72479768bada?w=300',
+                location: 'Guided Tour Route',
+                likes: r.likesCount,
+                date: 'Just Now',
+                price: undefined,
+              })) : activeMedia).map((media) => (
                 <View key={media.id} style={styles.uploadCardItem}>
                   <Image source={{ uri: media.image }} style={styles.uploadCardImg} />
                   <View style={styles.uploadCardOverlay}>
@@ -954,74 +1164,155 @@ export default function TravelGuideScreen() {
               })}
             </View>
 
-            {/* 3A: Itinerary Builder */}
+            {/* 3A: Packages CRUD */}
             {plannerTab === 'itinerary' && (
               <View style={styles.innerPlannerSection}>
-                <Text style={styles.subTitle}>Day-Wise Trip Itinerary Builder</Text>
-                <Text style={styles.descSec}>Add detailed daily schedules for tourists to view and download</Text>
-
-                {/* Timeline connector visual container */}
-                <View style={styles.timelineContainer}>
-                  {itineraryDays.map((day, index) => {
-                    const isLast = index === itineraryDays.length - 1;
-                    return (
-                      <View key={day.id} style={styles.timelineItem}>
-                        {/* Vertical line connector */}
-                        <View style={[styles.timelineLine, isLast && { backgroundColor: 'transparent' }]} />
-
-                        {/* Round Day Node */}
-                        <LinearGradient
-                          colors={[C.blueGlow, C.blue]}
-                          style={styles.timelineNode}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 1 }}
-                        >
-                          <Text style={styles.timelineNodeText}>{day.day}</Text>
-                        </LinearGradient>
-
-                        {/* Itinerary Day Content */}
-                        <View style={styles.dayCard}>
-                          <Text style={styles.dayTitle}>{day.title}</Text>
-                          <Text style={styles.dayActivitiesText}>{day.activities}</Text>
-                        </View>
-                      </View>
-                    );
-                  })}
-                </View>
-
-                {/* Form to Add Day */}
-                <View style={styles.addDayBox}>
-                  <Text style={styles.addDayBoxTitle}>Insert Itinerary Day</Text>
-
-                  <Text style={styles.formInputLabel}>Day Schedule Title</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    placeholder="e.g. City Palace Guided Walk & Photography"
-                    placeholderTextColor={C.textMuted}
-                    value={newDayTitle}
-                    onChangeText={setNewDayTitle}
-                  />
-
-                  <Text style={styles.formInputLabel}>Activities Description</Text>
-                  <TextInput
-                    style={[styles.formInput, { height: 75, textAlignVertical: 'top' }]}
-                    placeholder="Outline transport details, sights, tickets & logistics..."
-                    placeholderTextColor={C.textMuted}
-                    multiline
-                    numberOfLines={3}
-                    value={newDayDesc}
-                    onChangeText={setNewDayDesc}
-                  />
-
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.subTitle}>My Guided Tour Packages</Text>
+                    <Text style={styles.descSec}>Manage packages offered to travellers looking for local guiding</Text>
+                  </View>
                   <TouchableOpacity
-                    style={styles.addDayBtn}
-                    onPress={handleAddDay}
-                    activeOpacity={0.8}
+                    style={[styles.addDayBtn, { width: 120, height: 35, marginTop: 0 }]}
+                    onPress={() => {
+                      setEditingPackage(null);
+                      setPkgTitle('');
+                      setPkgDesc('');
+                      setPkgPrice('');
+                      setPkgDuration('');
+                      setPkgCities('');
+                      setPkgModalVisible(true);
+                    }}
                   >
-                    <Plus size={15} color={C.white} />
-                    <Text style={styles.addDayBtnText}>Add Day to Itinerary</Text>
+                    <Plus size={12} color={C.white} />
+                    <Text style={styles.addDayBtnText}>Add Package</Text>
                   </TouchableOpacity>
                 </View>
+
+                {packages.length === 0 ? (
+                  <View style={[styles.emptyCreations, { paddingVertical: 40 }]}>
+                    <Compass size={32} color='#64748B' style={{ marginBottom: 12, alignSelf: 'center' }} />
+                    <Text style={[styles.emptyCreationsTitle, { textAlign: 'center' }]}>No Packages Listed</Text>
+                    <Text style={[styles.emptyCreationsSub, { textAlign: 'center' }]}>Create a package to display your services and pricing guides.</Text>
+                  </View>
+                ) : (
+                  <View style={{ gap: 12 }}>
+                    {packages.map((pkg) => (
+                      <View key={pkg.id} style={[styles.leadCard, { padding: 16, backgroundColor: C.card, borderColor: C.border, borderWidth: 1, borderRadius: 16 }]}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                          <Text style={[styles.leadName, { fontSize: 15, fontWeight: '800' }]}>{pkg.title}</Text>
+                          <Text style={[styles.leadBudget, { color: C.greenGlow }]}>₹{pkg.price}</Text>
+                        </View>
+                        <Text style={[styles.descSec, { marginTop: 4, color: C.textSec }]}>
+                          {pkg.durationDays} Days • {pkg.citiesIncluded?.join(', ') || 'Various Locations'}
+                        </Text>
+                        <Text style={[styles.leadDesc, { marginTop: 8, color: 'rgba(255,255,255,0.8)' }]}>{pkg.description}</Text>
+                        <View style={{ flexDirection: 'row', gap: 10, marginTop: 12, justifyContent: 'flex-end' }}>
+                          <TouchableOpacity
+                            style={[styles.applyLeadBtn, { backgroundColor: C.border, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 }]}
+                            onPress={() => {
+                              setEditingPackage(pkg);
+                              setPkgTitle(pkg.title);
+                              setPkgDesc(pkg.description);
+                              setPkgPrice(String(pkg.price));
+                              setPkgDuration(String(pkg.durationDays));
+                              setPkgCities(pkg.citiesIncluded?.join(', ') || '');
+                              setPkgModalVisible(true);
+                            }}
+                          >
+                            <Text style={[styles.applyLeadBtnText, { color: C.white }]}>Edit</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[styles.applyLeadBtn, { backgroundColor: 'rgba(239, 68, 68, 0.12)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 }]}
+                            onPress={() => handleDeletePackage(pkg.id)}
+                          >
+                            <Text style={[styles.applyLeadBtnText, { color: C.rose }]}>Delete</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {/* Create/Edit Package Modal */}
+                <Modal
+                  visible={pkgModalVisible}
+                  animationType="slide"
+                  transparent={true}
+                  onRequestClose={() => setPkgModalVisible(false)}
+                >
+                  <View style={styles.creationDetailOverlay}>
+                    <View style={[styles.creationDetailCard, { backgroundColor: '#0B0D19', borderColor: '#1E243B', padding: 20 }]}>
+                      <Text style={[styles.detailHeaderTitle, { fontSize: 18, marginBottom: 16 }]}>
+                        {editingPackage ? 'Edit Package' : 'Create Package'}
+                      </Text>
+
+                      <Text style={styles.formInputLabel}>Package Title *</Text>
+                      <TextInput
+                        style={styles.formInput}
+                        placeholder="e.g. Sikkim Highlights Tour Guide"
+                        placeholderTextColor={C.textMuted}
+                        value={pkgTitle}
+                        onChangeText={pkgTitle => setPkgTitle(pkgTitle)}
+                      />
+
+                      <Text style={styles.formInputLabel}>Price (₹) *</Text>
+                      <TextInput
+                        style={styles.formInput}
+                        placeholder="e.g. 2500"
+                        placeholderTextColor={C.textMuted}
+                        keyboardType="numeric"
+                        value={pkgPrice}
+                        onChangeText={pkgPrice => setPkgPrice(pkgPrice)}
+                      />
+
+                      <Text style={styles.formInputLabel}>Duration (Days) *</Text>
+                      <TextInput
+                        style={styles.formInput}
+                        placeholder="e.g. 5"
+                        placeholderTextColor={C.textMuted}
+                        keyboardType="numeric"
+                        value={pkgDuration}
+                        onChangeText={pkgDuration => setPkgDuration(pkgDuration)}
+                      />
+
+                      <Text style={styles.formInputLabel}>Cities Included (Comma separated)</Text>
+                      <TextInput
+                        style={styles.formInput}
+                        placeholder="e.g. Gangtok, Lachen, Lachung"
+                        placeholderTextColor={C.textMuted}
+                        value={pkgCities}
+                        onChangeText={pkgCities => setPkgCities(pkgCities)}
+                      />
+
+                      <Text style={styles.formInputLabel}>Description</Text>
+                      <TextInput
+                        style={[styles.formInput, { height: 80, textAlignVertical: 'top' }]}
+                        placeholder="Describe services, inclusions, and experience..."
+                        placeholderTextColor={C.textMuted}
+                        multiline
+                        numberOfLines={3}
+                        value={pkgDesc}
+                        onChangeText={pkgDesc => setPkgDesc(pkgDesc)}
+                      />
+
+                      <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
+                        <TouchableOpacity
+                          style={[styles.publishBtn, { flex: 1, backgroundColor: C.green }]}
+                          onPress={handleSavePackage}
+                        >
+                          <Text style={styles.publishBtnText}>Save</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.publishBtn, { flex: 1, backgroundColor: C.border }]}
+                          onPress={() => setPkgModalVisible(false)}
+                        >
+                          <Text style={styles.publishBtnText}>Cancel</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                </Modal>
               </View>
             )}
 
@@ -1280,6 +1571,63 @@ export default function TravelGuideScreen() {
             ======================================================== */}
         {activeTab === 'weather' && (
           <View>
+            <View style={[styles.innerPlannerSection, { marginBottom: 20 }]}>
+              <Text style={[styles.subTitle, { fontSize: 16 }]}>Live Guiding Broadcast Panel</Text>
+              <Text style={styles.descSec}>Broadcast coordinates to active tourist groups and rescue dispatchers</Text>
+
+              <LinearGradient
+                colors={isBroadcasting ? ['rgba(16, 185, 129, 0.08)', 'rgba(12, 15, 29, 0.95)'] : ['rgba(34, 41, 76, 0.2)', 'rgba(12, 15, 29, 0.95)']}
+                style={[styles.walletCard, { padding: 18, marginTop: 10, borderWidth: 1, borderColor: isBroadcasting ? C.green : C.border, borderRadius: 16 }]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.walletLabel, { fontSize: 10 }]}>BROADCAST STATUS</Text>
+                    <Text style={[styles.leadName, { color: isBroadcasting ? C.greenGlow : C.textSec, fontSize: 14, fontWeight: '800', marginTop: 4 }]}>
+                      {isBroadcasting ? '● ACTIVE • Live on Map' : '○ INACTIVE • Offline'}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.cashoutBtn, { height: 32, paddingHorizontal: 16, backgroundColor: isBroadcasting ? C.rose : C.blue, borderRadius: 8, justifyContent: 'center' }]}
+                    onPress={() => {
+                      if (isBroadcasting) {
+                        setIsBroadcasting(false);
+                      } else {
+                        setIsBroadcasting(true);
+                        triggerLiveBroadcast();
+                      }
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.cashoutBtnText, { fontSize: 12, lineHeight: 14 }]}>
+                      {isBroadcasting ? 'Stop Live' : 'Go Live'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {liveStatus?.location && (
+                  <View style={{ marginTop: 14, borderTopWidth: 1, borderColor: 'rgba(255,255,255,0.06)', paddingTop: 12, gap: 4 }}>
+                    <Text style={[styles.descSec, { fontSize: 11 }]}>Current GPS Coordinates:</Text>
+                    <Text style={{ color: C.white, fontSize: 13, fontWeight: '700' }}>
+                      Lat: {liveStatus.location.latitude.toFixed(6)} • Lon: {liveStatus.location.longitude.toFixed(6)}
+                    </Text>
+                    <Text style={[styles.descSec, { fontSize: 10 }]}>
+                      Updated: {new Date(liveStatus.location.updatedAt).toLocaleTimeString()}
+                    </Text>
+                  </View>
+                )}
+
+                {liveStatus?.activeGuiding && (
+                  <View style={{ marginTop: 12, backgroundColor: 'rgba(59, 130, 246, 0.08)', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(59, 130, 246, 0.2)' }}>
+                    <Text style={{ color: C.blueGlow, fontSize: 12, fontWeight: '700' }}>Guiding Booking Ongoing</Text>
+                    <Text style={[styles.descSec, { fontSize: 11, marginTop: 2 }]}>Booking ID: {liveStatus.activeGuiding.bookingId}</Text>
+                    <Text style={[styles.descSec, { fontSize: 11 }]}>Revenue: ₹{liveStatus.activeGuiding.amount}</Text>
+                  </View>
+                )}
+              </LinearGradient>
+            </View>
+
             <View style={styles.cardHeader}>
               <Text style={styles.subTitle}>Live Local Parameters</Text>
               <Text style={styles.descSec}>Real-time weather forecast, air quality indices, and live crowd levels</Text>
@@ -3104,5 +3452,42 @@ const styles = StyleSheet.create({
     color: C.white,
     fontSize: 13,
     fontWeight: '800',
+  },
+  emptyCreations: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingBottom: 60,
+  },
+  emptyCreationsTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#F8FAFC',
+    marginBottom: 6,
+  },
+  emptyCreationsSub: {
+    fontSize: 12,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 18,
+    paddingHorizontal: 32,
+  },
+  creationDetailOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    justifyContent: 'flex-end',
+  },
+  creationDetailCard: {
+    width: '100%',
+    height: '92%',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderWidth: 1,
+    paddingTop: 16,
+  },
+  detailHeaderTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#F8FAFC',
   },
 });

@@ -1,4 +1,5 @@
 import { useApp } from '@/store/AppContext';
+import { apiService } from '@/services/api';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -21,6 +22,7 @@ import {
   Sparkles,
   Square,
   User,
+  MessageSquare,
   UserPlus,
   Users,
   Utensils,
@@ -79,7 +81,7 @@ const CITY_COORDS: Record<string, { latitude: number; longitude: number }> = {
   'Ladakh': { latitude: 34.1526, longitude: 77.5771 },
   'Amritsar': { latitude: 31.6340, longitude: 74.8723 },
   'Chandigarh': { latitude: 30.7333, longitude: 76.7794 },
-  
+
   // Western India
   'Jaipur': { latitude: 26.9124, longitude: 75.7873 },
   'Udaipur': { latitude: 24.5854, longitude: 73.7125 },
@@ -125,7 +127,7 @@ const CITY_COORDS: Record<string, { latitude: number; longitude: number }> = {
   'Alleppey': { latitude: 9.4981, longitude: 76.3388 },
   'Trivandrum': { latitude: 8.5241, longitude: 76.9366 },
   'Thiruvananthapuram': { latitude: 8.5241, longitude: 76.9366 },
-  
+
   // Central India
   'Bhopal': { latitude: 23.2599, longitude: 77.4126 },
   'Indore': { latitude: 22.7196, longitude: 75.8577 },
@@ -265,7 +267,7 @@ const TRIP_CATEGORIES = ['Adventure', 'Religious', 'Family', 'Road Trip', 'Beach
 
 export default function CreateTripScreen() {
   const router = useRouter();
-  const { trips, addTrip, profile } = useApp();
+  const { trips, addTrip, profile, reloadIncomingRequestsCount, setActiveRoomId } = useApp();
   const scrollRef = useRef<ScrollView>(null);
 
   const [tripName, setTripName] = useState('');
@@ -370,6 +372,35 @@ export default function CreateTripScreen() {
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   const [joinRequests, setJoinRequests] = useState<any[]>([]);
+  const [creationMembers, setCreationMembers] = useState<any[]>([]);
+  const fetchCreationMembers = async (tripId: string) => {
+    try {
+      const data = await apiService.getTripMembers(tripId);
+      if (data) {
+        setCreationMembers(data);
+      }
+    } catch (e) {
+      console.warn('[Create] Failed to fetch trip members:', e);
+    }
+  };
+  const fetchIncomingRequests = async () => {
+    try {
+      const data = await apiService.getIncomingRequests();
+      if (data) {
+        setJoinRequests(data);
+      }
+      reloadIncomingRequestsCount();
+    } catch (e) {
+      console.warn('[Create] Failed to fetch incoming requests:', e);
+    }
+  };
+
+  React.useEffect(() => {
+    if (profile?.id) {
+      fetchIncomingRequests();
+    }
+  }, [profile?.id]);
+
   const [participants, setParticipants] = useState([
     { id: 'p-1', name: 'Aarav Sharma (Creator)', isCreator: true },
   ]);
@@ -540,19 +571,30 @@ export default function CreateTripScreen() {
     setChecklist((prev) => prev.map((c) => (c.id === id ? { ...c, checked: !c.checked } : c)));
   };
 
-  const handleAcceptRequest = (reqId: string, name: string) => {
-    setJoinRequests((prev) => prev.filter((r) => r.id !== reqId));
-    setParticipants((prev) => [...prev, { id: `p-${Date.now()}`, name, isCreator: false }]);
-    if (totalSeats) {
-      const remaining = Math.max(0, parseInt(totalSeats) - 1);
-      setTotalSeats(String(remaining));
+  const handleAcceptRequest = async (reqId: string, name: string) => {
+    try {
+      await apiService.updateJoinRequestStatus(reqId, 'APPROVED');
+      showToast(`✅ Accepted ${name}'s join request!`);
+      fetchIncomingRequests();
+      if (selectedCreation) {
+        fetchCreationMembers(selectedCreation.id);
+      }
+    } catch (e) {
+      showToast('❌ Failed to accept request');
     }
-    showToast(`✅ Accepted ${name}'s join request!`);
   };
 
-  const handleRejectRequest = (reqId: string) => {
-    setJoinRequests((prev) => prev.filter((r) => r.id !== reqId));
-    showToast('❌ Join request declined');
+  const handleRejectRequest = async (reqId: string) => {
+    try {
+      await apiService.updateJoinRequestStatus(reqId, 'REJECTED');
+      showToast('❌ Join request declined');
+      fetchIncomingRequests();
+      if (selectedCreation) {
+        fetchCreationMembers(selectedCreation.id);
+      }
+    } catch (e) {
+      showToast('❌ Failed to decline request');
+    }
   };
 
   const selectCalendarDay = (day: number) => {
@@ -626,13 +668,16 @@ export default function CreateTripScreen() {
           {/* ─── ORGANIZER CREATIONS NOTIFICATION BANNER (TOP LEVEL) ─── */}
           {(() => {
             const myTrips = trips.filter(t => !!(profile && profile.id && t.creatorId === profile.id));
-            const pendingCount = joinRequests.length;
+            const pendingCount = joinRequests.filter(req => req.status === 'PENDING').length;
             const hasAlert = pendingCount > 0;
 
             return (
               <TouchableOpacity
                 style={styles.notificationBannerTouch}
-                onPress={() => setShowCreationsModal(true)}
+                onPress={() => {
+                  fetchIncomingRequests();
+                  setShowCreationsModal(true);
+                }}
                 activeOpacity={0.9}
               >
                 <LinearGradient
@@ -1335,26 +1380,28 @@ export default function CreateTripScreen() {
               </View>
 
               {/* PENDING JOIN REQUESTS */}
-              {privacy !== 'PRIVATE' && joinRequests.length > 0 && (
+              {privacy !== 'PRIVATE' && joinRequests.filter(req => req.status === 'PENDING').length > 0 && (
                 <>
                   <View style={styles.sectionHeader}>
                     <UserPlus size={16} color={C.amber} />
-                    <Text style={styles.sectionTitle}>Pending Join Requests ({joinRequests.length})</Text>
+                    <Text style={styles.sectionTitle}>
+                      Pending Join Requests ({joinRequests.filter(req => req.status === 'PENDING').length})
+                    </Text>
                   </View>
 
-                  {joinRequests.map((req) => (
+                  {joinRequests.filter(req => req.status === 'PENDING').map((req) => (
                     <View key={req.id} style={styles.requestItem}>
                       <View style={styles.reqAvatarWrap}>
                         <User size={15} color={C.white} />
                       </View>
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.reqName}>{req.name}</Text>
+                        <Text style={styles.reqName}>{req.applicantName}</Text>
                         <Text style={styles.reqSub}>Requested to join group route</Text>
                       </View>
 
                       <TouchableOpacity
                         style={styles.acceptBtn}
-                        onPress={() => handleAcceptRequest(req.id, req.name)}
+                        onPress={() => handleAcceptRequest(req.id, req.applicantName)}
                         activeOpacity={0.8}
                       >
                         <Check size={14} color='#FFF' />
@@ -1543,7 +1590,10 @@ export default function CreateTripScreen() {
                         <TouchableOpacity
                           key={trip.id}
                           style={styles.creationCard}
-                          onPress={() => setSelectedCreation(trip)}
+                          onPress={() => {
+                            setSelectedCreation(trip);
+                            fetchCreationMembers(trip.id);
+                          }}
                           activeOpacity={0.85}
                         >
                           <Image source={{ uri: displayImage }} style={styles.creationCardImg} />
@@ -1552,13 +1602,19 @@ export default function CreateTripScreen() {
                               <Text style={styles.creationCardTitle} numberOfLines={1}>
                                 {trip.name}
                               </Text>
-                              {trip.id === 'creation-1' && joinRequests.length > 0 && (
-                                <View style={styles.requestNotifyIndicator}>
-                                  <Text style={styles.requestNotifyText}>
-                                    {joinRequests.length} Pending Request{joinRequests.length !== 1 ? 's' : ''}
-                                  </Text>
-                                </View>
-                              )}
+                              {(() => {
+                                const tripPendingCount = joinRequests.filter(
+                                  (req) => req.tripId === trip.id && req.status === 'PENDING'
+                                ).length;
+                                if (tripPendingCount === 0) return null;
+                                return (
+                                  <View style={styles.requestNotifyIndicator}>
+                                    <Text style={styles.requestNotifyText}>
+                                      {tripPendingCount} Pending Request{tripPendingCount !== 1 ? 's' : ''}
+                                    </Text>
+                                  </View>
+                                );
+                              })()}
                               <View style={styles.creationCategoryBadge}>
                                 <Text style={styles.creationCategoryText}>{trip.category || 'Tour'}</Text>
                               </View>
@@ -1652,6 +1708,28 @@ export default function CreateTripScreen() {
                     <Text style={styles.viewOnMapHeaderBtnText}>View Route on Map</Text>
                   </TouchableOpacity>
 
+                  <TouchableOpacity
+                    style={[
+                      styles.viewOnMapHeaderBtn,
+                      { marginTop: 10, backgroundColor: selectedCreation.chatRoomId ? '#10B981' : '#374151' }
+                    ]}
+                    activeOpacity={0.8}
+                    disabled={!selectedCreation.chatRoomId}
+                    onPress={() => {
+                      if (selectedCreation.chatRoomId) {
+                        setActiveRoomId(selectedCreation.chatRoomId);
+                        setSelectedCreation(null);
+                        setShowCreationsModal(false);
+                        router.push('/chat');
+                      }
+                    }}
+                  >
+                    <MessageSquare size={12} color="#FFF" style={{ marginRight: 4 }} />
+                    <Text style={styles.viewOnMapHeaderBtnText}>
+                      {selectedCreation.chatRoomId ? 'Open Group Chat' : 'Chat room setup pending'}
+                    </Text>
+                  </TouchableOpacity>
+
                   {/* Cities stops */}
                   <Text style={styles.detailSectionTitle}>ITINERARY FLOW</Text>
                   <View style={styles.detailRouteFlow}>
@@ -1717,47 +1795,55 @@ export default function CreateTripScreen() {
                   </View>
 
                   {/* PENDING JOIN REQUESTS */}
-                  {selectedCreation.id === 'creation-1' && joinRequests.length > 0 && (
+                  {joinRequests.filter(req => req.tripId === selectedCreation.id && req.status === 'PENDING').length > 0 && (
                     <>
-                      <Text style={styles.detailSectionTitle}>PENDING JOIN REQUESTS</Text>
-                      {joinRequests.map((req) => (
-                        <View key={req.id} style={styles.detailRequestItem}>
-                          <View style={styles.detailReqAvatarWrap}>
-                            <User size={14} color={C.white} />
+                      <Text style={styles.detailSectionTitle}>
+                        PENDING JOIN REQUESTS ({joinRequests.filter(req => req.tripId === selectedCreation.id && req.status === 'PENDING').length})
+                      </Text>
+                      {joinRequests
+                        .filter(req => req.tripId === selectedCreation.id && req.status === 'PENDING')
+                        .map((req) => (
+                          <View key={req.id} style={styles.detailRequestItem}>
+                            <View style={styles.detailReqAvatarWrap}>
+                              <User size={14} color={C.white} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.detailReqName}>{req.applicantName}</Text>
+                              <Text style={styles.detailReqSub}>Wants to join this trip</Text>
+                            </View>
+                            <View style={styles.detailReqActionRow}>
+                              <TouchableOpacity
+                                style={styles.detailAcceptBtn}
+                                onPress={() => handleAcceptRequest(req.id, req.applicantName)}
+                                activeOpacity={0.8}
+                              >
+                                <Text style={styles.detailAcceptText}>Accept</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={styles.detailRejectBtn}
+                                onPress={() => handleRejectRequest(req.id)}
+                                activeOpacity={0.8}
+                              >
+                                <Text style={styles.detailRejectText}>Decline</Text>
+                              </TouchableOpacity>
+                            </View>
                           </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.detailReqName}>{req.name}</Text>
-                            <Text style={styles.detailReqSub}>Wants to join this trip</Text>
-                          </View>
-                          <View style={styles.detailReqActionRow}>
-                            <TouchableOpacity
-                              style={styles.detailAcceptBtn}
-                              onPress={() => handleAcceptRequest(req.id, req.name)}
-                              activeOpacity={0.8}
-                            >
-                              <Text style={styles.detailAcceptText}>Accept</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                              style={styles.detailRejectBtn}
-                              onPress={() => handleRejectRequest(req.id)}
-                              activeOpacity={0.8}
-                            >
-                              <Text style={styles.detailRejectText}>Decline</Text>
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                      ))}
+                        ))}
                     </>
                   )}
                   {/* CONFIRMED TRAVELERS */}
-                  {participants.length > 0 && (
+                  {creationMembers.length > 0 && (
                     <>
-                      <Text style={styles.detailSectionTitle}>CONFIRMED TRAVELERS</Text>
+                      <Text style={styles.detailSectionTitle}>CONFIRMED TRAVELERS ({creationMembers.length})</Text>
                       <View style={{ gap: 8, marginTop: 6 }}>
-                        {participants.map((p) => (
+                        {creationMembers.map((p) => (
                           <View key={p.id} style={styles.detailRequestItem}>
                             <View style={styles.detailReqAvatarWrap}>
-                              <User size={14} color={C.white} />
+                              {p.avatar ? (
+                                <Image source={{ uri: p.avatar }} style={{ width: '100%', height: '100%', borderRadius: 12 }} />
+                              ) : (
+                                <User size={14} color={C.white} />
+                              )}
                             </View>
                             <View style={{ flex: 1 }}>
                               <Text style={styles.detailReqName}>{p.name}</Text>

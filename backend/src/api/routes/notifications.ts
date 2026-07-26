@@ -1,7 +1,23 @@
 import { Router } from 'express';
+import jwt from 'jsonwebtoken';
 import prisma from '../../services/db';
 
 const router = Router();
+const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_jwt_key_travelconnect_12345';
+
+const getUserIdFromReq = (req: any): string | null => {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded: any = jwt.verify(token, JWT_SECRET);
+      return decoded.id || decoded.userId;
+    } catch (e) {
+      return null;
+    }
+  }
+  return null;
+};
 
 // Mock Initial Notifications to Seed PostgreSQL on First Run
 const seedNotifications = [
@@ -59,7 +75,15 @@ async function queryWithRetry<T>(fn: () => Promise<T>, retries = 3, delay = 1500
 // Get all notifications
 router.get('/', async (req, res) => {
   try {
+    const tokenUserId = getUserIdFromReq(req);
+
     let list = await queryWithRetry(() => prisma.notification.findMany({
+      where: {
+        OR: [
+          { userId: null },
+          ...(tokenUserId ? [{ userId: tokenUserId }] : []),
+        ],
+      },
       orderBy: { createdAt: 'desc' },
     }));
 
@@ -69,6 +93,12 @@ router.get('/', async (req, res) => {
         data: seedNotifications,
       }));
       list = await queryWithRetry(() => prisma.notification.findMany({
+        where: {
+          OR: [
+            { userId: null },
+            ...(tokenUserId ? [{ userId: tokenUserId }] : []),
+          ],
+        },
         orderBy: { createdAt: 'desc' },
       }));
     }
@@ -83,14 +113,36 @@ router.get('/', async (req, res) => {
 // Mark all as read
 router.post('/read-all', async (req, res) => {
   try {
+    const tokenUserId = getUserIdFromReq(req);
     await prisma.notification.updateMany({
-      where: { unread: true },
+      where: {
+        unread: true,
+        OR: [
+          { userId: null },
+          ...(tokenUserId ? [{ userId: tokenUserId }] : []),
+        ],
+      },
       data: { unread: false },
     });
     res.status(200).json({ status: 'success', message: 'All notifications marked as read' });
   } catch (err) {
     console.warn('[Postgres DB Warn] Read-all notifications failed:', err);
     res.status(500).json({ status: 'error', message: 'Failed to mark notifications read' });
+  }
+});
+
+// Mark single notification as read
+router.post('/:id/read', async (req, res) => {
+  const { id } = req.params;
+  try {
+    await prisma.notification.update({
+      where: { id },
+      data: { unread: false },
+    });
+    res.status(200).json({ status: 'success', message: 'Notification marked as read' });
+  } catch (err) {
+    console.warn('[Postgres DB Warn] Mark notification read failed:', err);
+    res.status(500).json({ status: 'error', message: 'Failed to mark notification read' });
   }
 });
 

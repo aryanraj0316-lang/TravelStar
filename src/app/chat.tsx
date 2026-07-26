@@ -409,7 +409,12 @@ interface ChatRoom {
 export default function ChatScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { trips, guides, profile, sosAlerts, triggerSOS, resolveSOS, activeRoomId, setActiveRoomId, messages, sendMessage } = useApp();
+  const { trips, guides, profile, sosAlerts, triggerSOS, resolveSOS, activeRoomId, setActiveRoomId, messages, sendMessage, clearChatUnread, refreshTrips } = useApp();
+
+  useEffect(() => {
+    clearChatUnread();
+    refreshTrips();
+  }, [clearChatUnread]);
 
   // Navigation States
   const selectedRoomId = activeRoomId;
@@ -616,9 +621,14 @@ export default function ChatScreen() {
       const matchedRoom = inboxRooms.find((r) => r.id === selectedRoomId);
       if (matchedRoom) {
         setSelectedTripId(matchedRoom.tripId);
+      } else {
+        const matchedTrip = trips.find((t) => t.chatRoomId === selectedRoomId || `room-${t.id}` === selectedRoomId);
+        if (matchedTrip) {
+          setSelectedTripId(matchedTrip.id);
+        }
       }
     }
-  }, [selectedRoomId, inboxRooms]);
+  }, [selectedRoomId, inboxRooms, trips]);
 
   // Dynamic trips synchronization into inboxRooms
   useEffect(() => {
@@ -627,9 +637,11 @@ export default function ChatScreen() {
       if (missingTrips.length === 0) return prevRooms;
 
       const newRooms: ChatRoom[] = missingTrips.map((t) => ({
-        id: t.id === 'trip-1' ? 'room-vrindavan-group' :
+        id: t.chatRoomId || (
+            t.id === 'trip-1' ? 'room-vrindavan-group' :
             t.id === 'trip-2' ? 'room-ladakh-group' :
-            t.id === 'trip-3' ? 'room-kerala-group' : `room-${t.id}`,
+            t.id === 'trip-3' ? 'room-kerala-group' : `room-${t.id}`
+        ),
         tripId: t.id,
         name: t.name.includes('Chat') || t.name.includes('Group') ? t.name : `${t.name} Group Chat`,
         avatar: t.id === 'trip-1' ? 'https://images.unsplash.com/photo-1548013146-72479768bada?w=150&q=80' :
@@ -1252,7 +1264,26 @@ export default function ChatScreen() {
     });
 
   // Find Room info of the selected room
-  const activeRoom = inboxRooms.find(r => r.id === selectedRoomId);
+  let activeRoom = inboxRooms.find(r => r.id === selectedRoomId);
+  if (!activeRoom && selectedRoomId) {
+    const matchedTrip = trips.find(t => t.chatRoomId === selectedRoomId || `room-${t.id}` === selectedRoomId);
+    if (matchedTrip) {
+      activeRoom = {
+        id: selectedRoomId,
+        tripId: matchedTrip.id,
+        name: matchedTrip.name.includes('Chat') || matchedTrip.name.includes('Group') ? matchedTrip.name : `${matchedTrip.name} Group Chat`,
+        avatar: matchedTrip.id === 'trip-1' ? 'https://images.unsplash.com/photo-1548013146-72479768bada?w=150&q=80' :
+                matchedTrip.id === 'trip-2' ? 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=150&q=80' :
+                matchedTrip.id === 'trip-3' ? 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=150&q=80' : 
+                'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=150&q=80',
+        type: 'GROUP',
+        latestMessage: 'System: Welcome to the group chat! Start planning together.',
+        latestTime: 'Just Now',
+        unreadCount: 0,
+        badge: 'Member',
+      };
+    }
+  }
 
   // --- SCREEN 1: WHATSAPP-STYLE INBOX LIST VIEW ---
   if (!selectedRoomId) {

@@ -65,6 +65,7 @@ router.get('/', async (req, res) => {
         creator: creatorName,
         creatorId: t.creatorId,
         isMyTrip: tokenUserId ? t.creatorId === tokenUserId : false,
+        chatRoomId: t.chatRoomId,
         cities: t.cities,
         startDate: t.startDate.toISOString().split('T')[0],
         endDate: t.endDate.toISOString().split('T')[0],
@@ -186,6 +187,7 @@ router.get('/:id', async (req, res) => {
       creator: creatorName,
       creatorId: t.creatorId,
       isMyTrip: tokenUserId ? t.creatorId === tokenUserId : false,
+      chatRoomId: t.chatRoomId,
       cities: t.cities,
       startDate: t.startDate.toISOString().split('T')[0],
       endDate: t.endDate.toISOString().split('T')[0],
@@ -277,30 +279,52 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // Create record in Neon PostgreSQL Database
-    const newTrip = await prisma.trip.create({
-      data: {
-        id: id || undefined,
-        creatorId: user.id,
-        name: name || 'Custom Indian Expedition',
-        description: 'Custom travel route created via TravelConnect app.',
-        cities: cities && cities.length ? cities : ['Delhi', 'Agra'],
-        startDate: new Date(startDate || '2026-09-01'),
-        endDate: new Date(endDate || '2026-09-05'),
-        durationDays: 5,
-        budget: parseFloat(budget) || 5000,
-        availableSeats: parseInt(totalSeats) || 10,
-        totalSeats: parseInt(totalSeats) || 10,
-        meetingPoint: meetingPoint || 'Central Station',
-        guideIncluded: Boolean(guideIncluded),
-        foodIncluded: Boolean(foodIncluded),
-        hotelIncluded: Boolean(hotelIncluded),
-        cabIncluded: Boolean(cabIncluded),
-        privacy: (privacy || 'PUBLIC') as any,
-        languages: ['Hindi', 'English'],
-        coverImage: coverImage || null,
-        category: category || null,
-      } as any
+    // Create record in Neon PostgreSQL Database along with ChatRoom and Member in transaction
+    const { newTrip, chatRoom } = await prisma.$transaction(async (tx) => {
+      // 1. Create chat room
+      const room = await tx.chatRoom.create({
+        data: {
+          isGroup: true,
+          name: name || 'Custom Indian Expedition',
+        },
+      });
+
+      // 2. Add creator to chat room
+      await tx.chatRoomMember.create({
+        data: {
+          chatRoomId: room.id,
+          userId: user.id,
+        },
+      });
+
+      // 3. Create trip associated with chat room
+      const trip = await tx.trip.create({
+        data: {
+          id: id || undefined,
+          creatorId: user.id,
+          name: name || 'Custom Indian Expedition',
+          description: 'Custom travel route created via TravelConnect app.',
+          cities: cities && cities.length ? cities : ['Delhi', 'Agra'],
+          startDate: new Date(startDate || '2026-09-01'),
+          endDate: new Date(endDate || '2026-09-05'),
+          durationDays: 5,
+          budget: parseFloat(budget) || 5000,
+          availableSeats: parseInt(totalSeats) || 10,
+          totalSeats: parseInt(totalSeats) || 10,
+          meetingPoint: meetingPoint || 'Central Station',
+          guideIncluded: Boolean(guideIncluded),
+          foodIncluded: Boolean(foodIncluded),
+          hotelIncluded: Boolean(hotelIncluded),
+          cabIncluded: Boolean(cabIncluded),
+          privacy: (privacy || 'PUBLIC') as any,
+          languages: ['Hindi', 'English'],
+          coverImage: coverImage || null,
+          category: category || null,
+          chatRoomId: room.id,
+        } as any
+      });
+
+      return { newTrip: trip, chatRoom: room };
     }) as any;
 
     const mappedTrip = {
@@ -308,6 +332,7 @@ router.post('/', async (req, res) => {
       name: newTrip.name,
       creator: user.profile ? `${user.profile.firstName} ${user.profile.lastName} (Organizer)` : `${user.email} (Organizer)`,
       creatorId: user.id,
+      chatRoomId: newTrip.chatRoomId,
       cities: newTrip.cities,
       startDate: newTrip.startDate.toISOString().split('T')[0],
       endDate: newTrip.endDate.toISOString().split('T')[0],
@@ -563,6 +588,66 @@ router.get('/nearby', (req, res) => {
     },
   ];
   res.status(200).json({ status: 'success', data: nearbyPlaces });
+});
+
+// Get trip members by trip ID
+router.get('/:id/members', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const trip = await prisma.trip.findUnique({
+      where: { id },
+      include: {
+        creator: {
+          include: { profile: true }
+        },
+        members: {
+          include: {
+            user: {
+              include: { profile: true }
+            }
+          }
+        }
+      }
+    });
+
+    if (!trip) {
+      return res.status(404).json({ status: 'error', message: 'Trip not found' });
+    }
+
+    const creatorName = trip.creator.profile
+      ? `${trip.creator.profile.firstName} ${trip.creator.profile.lastName}`.trim()
+      : (trip.creator.email ? trip.creator.email.split('@')[0] : 'Organizer');
+    const creatorAvatar = trip.creator.profile?.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150';
+
+    const creatorItem = {
+      id: `creator-${trip.creatorId}`,
+      userId: trip.creatorId,
+      name: `${creatorName} (Creator)`,
+      avatar: creatorAvatar,
+      isCreator: true,
+    };
+
+    const memberItems = trip.members.map((m) => {
+      const name = m.user.profile
+        ? `${m.user.profile.firstName} ${m.user.profile.lastName}`.trim()
+        : (m.user.email ? m.user.email.split('@')[0] : 'Traveler');
+      const avatar = m.user.profile?.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150';
+
+      return {
+        id: m.id,
+        userId: m.userId,
+        name,
+        avatar,
+        isCreator: false,
+      };
+    });
+
+    const participants = [creatorItem, ...memberItems];
+    return res.status(200).json({ status: 'success', data: participants });
+  } catch (err) {
+    console.warn('[Trips] Get trip members error:', err);
+    return res.status(500).json({ status: 'error', message: 'Failed to fetch trip members' });
+  }
 });
 
 export default router;

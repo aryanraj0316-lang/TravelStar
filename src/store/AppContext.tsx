@@ -50,6 +50,7 @@ export interface Trip {
   coverImage?: string;
   category?: string;
   coordinates?: { latitude: number; longitude: number; name: string }[];
+  chatRoomId?: string;
 }
 
 export interface Guide {
@@ -126,6 +127,13 @@ interface AppContextType {
   setRequestedTrips: React.Dispatch<React.SetStateAction<Set<string>>>;
   reloadJoinRequests: () => void;
   refreshTrips: () => void;
+  pendingRequestsCount: number;
+  reloadIncomingRequestsCount: () => void;
+  hasUnreadChat: boolean;
+  clearChatUnread: () => void;
+  activeTabName: string;
+  setActiveTabName: (name: string) => void;
+  checkUnreadNotifications: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -133,6 +141,9 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentRole, setCurrentRole] = useState<UserRole>('TOURIST');
   const [requestedTrips, setRequestedTrips] = useState<Set<string>>(new Set());
+  const [pendingRequestsCount, setPendingRequestsCount] = useState<number>(0);
+  const [hasUnreadChat, setHasUnreadChat] = useState<boolean>(false);
+  const [activeTabName, setActiveTabName] = useState<string>('index');
   const [profile, setProfile] = useState<UserProfile>({
     name: 'Aarav Sharma',
     avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
@@ -488,6 +499,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     refreshTrips();
     reloadJoinRequests();
+    reloadIncomingRequestsCount();
 
     // Real-time socket subscriptions
     const unsubMsg = socketService.onMessage((data) => {
@@ -496,6 +508,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (prev.some((m) => m.id === data.message.id)) return prev;
           return [...prev, data.message];
         });
+
+        // Set unread chat dot if message is from a different room OR user is not currently viewing the Chat tab
+        if (data.roomId !== activeRoomId || activeTabName !== 'chat') {
+          setHasUnreadChat(true);
+        }
       }
     });
 
@@ -512,9 +529,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsubMsg();
       unsubSOS();
     };
-  }, [activeRoomId, isLoggedIn]);
+  }, [activeRoomId, isLoggedIn, activeTabName]);
 
   const reloadJoinRequests = () => {
+    if (!isLoggedIn) return;
     apiService.getJoinRequests().then((reqs) => {
       if (reqs && reqs.length > 0) {
         const tripIds = reqs.filter((r: any) => r.status === 'PENDING' || r.status === 'APPROVED').map((r: any) => r.tripId);
@@ -533,8 +551,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }).catch(() => {});
   };
 
+  const reloadIncomingRequestsCount = () => {
+    if (!isLoggedIn) return;
+    apiService.getIncomingRequests().then((reqs) => {
+      if (reqs && reqs.length > 0) {
+        const pending = reqs.filter((r: any) => r.status === 'PENDING').length;
+        setPendingRequestsCount(pending);
+      } else {
+        setPendingRequestsCount(0);
+      }
+    }).catch(() => {
+      setPendingRequestsCount(0);
+    });
+  };
+
+  const clearChatUnread = () => {
+    setHasUnreadChat(false);
+  };
+
+  const checkUnreadNotifications = () => {
+    if (!isLoggedIn) return;
+    apiService.getNotifications().then((notifs) => {
+      if (notifs && notifs.length > 0) {
+        const hasUnreadJoinAccepted = notifs.some(
+          (n: any) => n.type === 'JOIN_ACCEPTED' && n.unread === true
+        );
+        if (hasUnreadJoinAccepted) {
+          setHasUnreadChat(true);
+        }
+      }
+    }).catch(() => {});
+  };
+
   useEffect(() => {
+    if (!isLoggedIn) {
+      setPendingRequestsCount(0);
+      setRequestedTrips(new Set());
+      return;
+    }
     reloadJoinRequests();
+    reloadIncomingRequestsCount();
+    checkUnreadNotifications();
   }, [isLoggedIn, profile?.id]);
 
   const updateProfile = (updated: Partial<UserProfile>) => {
@@ -560,26 +617,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const joinTrip = (tripId: string) => {
-    setTrips((prev) =>
-      prev.map((t) => {
-        if (t.id === tripId && t.availableSeats > 0) {
-          return {
-            ...t,
-            availableSeats: t.availableSeats - 1,
-            membersCount: t.membersCount + 1,
-          };
-        }
-        return t;
-      })
-    );
-    setRequestedTrips((prev) => {
-      const next = new Set(prev);
-      next.add(tripId);
-      return next;
-    });
-    apiService.joinTrip(tripId);
-    apiService.createJoinRequest(tripId).catch(() => {});
-  };
+  // Optimistic UI: mark as "requested", but do NOT touch availableSeats/membersCount here.
+  // Seats are only decremented on the backend once the organizer approves the JoinRequest
+  // (see /interactions/join-request/:id/status). Decrementing locally here caused seats
+  // to be counted twice — once fraudulently on request, once for real on approval.
+  setRequestedTrips((prev) => {
+    const next = new Set(prev);
+    next.add(tripId);
+    return next;
+  });
+  apiService.createJoinRequest(tripId).catch(() => {});
+};
 
   const sendMessage = (content: string, mediaType: 'NONE' | 'IMAGE' | 'VOICE' = 'NONE') => {
     const newMsg: Message = {
@@ -692,6 +740,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setRequestedTrips,
         reloadJoinRequests,
         refreshTrips,
+        pendingRequestsCount,
+        reloadIncomingRequestsCount,
+        hasUnreadChat,
+        clearChatUnread,
+        activeTabName,
+        setActiveTabName,
+        checkUnreadNotifications,
       }}
     >
       {children}

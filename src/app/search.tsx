@@ -207,15 +207,10 @@ export default function SearchScreen() {
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
   }, []);
 
-  const getRoomId = (id: string) => {
-    if (id === 'trip-1') return 'room-vrindavan-group';
-    if (id === 'trip-2') return 'room-ladakh-group';
-    if (id === 'trip-3') return 'room-kerala-group';
-    return `room-${id}`;
-  };
-
   const handleJoinGroupChat = (tripId: string) => {
-    setActiveRoomId(getRoomId(tripId));
+    const trip = trips.find(t => t.id === tripId);
+    const roomId = trip?.chatRoomId || `room-${tripId}`;
+    setActiveRoomId(roomId);
     router.push('/chat');
   };
 

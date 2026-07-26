@@ -1,6 +1,7 @@
 import http from 'http';
 import { Server } from 'socket.io';
 import app from './app';
+import prisma from './services/db';
 
 const PORT = process.env.PORT || 5000;
 
@@ -11,6 +12,8 @@ const io = new Server(server, {
     methods: ['GET', 'POST'],
   },
 });
+
+app.set('socketio', io);
 
 // In-memory chat store for rooms
 const roomMessages = new Map<string, Array<{
@@ -59,35 +62,94 @@ io.on('connection', (socket) => {
   }
 
   // Join a trip chatroom
-  socket.on('joinRoom', (roomId: string) => {
+  socket.on('joinRoom', async (roomId: string) => {
     socket.join(roomId);
     console.log(`Socket ${socket.id} joined room ${roomId}`);
     
-    // Send existing room history to client
-    const history = roomMessages.get(roomId) || [];
-    socket.emit('roomHistory', { roomId, messages: history });
+    try {
+      const dbMessages = await prisma.message.findMany({
+        where: { chatRoomId: roomId },
+        include: { sender: { include: { profile: true } } },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      const history = dbMessages.map((m) => {
+        const name = m.sender?.profile
+          ? `${m.sender.profile.firstName} ${m.sender.profile.lastName}`.trim()
+          : (m.sender?.email ? m.sender.email.split('@')[0] : 'System');
+        const role = m.sender?.role || 'Tourist';
+        return {
+          id: m.id,
+          senderName: name,
+          senderRole: role,
+          content: m.content || '',
+          timestamp: new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          mediaType: m.mediaType as any || 'NONE',
+        };
+      });
+
+      socket.emit('roomHistory', { roomId, messages: history });
+    } catch (e) {
+      console.warn('Error loading chat history from DB, falling back to cache:', e);
+      const history = roomMessages.get(roomId) || [];
+      socket.emit('roomHistory', { roomId, messages: history });
+    }
   });
 
   // Handle messages sending
-  socket.on('sendMessage', (data: { chatRoomId: string; senderName: string; senderRole: string; content: string; mediaType?: 'NONE' | 'IMAGE' | 'VOICE' }) => {
+  socket.on('sendMessage', async (data: { chatRoomId: string; senderName: string; senderRole: string; content: string; mediaType?: 'NONE' | 'IMAGE' | 'VOICE'; senderId?: string }) => {
     const roomId = data.chatRoomId || 'default-room';
-    const newMsg = {
-      id: `msg-${Date.now()}`,
-      senderName: data.senderName || 'Anonymous Traveler',
-      senderRole: data.senderRole || 'Tourist',
-      content: data.content,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      mediaType: data.mediaType || 'NONE',
-    };
-
-    if (!roomMessages.has(roomId)) {
-      roomMessages.set(roomId, []);
+    
+    let senderId = data.senderId;
+    if (!senderId) {
+      // Find a user matching data.senderName
+      const user = await prisma.user.findFirst({
+        where: {
+          profile: {
+            firstName: data.senderName.split(' ')[0],
+          }
+        }
+      });
+      senderId = user?.id || (await prisma.user.findFirst())?.id;
     }
-    roomMessages.get(roomId)?.push(newMsg);
 
-    // Broadcast message to everyone in the room and all connected sockets
-    io.to(roomId).emit('messageReceived', { roomId, message: newMsg });
-    io.emit('messageReceived', { roomId, message: newMsg });
+    if (senderId) {
+      try {
+        const savedMsg = await prisma.message.create({
+          data: {
+            chatRoomId: roomId,
+            senderId,
+            content: data.content,
+            mediaType: data.mediaType || 'NONE',
+          }
+        });
+
+        const newMsg = {
+          id: savedMsg.id,
+          senderName: data.senderName || 'Anonymous Traveler',
+          senderRole: data.senderRole || 'Tourist',
+          content: data.content,
+          timestamp: new Date(savedMsg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          mediaType: data.mediaType || 'NONE',
+        };
+
+        io.to(roomId).emit('messageReceived', { roomId, message: newMsg });
+        io.emit('messageReceived', { roomId, message: newMsg });
+      } catch (e) {
+        console.warn('Error saving message to DB:', e);
+        // Fallback: emit unsaved message to keep chat functional
+        const newMsg = {
+          id: `msg-${Date.now()}`,
+          senderName: data.senderName || 'Anonymous Traveler',
+          senderRole: data.senderRole || 'Tourist',
+          content: data.content,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          mediaType: data.mediaType || 'NONE',
+        };
+        io.to(roomId).emit('messageReceived', { roomId, message: newMsg });
+        io.emit('messageReceived', { roomId, message: newMsg });
+      }
+    }
   });
 
   // Handle Live location updates

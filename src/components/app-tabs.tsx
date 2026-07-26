@@ -47,12 +47,14 @@ function AnimatedTabButton({
   onPress,
   onLongPress,
   isDark,
+  showDot,
 }: {
   routeName: string;
   isFocused: boolean;
   onPress: () => void;
   onLongPress: () => void;
   isDark: boolean;
+  showDot?: boolean;
 }) {
   const scaleAnim = useRef(new Animated.Value(isFocused ? 1 : 0)).current;
 
@@ -89,11 +91,17 @@ function AnimatedTabButton({
             end={{ x: 1, y: 1 }}
             style={styles.activePillCapsule}
           >
-            <Icon size={20} color="#FFFFFF" strokeWidth={2.4} />
+            <View style={{ position: 'relative' }}>
+              <Icon size={20} color="#FFFFFF" strokeWidth={2.4} />
+              {showDot && !isFocused && <View style={styles.tabDot} />}
+            </View>
           </LinearGradient>
         ) : (
           <View style={styles.inactiveTabBox}>
-            <Icon size={20} color={isDark ? '#94A3B8' : '#64748B'} strokeWidth={1.8} />
+            <View style={{ position: 'relative' }}>
+              <Icon size={20} color={isDark ? '#94A3B8' : '#64748B'} strokeWidth={1.8} />
+              {showDot && !isFocused && <View style={styles.tabDot} />}
+            </View>
             <Text style={[styles.inactiveTabLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
               {label}
             </Text>
@@ -128,7 +136,14 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
     prevIndexRef.current = activeIndex;
   }, [activeIndex]);
 
-  const { activeRoomId, navbarHidden, setNavbarHidden } = useApp();
+  const { activeRoomId, navbarHidden, setNavbarHidden, pendingRequestsCount, hasUnreadChat, setActiveTabName } = useApp();
+  
+  useEffect(() => {
+    if (currentRouteName) {
+      setActiveTabName(currentRouteName);
+    }
+  }, [currentRouteName]);
+
   console.log('[CustomTabBar] currentRouteName:', currentRouteName, 'navbarHidden:', navbarHidden);
 
   // ── Core slide in/out logic ──────────────────────────────────────────
@@ -313,6 +328,10 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
                     });
                   }}
                   isDark={isDark}
+                  showDot={
+                    (route.name === 'create' && pendingRequestsCount > 0) ||
+                    (route.name === 'chat' && hasUnreadChat)
+                  }
                 />
               </View>
             );
@@ -412,5 +431,16 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.5,
     shadowRadius: 10,
     elevation: 10,
+  },
+  tabDot: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#EF4444',
+    borderWidth: 1.5,
+    borderColor: '#0C1020',
   },
 });

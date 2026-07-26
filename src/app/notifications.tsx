@@ -24,6 +24,7 @@ import {
 } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import { apiService } from '../services/api';
+import { useApp } from '../store/AppContext';
 import {
   Animated,
   Dimensions,
@@ -206,6 +207,7 @@ const HAZARD_DISASTER_ALERTS = [
 // ─── Main Component ─────────────────────────────────────────────────
 export default function NotificationsScreen() {
   const router = useRouter();
+  const { setActiveRoomId, checkUnreadNotifications } = useApp();
   const [activeTab, setActiveTab] = useState<TabType>('ALL');
   const [unreadCount, setUnreadCount] = useState(5);
   const [secondsLeft, setSecondsLeft] = useState(8140);
@@ -439,6 +441,67 @@ export default function NotificationsScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.feedScrollContent}
       >
+        {/* ── JOIN REQUEST ACCEPTANCES ── */}
+        {(activeTab === 'ALL' || activeTab === 'TRIPS') && notifications.some(n => n.type === 'JOIN_ACCEPTED') && (
+          <View style={styles.sectionBlock}>
+            <View style={styles.sectionHeaderRow}>
+              <View style={styles.sectionHeaderTitleGroup}>
+                <CheckCheck size={18} color={C.green} />
+                <Text style={styles.sectionHeaderTitle}>Group Chat Invitations</Text>
+              </View>
+            </View>
+
+            {notifications.filter(n => n.type === 'JOIN_ACCEPTED').map((notif: any) => (
+              <TouchableOpacity
+                key={notif.id}
+                style={[
+                  styles.hazardCard,
+                  {
+                    backgroundColor: notif.unread ? 'rgba(16, 185, 129, 0.08)' : C.card,
+                    borderColor: notif.unread ? 'rgba(16, 185, 129, 0.3)' : C.border,
+                  }
+                ]}
+                activeOpacity={0.85}
+                onPress={async () => {
+                  try {
+                    await apiService.markNotificationRead(notif.id);
+                  } catch (e) {}
+                  loadNotifications();
+                  checkUnreadNotifications();
+                  if (notif.chatRoomId) {
+                    setActiveRoomId(notif.chatRoomId);
+                    router.push('/chat');
+                  }
+                }}
+              >
+                <View style={styles.hazardHeader}>
+                  <View style={styles.hazardCategoryGroup}>
+                    <View style={[styles.hazardIconWrap, { backgroundColor: C.green }]}>
+                      <CheckCheck size={14} color={C.white} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.hazardTitle}>{notif.title}</Text>
+                      <Text style={styles.hazardLocation} numberOfLines={2}>{notif.content}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.hazardMetaRight}>
+                    {notif.unread && (
+                      <View style={[styles.severityPill, { backgroundColor: C.green }]}>
+                        <Text style={styles.severityText}>NEW</Text>
+                      </View>
+                    )}
+                    <Text style={styles.hazardTime}>{notif.time}</Text>
+                  </View>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                  <Text style={{ fontSize: 11, color: C.blue, fontWeight: '700' }}>Tap to open group chat</Text>
+                  <ChevronRight size={12} color={C.blue} style={{ marginLeft: 2 }} />
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
         {/* ── REAL-TIME HAZARD & DISASTER NEWS ALERTS ── */}
         {(activeTab === 'ALL' || activeTab === 'HAZARDS') && (
           <View style={styles.sectionBlock}>

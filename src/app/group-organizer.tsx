@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ScrollView,
   StyleSheet,
@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useApp } from '@/store/AppContext';
+import { apiService } from '@/services/api';
 import {
   ArrowLeft,
   Search,
@@ -113,13 +114,13 @@ interface JoinRequest {
 
 export default function GroupOrganizerScreen() {
   const router = useRouter();
-  const { profile, addTrip } = useApp();
+  const { profile, addTrip, trips } = useApp();
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'trips' | 'logistics' | 'payments' | 'chat' | 'live'>('dashboard');
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ────────────────────────────────────────────────────────
   // STATE: TOURS & CHATS
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ────────────────────────────────────────────────────────
   const [tours, setTours] = useState<ActiveTour[]>([
     {
       id: 'tour-1',
@@ -132,48 +133,87 @@ export default function GroupOrganizerScreen() {
       status: 'OPEN',
       chatLink: 'travelstar.app/chat/join/sikkim-highlanders',
     },
-    {
-      id: 'tour-2',
-      groupName: 'Rajasthan Heritage Royals',
-      destination: 'Jaipur & Jodhpur Forts',
-      durationDays: 4,
-      maxSize: 15,
-      currentSize: 15,
-      price: 9500,
-      status: 'FULL',
-      chatLink: 'travelstar.app/chat/join/rajasthan-royals',
-    },
-    {
-      id: 'tour-3',
-      groupName: 'Kerala Backwaters Cruise',
-      destination: 'Alleppey & Munnar Hills',
-      durationDays: 5,
-      maxSize: 10,
-      currentSize: 4,
-      price: 12000,
-      status: 'OPEN',
-      chatLink: 'travelstar.app/chat/join/kerala-cruise',
-    },
   ]);
 
   const [selectedTourIdx, setSelectedTourIdx] = useState(0);
-  const currentTour = tours[selectedTourIdx];
+  const currentTour = tours[selectedTourIdx] || tours[0];
 
   // Join Requests state
-  const [joinRequests, setJoinRequests] = useState<JoinRequest[]>([
-    { id: 'req-1', tourId: 'tour-1', userName: 'Amit Khandelwal', userAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&q=80', requestMessage: 'Hey! I would love to join the Sikkim trek. Verified guide is included right?' },
-    { id: 'req-2', tourId: 'tour-1', userName: 'Preeti Deshmukh', userAvatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120&q=80', requestMessage: 'Interested in the Himalayas hike. Pls approve request, ready to deposit token amount.' },
-    { id: 'req-3', tourId: 'tour-3', userName: 'Sunil Rao', userAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=120&q=80', requestMessage: 'Traveling with my spouse, looking forward to join approved backwaters trip.' },
-  ]);
+  const [joinRequests, setJoinRequests] = useState<JoinRequest[]>([]);
 
   // Members list (dynamic for currently selected tour)
-  const [members, setMembers] = useState<GroupMember[]>([
-    { id: 'm-1', name: 'Aarav Sharma (You)', avatar: profile.avatar, role: 'LEADER', emergencyContact: 'Father: 9876543210', checkedIn: true, diet: 'VEG', roomAllocated: 'Room 302', seatAllocated: 'Seat 1A' },
-    { id: 'm-2', name: 'Rajesh Kumar', avatar: 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?w=120&q=80', role: 'GUIDE', emergencyContact: 'Wife: 9812345678', checkedIn: true, diet: 'VEG', roomAllocated: 'Room 303', seatAllocated: 'Seat 1B' },
-    { id: 'm-3', name: 'Rohan Malhotra', avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=120&q=80', role: 'MEMBER', emergencyContact: 'Mother: 9944556677', checkedIn: true, diet: 'NON-VEG', roomAllocated: 'Room 305', seatAllocated: 'Seat 4A' },
-    { id: 'm-4', name: 'Neha Gupta', avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120&q=80', role: 'MEMBER', emergencyContact: 'Brother: 9789456123', checkedIn: false, diet: 'VEGAN', roomAllocated: 'Room 306', seatAllocated: 'Seat 4B' },
-    { id: 'm-5', name: 'Kabir Sen', avatar: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=120&q=80', role: 'MEMBER', emergencyContact: 'Sister: 9654123789', checkedIn: false, diet: 'NON-VEG', roomAllocated: 'Room 305', seatAllocated: 'Seat 5A' },
-  ]);
+  const [members, setMembers] = useState<GroupMember[]>([]);
+
+  // Derived properties from AppContext
+  const myTrips = trips.filter(t => t.creatorId === profile?.id);
+
+  // Sync tours list dynamically based on AppContext
+  useEffect(() => {
+    if (myTrips.length > 0) {
+      const mappedTours = myTrips.map(t => ({
+        id: t.id,
+        groupName: t.name,
+        destination: t.cities?.join(' ➔ ') || 'Custom Route',
+        durationDays: 5,
+        maxSize: t.totalSeats || 10,
+        currentSize: (t.totalSeats || 10) - (t.availableSeats || 0),
+        price: t.budget || 5000,
+        status: (t.availableSeats || 0) <= 0 ? 'FULL' : 'OPEN' as any,
+        chatLink: t.chatRoomId ? `Linked Group Chat` : 'Setup Pending',
+      }));
+      setTours(mappedTours);
+    }
+  }, [trips, profile?.id]);
+
+  const fetchIncoming = async () => {
+    try {
+      const data = await apiService.getIncomingRequests();
+      if (data) {
+        const pending = data.filter((r: any) => r.status === 'PENDING').map(r => ({
+          id: r.id,
+          tourId: r.tripId,
+          userName: r.applicantName,
+          userAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&q=80',
+          requestMessage: r.requestMessage || 'Would love to join this group tour! Let me know if there are slots.',
+        }));
+        setJoinRequests(pending);
+      }
+    } catch (e) {
+      console.warn('Failed to fetch incoming requests:', e);
+    }
+  };
+
+  const fetchTourMembers = async (tripId: string) => {
+    try {
+      const data = await apiService.getTripMembers(tripId);
+      if (data) {
+        const mappedMembers = data.map((m: any) => ({
+          id: m.id,
+          name: m.name,
+          avatar: m.avatar,
+          role: m.isCreator ? 'LEADER' : 'MEMBER' as any,
+          emergencyContact: 'Family Support Desk',
+          checkedIn: false,
+          diet: 'VEG',
+          roomAllocated: 'Room TBD',
+          seatAllocated: 'Seat TBD',
+        }));
+        setMembers(mappedMembers);
+      }
+    } catch (e) {
+      console.warn('Failed to fetch tour members:', e);
+    }
+  };
+
+  useEffect(() => {
+    fetchIncoming();
+  }, []);
+
+  useEffect(() => {
+    if (currentTour) {
+      fetchTourMembers(currentTour.id);
+    }
+  }, [selectedTourIdx, tours]);
 
   // Create new Tour form
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -231,36 +271,29 @@ export default function GroupOrganizerScreen() {
     Alert.alert('Tour Created!', `"${newTour.groupName}" has been successfully added to your dashboard. Group chat link generated.`);
   };
 
-  const handleApproveRequest = (reqId: string, userName: string, avatar: string) => {
-    // Add traveler to active member list
-    const newMember: GroupMember = {
-      id: `m-${Date.now()}`,
-      name: userName,
-      avatar,
-      role: 'MEMBER',
-      emergencyContact: 'Not Provided (Pending onboarding)',
-      checkedIn: false,
-      diet: 'VEG',
-      roomAllocated: 'Room TBD',
-      seatAllocated: 'Seat TBD',
-    };
-
-    setMembers([...members, newMember]);
-    setJoinRequests(joinRequests.filter((r) => r.id !== reqId));
-
-    // Update current size on tour
-    setTours(
-      tours.map((t, idx) =>
-        idx === selectedTourIdx ? { ...t, currentSize: t.currentSize + 1 } : t
-      )
-    );
-
-    Alert.alert('Approved!', `"${userName}" has been added to ${currentTour.groupName} and the group chat.`);
+  const handleApproveRequest = async (reqId: string, userName: string, avatar: string) => {
+    try {
+      await apiService.updateJoinRequestStatus(reqId, 'APPROVED');
+      Alert.alert('Approved!', `"${userName}" has been added to ${currentTour.groupName} and the group chat.`);
+      fetchIncoming();
+      if (currentTour) {
+        fetchTourMembers(currentTour.id);
+      }
+    } catch (e) {
+      console.warn('Approve request failed:', e);
+      Alert.alert('Error', 'Failed to approve join request.');
+    }
   };
 
-  const handleRejectRequest = (reqId: string, userName: string) => {
-    setJoinRequests(joinRequests.filter((r) => r.id !== reqId));
-    Alert.alert('Rejected', `Declined group chat join request for "${userName}".`);
+  const handleRejectRequest = async (reqId: string, userName: string) => {
+    try {
+      await apiService.updateJoinRequestStatus(reqId, 'REJECTED');
+      Alert.alert('Rejected', `Declined group chat join request for "${userName}".`);
+      fetchIncoming();
+    } catch (e) {
+      console.warn('Reject request failed:', e);
+      Alert.alert('Error', 'Failed to reject join request.');
+    }
   };
 
   const handleEditGroupName = () => {

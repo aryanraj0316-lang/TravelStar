@@ -107,6 +107,10 @@ export const apiService = {
     });
   },
 
+  async getTripMembers(tripId: string): Promise<any[] | null> {
+    return request<any[]>(`/trips/${tripId}/members`);
+  },
+
   async midwayJoin(tripId: string, fromCity: string, toCity: string) {
     return request(`/trips/${tripId}/midway-join`, {
       method: 'POST',
@@ -210,6 +214,12 @@ export const apiService = {
     });
   },
 
+  async markNotificationRead(id: string): Promise<any> {
+    return request(`/notifications/${id}/read`, {
+      method: 'POST',
+    });
+  },
+
   // Homepage — Destinations
   async getDestinations(): Promise<any[] | null> {
     return request<any[]>('/destinations');
@@ -270,7 +280,72 @@ export const apiService = {
     });
   },
 
+  async getIncomingRequests(): Promise<any[] | null> {
+    return request<any[]>('/interactions/incoming-requests');
+  },
+
+  async updateJoinRequestStatus(requestId: string, status: 'APPROVED' | 'REJECTED'): Promise<any> {
+    return request(`/interactions/join-request/${requestId}/status`, {
+      method: 'POST',
+      body: JSON.stringify({ status }),
+    });
+  },
+
   async getUnreadNotificationCount(): Promise<{ count: number } | null> {
     return request<{ count: number }>('/interactions/unread-count');
+  },
+
+  async getMyGuideProfile(): Promise<any | null> {
+    return request<any>('/guides/profile');
+  },
+
+  async getEarnings(guideId: string): Promise<any | null> {
+    return request<any>(`/guides/${guideId}/earnings`);
+  },
+
+  async getGuidePackages(guideId: string): Promise<any[] | null> {
+    return request<any[]>(`/guides/${guideId}/packages`);
+  },
+
+  async createGuidePackage(guideId: string, data: any): Promise<any> {
+    return request(`/guides/${guideId}/packages`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateGuidePackage(guideId: string, pkgId: string, data: any): Promise<any> {
+    return request(`/guides/${guideId}/packages/${pkgId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteGuidePackage(guideId: string, pkgId: string): Promise<any> {
+    return request(`/guides/${guideId}/packages/${pkgId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  async getGuideReels(guideId: string): Promise<any[] | null> {
+    return request<any[]>(`/guides/${guideId}/reels`);
+  },
+
+  async uploadGuideReel(guideId: string, data: any): Promise<any> {
+    return request(`/guides/${guideId}/reels`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getGuideLiveStatus(guideId: string): Promise<any | null> {
+    return request<any>(`/guides/${guideId}/live-status`);
+  },
+
+  async updateGuideLiveStatus(guideId: string, coords: { latitude: number; longitude: number }): Promise<any> {
+    return request(`/guides/${guideId}/live-status`, {
+      method: 'POST',
+      body: JSON.stringify(coords),
+    });
   },
 };
