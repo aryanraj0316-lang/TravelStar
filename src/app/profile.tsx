@@ -43,7 +43,7 @@ import {
   Wallet,
   X
 } from 'lucide-react-native';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Alert,
   Image,
@@ -136,6 +136,9 @@ export default function ProfileScreen() {
     setNavbarHidden,
   } = useApp();
 
+  const lastScrollYRef = useRef(0);
+  const navbarHiddenRef = useRef(false);
+
   // Navigation tab state
   const [activeTab, setActiveTab] = useState<'DETAILS' | 'HISTORY' | 'WALLET' | 'DASHBOARD' | 'SETTINGS'>('DETAILS');
   const [historyFilter, setHistoryFilter] = useState<'ALL' | 'UPCOMING' | 'COMPLETED'>('ALL');
@@ -167,7 +170,6 @@ export default function ProfileScreen() {
   const [editStyles, setEditStyles] = useState('Mountains, Backpacking, Photography');
 
   useEffect(() => {
-    console.log('[ProfileScreen] isLoggedIn:', isLoggedIn, 'profile.name:', profile?.name, 'showAuthModal:', showAuthModal);
     if (isLoggedIn) {
       setShowAuthModal(false);
     }
@@ -390,7 +392,23 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={[styles.safeArea, { backgroundColor: '#070913' }]}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        scrollEventThrottle={16}
+        onScroll={(e) => {
+          const y = e.nativeEvent.contentOffset.y;
+          const diff = y - lastScrollYRef.current;
+          if (diff > 10 && !navbarHiddenRef.current) {
+            navbarHiddenRef.current = true;
+            setNavbarHidden(true);
+          } else if (diff < -8 && navbarHiddenRef.current) {
+            navbarHiddenRef.current = false;
+            setNavbarHidden(false);
+          }
+          lastScrollYRef.current = y;
+        }}
+      >
 
         {/* ════════════════════════════════════════════════
             HERO COVER PHOTO BANNER & PROFILE CARD

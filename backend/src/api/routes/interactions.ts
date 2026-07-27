@@ -203,8 +203,10 @@ router.delete('/join-request/:tripId', async (req, res) => {
 // Get unread notification count
 router.get('/unread-count', async (req, res) => {
   try {
+    const tokenUserId = getUserIdFromReq(req);
+    if (!tokenUserId) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
     const count = await prisma.notification.count({
-      where: { unread: true },
+      where: { unread: true, userId: tokenUserId },
     });
 
     return res.status(200).json({ status: 'success', data: { count } });
@@ -387,6 +389,7 @@ const handleStatusChange = async (req: any, res: any) => {
           senderId: request.trip.creatorId,
           content: systemMsgContent,
           mediaType: 'NONE',
+          isSystem: true,
         },
       });
 
@@ -398,7 +401,7 @@ const handleStatusChange = async (req: any, res: any) => {
           message: {
             id: `sys-${Date.now()}`,
             senderName: 'System',
-            senderRole: 'Organizer',
+            senderRole: 'SYSTEM',
             content: systemMsgContent,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             mediaType: 'NONE',
@@ -424,6 +427,7 @@ const handleStatusChange = async (req: any, res: any) => {
           time: 'Just now',
           unread: true,
           tripId: request.tripId,
+          chatRoomId: targetChatRoomId,
         },
       });
 

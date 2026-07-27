@@ -28,7 +28,6 @@ class SocketService {
       });
 
       this.socket.on('connect', () => {
-        console.log(`[SocketService] Connected to real-time server: ${serverUrl} (Socket ID: ${this.socket?.id})`);
       });
 
       this.socket.on('messageReceived', (data: any) => {
@@ -48,7 +47,6 @@ class SocketService {
       });
 
       this.socket.on('disconnect', (reason: string) => {
-        console.log(`[SocketService] Disconnected from real-time server: ${reason}`);
       });
 
       this.socket.on('connect_error', (err: any) => {

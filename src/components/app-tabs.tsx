@@ -144,72 +144,29 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
     }
   }, [currentRouteName]);
 
-  console.log('[CustomTabBar] currentRouteName:', currentRouteName, 'navbarHidden:', navbarHidden);
-
-  // ── Core slide in/out logic ──────────────────────────────────────────
+  // ── Core slide in/out logic (downward slide) ────────────────────────────────
   useEffect(() => {
-    if (currentRouteName !== 'index') return;
-
-    const dockW = dockWidth > 0 ? dockWidth : SCREEN_WIDTH - 20;
-
     if (navbarHidden) {
-      // 1. Slide the full dock completely off-screen to the left
       Animated.spring(dockSlideAnim, {
-        toValue: -(dockW + 30),
-        friction: 7,
-        tension: 55,
+        toValue: 150,
+        friction: 8,
+        tension: 50,
         useNativeDriver: true,
       }).start();
-
-      // 2. Animate the extracted active-icon peeking from the left edge
-      //    peekSlideAnim: -50 (hidden) → -22 (half visible)
-      Animated.parallel([
-        Animated.spring(peekSlideAnim, {
-          toValue: -22,
-          friction: 7,
-          tension: 55,
-          useNativeDriver: true,
-        }),
-        Animated.timing(peekOpacityAnim, {
-          toValue: 1,
-          duration: 280,
-          useNativeDriver: true,
-        }),
-      ]).start();
     } else {
-      // 1. Slide the full dock back into view
       Animated.spring(dockSlideAnim, {
         toValue: 0,
-        friction: 7,
-        tension: 55,
+        friction: 8,
+        tension: 50,
         useNativeDriver: true,
       }).start();
-
-      // 2. Fade & slide the peeking icon back off-screen
-      Animated.parallel([
-        Animated.spring(peekSlideAnim, {
-          toValue: -50,
-          friction: 7,
-          tension: 55,
-          useNativeDriver: true,
-        }),
-        Animated.timing(peekOpacityAnim, {
-          toValue: 0,
-          duration: 180,
-          useNativeDriver: true,
-        }),
-      ]).start();
     }
-  }, [navbarHidden, dockWidth]);
+  }, [navbarHidden]);
 
-  // ── Reset when leaving home tab ──────────────────────────────────────
+  // ── Reset when changing tabs ──────────────────────────────────────
   useEffect(() => {
-    if (currentRouteName !== 'index' && currentRouteName !== 'profile') {
-      setNavbarHidden(false);
-      dockSlideAnim.setValue(0);
-      peekSlideAnim.setValue(-50);
-      peekOpacityAnim.setValue(0);
-    }
+    setNavbarHidden(false);
+    dockSlideAnim.setValue(0);
   }, [currentRouteName]);
 
   // ── Hide entirely when in chat room or stories ───────────────────────
@@ -254,43 +211,14 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
 
   return (
     <>
-      {/* ── Peeking floating icon: extracted from navbar, half-visible from left edge ── */}
-      <Animated.View
-        style={[
-          styles.peekingWrap,
-          {
-            bottom: bottomOffset + 6, // vertically match the dock
-            opacity: peekOpacityAnim,
-            transform: [{ translateX: peekSlideAnim }],
-          },
-          shouldHideNavbar && { display: 'none', opacity: 0, height: 0 }
-        ]}
-        pointerEvents={navbarHidden ? 'auto' : 'none'}
-      >
-        <TouchableOpacity
-          onPress={() => setNavbarHidden(false)}
-          activeOpacity={0.85}
-        >
-          <LinearGradient
-            colors={['#0044CC', '#0066FF']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.peekPill}
-          >
-            <ActiveIcon size={20} color="#FFFFFF" strokeWidth={2.4} />
-          </LinearGradient>
-        </TouchableOpacity>
-      </Animated.View>
- 
       {/* ── Full dock ─────────────────────────────────────────────────────── */}
       <Animated.View
         style={[
           styles.floatingDockWrap,
           {
             bottom: bottomOffset,
-            transform: [{ translateX: dockSlideAnim }],
-          },
-          shouldHideNavbar && { display: 'none', opacity: 0, height: 0 }
+            transform: [{ translateY: dockSlideAnim }],
+          }
         ]}
         onLayout={(e) => setDockWidth(e.nativeEvent.layout.width)}
       >

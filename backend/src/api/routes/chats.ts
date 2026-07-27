@@ -69,6 +69,8 @@ router.get('/', async (req, res) => {
         }
       });
 
+      const sortDate = lastMsg?.createdAt || room.createdAt;
+
       return {
         id: room.id,
         tripId: trip?.id || null,
@@ -82,8 +84,11 @@ router.get('/', async (req, res) => {
         unread: unreadCount > 0,
         unreadCount: unreadCount,
         badge: 'Member',
+        lastMessageAt: sortDate.toISOString(),
       };
     }));
+
+    rooms.sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
 
     return res.status(200).json({ status: 'success', data: rooms });
   } catch (err) {
@@ -158,18 +163,28 @@ router.get('/:id/messages', async (req, res) => {
       include: {
         sender: {
           include: { profile: true }
+        },
+        chatRoom: {
+          include: { trip: true }
         }
       },
       orderBy: { createdAt: 'asc' },
     });
 
     const history = dbMessages.map((m) => {
-      const name = m.sender?.profile
-        ? `${m.sender.profile.firstName} ${m.sender.profile.lastName}`.trim()
-        : (m.sender?.email ? m.sender.email.split('@')[0] : 'System');
-      const role = m.sender?.role || 'Tourist';
+      let name = 'System';
+      let role = 'SYSTEM';
+
+      if (!m.isSystem) {
+        name = m.sender?.profile
+          ? `${m.sender.profile.firstName} ${m.sender.profile.lastName}`.trim()
+          : (m.sender?.email ? m.sender.email.split('@')[0] : 'Member');
+        role = m.senderId === m.chatRoom?.trip?.creatorId ? 'Organizer' : 'Tourist';
+      }
+
       return {
         id: m.id,
+        senderId: m.senderId,
         senderName: name,
         senderRole: role,
         content: m.content || '',
@@ -182,6 +197,55 @@ router.get('/:id/messages', async (req, res) => {
   } catch (err) {
     console.warn('[Chats] Get message history error:', err);
     return res.status(500).json({ status: 'error', message: 'Failed to retrieve chat messages' });
+  }
+});
+
+// 4. Mark all messages in a chat room as read for the current user
+router.post('/:id/read', async (req, res) => {
+  const { id } = req.params;
+  const tokenUserId = getUserIdFromReq(req);
+  if (!tokenUserId) {
+    return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+  }
+
+  try {
+    const messagesToRead = await prisma.message.findMany({
+      where: {
+        chatRoomId: id,
+        senderId: { not: tokenUserId },
+        readBy: {
+          none: {
+            userId: tokenUserId,
+          },
+        },
+      },
+      select: { id: true },
+    });
+
+    if (messagesToRead.length > 0) {
+      await prisma.$transaction(
+        messagesToRead.map((m) =>
+          prisma.messageReadReceipt.upsert({
+            where: {
+              messageId_userId: {
+                messageId: m.id,
+                userId: tokenUserId,
+              },
+            },
+            create: {
+              messageId: m.id,
+              userId: tokenUserId,
+            },
+            update: {},
+          })
+        )
+      );
+    }
+
+    return res.status(200).json({ status: 'success', message: 'Messages marked as read' });
+  } catch (err) {
+    console.warn('[Chats] Mark messages read error:', err);
+    return res.status(500).json({ status: 'error', message: 'Failed to mark messages as read' });
   }
 });
 

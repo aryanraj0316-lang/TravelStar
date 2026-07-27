@@ -267,7 +267,9 @@ const TRIP_CATEGORIES = ['Adventure', 'Religious', 'Family', 'Road Trip', 'Beach
 
 export default function CreateTripScreen() {
   const router = useRouter();
-  const { trips, addTrip, profile, reloadIncomingRequestsCount, setActiveRoomId } = useApp();
+  const lastScrollYRef = useRef(0);
+  const navbarHiddenRef = useRef(false);
+  const { trips, addTrip, profile, reloadIncomingRequestsCount, setActiveRoomId, setNavbarHidden } = useApp();
   const scrollRef = useRef<ScrollView>(null);
 
   const [tripName, setTripName] = useState('');
@@ -663,6 +665,19 @@ export default function CreateTripScreen() {
             { paddingBottom: Platform.OS === 'ios' ? 140 : keyboardHeight + 140 }
           ]}
           keyboardShouldPersistTaps="handled"
+          scrollEventThrottle={16}
+          onScroll={(e) => {
+            const y = e.nativeEvent.contentOffset.y;
+            const diff = y - lastScrollYRef.current;
+            if (diff > 10 && !navbarHiddenRef.current) {
+              navbarHiddenRef.current = true;
+              setNavbarHidden(true);
+            } else if (diff < -8 && navbarHiddenRef.current) {
+              navbarHiddenRef.current = false;
+              setNavbarHidden(false);
+            }
+            lastScrollYRef.current = y;
+          }}
         >
 
           {/* ─── ORGANIZER CREATIONS NOTIFICATION BANNER (TOP LEVEL) ─── */}

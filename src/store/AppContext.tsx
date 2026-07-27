@@ -1,5 +1,5 @@
 import { safeStorage } from '@/services/storage';
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { apiService } from '../services/api';
 import { socketService } from '../services/socket';
 
@@ -74,6 +74,8 @@ export interface Message {
   timestamp: string;
   mediaType?: 'NONE' | 'IMAGE' | 'VOICE';
   mediaUrl?: string;
+  roomId?: string;
+  senderId?: string;
 }
 
 export interface SOSAlert {
@@ -504,9 +506,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Real-time socket subscriptions
     const unsubMsg = socketService.onMessage((data) => {
       if (data && data.message) {
+        const msgWithRoom = {
+          ...data.message,
+          roomId: data.roomId,
+        };
         setMessages((prev) => {
-          if (prev.some((m) => m.id === data.message.id)) return prev;
-          return [...prev, data.message];
+          if (prev.some((m) => m.id === msgWithRoom.id)) return prev;
+          return [...prev, msgWithRoom];
         });
 
         // Set unread chat dot if message is from a different room OR user is not currently viewing the Chat tab
@@ -538,7 +544,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [activeRoomId, isLoggedIn, activeTabName]);
 
-  const reloadJoinRequests = () => {
+  const reloadJoinRequests = useCallback(() => {
     if (!isLoggedIn) return;
     apiService.getJoinRequests().then((reqs) => {
       if (reqs && reqs.length > 0) {
@@ -548,17 +554,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setRequestedTrips(new Set());
       }
     }).catch(() => {});
-  };
+  }, [isLoggedIn]);
 
-  const refreshTrips = () => {
+  const refreshTrips = useCallback(() => {
     apiService.getTrips().then((remoteTrips) => {
       if (remoteTrips && remoteTrips.length > 0) {
         setTrips(remoteTrips);
       }
     }).catch(() => {});
-  };
+  }, []);
 
-  const reloadIncomingRequestsCount = () => {
+  const reloadIncomingRequestsCount = useCallback(() => {
     if (!isLoggedIn) return;
     apiService.getIncomingRequests().then((reqs) => {
       if (reqs && reqs.length > 0) {
@@ -570,11 +576,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }).catch(() => {
       setPendingRequestsCount(0);
     });
-  };
+  }, [isLoggedIn]);
 
-  const clearChatUnread = () => {
+  const clearChatUnread = useCallback(() => {
     setHasUnreadChat(false);
-  };
+  }, []);
 
   const checkUnreadNotifications = () => {
     if (!isLoggedIn) return;

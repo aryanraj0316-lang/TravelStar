@@ -159,7 +159,9 @@ export default function SearchScreen() {
   const scheme = useColorScheme();
   const isDark = scheme === 'dark';
   const C = isDark ? DARK : LIGHT;
-  const { trips, joinTrip, setActiveRoomId, profile, isLoggedIn, requestedTrips, setRequestedTrips, reloadJoinRequests } = useApp();
+  const lastScrollYRef = useRef(0);
+  const navbarHiddenRef = useRef(false);
+  const { trips, joinTrip, setActiveRoomId, profile, isLoggedIn, requestedTrips, setRequestedTrips, reloadJoinRequests, setNavbarHidden } = useApp();
   const insets = useSafeAreaInsets();
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
@@ -546,7 +548,23 @@ export default function SearchScreen() {
           </View>
         )}
 
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+          scrollEventThrottle={16}
+          onScroll={(e) => {
+            const y = e.nativeEvent.contentOffset.y;
+            const diff = y - lastScrollYRef.current;
+            if (diff > 10 && !navbarHiddenRef.current) {
+              navbarHiddenRef.current = true;
+              setNavbarHidden(true);
+            } else if (diff < -8 && navbarHiddenRef.current) {
+              navbarHiddenRef.current = false;
+              setNavbarHidden(false);
+            }
+            lastScrollYRef.current = y;
+          }}
+        >
           {/* ─── QUICK ACCESS GRID (VECTOR ICONS) ────────────────── */}
           <View style={styles.quickGrid}>
             {QUICK_ACCESS.map((item) => (
@@ -616,9 +634,7 @@ export default function SearchScreen() {
             const imageSource = typeof imageUri === 'string' ? { uri: imageUri } : imageUri;
             const isLiked = likedTrips.has(trip.id);
             const isMyTrip = isLoggedIn && (trip.isMyTrip === true || !!(profile && profile.id && trip.creatorId && trip.creatorId === profile.id));
-            if (trip.isMyTrip !== undefined || (trip.creatorId && profile?.id)) {
-              console.log(`[Search] trip="${trip.name}" isMyTrip=${isMyTrip} trip.isMyTrip=${trip.isMyTrip} trip.creatorId=${trip.creatorId} profile.id=${profile?.id} isLoggedIn=${isLoggedIn}`);
-            }
+
 
             return (
               <TouchableOpacity

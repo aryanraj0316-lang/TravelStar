@@ -54,7 +54,6 @@ roomMessages.set('trip-1', [
 const activeUserLocations = new Map<string, { latitude: number; longitude: number }>();
 
 io.on('connection', (socket) => {
-  console.log(`User connected: ${socket.id}`);
   const userId = socket.handshake.query.userId as string;
 
   if (userId) {
@@ -64,20 +63,28 @@ io.on('connection', (socket) => {
   // Join a trip chatroom
   socket.on('joinRoom', async (roomId: string) => {
     socket.join(roomId);
-    console.log(`Socket ${socket.id} joined room ${roomId}`);
     
     try {
       const dbMessages = await prisma.message.findMany({
         where: { chatRoomId: roomId },
-        include: { sender: { include: { profile: true } } },
+        include: {
+          sender: { include: { profile: true } },
+          chatRoom: { include: { trip: true } }
+        },
         orderBy: { createdAt: 'asc' },
       });
 
       const history = dbMessages.map((m: any) => {
-        const name = m.sender?.profile
-          ? `${m.sender.profile.firstName} ${m.sender.profile.lastName}`.trim()
-          : (m.sender?.email ? m.sender.email.split('@')[0] : 'System');
-        const role = m.sender?.role || 'Tourist';
+        let name = 'System';
+        let role = 'SYSTEM';
+
+        if (!m.isSystem) {
+          name = m.sender?.profile
+            ? `${m.sender.profile.firstName} ${m.sender.profile.lastName}`.trim()
+            : (m.sender?.email ? m.sender.email.split('@')[0] : 'Member');
+          role = m.senderId === m.chatRoom?.trip?.creatorId ? 'Organizer' : 'Tourist';
+        }
+
         return {
           id: m.id,
           senderName: name,
@@ -126,6 +133,7 @@ io.on('connection', (socket) => {
 
         const newMsg = {
           id: savedMsg.id,
+          senderId,
           senderName: data.senderName || 'Anonymous Traveler',
           senderRole: data.senderRole || 'Tourist',
           content: data.content,
@@ -182,7 +190,6 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    console.log(`User disconnected: ${socket.id}`);
   });
 });
 

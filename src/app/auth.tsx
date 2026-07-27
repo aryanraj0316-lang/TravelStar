@@ -53,7 +53,6 @@ export default function AuthScreen() {
   const [loading, setLoading] = useState(false);
 
   const handleFormSubmit = async () => {
-    console.log('[Auth] handleFormSubmit called, mode:', mode, 'email:', email);
     if (mode === 'LOGIN') {
       if (!email.trim() || !password.trim()) {
         Alert.alert('Required', 'Please enter your email and password');
@@ -61,16 +60,13 @@ export default function AuthScreen() {
       }
       setLoading(true);
       try {
-        console.log('[Auth] Attempting login with email:', email);
         const response = await apiService.login(email, password);
-        console.log('[Auth] Login response:', JSON.stringify(response));
         if (!response) {
           Alert.alert('Login Failed ❌', 'Invalid response from server.');
           return;
         }
         if (response.token) {
           await safeStorage.setItem('userToken', response.token);
-          console.log('[Auth] Token saved to storage');
         }
         const userObj = response.user;
         setCurrentRole(userObj.role || selectedRole);
@@ -82,7 +78,6 @@ export default function AuthScreen() {
           { text: 'Continue', onPress: () => router.replace('/') },
         ]);
       } catch (err: any) {
-        console.log('[Auth] Login error:', err?.message);
         Alert.alert('Login Failed ❌', err?.message || 'An error occurred during login.');
       } finally {
         setLoading(false);

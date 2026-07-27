@@ -365,4 +365,10 @@ export const apiService = {
   async getChatMessages(id: string): Promise<any[] | null> {
     return request<any[]>(`/chats/${id}/messages`);
   },
+
+  async markChatRead(id: string): Promise<any> {
+    return request(`/chats/${id}/read`, {
+      method: 'POST',
+    });
+  },
 };

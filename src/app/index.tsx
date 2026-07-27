@@ -601,26 +601,24 @@ export default function HomeScreen() {
   const infiniteTrendingDests = [...destinations, ...destinations];
 
   useEffect(() => {
-    let animFrameId: number;
+    if (destinations.length <= 1) return;
     const itemWidth = TRENDING_CARD_WIDTH + 12;
     const singleSetWidth = itemWidth * destinations.length;
 
-    const animate = () => {
+    const interval = setInterval(() => {
       if (!isInteractingRef.current) {
-        scrollXRef.current += 0.8;
+        scrollXRef.current += itemWidth;
         if (scrollXRef.current >= singleSetWidth) {
-          scrollXRef.current -= singleSetWidth;
+          scrollXRef.current = 0;
         }
-        trendingRef.current?.scrollTo({ x: scrollXRef.current, animated: false });
+        trendingRef.current?.scrollTo({ x: scrollXRef.current, animated: true });
 
         const currentDot = Math.floor(scrollXRef.current / itemWidth) % destinations.length;
         setActiveDot(currentDot);
       }
-      animFrameId = requestAnimationFrame(animate);
-    };
+    }, 3000);
 
-    animFrameId = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(animFrameId);
+    return () => clearInterval(interval);
   }, [destinations]);
 
   return (

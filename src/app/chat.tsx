@@ -98,6 +98,7 @@ interface CustomMessage {
   content: string;
   timestamp: string;
   isMe: boolean;
+  senderId?: string;
   type?: 'text' | 'image' | 'voice' | 'poll' | 'expense' | 'location' | 'sos';
   mediaUrl?: string;
   translations?: Record<string, string>;
@@ -405,18 +406,21 @@ interface ChatRoom {
   latestTime: string;
   unreadCount: number;
   badge?: string;
+  lastMessageAt?: string;
 }
 
 export default function ChatScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { trips, guides, profile, sosAlerts, triggerSOS, resolveSOS, activeRoomId, setActiveRoomId, messages, sendMessage, clearChatUnread, refreshTrips } = useApp();
+  const lastScrollYRef = useRef(0);
+  const navbarHiddenRef = useRef(false);
+  const { trips, guides, profile, sosAlerts, triggerSOS, resolveSOS, activeRoomId, setActiveRoomId, messages, sendMessage, clearChatUnread, refreshTrips, setNavbarHidden } = useApp();
 
   useEffect(() => {
     clearChatUnread();
     refreshTrips();
     loadInboxRooms();
-  }, [clearChatUnread]);
+  }, []);
 
   // Navigation States
   const selectedRoomId = activeRoomId;
@@ -468,6 +472,7 @@ export default function ChatScreen() {
           latestTime: r.latestTime,
           unreadCount: r.unreadCount || 0,
           badge: r.badge || 'Member',
+          lastMessageAt: r.lastMessageAt || new Date().toISOString(),
         }));
 
         setInboxRooms((prevRooms) => {
@@ -491,18 +496,30 @@ export default function ChatScreen() {
   // Load message history from DB
   useEffect(() => {
     if (selectedRoomId) {
+      apiService.markChatRead(selectedRoomId).then(() => {
+        setInboxRooms((prevRooms) =>
+          prevRooms.map((room) =>
+            room.id === selectedRoomId ? { ...room, unreadCount: 0 } : room
+          )
+        );
+      }).catch(() => {});
+
       apiService.getChatMessages(selectedRoomId).then((history: any[] | null) => {
         if (history && history.length > 0) {
-          const mappedHistory: CustomMessage[] = history.map((m: any) => ({
-            id: m.id,
-            senderName: m.senderName,
-            senderRole: m.senderRole,
-            avatar: m.senderName === profile.name ? profile.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
-            content: m.content,
-            timestamp: m.timestamp,
-            isMe: m.senderName === profile.name,
-            type: m.mediaType === 'IMAGE' ? 'image' : m.mediaType === 'VOICE' ? 'voice' : 'text',
-          }));
+          const mappedHistory: CustomMessage[] = history.map((m: any) => {
+            const isMe = m.senderId === profile.id || !!(profile.name && m.senderName === profile.name);
+            return {
+              id: m.id,
+              senderId: m.senderId,
+              senderName: m.senderName,
+              senderRole: m.senderRole,
+              avatar: isMe ? profile.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
+              content: m.content,
+              timestamp: m.timestamp,
+              isMe: isMe,
+              type: m.mediaType === 'IMAGE' ? 'image' : m.mediaType === 'VOICE' ? 'voice' : 'text',
+            };
+          });
 
           setTripMessages((prev) => ({
             ...prev,
@@ -517,6 +534,8 @@ export default function ChatScreen() {
                   ...room,
                   latestMessage: `${lastMsg.senderName === profile.name ? 'You' : lastMsg.senderName}: ${lastMsg.content}`,
                   latestTime: lastMsg.timestamp,
+                  unread: false,
+                  unreadCount: 0,
                 };
               }
               return room;
@@ -538,22 +557,41 @@ export default function ChatScreen() {
   useEffect(() => {
     if (messages.length > 0) {
       const latestMsg = messages[messages.length - 1];
-      const key = activeRoomId || 'trip-1';
+      const key = latestMsg.roomId || activeRoomId || 'trip-1';
       
       setTripMessages((prev) => {
         const roomMsgs = prev[key] || [];
         if (roomMsgs.some((m) => m.id === latestMsg.id)) {
           return prev;
         }
+
+        const isMe = latestMsg.senderId === profile.id || !!(profile.name && latestMsg.senderName === profile.name);
+        const dupIdx = isMe
+          ? roomMsgs.findIndex((m) => m.isMe && m.content === latestMsg.content && m.id.startsWith('msg-'))
+          : -1;
+
+        if (dupIdx >= 0) {
+          const updatedMsgs = [...roomMsgs];
+          updatedMsgs[dupIdx] = {
+            ...updatedMsgs[dupIdx],
+            id: latestMsg.id,
+            timestamp: latestMsg.timestamp,
+          };
+          return {
+            ...prev,
+            [key]: updatedMsgs,
+          };
+        }
         
         const newMsg: CustomMessage = {
           id: latestMsg.id,
+          senderId: latestMsg.senderId,
           senderName: latestMsg.senderName,
           senderRole: latestMsg.senderRole,
-          avatar: latestMsg.senderName === profile.name ? profile.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
+          avatar: isMe ? profile.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
           content: latestMsg.content,
           timestamp: latestMsg.timestamp,
-          isMe: latestMsg.senderName === profile.name,
+          isMe: isMe,
           type: latestMsg.mediaType === 'IMAGE' ? 'image' : latestMsg.mediaType === 'VOICE' ? 'voice' : 'text',
         };
         
@@ -570,7 +608,8 @@ export default function ChatScreen() {
               ...room,
               latestMessage: `${latestMsg.senderName === profile.name ? 'You' : latestMsg.senderName}: ${latestMsg.content}`,
               latestTime: latestMsg.timestamp,
-              unreadCount: 0,
+              unreadCount: room.id === activeRoomId ? 0 : room.unreadCount + 1,
+              lastMessageAt: new Date().toISOString(),
             };
           }
           return room;
@@ -730,6 +769,7 @@ export default function ChatScreen() {
         latestTime: 'Just Now',
         unreadCount: 0,
         badge: 'Organizer Trip',
+        lastMessageAt: new Date().toISOString(),
       }));
 
       return [...prevRooms, ...newRooms];
@@ -908,6 +948,7 @@ export default function ChatScreen() {
 
     const newMsg: CustomMessage = {
       id: `msg-${Date.now()}`,
+      senderId: profile.id,
       senderName: profile.name,
       senderRole: profile.role === 'TOURIST' ? 'Tourist' : 'Organizer',
       avatar: profile.avatar,
@@ -932,6 +973,7 @@ export default function ChatScreen() {
             latestMessage: `You: ${msgData.content || 'Attachment shared'}`,
             latestTime: newMsg.timestamp,
             unreadCount: 0,
+            lastMessageAt: new Date().toISOString(),
           };
         }
         return room;
@@ -1274,6 +1316,7 @@ export default function ChatScreen() {
       content: `🚨 SOS PANIC TRIGGERED by ${profile.name}! Needs immediate assistance.`,
       locationCoords: { latitude: lat, longitude: lng },
       resolved: false,
+      senderId: profile.id,
       senderName: profile.name,
       senderRole: 'Tourist',
       avatar: profile.avatar,
@@ -1337,7 +1380,12 @@ export default function ChatScreen() {
     .sort((a, b) => {
       const aPinned = pinnedRoomIds.has(a.id) ? 1 : 0;
       const bPinned = pinnedRoomIds.has(b.id) ? 1 : 0;
-      return bPinned - aPinned;
+      if (aPinned !== bPinned) {
+        return bPinned - aPinned;
+      }
+      const aTime = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+      const bTime = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+      return bTime - aTime;
     });
 
   // Find Room info of the selected room
@@ -1433,7 +1481,24 @@ export default function ChatScreen() {
         )}
 
         {/* Inbox Rooms Scroll List */}
-        <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 110 }}>
+        <ScrollView
+          style={{ flex: 1 }}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 110 }}
+          scrollEventThrottle={16}
+          onScroll={(e) => {
+            const y = e.nativeEvent.contentOffset.y;
+            const diff = y - lastScrollYRef.current;
+            if (diff > 10 && !navbarHiddenRef.current) {
+              navbarHiddenRef.current = true;
+              setNavbarHidden(true);
+            } else if (diff < -8 && navbarHiddenRef.current) {
+              navbarHiddenRef.current = false;
+              setNavbarHidden(false);
+            }
+            lastScrollYRef.current = y;
+          }}
+        >
           {filteredRooms.map((room) => {
             const hasUnread = room.unreadCount > 0;
 
@@ -1819,6 +1884,15 @@ export default function ChatScreen() {
               const hasTranslation = !!translatedMsgs.has(msg.id);
               const displayedContent = hasTranslation && msg.translations?.hindi ? msg.translations.hindi : msg.content;
               const isSOS = msg.type === 'sos';
+              const isSystem = msg.senderRole === 'SYSTEM' || msg.senderName === 'System';
+
+              if (isSystem) {
+                return (
+                  <View key={msg.id} style={styles.systemMessageContainer}>
+                    <Text style={styles.systemMessageText}>{displayedContent}</Text>
+                  </View>
+                );
+              }
 
               // Check if previous message was sent by the same sender using senderName as key
               const isConsecutive = idx > 0 && currentMessages[idx - 1].senderName === msg.senderName;
@@ -5218,5 +5292,20 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 102, 255, 0.1)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  systemMessageContainer: {
+    alignSelf: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 12,
+    marginVertical: 8,
+    maxWidth: '85%',
+  },
+  systemMessageText: {
+    color: '#94A3B8',
+    fontSize: 12,
+    textAlign: 'center',
+    fontWeight: '500',
   },
 });
