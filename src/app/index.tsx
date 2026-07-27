@@ -397,31 +397,30 @@ function FeaturedTripsCarousel() {
   const { trips, setActiveRoomId } = useApp();
   const router = useRouter();
   const carouselRef = useRef<ScrollView>(null);
-  const scrollX = useRef(0);
   const isInteracting = useRef(false);
+  const scrollX = useRef(0);
 
   const organizerTrips = trips;
+  const infiniteTrips = [...organizerTrips, ...organizerTrips, ...organizerTrips];
 
   useEffect(() => {
     if (organizerTrips.length <= 1) return;
 
-    let animFrameId: number;
-    const cardWidth = SCREEN_WIDTH - 40; // width of each card + padding margin
-    const totalWidth = (cardWidth + 10) * organizerTrips.length; // include gap
+    const cardWidth = SCREEN_WIDTH - 40;
+    const stepWidth = cardWidth + 10;
+    const singleSetWidth = stepWidth * organizerTrips.length;
 
-    const animate = () => {
+    const interval = setInterval(() => {
       if (!isInteracting.current) {
-        scrollX.current += 0.8;
-        if (scrollX.current >= totalWidth) {
-          scrollX.current = 0;
+        scrollX.current += 0.85;
+        if (scrollX.current >= singleSetWidth) {
+          scrollX.current -= singleSetWidth;
         }
         carouselRef.current?.scrollTo({ x: scrollX.current, animated: false });
       }
-      animFrameId = requestAnimationFrame(animate);
-    };
+    }, 30);
 
-    animFrameId = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(animFrameId);
+    return () => clearInterval(interval);
   }, [organizerTrips]);
 
   const getTripImage = (id: string, name: string) => {
@@ -445,15 +444,20 @@ function FeaturedTripsCarousel() {
       <ScrollView
         ref={carouselRef}
         horizontal
-        pagingEnabled
         showsHorizontalScrollIndicator={false}
         onTouchStart={() => { isInteracting.current = true; }}
         onTouchEnd={() => { setTimeout(() => { isInteracting.current = false; }, 1200); }}
         onScrollBeginDrag={() => { isInteracting.current = true; }}
         onScrollEndDrag={() => { setTimeout(() => { isInteracting.current = false; }, 1200); }}
+        onScroll={(e) => {
+          if (isInteracting.current) {
+            scrollX.current = e.nativeEvent.contentOffset.x;
+          }
+        }}
+        scrollEventThrottle={16}
         contentContainerStyle={{ paddingHorizontal: 20, gap: 10 }}
       >
-        {organizerTrips.map((trip) => {
+        {infiniteTrips.map((trip, idx) => {
           const imageUri = getTripImage(trip.id, trip.name);
           const durationText = trip.id === 'trip-1' ? '7 Nights / 8 Days' :
             trip.id === 'trip-2' ? '10 Nights / 11 Days' :
@@ -462,7 +466,7 @@ function FeaturedTripsCarousel() {
 
           return (
             <TouchableOpacity
-              key={trip.id}
+              key={`${trip.id}-${idx}`}
               activeOpacity={0.85}
               onPress={() => {
                 router.push('/search');
@@ -570,6 +574,7 @@ export default function HomeScreen() {
   const scrollXRef = useRef(0);
   const isInteractingRef = useRef(false);
   const lastScrollYRef = useRef(0);
+  const scrollAccumulatorRef = useRef(0);
   const navbarHiddenRef = useRef(false);
 
   // ── Dynamic DB state ──────────────────────────────────────────────
@@ -603,23 +608,21 @@ export default function HomeScreen() {
   useEffect(() => {
     if (destinations.length <= 1) return;
     const itemWidth = TRENDING_CARD_WIDTH + 12;
-    const singleSetWidth = itemWidth * destinations.length;
 
     const interval = setInterval(() => {
       if (!isInteractingRef.current) {
-        scrollXRef.current += itemWidth;
-        if (scrollXRef.current >= singleSetWidth) {
-          scrollXRef.current = 0;
+        let nextDot = activeDot + 1;
+        if (nextDot >= destinations.length) {
+          nextDot = 0;
         }
+        setActiveDot(nextDot);
+        scrollXRef.current = nextDot * itemWidth;
         trendingRef.current?.scrollTo({ x: scrollXRef.current, animated: true });
-
-        const currentDot = Math.floor(scrollXRef.current / itemWidth) % destinations.length;
-        setActiveDot(currentDot);
       }
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [destinations]);
+  }, [destinations, activeDot]);
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
@@ -631,15 +634,36 @@ export default function HomeScreen() {
         onScroll={(e) => {
           const y = e.nativeEvent.contentOffset.y;
           const diff = y - lastScrollYRef.current;
-          if (diff > 10 && !navbarHiddenRef.current) {
-            // Scrolling down — hide navbar
+          
+          if (y <= 15) {
+            if (navbarHiddenRef.current) {
+              navbarHiddenRef.current = false;
+              setNavbarHidden(false);
+            }
+            scrollAccumulatorRef.current = 0;
+            lastScrollYRef.current = y;
+            return;
+          }
+
+          const currentDirection = diff > 0 ? 'down' : 'up';
+          const lastDirection = scrollAccumulatorRef.current > 0 ? 'down' : scrollAccumulatorRef.current < 0 ? 'up' : null;
+
+          if (lastDirection && currentDirection !== lastDirection) {
+            scrollAccumulatorRef.current = 0;
+          }
+
+          scrollAccumulatorRef.current += diff;
+
+          if (scrollAccumulatorRef.current > 30 && !navbarHiddenRef.current) {
             navbarHiddenRef.current = true;
             setNavbarHidden(true);
-          } else if (diff < -8 && navbarHiddenRef.current) {
-            // Scrolling up — show navbar
+            scrollAccumulatorRef.current = 0;
+          } else if (scrollAccumulatorRef.current < -15 && navbarHiddenRef.current) {
             navbarHiddenRef.current = false;
             setNavbarHidden(false);
+            scrollAccumulatorRef.current = 0;
           }
+
           lastScrollYRef.current = y;
         }}
       >
@@ -876,6 +900,8 @@ export default function HomeScreen() {
         <ScrollView
           ref={trendingRef}
           horizontal
+          snapToInterval={TRENDING_CARD_WIDTH + 12}
+          decelerationRate="fast"
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.trendingRow}
           scrollEventThrottle={16}
@@ -895,6 +921,13 @@ export default function HomeScreen() {
             setTimeout(() => {
               isInteractingRef.current = false;
             }, 1200);
+          }}
+          onMomentumScrollEnd={(e) => {
+            const x = e.nativeEvent.contentOffset.x;
+            scrollXRef.current = x;
+            const currentIdx = Math.round(x / (TRENDING_CARD_WIDTH + 12)) % destinations.length;
+            setActiveDot(currentIdx);
+            isInteractingRef.current = false;
           }}
         >
           {infiniteTrendingDests.map((dest, index) => (
@@ -921,12 +954,14 @@ export default function HomeScreen() {
               {/* Hanging Vertical Ribbon Tag for Rank */}
               <View style={styles.rankRibbonWrap}>
                 <LinearGradient
-                  colors={['#475569', '#334155', '#1E293B']}
+                  colors={['#FFD700', '#F59E0B', '#B45309']}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 0, y: 1 }}
                   style={styles.rankRibbonBody}
                 >
-                  <Text style={styles.rankRibbonText}>{dest.id}</Text>
+                  <Text style={styles.rankRibbonText}>
+                    #{destinations.length > 0 ? (index % destinations.length) + 1 : index + 1}
+                  </Text>
                 </LinearGradient>
               </View>
               {/* Heart Button */}

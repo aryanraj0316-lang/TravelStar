@@ -38,6 +38,8 @@ import {
   Text,
   TouchableOpacity,
   View,
+  StatusBar,
+  LayoutAnimation,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
@@ -207,8 +209,7 @@ function buildMapHTML(tileKey: string, routeCoords: typeof ROUTE_COORDS) {
         background: #0D1117;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       }
-      .leaflet-control-attribution { display: none !important; }
-      .leaflet-control-zoom { display: none !important; }
+      .leaflet-control-container { display: none !important; }
 
       .leaflet-popup-content-wrapper {
         background: rgba(13, 17, 23, 0.95) !important;
@@ -848,6 +849,16 @@ export default function MapScreen() {
   let activeTrip = trips.find((t) => t.id === tripId);
 
   const [bottomCardHeight, setBottomCardHeight] = useState(180);
+  const panelTranslateY = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.spring(panelTranslateY, {
+      toValue: showNavigationOverlay ? (bottomCardHeight + 50) : 0,
+      friction: 8,
+      tension: 50,
+      useNativeDriver: true,
+    }).start();
+  }, [showNavigationOverlay, bottomCardHeight]);
 
   // Dynamic bottom offset for SOS button based on panel height measurements
   const sosBottomOffset = 16 + bottomCardHeight + 12;
@@ -984,6 +995,7 @@ export default function MapScreen() {
 
   return (
     <View style={styles.screenRoot}>
+      <StatusBar hidden={true} />
       <View style={styles.mapContainer}>
         {/* LEAFLET WEBVIEW */}
         <WebView
@@ -1211,8 +1223,13 @@ export default function MapScreen() {
 
 
         {/* BOTTOM TRIP INFO CARD / SEGMENT NAVIGATION CARD */}
-        <View
-          style={styles.bottomCardContainer}
+        <Animated.View
+          style={[
+            styles.bottomCardContainer,
+            {
+              transform: [{ translateY: panelTranslateY }],
+            }
+          ]}
           onLayout={(e) => {
             const { height } = e.nativeEvent.layout;
             if (height > 0) {
@@ -1239,7 +1256,10 @@ export default function MapScreen() {
 
                 {/* Main Panel Collapse/Expand Toggle Button */}
                 <TouchableOpacity
-                  onPress={() => setIsMainPanelCollapsed(!isMainPanelCollapsed)}
+                  onPress={() => {
+                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                    setIsMainPanelCollapsed(!isMainPanelCollapsed);
+                  }}
                   activeOpacity={0.8}
                   style={{ width: 28, height: 28, borderRadius: 14, overflow: 'hidden', marginLeft: 8 }}
                 >
@@ -1368,7 +1388,10 @@ export default function MapScreen() {
                       {/* Compact Switcher Chevrons removed */}
 
                       <TouchableOpacity
-                        onPress={() => setIsBottomPanelCollapsed(!isBottomPanelCollapsed)}
+                        onPress={() => {
+                          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                          setIsBottomPanelCollapsed(!isBottomPanelCollapsed);
+                        }}
                         activeOpacity={0.8}
                         style={{ width: 28, height: 28, borderRadius: 14, overflow: 'hidden', marginRight: 6 }}
                       >
@@ -1464,7 +1487,7 @@ export default function MapScreen() {
               })()}
             </LinearGradient>
           )}
-        </View>
+        </Animated.View>
 
 
 

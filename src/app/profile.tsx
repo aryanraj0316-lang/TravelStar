@@ -137,6 +137,7 @@ export default function ProfileScreen() {
   } = useApp();
 
   const lastScrollYRef = useRef(0);
+  const scrollAccumulatorRef = useRef(0);
   const navbarHiddenRef = useRef(false);
 
   // Navigation tab state
@@ -399,13 +400,36 @@ export default function ProfileScreen() {
         onScroll={(e) => {
           const y = e.nativeEvent.contentOffset.y;
           const diff = y - lastScrollYRef.current;
-          if (diff > 10 && !navbarHiddenRef.current) {
+          
+          if (y <= 15) {
+            if (navbarHiddenRef.current) {
+              navbarHiddenRef.current = false;
+              setNavbarHidden(false);
+            }
+            scrollAccumulatorRef.current = 0;
+            lastScrollYRef.current = y;
+            return;
+          }
+
+          const currentDirection = diff > 0 ? 'down' : 'up';
+          const lastDirection = scrollAccumulatorRef.current > 0 ? 'down' : scrollAccumulatorRef.current < 0 ? 'up' : null;
+
+          if (lastDirection && currentDirection !== lastDirection) {
+            scrollAccumulatorRef.current = 0;
+          }
+
+          scrollAccumulatorRef.current += diff;
+
+          if (scrollAccumulatorRef.current > 30 && !navbarHiddenRef.current) {
             navbarHiddenRef.current = true;
             setNavbarHidden(true);
-          } else if (diff < -8 && navbarHiddenRef.current) {
+            scrollAccumulatorRef.current = 0;
+          } else if (scrollAccumulatorRef.current < -15 && navbarHiddenRef.current) {
             navbarHiddenRef.current = false;
             setNavbarHidden(false);
+            scrollAccumulatorRef.current = 0;
           }
+
           lastScrollYRef.current = y;
         }}
       >
