@@ -36,9 +36,10 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { eventBus } from '@/services/event-bus';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const TRENDING_CARD_WIDTH = SCREEN_WIDTH * 0.52;
@@ -585,9 +586,18 @@ export default function HomeScreen() {
   const [unreadNotif, setUnreadNotif] = useState(false);
 
   useEffect(() => {
-    // Fetch all homepage data from backend database
-    apiService.getStories().then((data) => {
-      if (data && data.length > 0) setStories(data);
+    // Fetch unified feed (stories + guide reels merged) from backend
+    apiService.getFeed(20).then((res) => {
+      if (res && Array.isArray(res) && res.length > 0) {
+        setStories(res);
+      } else if (res && res.data && Array.isArray(res.data) && res.data.length > 0) {
+        setStories(res.data);
+      }
+    }).catch(() => {
+      // Fallback to stories-only if feed endpoint unavailable
+      apiService.getStories().then((data) => {
+        if (data && data.length > 0) setStories(data);
+      });
     });
     apiService.getDestinations().then((data) => {
       if (data && data.length > 0) setDestinations(data);
@@ -638,30 +648,18 @@ export default function HomeScreen() {
           if (y <= 15) {
             if (navbarHiddenRef.current) {
               navbarHiddenRef.current = false;
-              setNavbarHidden(false);
+              eventBus.emit('toggleNavbar', false);
             }
-            scrollAccumulatorRef.current = 0;
             lastScrollYRef.current = y;
             return;
           }
 
-          const currentDirection = diff > 0 ? 'down' : 'up';
-          const lastDirection = scrollAccumulatorRef.current > 0 ? 'down' : scrollAccumulatorRef.current < 0 ? 'up' : null;
-
-          if (lastDirection && currentDirection !== lastDirection) {
-            scrollAccumulatorRef.current = 0;
-          }
-
-          scrollAccumulatorRef.current += diff;
-
-          if (scrollAccumulatorRef.current > 30 && !navbarHiddenRef.current) {
+          if (diff > 0.01 && !navbarHiddenRef.current) {
             navbarHiddenRef.current = true;
-            setNavbarHidden(true);
-            scrollAccumulatorRef.current = 0;
-          } else if (scrollAccumulatorRef.current < -15 && navbarHiddenRef.current) {
+            eventBus.emit('toggleNavbar', true);
+          } else if (diff < -0.01 && navbarHiddenRef.current) {
             navbarHiddenRef.current = false;
-            setNavbarHidden(false);
-            scrollAccumulatorRef.current = 0;
+            eventBus.emit('toggleNavbar', false);
           }
 
           lastScrollYRef.current = y;

@@ -193,7 +193,7 @@ export default function NearbyTripsScreen() {
       if (places && places.length > 0) {
         setNearbyPlaces(places);
       }
-    });
+    }).catch(() => {});
   }, []);
 
   const showToast = (msg: string) => {

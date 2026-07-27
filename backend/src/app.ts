@@ -15,6 +15,7 @@ import weatherRoutes from './api/routes/weather';
 import alertRoutes from './api/routes/alerts';
 import interactionRoutes from './api/routes/interactions';
 import chatRoutes from './api/routes/chats';
+import feedRoutes from './api/routes/feed';
 import { errorHandler } from './middleware/error';
 
 dotenv.config();
@@ -54,6 +55,7 @@ app.use('/api/v1/weather', weatherRoutes);
 app.use('/api/v1/alerts', alertRoutes);
 app.use('/api/v1/interactions', interactionRoutes);
 app.use('/api/v1/chats', chatRoutes);
+app.use('/api/v1/feed', feedRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

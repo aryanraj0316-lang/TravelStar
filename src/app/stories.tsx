@@ -218,7 +218,11 @@ export default function StoriesScreen() {
       setCurrentIdx((prev) => prev + 1);
     } else {
       // Out of stories, navigate back
-      router.back();
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/');
+      }
     }
   };
 
@@ -324,7 +328,16 @@ export default function StoriesScreen() {
             <Text style={styles.locationText}>{storyLocation}</Text>
           </View>
         </View>
-        <TouchableOpacity style={styles.closeBtn} onPress={() => router.back()}>
+        <TouchableOpacity
+          style={styles.closeBtn}
+          onPress={() => {
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.replace('/');
+            }
+          }}
+        >
           <X size={20} color="#FFF" />
         </TouchableOpacity>
       </View>

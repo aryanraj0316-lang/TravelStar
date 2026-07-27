@@ -57,9 +57,10 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { eventBus } from '../services/event-bus';
 
 let ImagePicker: any = null;
 try {
@@ -1494,30 +1495,18 @@ export default function ChatScreen() {
             if (y <= 15) {
               if (navbarHiddenRef.current) {
                 navbarHiddenRef.current = false;
-                setNavbarHidden(false);
+                eventBus.emit('toggleNavbar', false);
               }
-              scrollAccumulatorRef.current = 0;
               lastScrollYRef.current = y;
               return;
             }
 
-            const currentDirection = diff > 0 ? 'down' : 'up';
-            const lastDirection = scrollAccumulatorRef.current > 0 ? 'down' : scrollAccumulatorRef.current < 0 ? 'up' : null;
-
-            if (lastDirection && currentDirection !== lastDirection) {
-              scrollAccumulatorRef.current = 0;
-            }
-
-            scrollAccumulatorRef.current += diff;
-
-            if (scrollAccumulatorRef.current > 30 && !navbarHiddenRef.current) {
+            if (diff > 0.01 && !navbarHiddenRef.current) {
               navbarHiddenRef.current = true;
-              setNavbarHidden(true);
-              scrollAccumulatorRef.current = 0;
-            } else if (scrollAccumulatorRef.current < -15 && navbarHiddenRef.current) {
+              eventBus.emit('toggleNavbar', true);
+            } else if (diff < -0.01 && navbarHiddenRef.current) {
               navbarHiddenRef.current = false;
-              setNavbarHidden(false);
-              scrollAccumulatorRef.current = 0;
+              eventBus.emit('toggleNavbar', false);
             }
 
             lastScrollYRef.current = y;

@@ -175,6 +175,7 @@ router.get('/:id/earnings', async (req, res) => {
         completedTripsCount,
         activeLeadsCount,
         chartData,
+        hasActivity: bookings.length > 0 || completedTripsCount > 0,
       }
     });
   } catch (err) {
@@ -373,4 +374,63 @@ router.post('/:id/live-status', async (req, res) => {
   }
 });
 
+// 6. Guide Leads — pending JoinRequests from trips matching guide expertise
+router.get('/:id/leads', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const guideProfile = await prisma.guideProfile.findUnique({
+      where: { id },
+    });
+
+    if (!guideProfile) {
+      return res.status(404).json({ status: 'error', message: 'Guide profile not found' });
+    }
+
+    const expertiseCities = guideProfile.expertisePlaces || [];
+
+    // Find pending join requests for trips that match guide's expertise cities
+    const joinRequests = await prisma.joinRequest.findMany({
+      where: {
+        status: 'PENDING',
+        trip: {
+          cities: {
+            hasSome: expertiseCities,
+          },
+        },
+      },
+      include: {
+        user: {
+          include: { profile: true },
+        },
+        trip: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    });
+
+    const leads = joinRequests.map((jr) => {
+      const profile = jr.user?.profile;
+      return {
+        id: jr.id,
+        name: profile ? `${profile.firstName} ${profile.lastName || ''}`.trim() : (jr.user?.email?.split('@')[0] || 'Traveler'),
+        avatar: profile?.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
+        destination: jr.trip?.cities?.join(' & ') || jr.trip?.name || 'Unknown',
+        groupSize: jr.trip?.totalSeats || 1,
+        durationDays: jr.trip?.durationDays || 1,
+        budget: jr.trip?.budget || 0,
+        startDate: jr.trip?.startDate ? new Date(jr.trip.startDate).toISOString().split('T')[0] : 'TBD',
+        description: jr.message || jr.trip?.description || 'Looking for a guide for this trip.',
+        status: 'PENDING' as const,
+        tripId: jr.tripId,
+      };
+    });
+
+    return res.status(200).json({ status: 'success', data: leads });
+  } catch (err) {
+    console.error('[Guides] Get leads error:', err);
+    return res.status(500).json({ status: 'error', message: 'Failed to retrieve leads' });
+  }
+});
+
 export default router;
+

@@ -168,11 +168,35 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Trigger SOS alarm
-  socket.on('triggerSOS', (data: { userId?: string; userName?: string; latitude: number; longitude: number }) => {
+  // Trigger SOS alarm — persist to DB AND broadcast
+  socket.on('triggerSOS', async (data: { userId?: string; userName?: string; latitude: number; longitude: number }) => {
     console.warn(`[SOS ALERT] User ${data.userName || data.userId || 'Guest'} triggered SOS at: ${data.latitude}, ${data.longitude}`);
+
+    let alertId = `sos-${Date.now()}`;
+    try {
+      // Find a valid userId for DB persistence
+      let resolvedUserId = data.userId;
+      if (!resolvedUserId) {
+        const firstUser = await prisma.user.findFirst();
+        resolvedUserId = firstUser?.id;
+      }
+
+      if (resolvedUserId) {
+        const dbAlert = await prisma.sOSAlert.create({
+          data: {
+            userId: resolvedUserId,
+            latitude: data.latitude,
+            longitude: data.longitude,
+          },
+        });
+        alertId = dbAlert.id;
+      }
+    } catch (e) {
+      console.warn('[SOS] DB persist failed, broadcasting anyway:', e);
+    }
+
     const alert = {
-      id: `sos-${Date.now()}`,
+      id: alertId,
       userName: data.userName || `User ${data.userId || 'Guest'}`,
       latitude: data.latitude,
       longitude: data.longitude,
@@ -184,8 +208,16 @@ io.on('connection', (socket) => {
     io.emit('sosReceived', alert);
   });
 
-  // Resolve SOS alarm
-  socket.on('resolveSOS', (data: { id: string }) => {
+  // Resolve SOS alarm — persist to DB AND broadcast
+  socket.on('resolveSOS', async (data: { id: string }) => {
+    try {
+      await prisma.sOSAlert.update({
+        where: { id: data.id },
+        data: { status: 'RESOLVED' },
+      });
+    } catch (e) {
+      console.warn('[SOS] DB resolve failed:', e);
+    }
     io.emit('sosResolved', { id: data.id });
   });
 

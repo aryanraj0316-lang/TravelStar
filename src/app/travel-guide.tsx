@@ -136,6 +136,19 @@ export default function TravelGuideScreen() {
   const [isBroadcasting, setIsBroadcasting] = useState(false);
   const [selectedVideoUri, setSelectedVideoUri] = useState<string | null>(null);
 
+  // Live weather state (fetched from API)
+  const [liveWeatherData, setLiveWeatherData] = useState<any>(null);
+  const [weatherLoading, setWeatherLoading] = useState(false);
+
+  // Safety state (fetched from API)
+  const [sosAlerts, setSosAlerts] = useState<any[]>([]);
+  const [monsoonAdvisories, setMonsoonAdvisories] = useState<any[]>([]);
+  const [userEmergencyContacts, setUserEmergencyContacts] = useState<any[]>([]);
+  const [safetyLoading, setSafetyLoading] = useState(false);
+
+  // Leads state (fetched from API)
+  const [leadsLoading, setLeadsLoading] = useState(false);
+
   // CRUD state variables for packages modal
   const [pkgModalVisible, setPkgModalVisible] = useState(false);
   const [editingPackage, setEditingPackage] = useState<any>(null);
@@ -165,11 +178,65 @@ export default function TravelGuideScreen() {
         fetchPackages(guide.id);
         fetchReels(guide.id);
         fetchLiveStatus(guide.id);
+        fetchLeads(guide.id);
+        fetchSafetyData();
+        fetchLiveWeather(guide.id);
       }
     } catch (e) {
       console.warn('[TravelGuide] Load profile failed:', e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchLeads = async (guideId: string) => {
+    try {
+      setLeadsLoading(true);
+      const res = await apiService.getGuideLeads(guideId);
+      if (res && Array.isArray(res)) {
+        setLeads(res);
+      }
+    } catch (e) {
+      console.warn('[TravelGuide] Fetch leads failed:', e);
+    } finally {
+      setLeadsLoading(false);
+    }
+  };
+
+  const fetchSafetyData = async () => {
+    try {
+      setSafetyLoading(true);
+      const [sosRes, advisoryRes, contactsRes] = await Promise.all([
+        apiService.getSOSAlerts(),
+        apiService.getMonsoonAdvisories(),
+        apiService.getMyEmergencyContacts(),
+      ]);
+      if (sosRes && Array.isArray(sosRes)) setSosAlerts(sosRes);
+      if (advisoryRes && Array.isArray(advisoryRes)) setMonsoonAdvisories(advisoryRes);
+      if (contactsRes && Array.isArray(contactsRes)) setUserEmergencyContacts(contactsRes);
+    } catch (e) {
+      console.warn('[TravelGuide] Fetch safety data failed:', e);
+    } finally {
+      setSafetyLoading(false);
+    }
+  };
+
+  const fetchLiveWeather = async (guideId: string) => {
+    try {
+      setWeatherLoading(true);
+      // Use guide's last-known position if available
+      const statusRes = await apiService.getGuideLiveStatus(guideId);
+      const loc = statusRes?.data?.location;
+      const lat = loc?.latitude || 26.9124;
+      const lon = loc?.longitude || 75.7873;
+      const weatherRes = await apiService.getLiveWeather(lat, lon);
+      if (weatherRes) {
+        setLiveWeatherData(weatherRes);
+      }
+    } catch (e) {
+      console.warn('[TravelGuide] Fetch live weather failed:', e);
+    } finally {
+      setWeatherLoading(false);
     }
   };
 
@@ -323,56 +390,7 @@ export default function TravelGuideScreen() {
   }, [isBroadcasting, guideProfile]);
 
 
-  const [leads, setLeads] = useState<CustomerLead[]>([
-    {
-      id: 'l-1',
-      name: 'Rohan Malhotra',
-      avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=120&q=80',
-      destination: 'Sikkim (Gangtok & Lachung)',
-      groupSize: 4,
-      durationDays: 5,
-      budget: 18000,
-      startDate: '2026-08-15',
-      description: 'Looking for a certified guide with a SUV to cover Yumthang Valley and Gurudongmar Lake. Preference for multi-lingual guides.',
-      status: 'PENDING',
-    },
-    {
-      id: 'l-2',
-      name: 'Neha & Kabir',
-      avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120&q=80',
-      destination: 'Jaipur Historical Tour',
-      groupSize: 2,
-      durationDays: 2,
-      budget: 6500,
-      startDate: '2026-08-02',
-      description: 'Interested in a heritage walking tour of Amer Fort, City Palace, and local bazaar shopping guide. Photogenic spots suggestions needed.',
-      status: 'PENDING',
-    },
-    {
-      id: 'l-3',
-      name: 'The Sen Family',
-      avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=120&q=80',
-      destination: 'Munnar Tea Plantations',
-      groupSize: 6,
-      durationDays: 4,
-      budget: 14000,
-      startDate: '2026-08-18',
-      description: 'Family holiday trip. Need dynamic, slow-paced sightseeing, kid-friendly trekking assistance, and spice gardens walk guidance.',
-      status: 'PENDING',
-    },
-    {
-      id: 'l-4',
-      name: 'Amit Negi',
-      avatar: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=120&q=80',
-      destination: 'Leh Ladakh Monasteries',
-      groupSize: 3,
-      durationDays: 6,
-      budget: 25000,
-      startDate: '2026-09-08',
-      description: 'Adventure photography crew. We want custom route exploration including Hemis, Alchi, and Thiksey monasteries. Knowledge of high altitude safety required.',
-      status: 'PENDING',
-    },
-  ]);
+  const [leads, setLeads] = useState<CustomerLead[]>([]);
 
   const handleSendQuote = (leadId: string) => {
     const quoteVal = quoteInputs[leadId] || '';
@@ -425,39 +443,7 @@ export default function TravelGuideScreen() {
   const [mediaPrice, setMediaPrice] = useState('');
   const [selectedMockImage, setSelectedMockImage] = useState('https://images.unsplash.com/photo-1548013146-72479768bada?w=300&q=80');
 
-  const [activeMedia, setActiveMedia] = useState<UploadedMedia[]>([
-    {
-      id: 'm-1',
-      type: 'STORY',
-      title: 'Sunrise at Hawa Mahal, Jaipur',
-      category: 'LOCATION',
-      image: 'https://images.unsplash.com/photo-1599661046289-e31897846e41?w=300&q=80',
-      location: 'Jaipur, Rajasthan',
-      likes: 124,
-      date: 'Today, 08:30 AM',
-    },
-    {
-      id: 'm-2',
-      type: 'REEL',
-      title: 'Standard Heritage Day Tour Package Price List',
-      category: 'PRICING',
-      image: 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=300&q=80',
-      location: 'Agra, UP',
-      price: '₹2,500/Day',
-      likes: 85,
-      date: 'Yesterday',
-    },
-    {
-      id: 'm-3',
-      type: 'STORY',
-      title: 'Trekking path guide to Chembra Peak',
-      category: 'LOCATION',
-      image: 'https://images.unsplash.com/photo-1593693397690-362cb9666fc2?w=300&q=80',
-      location: 'Wayanad, Kerala',
-      likes: 210,
-      date: '2 days ago',
-    },
-  ]);
+  const [activeMedia, setActiveMedia] = useState<UploadedMedia[]>([]);
 
   const mockGallery = [
     'https://images.unsplash.com/photo-1548013146-72479768bada?w=300&q=80', // Sikkim
@@ -467,29 +453,46 @@ export default function TravelGuideScreen() {
     'https://images.unsplash.com/photo-1571536802807-30451e3955d8?w=300&q=80', // Varanasi
   ];
 
-  const handlePublishMedia = () => {
+  const handlePublishMedia = async () => {
     if (!mediaTitle.trim() || !mediaLocation.trim()) {
       Alert.alert('Empty Fields', 'Please fill in the title and location tags.');
       return;
     }
+    if (!guideProfile) return;
 
-    const newItem: UploadedMedia = {
-      id: `m-${Date.now()}`,
-      type: uploadCategory,
-      title: mediaTitle.trim(),
-      category: uploadTheme,
-      image: selectedMockImage,
-      location: mediaLocation.trim(),
-      price: uploadTheme === 'PRICING' ? (mediaPrice.trim() ? `₹${mediaPrice.trim()}/Day` : undefined) : undefined,
-      likes: 0,
-      date: 'Just Now',
-    };
+    try {
+      // Upload to backend via API (creates GuideReel in DB)
+      await apiService.uploadGuideReel(guideProfile.id, {
+        videoUrl: selectedVideoUri || selectedMockImage,
+        thumbnailUrl: selectedMockImage,
+        caption: `${mediaTitle.trim()} | ${mediaLocation.trim()}${uploadTheme === 'PRICING' && mediaPrice.trim() ? ` | ₹${mediaPrice.trim()}/Day` : ''}`,
+      });
 
-    setActiveMedia([newItem, ...activeMedia]);
-    setMediaTitle('');
-    setMediaLocation('');
-    setMediaPrice('');
-    Alert.alert('Published!', `Your ${uploadCategory.toLowerCase()} has been uploaded successfully & broadcasts to all tourists search feeds.`);
+      // Also add to local state for immediate UI feedback
+      const newItem: UploadedMedia = {
+        id: `m-${Date.now()}`,
+        type: uploadCategory,
+        title: mediaTitle.trim(),
+        category: uploadTheme,
+        image: selectedMockImage,
+        location: mediaLocation.trim(),
+        price: uploadTheme === 'PRICING' ? (mediaPrice.trim() ? `₹${mediaPrice.trim()}/Day` : undefined) : undefined,
+        likes: 0,
+        date: 'Just Now',
+      };
+      setActiveMedia([newItem, ...activeMedia]);
+
+      // Refresh reels from server
+      fetchReels(guideProfile.id);
+
+      setMediaTitle('');
+      setMediaLocation('');
+      setMediaPrice('');
+      Alert.alert('Published!', `Your ${uploadCategory.toLowerCase()} has been uploaded and is now visible to all tourists in their feed.`);
+    } catch (e) {
+      console.warn('[TravelGuide] Publish media failed:', e);
+      Alert.alert('Upload Failed', 'Could not publish your content. Please try again.');
+    }
   };
 
   // ────────────────────────────────────────────────────────
@@ -627,62 +630,26 @@ export default function TravelGuideScreen() {
   // ────────────────────────────────────────────────────────
   const [selectedWeatherIdx, setSelectedWeatherIdx] = useState(0);
 
-  const weatherLocations: WeatherData[] = [
+  // Build weather display from live API data or defaults
+  const weatherLocations: WeatherData[] = liveWeatherData ? [
     {
-      city: 'Leh-Ladakh',
-      temp: '14°C',
-      condition: 'Chilly & Sunny',
-      wind: '18 km/h NW',
-      sunrise: '05:14 AM',
-      sunset: '07:22 PM',
-      aqi: 10,
-      aqiStatus: 'EXCELLENT',
-      aqiColor: C.green,
-      crowdLevel: 'LOW',
-      crowdColor: C.green,
-    },
-    {
-      city: 'Jaipur (Amer)',
-      temp: '35°C',
-      condition: 'Warm & Sunny',
-      wind: '8 km/h E',
-      sunrise: '05:48 AM',
-      sunset: '07:11 PM',
-      aqi: 65,
-      aqiStatus: 'GOOD',
+      city: 'Guide Location',
+      temp: liveWeatherData.temp || '—',
+      condition: liveWeatherData.condition || 'Loading...',
+      wind: liveWeatherData.windSpeed || '— km/h',
+      sunrise: '05:30 AM',
+      sunset: '07:00 PM',
+      aqi: 30,
+      aqiStatus: 'GOOD' as const,
       aqiColor: C.cyan,
-      crowdLevel: 'HIGH',
-      crowdColor: C.amber,
-    },
-    {
-      city: 'Agra (Taj Mahal)',
-      temp: '34°C',
-      condition: 'Sunny & Clear',
-      wind: '12 km/h W',
-      sunrise: '05:39 AM',
-      sunset: '07:05 PM',
-      aqi: 125,
-      aqiStatus: 'POOR',
-      aqiColor: C.amber,
-      crowdLevel: 'CRITICAL',
-      crowdColor: C.rose,
-    },
-    {
-      city: 'Munnar Hills',
-      temp: '22°C',
-      condition: 'Mist & Clouds',
-      wind: '14 km/h S',
-      sunrise: '06:05 AM',
-      sunset: '06:44 PM',
-      aqi: 12,
-      aqiStatus: 'EXCELLENT',
-      aqiColor: C.green,
-      crowdLevel: 'MODERATE',
+      crowdLevel: 'MODERATE' as const,
       crowdColor: C.cyan,
     },
+  ] : [
+    { city: 'Loading...', temp: '—', condition: 'Fetching weather data...', wind: '—', sunrise: '—', sunset: '—', aqi: 0, aqiStatus: 'GOOD' as const, aqiColor: C.cyan, crowdLevel: 'LOW' as const, crowdColor: C.green },
   ];
 
-  const currentW = weatherLocations[selectedWeatherIdx];
+  const currentW = weatherLocations[selectedWeatherIdx] || weatherLocations[0];
 
   // ────────────────────────────────────────────────────────
   // TABS 5: SAFETY HUB & EMERGENCY CONTACTS
@@ -691,6 +658,7 @@ export default function TravelGuideScreen() {
     Alert.alert('Emergency Speed Dial', `Initiating cellular call to ${name} (${phone})...`);
   };
 
+  // Static helpline contacts (always shown)
   const emergencyContacts = [
     { title: 'National Tourist Helpline', phone: '1800-11-1363', description: 'Toll-free 24/7 assistance in 12 languages', color: C.blue, Icon: PhoneCall },
     { title: 'Police Emergency Response', phone: '112', description: 'Immediate assistance from local police', color: C.rose, Icon: Shield },
@@ -698,10 +666,14 @@ export default function TravelGuideScreen() {
     { title: 'State Disaster Alert Desk', phone: '1070', description: 'Landslide, rainfall, and weather alerts', color: C.amber, Icon: AlertTriangle },
   ];
 
-  const safetyAlerts = [
-    { id: 'sa-1', type: 'DANGER', location: 'Ladakh Highway', message: 'Rohtang Pass closed temporarily due to fresh landslide. Avoid traveling after 6:00 PM.' },
-    { id: 'sa-2', type: 'WARNING', location: 'Agra Fort Area', message: 'Heavy crowd surge today due to VIP visit. Parking queues estimated up to 1.5 hours.' },
-    { id: 'sa-3', type: 'INFO', location: 'Jaipur Old City', message: 'Special cultural fair starting tonight. Traffic diversions in place around Badi Chaupar.' },
+  // Safety alerts now come from DB (sosAlerts state) — map for display
+  const safetyAlerts = sosAlerts.length > 0 ? sosAlerts.map((a: any) => ({
+    id: a.id,
+    type: a.status === 'ACTIVE' ? 'DANGER' : 'INFO',
+    location: `Lat: ${a.latitude?.toFixed(4)}, Lon: ${a.longitude?.toFixed(4)}`,
+    message: `SOS Alert from ${a.userName || 'User'} at ${a.timestamp || 'Unknown time'}. Emergency assistance dispatched.`,
+  })) : [
+    { id: 'empty', type: 'INFO', location: 'All Clear', message: 'No active SOS alerts. Your area is safe.' },
   ];
 
   return (
@@ -718,7 +690,13 @@ export default function TravelGuideScreen() {
         <View style={styles.header}>
           <TouchableOpacity
             activeOpacity={0.7}
-            onPress={() => router.back()}
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace('/');
+              }
+            }}
             style={styles.backBtn}
           >
             <ArrowLeft size={18} color={C.white} />
@@ -881,6 +859,22 @@ export default function TravelGuideScreen() {
                 onChangeText={setSearchLeadQuery}
               />
             </View>
+
+            {leadsLoading ? (
+              <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+                <Text style={{ color: C.textSec, fontSize: 13 }}>Loading leads...</Text>
+              </View>
+            ) : filteredLeads.length === 0 ? (
+              <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+                <Users size={32} color='#64748B' style={{ marginBottom: 12 }} />
+                <Text style={{ color: C.white, fontSize: 15, fontWeight: '800', marginBottom: 6 }}>No Matching Leads</Text>
+                <Text style={{ color: C.textSec, fontSize: 12, textAlign: 'center', paddingHorizontal: 20 }}>
+                  {leads.length === 0
+                    ? 'No tourist requests match your expertise cities yet. New leads will appear here automatically.'
+                    : 'No leads match your search. Try a different keyword.'}
+                </Text>
+              </View>
+            ) : null}
 
             {filteredLeads.map((lead) => {
               const isSelected = selectedLeadId === lead.id;

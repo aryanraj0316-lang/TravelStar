@@ -20,6 +20,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { eventBus } from '@/services/event-bus';
 import { useApp } from '@/store/AppContext';
 
 const TAB_ICONS: Record<string, typeof Home> = {
@@ -137,7 +138,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
   }, [activeIndex]);
 
   const { activeRoomId, navbarHidden, setNavbarHidden, pendingRequestsCount, hasUnreadChat, setActiveTabName } = useApp();
-  
+
   useEffect(() => {
     if (currentRouteName) {
       setActiveTabName(currentRouteName);
@@ -146,18 +147,27 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
 
   // ── Core slide in/out logic (downward slide) ────────────────────────────────
   useEffect(() => {
+    const unsub = eventBus.on('toggleNavbar', (hidden: boolean) => {
+      Animated.timing(dockSlideAnim, {
+        toValue: hidden ? 150 : 0,
+        duration: 100,
+        useNativeDriver: true,
+      }).start();
+    });
+    return unsub;
+  }, []);
+
+  useEffect(() => {
     if (navbarHidden) {
-      Animated.spring(dockSlideAnim, {
+      Animated.timing(dockSlideAnim, {
         toValue: 150,
-        friction: 8,
-        tension: 50,
+        duration: 100,
         useNativeDriver: true,
       }).start();
     } else {
-      Animated.spring(dockSlideAnim, {
+      Animated.timing(dockSlideAnim, {
         toValue: 0,
-        friction: 8,
-        tension: 50,
+        duration: 100,
         useNativeDriver: true,
       }).start();
     }
@@ -279,6 +289,7 @@ export default function AppTabs() {
       screenOptions={{
         headerShown: false,
         animation: 'fade',
+        lazy: true,
       }}
     >
       <Tabs.Screen name="index" options={{ title: 'Home' }} />

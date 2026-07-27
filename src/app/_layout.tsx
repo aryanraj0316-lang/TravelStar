@@ -8,11 +8,29 @@ import { AppProvider } from '@/store/AppContext';
 
 SplashScreen.preventAutoHideAsync();
 
+const CustomDarkTheme = {
+  ...DarkTheme,
+  colors: {
+    ...DarkTheme.colors,
+    background: '#060814',
+    card: '#111322',
+  },
+};
+
+const CustomLightTheme = {
+  ...DefaultTheme,
+  colors: {
+    ...DefaultTheme.colors,
+    background: '#060814',
+    card: '#111322',
+  },
+};
+
 export default function TabLayout() {
   const colorScheme = useColorScheme();
   return (
     <AppProvider>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <ThemeProvider value={colorScheme === 'dark' ? CustomDarkTheme : CustomLightTheme}>
         <AnimatedSplashOverlay />
         <AppTabs />
       </ThemeProvider>

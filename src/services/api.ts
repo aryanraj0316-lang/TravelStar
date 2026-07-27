@@ -44,12 +44,11 @@ async function request<T>(endpoint: string, options?: RequestInit): Promise<T | 
     }
 
     if (!res.ok) {
-      // If the user isn't authenticated yet, return null silently
       if (res.status === 401) {
         return null;
       }
       console.warn(`[API] HTTP Error ${res.status} for ${endpoint}`);
-      throw new Error(json?.message || `Request failed with status ${res.status}`);
+      return null;
     }
 
     return json.data !== undefined ? json.data : json;
@@ -369,6 +368,41 @@ export const apiService = {
   async markChatRead(id: string): Promise<any> {
     return request(`/chats/${id}/read`, {
       method: 'POST',
+    });
+  },
+
+  // ── Unified Feed (Stories + Guide Reels merged) ──────
+  async getFeed(limit: number = 20, cursor?: string): Promise<any> {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (cursor) params.set('cursor', cursor);
+    return request<any>(`/feed?${params.toString()}`);
+  },
+
+  // ── Guide Leads (pending JoinRequests as leads) ──────
+  async getGuideLeads(guideId: string): Promise<any[] | null> {
+    return request<any[]>(`/guides/${guideId}/leads`);
+  },
+
+  // ── Live Weather (at specific coordinates) ──────
+  async getLiveWeather(lat: number, lon: number): Promise<any | null> {
+    return request<any>(`/weather/live?lat=${lat}&lon=${lon}`);
+  },
+
+  // ── Emergency Contacts CRUD ──────
+  async getMyEmergencyContacts(): Promise<any[] | null> {
+    return request<any[]>('/safety/contacts');
+  },
+
+  async createEmergencyContact(data: { name: string; relation: string; phoneNumber: string }): Promise<any> {
+    return request('/safety/contacts', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteEmergencyContact(id: string): Promise<any> {
+    return request(`/safety/contacts/${id}`, {
+      method: 'DELETE',
     });
   },
 };

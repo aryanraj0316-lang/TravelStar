@@ -144,6 +144,96 @@ router.get('/', async (req, res) => {
   }
 });
 
+// Get Nearby Places / Trips
+router.get('/nearby', (req, res) => {
+  const nearbyPlaces = [
+    {
+      id: 'place-1',
+      name: 'Sultanpur Bird Sanctuary & Lake',
+      category: 'Nature & Wildlife',
+      distanceKm: 42,
+      driveTime: '1 hr 05 mins',
+      pricePerHead: 1800,
+      priceDiffText: '✨ SASTA TRIP (Minimal Expense - Save ₹3,100)',
+      isCheapest: true,
+      rating: 4.6,
+      reviewsCount: 1240,
+      imageUrl: 'https://images.unsplash.com/photo-1511497584788-876761c119ef?w=800&q=80',
+      shortDesc: 'Serene wetland lake sanctuary with migratory birds & peaceful walking trails.',
+      transportCost: 600,
+      stayMealCost: 1000,
+      entryCost: 200,
+    },
+    {
+      id: 'place-2',
+      name: 'Surajkund Heritage Lake & Asola Reserve',
+      category: 'Heritage & Nature',
+      distanceKm: 24,
+      driveTime: '35 mins',
+      pricePerHead: 2200,
+      priceDiffText: '📍 NEAREST LOCATION (Only 24 km away)',
+      isNearest: true,
+      rating: 4.5,
+      reviewsCount: 890,
+      imageUrl: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&q=80',
+      shortDesc: 'Ancient 10th-century amphitheater reservoir surrounded by lush green hills.',
+      transportCost: 500,
+      stayMealCost: 1500,
+      entryCost: 200,
+    },
+    {
+      id: 'place-3',
+      name: 'Agra Taj Mahal & Agra Fort',
+      category: 'World Wonder Heritage',
+      distanceKm: 210,
+      driveTime: '3 hrs 15 mins (Expressway)',
+      pricePerHead: 4900,
+      priceDiffText: '👑 BEST RATED #1 DESTINATION (4.9★)',
+      isBestRated: true,
+      rating: 4.9,
+      reviewsCount: 4820,
+      imageUrl: 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=800&q=80',
+      shortDesc: 'Iconic marble monument of eternal love & Mughal grand citadel fort.',
+      transportCost: 1800,
+      stayMealCost: 2500,
+      entryCost: 600,
+    },
+    {
+      id: 'place-4',
+      name: 'Neemrana Fort Palace & Zipline',
+      category: 'Royal Heritage & Adventure',
+      distanceKm: 122,
+      driveTime: '2 hrs 10 mins',
+      pricePerHead: 3800,
+      priceDiffText: '+₹2,000 vs Sasta Trip',
+      rating: 4.7,
+      reviewsCount: 2150,
+      imageUrl: 'https://images.unsplash.com/photo-1585123334904-845d60e97b29?w=800&q=80',
+      shortDesc: '15th-century cliffside palace with flying-fox zipline over Rajasthan hills.',
+      transportCost: 1200,
+      stayMealCost: 2100,
+      entryCost: 500,
+    },
+    {
+      id: 'place-5',
+      name: 'Rishikesh Ganga Ghats & Rafting',
+      category: 'Adventure & Yoga Capital',
+      distanceKm: 240,
+      driveTime: '4 hrs 20 mins',
+      pricePerHead: 3400,
+      priceDiffText: '+₹1,600 vs Sasta Trip',
+      rating: 4.8,
+      reviewsCount: 3910,
+      imageUrl: 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=800&q=80',
+      shortDesc: 'White-water river rafting on River Ganges & evening divine Ganga Aarti.',
+      transportCost: 1400,
+      stayMealCost: 1600,
+      entryCost: 400,
+    },
+  ];
+  res.status(200).json({ status: 'success', data: nearbyPlaces });
+});
+
 // Get Trip by ID
 router.get('/:id', async (req, res) => {
   const { id } = req.params;
@@ -502,95 +592,6 @@ router.post('/:id/midway-join', (req, res) => {
   });
 });
 
-// Get Nearby Places / Trips
-router.get('/nearby', (req, res) => {
-  const nearbyPlaces = [
-    {
-      id: 'place-1',
-      name: 'Sultanpur Bird Sanctuary & Lake',
-      category: 'Nature & Wildlife',
-      distanceKm: 42,
-      driveTime: '1 hr 05 mins',
-      pricePerHead: 1800,
-      priceDiffText: '✨ SASTA TRIP (Minimal Expense - Save ₹3,100)',
-      isCheapest: true,
-      rating: 4.6,
-      reviewsCount: 1240,
-      imageUrl: 'https://images.unsplash.com/photo-1511497584788-876761c119ef?w=800&q=80',
-      shortDesc: 'Serene wetland lake sanctuary with migratory birds & peaceful walking trails.',
-      transportCost: 600,
-      stayMealCost: 1000,
-      entryCost: 200,
-    },
-    {
-      id: 'place-2',
-      name: 'Surajkund Heritage Lake & Asola Reserve',
-      category: 'Heritage & Nature',
-      distanceKm: 24,
-      driveTime: '35 mins',
-      pricePerHead: 2200,
-      priceDiffText: '📍 NEAREST LOCATION (Only 24 km away)',
-      isNearest: true,
-      rating: 4.5,
-      reviewsCount: 890,
-      imageUrl: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&q=80',
-      shortDesc: 'Ancient 10th-century amphitheater reservoir surrounded by lush green hills.',
-      transportCost: 500,
-      stayMealCost: 1500,
-      entryCost: 200,
-    },
-    {
-      id: 'place-3',
-      name: 'Agra Taj Mahal & Agra Fort',
-      category: 'World Wonder Heritage',
-      distanceKm: 210,
-      driveTime: '3 hrs 15 mins (Expressway)',
-      pricePerHead: 4900,
-      priceDiffText: '👑 BEST RATED #1 DESTINATION (4.9★)',
-      isBestRated: true,
-      rating: 4.9,
-      reviewsCount: 4820,
-      imageUrl: 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=800&q=80',
-      shortDesc: 'Iconic marble monument of eternal love & Mughal grand citadel fort.',
-      transportCost: 1800,
-      stayMealCost: 2500,
-      entryCost: 600,
-    },
-    {
-      id: 'place-4',
-      name: 'Neemrana Fort Palace & Zipline',
-      category: 'Royal Heritage & Adventure',
-      distanceKm: 122,
-      driveTime: '2 hrs 10 mins',
-      pricePerHead: 3800,
-      priceDiffText: '+₹2,000 vs Sasta Trip',
-      rating: 4.7,
-      reviewsCount: 2150,
-      imageUrl: 'https://images.unsplash.com/photo-1585123334904-845d60e97b29?w=800&q=80',
-      shortDesc: '15th-century cliffside palace with flying-fox zipline over Rajasthan hills.',
-      transportCost: 1200,
-      stayMealCost: 2100,
-      entryCost: 500,
-    },
-    {
-      id: 'place-5',
-      name: 'Rishikesh Ganga Ghats & Rafting',
-      category: 'Adventure & Yoga Capital',
-      distanceKm: 240,
-      driveTime: '4 hrs 20 mins',
-      pricePerHead: 3400,
-      priceDiffText: '+₹1,600 vs Sasta Trip',
-      rating: 4.8,
-      reviewsCount: 3910,
-      imageUrl: 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=800&q=80',
-      shortDesc: 'White-water river rafting on River Ganges & evening divine Ganga Aarti.',
-      transportCost: 1400,
-      stayMealCost: 1600,
-      entryCost: 400,
-    },
-  ];
-  res.status(200).json({ status: 'success', data: nearbyPlaces });
-});
 
 // Get trip members by trip ID
 router.get('/:id/members', async (req, res) => {
@@ -613,6 +614,32 @@ router.get('/:id/members', async (req, res) => {
     });
 
     if (!trip) {
+      if (id === 'trip-1' || id === 'tour-1') {
+        const mockMembers = [
+          {
+            id: 'creator-u1',
+            userId: 'u1',
+            name: 'Aarav Sharma (Creator)',
+            avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+            isCreator: true,
+          },
+          {
+            id: 'member-u2',
+            userId: 'u2',
+            name: 'Priya Nair',
+            avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150',
+            isCreator: false,
+          },
+          {
+            id: 'member-u3',
+            userId: 'u3',
+            name: 'Vikram Singh',
+            avatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=150',
+            isCreator: false,
+          }
+        ];
+        return res.status(200).json({ status: 'success', data: mockMembers });
+      }
       return res.status(404).json({ status: 'error', message: 'Trip not found' });
     }
 

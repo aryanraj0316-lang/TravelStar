@@ -669,15 +669,28 @@ model Destination {
 }
 
 model WeatherLocation {
-  id        String   @id @default(uuid())
-  name      String
-  place     String
-  temp      String
-  condition String
-  aqi       String
-  humidity  String
-  image     String
-  createdAt DateTime @default(now())
+  id            String   @id @default(uuid())
+  name          String
+  place         String
+  temp          String
+  condition     String
+  aqi           String
+  humidity      String
+  image         String
+  lastFetchedAt DateTime @default(now())
+  latitude      Float?
+  longitude     Float?
+  createdAt     DateTime @default(now())
+}
+
+model MonsoonAdvisory {
+  id          String   @id @default(uuid())
+  region      String
+  severity    String   // 'HIGH' | 'MEDIUM' | 'LOW'
+  alertTitle  String
+  description String
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
 }
 
 model Alert {
