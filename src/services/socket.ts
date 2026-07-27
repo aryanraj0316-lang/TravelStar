@@ -5,12 +5,14 @@ import { getHostUrl } from './api';
 type MessageListener = (data: { roomId: string; message: any }) => void;
 type SOSListener = (data: any) => void;
 type LocationListener = (data: any) => void;
+type AddedToChatListener = (data: { tripId: string; chatRoomId: string; tripName: string }) => void;
 
 class SocketService {
   private socket: any = null;
   private messageListeners: MessageListener[] = [];
   private sosListeners: SOSListener[] = [];
   private locationListeners: LocationListener[] = [];
+  private addedToChatListeners: AddedToChatListener[] = [];
 
   connect() {
     if (this.socket && this.socket.connected) return;
@@ -31,6 +33,10 @@ class SocketService {
 
       this.socket.on('messageReceived', (data: any) => {
         this.messageListeners.forEach((l) => l(data));
+      });
+
+      this.socket.on('addedToChat', (data: any) => {
+        this.addedToChatListeners.forEach((l) => l(data));
       });
 
       this.socket.on('sosReceived', (data: any) => {
@@ -115,6 +121,13 @@ class SocketService {
     this.locationListeners.push(listener);
     return () => {
       this.locationListeners = this.locationListeners.filter((l) => l !== listener);
+    };
+  }
+
+  onAddedToChat(listener: AddedToChatListener) {
+    this.addedToChatListeners.push(listener);
+    return () => {
+      this.addedToChatListeners = this.addedToChatListeners.filter((l) => l !== listener);
     };
   }
 }

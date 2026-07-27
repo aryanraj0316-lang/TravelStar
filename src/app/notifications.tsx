@@ -451,7 +451,7 @@ export default function NotificationsScreen() {
               </View>
             </View>
 
-            {notifications.filter(n => n.type === 'JOIN_ACCEPTED').map((notif: any) => (
+            {notifications.filter(n => n.type === 'JOIN_ACCEPTED' || n.category === 'CHAT_ADDED' || n.category === 'JOIN_ACCEPTED').map((notif: any) => (
               <TouchableOpacity
                 key={notif.id}
                 style={[

@@ -1,4 +1,5 @@
-import { useApp } from '@/store/AppContext';
+import { apiService } from '../services/api';
+import { useApp } from '../store/AppContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import {
@@ -414,6 +415,7 @@ export default function ChatScreen() {
   useEffect(() => {
     clearChatUnread();
     refreshTrips();
+    loadInboxRooms();
   }, [clearChatUnread]);
 
   // Navigation States
@@ -451,6 +453,81 @@ export default function ChatScreen() {
   const [docSubtitle, setDocSubtitle] = useState('');
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
+
+  async function loadInboxRooms() {
+    try {
+      const res = await apiService.getChats();
+      if (res && res.length > 0) {
+        const loadedRooms: ChatRoom[] = res.map((r: any) => ({
+          id: r.id,
+          tripId: r.tripId,
+          name: r.name,
+          avatar: r.avatar,
+          type: r.type || 'GROUP',
+          latestMessage: r.latestMessage,
+          latestTime: r.latestTime,
+          unreadCount: r.unreadCount || 0,
+          badge: r.badge || 'Member',
+        }));
+
+        setInboxRooms((prevRooms) => {
+          const merged = [...prevRooms];
+          loadedRooms.forEach((lr) => {
+            const idx = merged.findIndex((mr) => mr.id === lr.id);
+            if (idx >= 0) {
+              merged[idx] = { ...merged[idx], ...lr };
+            } else {
+              merged.push(lr);
+            }
+          });
+          return merged;
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to load chat rooms from backend:', e);
+    }
+  };
+
+  // Load message history from DB
+  useEffect(() => {
+    if (selectedRoomId) {
+      apiService.getChatMessages(selectedRoomId).then((history: any[] | null) => {
+        if (history && history.length > 0) {
+          const mappedHistory: CustomMessage[] = history.map((m: any) => ({
+            id: m.id,
+            senderName: m.senderName,
+            senderRole: m.senderRole,
+            avatar: m.senderName === profile.name ? profile.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
+            content: m.content,
+            timestamp: m.timestamp,
+            isMe: m.senderName === profile.name,
+            type: m.mediaType === 'IMAGE' ? 'image' : m.mediaType === 'VOICE' ? 'voice' : 'text',
+          }));
+
+          setTripMessages((prev) => ({
+            ...prev,
+            [selectedRoomId]: mappedHistory,
+          }));
+
+          const lastMsg = history[history.length - 1];
+          setInboxRooms((prevRooms) =>
+            prevRooms.map((room) => {
+              if (room.id === selectedRoomId) {
+                return {
+                  ...room,
+                  latestMessage: `${lastMsg.senderName === profile.name ? 'You' : lastMsg.senderName}: ${lastMsg.content}`,
+                  latestTime: lastMsg.timestamp,
+                };
+              }
+              return room;
+            })
+          );
+        }
+      }).catch((e: any) => {
+        console.warn('Failed to load chat messages:', e);
+      });
+    }
+  }, [selectedRoomId]);
 
   // Reset tab to chat when activeRoomId/selectedRoomId changes
   useEffect(() => {

@@ -73,7 +73,7 @@ io.on('connection', (socket) => {
         orderBy: { createdAt: 'asc' },
       });
 
-      const history = dbMessages.map((m) => {
+      const history = dbMessages.map((m: any) => {
         const name = m.sender?.profile
           ? `${m.sender.profile.firstName} ${m.sender.profile.lastName}`.trim()
           : (m.sender?.email ? m.sender.email.split('@')[0] : 'System');
@@ -134,7 +134,6 @@ io.on('connection', (socket) => {
         };
 
         io.to(roomId).emit('messageReceived', { roomId, message: newMsg });
-        io.emit('messageReceived', { roomId, message: newMsg });
       } catch (e) {
         console.warn('Error saving message to DB:', e);
         // Fallback: emit unsaved message to keep chat functional
@@ -147,7 +146,6 @@ io.on('connection', (socket) => {
           mediaType: data.mediaType || 'NONE',
         };
         io.to(roomId).emit('messageReceived', { roomId, message: newMsg });
-        io.emit('messageReceived', { roomId, message: newMsg });
       }
     }
   });

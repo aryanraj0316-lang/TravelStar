@@ -525,9 +525,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     });
 
+    const unsubAddedToChat = socketService.onAddedToChat((data) => {
+      setHasUnreadChat(true);
+      refreshTrips();
+      reloadJoinRequests();
+    });
+
     return () => {
       unsubMsg();
       unsubSOS();
+      unsubAddedToChat();
     };
   }, [activeRoomId, isLoggedIn, activeTabName]);
 
@@ -574,11 +581,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     apiService.getNotifications().then((notifs) => {
       if (notifs && notifs.length > 0) {
         const hasUnreadJoinAccepted = notifs.some(
-          (n: any) => n.type === 'JOIN_ACCEPTED' && n.unread === true
+          (n: any) => (n.type === 'JOIN_ACCEPTED' || n.category === 'CHAT_ADDED' || n.category === 'JOIN_ACCEPTED') && n.unread === true
         );
         if (hasUnreadJoinAccepted) {
           setHasUnreadChat(true);
         }
+      }
+    }).catch(() => {});
+  };
+
+  const checkUnreadChats = () => {
+    if (!isLoggedIn) return;
+    apiService.getChats().then((rooms) => {
+      if (rooms && rooms.length > 0) {
+        const hasUnread = rooms.some((r: any) => r.unread === true || r.unreadCount > 0);
+        setHasUnreadChat(hasUnread);
+      } else {
+        setHasUnreadChat(false);
       }
     }).catch(() => {});
   };
@@ -592,6 +611,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     reloadJoinRequests();
     reloadIncomingRequestsCount();
     checkUnreadNotifications();
+    checkUnreadChats();
   }, [isLoggedIn, profile?.id]);
 
   const updateProfile = (updated: Partial<UserProfile>) => {
@@ -630,15 +650,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 };
 
   const sendMessage = (content: string, mediaType: 'NONE' | 'IMAGE' | 'VOICE' = 'NONE') => {
-    const newMsg: Message = {
-      id: `m-${Date.now()}`,
-      senderName: profile.name,
-      senderRole: currentRole,
-      content,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      mediaType,
-    };
-    setMessages((prev) => [...prev, newMsg]);
     socketService.sendMessage(activeRoomId || 'trip-1', profile.name, currentRole, content, mediaType);
   };
 

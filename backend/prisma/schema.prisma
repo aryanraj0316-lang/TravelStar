@@ -247,8 +247,7 @@ model Trip {
   languages     String[]
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
-  chatRoomId    String?        @unique
-  chatRoom      ChatRoom?      @relation(fields: [chatRoomId], references: [id])
+  chatRoom      ChatRoom?
 
   members       TripMember[]
   requests      JoinRequest[]
@@ -472,7 +471,8 @@ model ChatRoom {
   createdAt DateTime         @default(now())
   members   ChatRoomMember[]
   messages  Message[]
-  trip      Trip?
+  tripId    String?          @unique
+  trip      Trip?            @relation(fields: [tripId], references: [id])
 }
 
 model ChatRoomMember {
@@ -651,6 +651,8 @@ model Notification {
   time       String
   unread     Boolean  @default(true)
   chatRoomId String?
+  tripId     String?
+  category   String?
   createdAt  DateTime @default(now())
 }
 

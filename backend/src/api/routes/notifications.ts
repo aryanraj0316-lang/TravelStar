@@ -74,35 +74,15 @@ async function queryWithRetry<T>(fn: () => Promise<T>, retries = 3, delay = 1500
 
 // Get all notifications
 router.get('/', async (req, res) => {
+  const tokenUserId = getUserIdFromReq(req);
+  if (!tokenUserId) {
+    return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+  }
   try {
-    const tokenUserId = getUserIdFromReq(req);
-
-    let list = await queryWithRetry(() => prisma.notification.findMany({
-      where: {
-        OR: [
-          { userId: null },
-          ...(tokenUserId ? [{ userId: tokenUserId }] : []),
-        ],
-      },
+    const list = await queryWithRetry(() => prisma.notification.findMany({
+      where: { userId: tokenUserId },
       orderBy: { createdAt: 'desc' },
     }));
-
-    if (list.length === 0) {
-      // Seed initially
-      await queryWithRetry(() => prisma.notification.createMany({
-        data: seedNotifications,
-      }));
-      list = await queryWithRetry(() => prisma.notification.findMany({
-        where: {
-          OR: [
-            { userId: null },
-            ...(tokenUserId ? [{ userId: tokenUserId }] : []),
-          ],
-        },
-        orderBy: { createdAt: 'desc' },
-      }));
-    }
-
     res.status(200).json({ status: 'success', data: list });
   } catch (err) {
     console.warn('[Postgres DB Warn] Get notifications failed:', err);

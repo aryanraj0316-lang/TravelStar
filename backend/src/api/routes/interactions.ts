@@ -267,8 +267,8 @@ router.get('/incoming-requests', async (req, res) => {
   }
 });
 
-// Update join request status (Accept/Decline)
-router.post('/join-request/:id/status', async (req, res) => {
+// Update join request status helper
+const handleStatusChange = async (req: any, res: any) => {
   const { id } = req.params;
   const { status } = req.body; // 'APPROVED' or 'REJECTED'
 
@@ -293,6 +293,10 @@ router.post('/join-request/:id/status', async (req, res) => {
 
     if (request.trip.creatorId !== tokenUserId) {
       return res.status(403).json({ status: 'error', message: 'Forbidden. You are not the creator of this trip.' });
+    }
+
+    if (status === 'APPROVED' && request.status !== 'PENDING') {
+      return res.status(400).json({ status: 'error', message: 'Join request is not pending' });
     }
 
     let targetChatRoomId: string | null = null;
@@ -329,26 +333,27 @@ router.post('/join-request/:id/status', async (req, res) => {
         });
       }
 
-      targetChatRoomId = request.trip.chatRoomId;
-      if (!targetChatRoomId) {
-        const room = await prisma.chatRoom.create({
+      // Find chat room associated with trip
+      let chatRoom = await prisma.chatRoom.findUnique({
+        where: { tripId: request.tripId }
+      });
+
+      if (!chatRoom) {
+        chatRoom = await prisma.chatRoom.create({
           data: {
             isGroup: true,
             name: request.trip.name,
+            tripId: request.tripId,
           },
         });
         await prisma.chatRoomMember.create({
           data: {
-            chatRoomId: room.id,
+            chatRoomId: chatRoom.id,
             userId: request.trip.creatorId,
           },
         });
-        await prisma.trip.update({
-          where: { id: request.tripId },
-          data: { chatRoomId: room.id },
-        });
-        targetChatRoomId = room.id;
       }
+      targetChatRoomId = chatRoom.id;
 
       await prisma.chatRoomMember.upsert({
         where: {
@@ -373,7 +378,7 @@ router.post('/join-request/:id/status', async (req, res) => {
         ? `${applicantUser.profile.firstName} ${applicantUser.profile.lastName}`.trim()
         : (applicantUser?.email ? applicantUser.email.split('@')[0] : 'Traveler');
 
-      const systemMsgContent = `${applicantName} has been added to the group chat.`;
+      const systemMsgContent = `${applicantName} has joined the group`;
 
       // Save system message to database
       await prisma.message.create({
@@ -399,17 +404,41 @@ router.post('/join-request/:id/status', async (req, res) => {
             mediaType: 'NONE',
           }
         });
+
+        // Emit addedToChat live socket event to user's personal room
+        io.to(request.userId).emit('addedToChat', {
+          tripId: request.tripId,
+          chatRoomId: targetChatRoomId,
+          tripName: request.trip.name,
+        });
       }
 
+      // 1. JOIN_ACCEPTED notification
       await prisma.notification.create({
         data: {
           userId: request.userId,
-          type: 'JOIN_ACCEPTED',
+          type: 'TRIP',
+          category: 'JOIN_ACCEPTED',
           title: 'Join Request Accepted 🎉',
-          content: `You've been added to "${request.trip.name}". Your group chat is ready!`,
+          content: `Your request to join ${request.trip.name} has been accepted!`,
+          time: 'Just now',
+          unread: true,
+          tripId: request.tripId,
+        },
+      });
+
+      // 2. CHAT_ADDED notification
+      await prisma.notification.create({
+        data: {
+          userId: request.userId,
+          type: 'TRIP',
+          category: 'CHAT_ADDED',
+          title: 'Added to Group Chat 💬',
+          content: `You've been added to the ${request.trip.name} group chat`,
           time: 'Just now',
           unread: true,
           chatRoomId: targetChatRoomId,
+          tripId: request.tripId,
         },
       });
     }
@@ -419,6 +448,17 @@ router.post('/join-request/:id/status', async (req, res) => {
     console.warn('[Interactions] Update join request status error:', err);
     return res.status(500).json({ status: 'error', message: 'Failed to update join request status' });
   }
+};
+
+// Update status endpoint
+router.post('/join-request/:id/status', async (req, res) => {
+  return handleStatusChange(req, res);
+});
+
+// Approve endpoint
+router.post('/join-request/:id/approve', async (req, res) => {
+  req.body.status = 'APPROVED';
+  return handleStatusChange(req, res);
 });
 
 export default router;

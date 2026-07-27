@@ -32,7 +32,8 @@ router.get('/', async (req, res) => {
       include: {
         creator: {
           include: { profile: true }
-        }
+        },
+        chatRoom: true
       },
       orderBy: {
         createdAt: 'desc'
@@ -65,7 +66,7 @@ router.get('/', async (req, res) => {
         creator: creatorName,
         creatorId: t.creatorId,
         isMyTrip: tokenUserId ? t.creatorId === tokenUserId : false,
-        chatRoomId: t.chatRoomId,
+        chatRoomId: t.chatRoom?.id || null,
         cities: t.cities,
         startDate: t.startDate.toISOString().split('T')[0],
         endDate: t.endDate.toISOString().split('T')[0],
@@ -153,7 +154,8 @@ router.get('/:id', async (req, res) => {
       include: {
         creator: {
           include: { profile: true }
-        }
+        },
+        chatRoom: true
       }
     });
     if (!t) {
@@ -187,7 +189,7 @@ router.get('/:id', async (req, res) => {
       creator: creatorName,
       creatorId: t.creatorId,
       isMyTrip: tokenUserId ? t.creatorId === tokenUserId : false,
-      chatRoomId: t.chatRoomId,
+      chatRoomId: t.chatRoom?.id || null,
       cities: t.cities,
       startDate: t.startDate.toISOString().split('T')[0],
       endDate: t.endDate.toISOString().split('T')[0],
@@ -281,23 +283,7 @@ router.post('/', async (req, res) => {
 
     // Create record in Neon PostgreSQL Database along with ChatRoom and Member in transaction
     const { newTrip, chatRoom } = await prisma.$transaction(async (tx) => {
-      // 1. Create chat room
-      const room = await tx.chatRoom.create({
-        data: {
-          isGroup: true,
-          name: name || 'Custom Indian Expedition',
-        },
-      });
-
-      // 2. Add creator to chat room
-      await tx.chatRoomMember.create({
-        data: {
-          chatRoomId: room.id,
-          userId: user.id,
-        },
-      });
-
-      // 3. Create trip associated with chat room
+      // 1. Create trip
       const trip = await tx.trip.create({
         data: {
           id: id || undefined,
@@ -320,8 +306,24 @@ router.post('/', async (req, res) => {
           languages: ['Hindi', 'English'],
           coverImage: coverImage || null,
           category: category || null,
+        }
+      });
+
+      // 2. Create chat room associated with trip
+      const room = await tx.chatRoom.create({
+        data: {
+          isGroup: true,
+          name: name || 'Custom Indian Expedition',
+          tripId: trip.id,
+        },
+      });
+
+      // 3. Add creator to chat room
+      await tx.chatRoomMember.create({
+        data: {
           chatRoomId: room.id,
-        } as any
+          userId: user.id,
+        },
       });
 
       return { newTrip: trip, chatRoom: room };
@@ -332,7 +334,7 @@ router.post('/', async (req, res) => {
       name: newTrip.name,
       creator: user.profile ? `${user.profile.firstName} ${user.profile.lastName} (Organizer)` : `${user.email} (Organizer)`,
       creatorId: user.id,
-      chatRoomId: newTrip.chatRoomId,
+      chatRoomId: chatRoom.id,
       cities: newTrip.cities,
       startDate: newTrip.startDate.toISOString().split('T')[0],
       endDate: newTrip.endDate.toISOString().split('T')[0],

@@ -595,7 +595,7 @@ export default function HomeScreen() {
     });
     apiService.getNotifications().then((data) => {
       if (data) setUnreadNotif(data.some((n: any) => n.unread));
-    });
+    }).catch(() => {});
   }, []);
 
   const infiniteTrendingDests = [...destinations, ...destinations];

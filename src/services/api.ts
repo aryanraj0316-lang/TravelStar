@@ -44,6 +44,10 @@ async function request<T>(endpoint: string, options?: RequestInit): Promise<T | 
     }
 
     if (!res.ok) {
+      // If the user isn't authenticated yet, return null silently
+      if (res.status === 401) {
+        return null;
+      }
       console.warn(`[API] HTTP Error ${res.status} for ${endpoint}`);
       throw new Error(json?.message || `Request failed with status ${res.status}`);
     }
@@ -347,5 +351,18 @@ export const apiService = {
       method: 'POST',
       body: JSON.stringify(coords),
     });
+  },
+
+  // Chats
+  async getChats(): Promise<any[] | null> {
+    return request<any[]>('/chats');
+  },
+
+  async getChatDetails(id: string): Promise<any | null> {
+    return request<any>(`/chats/${id}`);
+  },
+
+  async getChatMessages(id: string): Promise<any[] | null> {
+    return request<any[]>(`/chats/${id}/messages`);
   },
 };

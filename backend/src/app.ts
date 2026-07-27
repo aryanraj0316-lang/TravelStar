@@ -14,6 +14,7 @@ import destinationRoutes from './api/routes/destinations';
 import weatherRoutes from './api/routes/weather';
 import alertRoutes from './api/routes/alerts';
 import interactionRoutes from './api/routes/interactions';
+import chatRoutes from './api/routes/chats';
 import { errorHandler } from './middleware/error';
 
 dotenv.config();
@@ -35,7 +36,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Rate limiter: prevent brute force & DOS
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 300,
+  max: 1000,
   message: 'Too many requests from this IP, please try again after 15 minutes',
 });
 app.use('/api/', limiter);
@@ -52,6 +53,7 @@ app.use('/api/v1/destinations', destinationRoutes);
 app.use('/api/v1/weather', weatherRoutes);
 app.use('/api/v1/alerts', alertRoutes);
 app.use('/api/v1/interactions', interactionRoutes);
+app.use('/api/v1/chats', chatRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
