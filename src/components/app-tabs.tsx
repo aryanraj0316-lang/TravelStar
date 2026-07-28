@@ -303,7 +303,7 @@ export default function AppTabs() {
           pagingEnabled
           showsHorizontalScrollIndicator={false}
           bounces={false}
-          scrollEnabled={activeTabName !== 'map'}
+          scrollEnabled={false}
           onMomentumScrollEnd={onScrollEnd}
           contentOffset={{ x: activeIdx * SCREEN_WIDTH, y: 0 }}
           style={{ flex: 1 }}

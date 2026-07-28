@@ -75,7 +75,16 @@ export default function AuthScreen() {
         // Refresh trips with new token so isMyTrip is correctly computed
         setTimeout(() => refreshTrips(), 300);
         Alert.alert('Welcome Back! 👋', 'Logged in successfully', [
-          { text: 'Continue', onPress: () => router.replace('/') },
+          {
+            text: 'Continue',
+            onPress: () => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace('/');
+              }
+            }
+          },
         ]);
       } catch (err: any) {
         Alert.alert('Login Failed ❌', err?.message || 'An error occurred during login.');
@@ -112,7 +121,16 @@ export default function AuthScreen() {
         setTimeout(() => refreshTrips(), 300);
 
         Alert.alert('Account Created 🎉', 'Welcome to TravelConnect India!', [
-          { text: 'Start Exploring', onPress: () => router.replace('/') },
+          {
+            text: 'Start Exploring',
+            onPress: () => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace('/');
+              }
+            }
+          },
         ]);
       } catch (err: any) {
         Alert.alert('Signup Failed ❌', err?.message || 'An error occurred during registration.');

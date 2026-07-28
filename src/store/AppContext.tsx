@@ -173,6 +173,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
   const logout = () => {
     setIsLoggedIn(false);
+    setRequestedTrips(new Set());
+    setPendingRequestsCount(0);
+    setActiveRoomId(null);
+    setMessages([]);
+    setHasUnreadChat(false);
+    setSosAlerts([]);
+    socketService.disconnect();
+
     setProfile((prev) => {
       const nextProfile = {
         ...prev,
@@ -498,6 +506,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // ── Reactive: refresh trips, join requests, and socket when login/room changes ──
   useEffect(() => {
+    if (!isLoggedIn) {
+      socketService.disconnect();
+      return;
+    }
+
     socketService.connect();
     if (activeRoomId) {
       socketService.joinRoom(activeRoomId);

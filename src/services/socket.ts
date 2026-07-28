@@ -68,6 +68,13 @@ class SocketService {
     }
   }
 
+  disconnect() {
+    if (this.socket) {
+      this.socket.disconnect();
+      this.socket = null;
+    }
+  }
+
   joinRoom(roomId: string) {
     if (this.socket) {
       this.socket.emit('joinRoom', roomId);
