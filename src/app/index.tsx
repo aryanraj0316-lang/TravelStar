@@ -836,11 +836,6 @@ function HomeScreen() {
                   <Image source={{ uri: story.coverImg }} style={styles.storyImage} />
                 </View>
               </LinearGradient>
-              {story.hasReel && (
-                <View style={styles.reelBadge}>
-                  <Text style={styles.reelBadgeText}>▶ REEL</Text>
-                </View>
-              )}
               <Text style={styles.storyName}>{story.location || story.title}</Text>
             </TouchableOpacity>
           ))}
