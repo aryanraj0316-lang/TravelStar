@@ -1,5 +1,3 @@
-import { apiService } from '../services/api';
-import { useApp } from '../store/AppContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import {
@@ -14,21 +12,17 @@ import {
   ChevronUp,
   Clock,
   Compass,
-  CornerUpLeft,
   Copy,
+  CornerUpLeft,
   DollarSign,
   Download,
   FileText,
-  Globe as TranslateIcon,
   Image as ImageIcon,
-  Info,
   LogOut,
   MapPin,
-  Megaphone,
   MessageSquare,
   Mic,
   MoreVertical,
-  Phone,
   Pin,
   Plus,
   Search,
@@ -37,12 +31,12 @@ import {
   ShieldAlert,
   Smile,
   Star,
+  Globe as TranslateIcon,
   Trash2,
   Users as UsersIcon,
-  Video,
   X
 } from 'lucide-react-native';
-import React, { useEffect, useMemo, useRef, useState, memo } from 'react';
+import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -60,7 +54,9 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { apiService } from '../services/api';
 import { eventBus } from '../services/event-bus';
+import { useApp } from '../store/AppContext';
 
 let ImagePicker: any = null;
 try {
@@ -507,7 +503,7 @@ function ChatScreen() {
             room.id === selectedRoomId ? { ...room, unreadCount: 0 } : room
           )
         );
-      }).catch(() => {});
+      }).catch(() => { });
 
       apiService.getChatMessages(selectedRoomId).then((history: any[] | null) => {
         if (history && history.length > 0) {
@@ -563,7 +559,24 @@ function ChatScreen() {
     if (messages.length > 0) {
       const latestMsg = messages[messages.length - 1];
       const key = latestMsg.roomId || activeRoomId || 'trip-1';
-      
+
+      // Check if this is a system message about a new user joining
+      const isSystemMsg = latestMsg.senderRole === 'SYSTEM' || latestMsg.senderName === 'System';
+      if (isSystemMsg && latestMsg.content.includes('has joined the group')) {
+        const userName = latestMsg.content.replace(' has joined the group', '').trim();
+        setDbMembers((prev) => {
+          if (prev.some((m) => m.name.toLowerCase() === userName.toLowerCase())) return prev;
+          return [
+            ...prev,
+            {
+              name: userName,
+              avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
+              role: 'Tourist',
+            }
+          ];
+        });
+      }
+
       setTripMessages((prev) => {
         const roomMsgs = prev[key] || [];
         if (roomMsgs.some((m) => m.id === latestMsg.id)) {
@@ -587,7 +600,7 @@ function ChatScreen() {
             [key]: updatedMsgs,
           };
         }
-        
+
         const newMsg: CustomMessage = {
           id: latestMsg.id,
           senderId: latestMsg.senderId,
@@ -599,27 +612,48 @@ function ChatScreen() {
           isMe: isMe,
           type: latestMsg.mediaType === 'IMAGE' ? 'image' : latestMsg.mediaType === 'VOICE' ? 'voice' : 'text',
         };
-        
+
         return {
           ...prev,
           [key]: [...roomMsgs, newMsg],
         };
       });
-      
-      setInboxRooms((prevRooms) =>
-        prevRooms.map((room) => {
-          if (room.id === key) {
-            return {
-              ...room,
-              latestMessage: `${latestMsg.senderName === profile.name ? 'You' : latestMsg.senderName}: ${latestMsg.content}`,
-              latestTime: latestMsg.timestamp,
-              unreadCount: room.id === activeRoomId ? 0 : room.unreadCount + 1,
-              lastMessageAt: new Date().toISOString(),
-            };
-          }
-          return room;
-        })
-      );
+
+      setInboxRooms((prevRooms) => {
+        const exists = prevRooms.some((room) => room.id === key);
+        const isMe = latestMsg.senderId === profile.id || !!(profile.name && latestMsg.senderName === profile.name);
+        
+        if (exists) {
+          return prevRooms.map((room) => {
+            if (room.id === key) {
+              return {
+                ...room,
+                latestMessage: `${latestMsg.senderName === profile.name ? 'You' : latestMsg.senderName}: ${latestMsg.content}`,
+                latestTime: latestMsg.timestamp,
+                unreadCount: room.id === activeRoomId ? 0 : room.unreadCount + 1,
+                lastMessageAt: new Date().toISOString(),
+              };
+            }
+            return room;
+          });
+        } else {
+          // If the room doesn't exist, create it on-the-fly and insert it at the top
+          const roomType = key.includes('guide') || key.includes('dm') ? 'GUIDE' : 'GROUP';
+          const newRoom: ChatRoom = {
+            id: key,
+            tripId: latestMsg.roomId?.startsWith('room-') ? latestMsg.roomId.replace('room-', '').split('-')[0] : 'trip-1',
+            name: key.includes('group') ? 'New Group Chat' : latestMsg.senderName,
+            avatar: isMe ? profile.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
+            type: roomType,
+            latestMessage: `${latestMsg.senderName === profile.name ? 'You' : latestMsg.senderName}: ${latestMsg.content}`,
+            latestTime: latestMsg.timestamp,
+            unreadCount: (key === activeRoomId || isMe) ? 0 : 1,
+            badge: roomType === 'GUIDE' ? 'Guide' : 'Group Chat',
+            lastMessageAt: new Date().toISOString(),
+          };
+          return [newRoom, ...prevRooms];
+        }
+      });
     }
   }, [messages, activeRoomId]);
 
@@ -629,6 +663,48 @@ function ChatScreen() {
 
   // Active Trip selection (binds details drawer + polls + expenses)
   const [selectedTripId, setSelectedTripId] = useState<string>('trip-1');
+
+  // Dynamic database members state
+  const [dbMembers, setDbMembers] = useState<{ name: string; avatar: string; role: string; id?: string }[]>([]);
+
+  // Load trip members from database dynamically when selectedTripId changes
+  useEffect(() => {
+    if (selectedTripId) {
+      apiService.getTripMembers(selectedTripId)
+        .then((membersData) => {
+          if (membersData && Array.isArray(membersData)) {
+            const mapped = membersData.map((m: any) => {
+              const userObj = m.user || m;
+              const profileObj = userObj.profile || {};
+              const firstName = profileObj.firstName || '';
+              const lastName = profileObj.lastName || '';
+              const fullName = (firstName && lastName)
+                ? `${firstName} ${lastName}`.trim()
+                : (userObj.name || userObj.email?.split('@')[0] || 'Traveler');
+
+              let roleName = m.role || userObj.role || 'Tourist';
+              if (roleName === 'TOURIST' || roleName === 'MEMBER') roleName = 'Tourist';
+              if (roleName === 'ORGANIZER') roleName = 'Organizer';
+              if (roleName === 'GUIDE') roleName = 'Guide';
+
+              return {
+                id: userObj.id || m.userId,
+                name: fullName,
+                avatar: profileObj.avatarUrl || userObj.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
+                role: roleName,
+              };
+            });
+            setDbMembers(mapped);
+          } else {
+            setDbMembers([]);
+          }
+        })
+        .catch((err) => {
+          console.warn('Failed to fetch trip members:', err);
+          setDbMembers([]);
+        });
+    }
+  }, [selectedTripId]);
 
   // Bottom attachments overlay
   const [isAttachmentOpen, setIsAttachmentOpen] = useState(false);
@@ -689,6 +765,7 @@ function ChatScreen() {
       latestTime: '10:33 AM',
       unreadCount: 2,
       badge: 'Trip Group',
+      lastMessageAt: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
     },
     {
       id: 'room-ladakh-group',
@@ -700,6 +777,7 @@ function ChatScreen() {
       latestTime: '09:12 AM',
       unreadCount: 0,
       badge: 'Bikers',
+      lastMessageAt: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
     },
     {
       id: 'room-kerala-group',
@@ -711,6 +789,7 @@ function ChatScreen() {
       latestTime: 'Yesterday',
       unreadCount: 0,
       badge: 'Family',
+      lastMessageAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
     },
     {
       id: 'room-guide-rajesh',
@@ -722,6 +801,7 @@ function ChatScreen() {
       latestTime: 'Yesterday',
       unreadCount: 0,
       badge: 'Braj Expert',
+      lastMessageAt: new Date(Date.now() - 1000 * 60 * 60 * 25).toISOString(),
     },
     {
       id: 'room-guide-lobsang',
@@ -733,6 +813,7 @@ function ChatScreen() {
       latestTime: 'Yesterday',
       unreadCount: 0,
       badge: 'Local Rider',
+      lastMessageAt: new Date(Date.now() - 1000 * 60 * 60 * 26).toISOString(),
     }
   ]);
 
@@ -759,16 +840,16 @@ function ChatScreen() {
 
       const newRooms: ChatRoom[] = missingTrips.map((t) => ({
         id: t.chatRoomId || (
-            t.id === 'trip-1' ? 'room-vrindavan-group' :
+          t.id === 'trip-1' ? 'room-vrindavan-group' :
             t.id === 'trip-2' ? 'room-ladakh-group' :
-            t.id === 'trip-3' ? 'room-kerala-group' : `room-${t.id}`
+              t.id === 'trip-3' ? 'room-kerala-group' : `room-${t.id}`
         ),
         tripId: t.id,
         name: t.name.includes('Chat') || t.name.includes('Group') ? t.name : `${t.name} Group Chat`,
         avatar: t.id === 'trip-1' ? 'https://images.unsplash.com/photo-1548013146-72479768bada?w=150&q=80' :
-                t.id === 'trip-2' ? 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=150&q=80' :
-                t.id === 'trip-3' ? 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=150&q=80' : 
-                'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=150&q=80',
+          t.id === 'trip-2' ? 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=150&q=80' :
+            t.id === 'trip-3' ? 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=150&q=80' :
+              'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=150&q=80',
         type: 'GROUP',
         latestMessage: 'System: Welcome to the group chat! Start planning together.',
         latestTime: 'Just Now',
@@ -828,7 +909,7 @@ function ChatScreen() {
   // Dynamically extract group members from message history in this room/trip
   const groupMembers = useMemo(() => {
     const membersMap = new Map<string, { name: string; avatar: string; role: string }>();
-    
+
     // Add the guide
     if (activeGuide) {
       membersMap.set(activeGuide.name, {
@@ -837,19 +918,39 @@ function ChatScreen() {
         role: 'Guide'
       });
     }
-    
+
+    // Add database/real-time members
+    if (dbMembers && dbMembers.length > 0) {
+      dbMembers.forEach(m => {
+        // Normalize role name
+        let roleName = m.role || 'Tourist';
+        if (roleName === 'TOURIST' || roleName === 'MEMBER') roleName = 'Tourist';
+        if (roleName === 'ORGANIZER') roleName = 'Organizer';
+        if (roleName === 'GUIDE') roleName = 'Guide';
+
+        membersMap.set(m.name, {
+          name: m.name,
+          avatar: m.avatar,
+          role: roleName
+        });
+      });
+    }
+
     // Add other senders from the current active messages
     currentMessages.forEach(msg => {
       if (msg.senderName && !msg.isMe) {
-        membersMap.set(msg.senderName, {
-          name: msg.senderName,
-          avatar: msg.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
-          role: msg.senderRole || 'Tourist'
-        });
+        // Only add if not already present to avoid overriding database entries
+        if (!membersMap.has(msg.senderName)) {
+          membersMap.set(msg.senderName, {
+            name: msg.senderName,
+            avatar: msg.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
+            role: msg.senderRole || 'Tourist'
+          });
+        }
       }
     });
-    
-    // Fallback static list of members if message history is empty
+
+    // Fallback static list of members if message history and database are empty
     if (membersMap.size <= 1) {
       const mockMembers = [
         { name: 'Neha Sharma', avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80', role: 'Tourist' },
@@ -863,9 +964,9 @@ function ChatScreen() {
         }
       });
     }
-    
+
     return Array.from(membersMap.values());
-  }, [currentMessages, activeGuide]);
+  }, [currentMessages, activeGuide, dbMembers]);
 
   // Click a member to direct message
   const handleMemberClick = (member: { name: string; avatar: string }) => {
@@ -947,7 +1048,7 @@ function ChatScreen() {
   const sendNewMessage = (msgData: Partial<CustomMessage>) => {
     const key = selectedRoomId || selectedTripId;
     const mediaType = msgData.type === 'image' ? 'IMAGE' : msgData.type === 'voice' ? 'VOICE' : 'NONE';
-    
+
     // Call global websocket sender
     sendMessage(msgData.content || '', mediaType);
 
@@ -1063,17 +1164,17 @@ function ChatScreen() {
       Alert.alert('Error', 'Please enter a document title.');
       return;
     }
-    
+
     setIsUploading(true);
     setUploadProgress(0);
-    
+
     let progress = 0;
     const interval = setInterval(() => {
       progress += 10;
       setUploadProgress(progress);
       if (progress >= 100) {
         clearInterval(interval);
-        
+
         const newDoc = {
           id: 'doc-uploaded-' + Date.now(),
           title: docTitle.trim(),
@@ -1081,18 +1182,18 @@ function ChatScreen() {
           status: 'Approved',
           date: new Date().toISOString().split('T')[0]
         };
-        
+
         setTripDocs(prev => ({
           ...prev,
           [selectedTripId]: [...(prev[selectedTripId] || []), newDoc]
         }));
-        
+
         setIsUploading(false);
         setIsDocModalOpen(false);
         setDocTitle('');
         setDocSubtitle('');
         setUploadProgress(0);
-        
+
         Alert.alert('Success', 'Document uploaded and verified successfully.');
       }
     }, 120);
@@ -1101,7 +1202,7 @@ function ChatScreen() {
   // Start Direct Message with sender
   const handleStartDirectMessage = (senderName: string, avatar: string) => {
     const dmRoomId = `room-dm-${senderName.toLowerCase().replace(/\s+/g, '-')}`;
-    
+
     // Check if DM room already exists in state
     const existingRoom = inboxRooms.find(r => r.id === dmRoomId);
     if (existingRoom) {
@@ -1119,10 +1220,11 @@ function ChatScreen() {
         latestTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         unreadCount: 0,
         badge: 'Member',
+        lastMessageAt: new Date().toISOString(),
       };
-      
+
       setInboxRooms(prev => [newRoom, ...prev]);
-      
+
       // Initialize message history
       setTripMessages(prev => ({
         ...prev,
@@ -1138,7 +1240,7 @@ function ChatScreen() {
           }
         ]
       }));
-      
+
       setSelectedRoomId(dmRoomId);
     }
     setSelectedMessageForOptions(null);
@@ -1192,7 +1294,7 @@ function ChatScreen() {
   const handleLogExpenseSubmit = () => {
     const amt = parseFloat(expenseForm.amount);
     if (isNaN(amt) || amt <= 0 || !expenseForm.desc) return;
-    
+
     const newExpense: TripExpense = {
       id: `exp-${Date.now()}`,
       amount: amt,
@@ -1344,6 +1446,7 @@ function ChatScreen() {
             ...room,
             latestMessage: `🚨 SOS Alert Triggered!`,
             latestTime: 'Now',
+            lastMessageAt: new Date().toISOString(),
           };
         }
         return room;
@@ -1403,9 +1506,9 @@ function ChatScreen() {
         tripId: matchedTrip.id,
         name: matchedTrip.name.includes('Chat') || matchedTrip.name.includes('Group') ? matchedTrip.name : `${matchedTrip.name} Group Chat`,
         avatar: matchedTrip.id === 'trip-1' ? 'https://images.unsplash.com/photo-1548013146-72479768bada?w=150&q=80' :
-                matchedTrip.id === 'trip-2' ? 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=150&q=80' :
-                matchedTrip.id === 'trip-3' ? 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=150&q=80' : 
-                'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=150&q=80',
+          matchedTrip.id === 'trip-2' ? 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=150&q=80' :
+            matchedTrip.id === 'trip-3' ? 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=150&q=80' :
+              'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=150&q=80',
         type: 'GROUP',
         latestMessage: 'System: Welcome to the group chat! Start planning together.',
         latestTime: 'Just Now',
@@ -1419,7 +1522,7 @@ function ChatScreen() {
   if (!selectedRoomId) {
     return (
       <SafeAreaView edges={['top', 'left', 'right']} style={styles.inboxContainer}>
-        
+
         {/* WhatsApp-Style Header */}
         <View style={styles.inboxHeader}>
           <Text style={styles.inboxHeaderTitle}>TravelStar Chats</Text>
@@ -1452,8 +1555,8 @@ function ChatScreen() {
           {(['ALL', 'GROUPS', 'GUIDES'] as const).map(filter => {
             const isSelected = inboxFilter === filter;
             const label = filter === 'ALL' ? 'All Chats' :
-                          filter === 'GROUPS' ? 'Groups' : 'Guides';
-            
+              filter === 'GROUPS' ? 'Groups' : 'Guides';
+
             return (
               <TouchableOpacity
                 key={filter}
@@ -1494,7 +1597,7 @@ function ChatScreen() {
           onScroll={(e) => {
             const y = e.nativeEvent.contentOffset.y;
             const diff = y - lastScrollYRef.current;
-            
+
             if (y <= 15) {
               if (navbarHiddenRef.current) {
                 navbarHiddenRef.current = false;
@@ -1725,7 +1828,7 @@ function ChatScreen() {
   // --- SCREEN 2: CLEAN CONVERSATION DETAIL VIEW ---
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
-      
+
       {/* ─── CLEAN ROOM HEADER BAR ───────────────────────────── */}
       <View style={styles.roomHeaderBar}>
         <View style={styles.headerLeftMeta}>
@@ -1738,10 +1841,10 @@ function ChatScreen() {
           >
             <ArrowLeft size={20} color="#FFF" />
           </TouchableOpacity>
-          
+
           <Image source={{ uri: activeRoom?.avatar }} style={styles.roomHeaderAvatar} />
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             style={styles.roomHeaderTitles}
             onPress={() => setIsSettingsOpen(true)}
             activeOpacity={0.7}
@@ -1757,16 +1860,16 @@ function ChatScreen() {
         </View>
 
         <View style={styles.headerRightActions}>
-          <TouchableOpacity 
-            style={styles.actionRoundBtn} 
+          <TouchableOpacity
+            style={styles.actionRoundBtn}
             onPress={() => router.push('/map')}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             activeOpacity={0.7}
           >
             <MapPin size={17} color="#FFF" />
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.actionRoundBtn} 
+          <TouchableOpacity
+            style={styles.actionRoundBtn}
             onPress={() => setIsSettingsOpen(true)}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             activeOpacity={0.7}
@@ -1867,20 +1970,20 @@ function ChatScreen() {
                 <View style={styles.groupUpdateInfo}>
                   <Text style={styles.groupUpdateTitleText}>Group Update</Text>
                   <Text style={styles.groupUpdateDescText}>
-                    {selectedTripId === 'trip-2' 
-                      ? 'Acclimatization is key. First 2 days in Leh we will rest. No high altitude rides on Day 1 & 2.' 
+                    {selectedTripId === 'trip-2'
+                      ? 'Acclimatization is key. First 2 days in Leh we will rest. No high altitude rides on Day 1 & 2.'
                       : 'Acclimatization and schedule sync. Please tag luggage and be on time.'}
                   </Text>
                 </View>
               </View>
               <View style={styles.groupUpdateRight}>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.groupUpdateViewBtn}
                   onPress={() => setIsSettingsOpen(true)}
                 >
                   <Text style={styles.groupUpdateViewBtnText}>View Details</Text>
                 </TouchableOpacity>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.groupUpdateCloseBtn}
                   onPress={() => setShowGroupUpdate(false)}
                 >
@@ -1920,234 +2023,234 @@ function ChatScreen() {
                   onSwipeReply={() => setReplyingToMessage(msg)}
                 >
                   <View style={[styles.messageRow, msg.isMe && { justifyContent: 'flex-end' }, isSOS && styles.sosMessageBg, isConsecutive && { marginTop: 2 }]}>
-                  {!msg.isMe && (
-                    <View style={styles.avatarContainer}>
-                      {!isConsecutive && (
-                        <>
-                          <Image source={{ uri: msg.avatar }} style={styles.messageAvatar} />
-                        </>
-                      )}
-                    </View>
-                  )}
-
-                  <View style={[styles.messageBody, msg.isMe ? { flex: 1, alignItems: 'flex-end' } : { flex: 1 }]}>
-                    {!isConsecutive && (
-                      <View style={[styles.senderHeader, msg.isMe && { justifyContent: 'flex-end' }]}>
-                        <Text style={[
-                          styles.senderNameText,
-                          msg.senderRole === 'Organizer' ? { color: C.blueGlow } :
-                          msg.senderRole === 'Guide' ? { color: C.purple } : { color: C.green }
-                        ]}>
-                          {msg.isMe ? 'You' : msg.senderName}
-                        </Text>
-                        {msg.senderRole && !msg.isMe && (
-                          <View style={[
-                            styles.rolePill,
-                            msg.senderRole === 'Organizer' ? styles.rolePillOrganizer :
-                            msg.senderRole === 'Guide' ? styles.rolePillGuide : styles.rolePillTourist
-                          ]}>
-                            <Text style={styles.rolePillText}>{msg.senderRole}</Text>
-                          </View>
+                    {!msg.isMe && (
+                      <View style={styles.avatarContainer}>
+                        {!isConsecutive && (
+                          <>
+                            <Image source={{ uri: msg.avatar }} style={styles.messageAvatar} />
+                          </>
                         )}
                       </View>
                     )}
 
-                    {msg.type === 'poll' ? (
-                      <View style={styles.pollCard}>
-                        <View style={styles.pollHeader}>
-                          <BarChart2 size={16} color={C.orange} style={{ marginRight: 6 }} />
-                          <Text style={styles.pollQuestionText}>{msg.pollQuestion}</Text>
+                    <View style={[styles.messageBody, msg.isMe ? { flex: 1, alignItems: 'flex-end' } : { flex: 1 }]}>
+                      {!isConsecutive && (
+                        <View style={[styles.senderHeader, msg.isMe && { justifyContent: 'flex-end' }]}>
+                          <Text style={[
+                            styles.senderNameText,
+                            msg.senderRole === 'Organizer' ? { color: C.blueGlow } :
+                              msg.senderRole === 'Guide' ? { color: C.purple } : { color: C.green }
+                          ]}>
+                            {msg.isMe ? 'You' : msg.senderName}
+                          </Text>
+                          {msg.senderRole && !msg.isMe && (
+                            <View style={[
+                              styles.rolePill,
+                              msg.senderRole === 'Organizer' ? styles.rolePillOrganizer :
+                                msg.senderRole === 'Guide' ? styles.rolePillGuide : styles.rolePillTourist
+                            ]}>
+                              <Text style={styles.rolePillText}>{msg.senderRole}</Text>
+                            </View>
+                          )}
                         </View>
-                        {msg.pollOptions?.map((opt, idx) => {
-                          const totalVotes = msg.pollOptions?.reduce((acc, current) => acc + current.votes, 0) || 1;
-                          const percent = Math.round((opt.votes / totalVotes) * 100) || 0;
-                          const isVotedByMe = msg.pollVoted === idx;
+                      )}
 
-                          return (
-                            <TouchableOpacity
-                              key={opt.text}
-                              style={[styles.pollOptionTouch, isVotedByMe && styles.pollOptionVoted]}
-                              onPress={() => handlePollVote(msg.id, idx)}
-                            >
-                              <View style={[styles.pollProgressFill, { width: `${percent}%` }]} />
-                              <View style={styles.pollOptionContent}>
-                                <Text style={[styles.pollOptionLabel, isVotedByMe && { fontWeight: '800', color: '#FFF' }]}>{opt.text}</Text>
-                                <Text style={styles.pollOptionPercent}>{percent}% ({opt.votes})</Text>
-                              </View>
-                            </TouchableOpacity>
-                          );
-                        })}
-                        <Text style={styles.pollFooter}>Tap option to vote in thread</Text>
-                      </View>
-                    ) : msg.type === 'expense' ? (
-                      <View style={styles.expenseCard}>
-                        <View style={styles.expenseHeader}>
-                          <DollarSign size={16} color={C.green} />
-                          <Text style={styles.expenseHeaderTitle}>Shared Expense Logged</Text>
+                      {msg.type === 'poll' ? (
+                        <View style={styles.pollCard}>
+                          <View style={styles.pollHeader}>
+                            <BarChart2 size={16} color={C.orange} style={{ marginRight: 6 }} />
+                            <Text style={styles.pollQuestionText}>{msg.pollQuestion}</Text>
+                          </View>
+                          {msg.pollOptions?.map((opt, idx) => {
+                            const totalVotes = msg.pollOptions?.reduce((acc, current) => acc + current.votes, 0) || 1;
+                            const percent = Math.round((opt.votes / totalVotes) * 100) || 0;
+                            const isVotedByMe = msg.pollVoted === idx;
+
+                            return (
+                              <TouchableOpacity
+                                key={opt.text}
+                                style={[styles.pollOptionTouch, isVotedByMe && styles.pollOptionVoted]}
+                                onPress={() => handlePollVote(msg.id, idx)}
+                              >
+                                <View style={[styles.pollProgressFill, { width: `${percent}%` }]} />
+                                <View style={styles.pollOptionContent}>
+                                  <Text style={[styles.pollOptionLabel, isVotedByMe && { fontWeight: '800', color: '#FFF' }]}>{opt.text}</Text>
+                                  <Text style={styles.pollOptionPercent}>{percent}% ({opt.votes})</Text>
+                                </View>
+                              </TouchableOpacity>
+                            );
+                          })}
+                          <Text style={styles.pollFooter}>Tap option to vote in thread</Text>
                         </View>
-                        <Text style={styles.expenseBillDesc}>{msg.expenseDesc}</Text>
-                        <Text style={styles.expenseBillAmount}>₹{msg.expenseAmount}</Text>
-                        <View style={styles.expenseDivider} />
-                        <View style={styles.expenseFooterRow}>
-                          <Text style={styles.expenseShareText}>Split with {msg.expenseSplitWith} members</Text>
-                          <Text style={styles.expenseCostHead}>₹{Math.round((msg.expenseAmount || 0) / (msg.expenseSplitWith || 1))}/head</Text>
+                      ) : msg.type === 'expense' ? (
+                        <View style={styles.expenseCard}>
+                          <View style={styles.expenseHeader}>
+                            <DollarSign size={16} color={C.green} />
+                            <Text style={styles.expenseHeaderTitle}>Shared Expense Logged</Text>
+                          </View>
+                          <Text style={styles.expenseBillDesc}>{msg.expenseDesc}</Text>
+                          <Text style={styles.expenseBillAmount}>₹{msg.expenseAmount}</Text>
+                          <View style={styles.expenseDivider} />
+                          <View style={styles.expenseFooterRow}>
+                            <Text style={styles.expenseShareText}>Split with {msg.expenseSplitWith} members</Text>
+                            <Text style={styles.expenseCostHead}>₹{Math.round((msg.expenseAmount || 0) / (msg.expenseSplitWith || 1))}/head</Text>
+                          </View>
                         </View>
-                      </View>
-                    ) : msg.type === 'location' ? (
-                      <View style={styles.locationCard}>
-                        <View style={styles.locationHeader}>
-                          <MapPin size={16} color={C.blueGlow} />
-                          <Text style={styles.locationCardTitle}>Shared Meeting Point</Text>
-                        </View>
-                        <Text style={styles.locationText}>{msg.content}</Text>
-                        <View style={styles.miniMapPlaceholder}>
-                          <View style={styles.radarRing1} />
-                          <View style={styles.radarRing2} />
-                          <MapPin size={24} color={C.red} style={styles.miniMapPin} />
-                          <Text style={styles.coordsText}>Lat: {msg.locationCoords?.latitude.toFixed(4)}, Lng: {msg.locationCoords?.longitude.toFixed(4)}</Text>
-                        </View>
-                        <TouchableOpacity
-                          style={styles.locationActionTouch}
-                          onPress={() => router.push('/map')}
-                        >
-                          <Text style={styles.locationActionText}>Open Live Navigation</Text>
-                        </TouchableOpacity>
-                      </View>
-                    ) : msg.type === 'voice' ? (
-                      <View style={styles.voiceNoteCard}>
-                        <TouchableOpacity style={styles.playButtonCircle}>
-                          <View style={styles.playArrow} />
-                        </TouchableOpacity>
-                        <View style={styles.waveformContainer}>
-                          <View style={[styles.waveBar, { height: 12, backgroundColor: C.blueGlow }]} />
-                          <View style={[styles.waveBar, { height: 22, backgroundColor: C.blueGlow }]} />
-                          <View style={[styles.waveBar, { height: 18, backgroundColor: C.blueGlow }]} />
-                          <View style={[styles.waveBar, { height: 14, backgroundColor: C.textSec }]} />
-                          <View style={[styles.waveBar, { height: 8, backgroundColor: C.textSec }]} />
-                          <View style={[styles.waveBar, { height: 16, backgroundColor: C.textSec }]} />
-                          <View style={[styles.waveBar, { height: 24, backgroundColor: C.textSec }]} />
-                          <View style={[styles.waveBar, { height: 10, backgroundColor: C.textSec }]} />
-                        </View>
-                        <Text style={styles.voiceDuration}>0:04</Text>
-                      </View>
-                    ) : msg.type === 'image' ? (
-                      <View style={styles.imageCard}>
-                        <Image source={{ uri: msg.mediaUrl }} style={styles.imageMedia} />
-                        <View style={styles.imageOverlayTextRow}>
-                          <Text style={styles.imageCardDesc} numberOfLines={1}>{msg.content}</Text>
-                          <TouchableOpacity style={styles.imageDownloadBtn}>
-                            <Download size={14} color="#FFF" />
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    ) : msg.type === 'sos' ? (
-                      <View style={styles.sosCardAlert}>
-                        <View style={styles.sosAlertHeader}>
-                          <AlertCircle size={18} color="#FFF" />
-                          <Text style={styles.sosAlertHeaderTitle}>CRITICAL EMERGENCY WARNING</Text>
-                        </View>
-                        <Text style={styles.sosAlertDesc}>{msg.content}</Text>
-                        <Text style={styles.sosAlertCoords}>Coordinates: {msg.locationCoords?.latitude.toFixed(4)}, {msg.locationCoords?.longitude.toFixed(4)}</Text>
-                        <View style={styles.sosAlertBtnRow}>
+                      ) : msg.type === 'location' ? (
+                        <View style={styles.locationCard}>
+                          <View style={styles.locationHeader}>
+                            <MapPin size={16} color={C.blueGlow} />
+                            <Text style={styles.locationCardTitle}>Shared Meeting Point</Text>
+                          </View>
+                          <Text style={styles.locationText}>{msg.content}</Text>
+                          <View style={styles.miniMapPlaceholder}>
+                            <View style={styles.radarRing1} />
+                            <View style={styles.radarRing2} />
+                            <MapPin size={24} color={C.red} style={styles.miniMapPin} />
+                            <Text style={styles.coordsText}>Lat: {msg.locationCoords?.latitude.toFixed(4)}, Lng: {msg.locationCoords?.longitude.toFixed(4)}</Text>
+                          </View>
                           <TouchableOpacity
-                            style={[styles.sosAlertBtn, { backgroundColor: 'rgba(255,255,255,0.15)' }]}
+                            style={styles.locationActionTouch}
                             onPress={() => router.push('/map')}
                           >
-                            <Text style={styles.sosAlertBtnText}>Show on Map</Text>
+                            <Text style={styles.locationActionText}>Open Live Navigation</Text>
                           </TouchableOpacity>
-                          {profile.role === 'ORGANIZER' || profile.role === 'GUIDE' ? (
-                            <TouchableOpacity
-                              style={[styles.sosAlertBtn, { backgroundColor: C.green }]}
-                              onPress={handleResolveSOSEvent}
-                            >
-                              <Text style={styles.sosAlertBtnText}>Mark as Safe</Text>
-                            </TouchableOpacity>
-                          ) : null}
                         </View>
-                      </View>
-                    ) : (
-                      <View style={[msg.isMe ? styles.instagramBubbleContainerMe : styles.bubbleContainerOther]}>
-                        {msg.isMe ? (
-                          <TouchableOpacity
-                            activeOpacity={0.9}
-                            onLongPress={() => setSelectedMessageForOptions(msg)}
-                          >
-                            <LinearGradient
-                              colors={['#0066FF', '#7C3AED', '#BA68C8']}
-                              start={(() => {
-                                // Compute deterministic but randomized start coordinates based on message ID
-                                let hash = 0;
-                                const idStr = msg.id || 'random';
-                                for (let i = 0; i < idStr.length; i++) {
-                                  hash = idStr.charCodeAt(i) + ((hash << 5) - hash);
-                                }
-                                const normX = (Math.abs(hash) % 5) / 10; // 0.0 to 0.4
-                                const normY = (Math.abs(hash >> 2) % 5) / 10; // 0.0 to 0.4
-                                return { x: normX, y: normY };
-                              })()}
-                              end={(() => {
-                                let hash = 0;
-                                const idStr = msg.id || 'random';
-                                for (let i = 0; i < idStr.length; i++) {
-                                  hash = idStr.charCodeAt(i) + ((hash << 3) - hash);
-                                }
-                                const normX = 0.6 + (Math.abs(hash) % 5) / 10; // 0.6 to 1.0
-                                const normY = 0.6 + (Math.abs(hash >> 2) % 5) / 10; // 0.6 to 1.0
-                                return { x: normX, y: normY };
-                              })()}
-                              style={styles.instagramGradientBubble}
+                      ) : msg.type === 'voice' ? (
+                        <View style={styles.voiceNoteCard}>
+                          <TouchableOpacity style={styles.playButtonCircle}>
+                            <View style={styles.playArrow} />
+                          </TouchableOpacity>
+                          <View style={styles.waveformContainer}>
+                            <View style={[styles.waveBar, { height: 12, backgroundColor: C.blueGlow }]} />
+                            <View style={[styles.waveBar, { height: 22, backgroundColor: C.blueGlow }]} />
+                            <View style={[styles.waveBar, { height: 18, backgroundColor: C.blueGlow }]} />
+                            <View style={[styles.waveBar, { height: 14, backgroundColor: C.textSec }]} />
+                            <View style={[styles.waveBar, { height: 8, backgroundColor: C.textSec }]} />
+                            <View style={[styles.waveBar, { height: 16, backgroundColor: C.textSec }]} />
+                            <View style={[styles.waveBar, { height: 24, backgroundColor: C.textSec }]} />
+                            <View style={[styles.waveBar, { height: 10, backgroundColor: C.textSec }]} />
+                          </View>
+                          <Text style={styles.voiceDuration}>0:04</Text>
+                        </View>
+                      ) : msg.type === 'image' ? (
+                        <View style={styles.imageCard}>
+                          <Image source={{ uri: msg.mediaUrl }} style={styles.imageMedia} />
+                          <View style={styles.imageOverlayTextRow}>
+                            <Text style={styles.imageCardDesc} numberOfLines={1}>{msg.content}</Text>
+                            <TouchableOpacity style={styles.imageDownloadBtn}>
+                              <Download size={14} color="#FFF" />
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      ) : msg.type === 'sos' ? (
+                        <View style={styles.sosCardAlert}>
+                          <View style={styles.sosAlertHeader}>
+                            <AlertCircle size={18} color="#FFF" />
+                            <Text style={styles.sosAlertHeaderTitle}>CRITICAL EMERGENCY WARNING</Text>
+                          </View>
+                          <Text style={styles.sosAlertDesc}>{msg.content}</Text>
+                          <Text style={styles.sosAlertCoords}>Coordinates: {msg.locationCoords?.latitude.toFixed(4)}, {msg.locationCoords?.longitude.toFixed(4)}</Text>
+                          <View style={styles.sosAlertBtnRow}>
+                            <TouchableOpacity
+                              style={[styles.sosAlertBtn, { backgroundColor: 'rgba(255,255,255,0.15)' }]}
+                              onPress={() => router.push('/map')}
                             >
-                              {msg.replyTo && (
-                                <View style={styles.bubbleReplyHeaderMe}>
-                                  <Text style={styles.bubbleReplySenderMe} numberOfLines={1}>
-                                    {msg.replyTo.senderName}
-                                  </Text>
-                                  <Text style={styles.bubbleReplyContentMe} numberOfLines={1}>
-                                    {msg.replyTo.content}
-                                  </Text>
-                                </View>
-                              )}
-                              <Text style={styles.bubbleTextMe}>{displayedContent}</Text>
-                              <Text style={styles.timestampTextMe}>{msg.timestamp}</Text>
-                            </LinearGradient>
-                          </TouchableOpacity>
-                        ) : (
-                          <TouchableOpacity
-                            activeOpacity={0.9}
-                            onLongPress={() => setSelectedMessageForOptions(msg)}
-                          >
-                            <View style={[styles.bubble, styles.bubbleOther]}>
-                              {msg.replyTo && (
-                                <View style={styles.bubbleReplyHeaderOther}>
-                                  <Text style={styles.bubbleReplySenderOther} numberOfLines={1}>
-                                    {msg.replyTo.senderName}
-                                  </Text>
-                                  <Text style={styles.bubbleReplyContentOther} numberOfLines={1}>
-                                    {msg.replyTo.content}
-                                  </Text>
-                                </View>
-                              )}
-                              <Text style={styles.bubbleText}>{displayedContent}</Text>
-                              {msg.translations && (
-                                <TouchableOpacity
-                                  activeOpacity={0.7}
-                                  onPress={() => toggleTranslate(msg.id)}
-                                  style={styles.translateRow}
-                                >
-                                  <TranslateIcon size={12} color={C.blueGlow} />
-                                  <Text style={styles.translateText}>
-                                    {hasTranslation ? 'Show Original' : 'Translate to Hindi'}
-                                  </Text>
-                                </TouchableOpacity>
-                              )}
-                              <Text style={styles.timestampText}>{msg.timestamp}</Text>
-                            </View>
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    )}
+                              <Text style={styles.sosAlertBtnText}>Show on Map</Text>
+                            </TouchableOpacity>
+                            {profile.role === 'ORGANIZER' || profile.role === 'GUIDE' ? (
+                              <TouchableOpacity
+                                style={[styles.sosAlertBtn, { backgroundColor: C.green }]}
+                                onPress={handleResolveSOSEvent}
+                              >
+                                <Text style={styles.sosAlertBtnText}>Mark as Safe</Text>
+                              </TouchableOpacity>
+                            ) : null}
+                          </View>
+                        </View>
+                      ) : (
+                        <View style={[msg.isMe ? styles.instagramBubbleContainerMe : styles.bubbleContainerOther]}>
+                          {msg.isMe ? (
+                            <TouchableOpacity
+                              activeOpacity={0.9}
+                              onLongPress={() => setSelectedMessageForOptions(msg)}
+                            >
+                              <LinearGradient
+                                colors={['#0066FF', '#7C3AED', '#BA68C8']}
+                                start={(() => {
+                                  // Compute deterministic but randomized start coordinates based on message ID
+                                  let hash = 0;
+                                  const idStr = msg.id || 'random';
+                                  for (let i = 0; i < idStr.length; i++) {
+                                    hash = idStr.charCodeAt(i) + ((hash << 5) - hash);
+                                  }
+                                  const normX = (Math.abs(hash) % 5) / 10; // 0.0 to 0.4
+                                  const normY = (Math.abs(hash >> 2) % 5) / 10; // 0.0 to 0.4
+                                  return { x: normX, y: normY };
+                                })()}
+                                end={(() => {
+                                  let hash = 0;
+                                  const idStr = msg.id || 'random';
+                                  for (let i = 0; i < idStr.length; i++) {
+                                    hash = idStr.charCodeAt(i) + ((hash << 3) - hash);
+                                  }
+                                  const normX = 0.6 + (Math.abs(hash) % 5) / 10; // 0.6 to 1.0
+                                  const normY = 0.6 + (Math.abs(hash >> 2) % 5) / 10; // 0.6 to 1.0
+                                  return { x: normX, y: normY };
+                                })()}
+                                style={styles.instagramGradientBubble}
+                              >
+                                {msg.replyTo && (
+                                  <View style={styles.bubbleReplyHeaderMe}>
+                                    <Text style={styles.bubbleReplySenderMe} numberOfLines={1}>
+                                      {msg.replyTo.senderName}
+                                    </Text>
+                                    <Text style={styles.bubbleReplyContentMe} numberOfLines={1}>
+                                      {msg.replyTo.content}
+                                    </Text>
+                                  </View>
+                                )}
+                                <Text style={styles.bubbleTextMe}>{displayedContent}</Text>
+                                <Text style={styles.timestampTextMe}>{msg.timestamp}</Text>
+                              </LinearGradient>
+                            </TouchableOpacity>
+                          ) : (
+                            <TouchableOpacity
+                              activeOpacity={0.9}
+                              onLongPress={() => setSelectedMessageForOptions(msg)}
+                            >
+                              <View style={[styles.bubble, styles.bubbleOther]}>
+                                {msg.replyTo && (
+                                  <View style={styles.bubbleReplyHeaderOther}>
+                                    <Text style={styles.bubbleReplySenderOther} numberOfLines={1}>
+                                      {msg.replyTo.senderName}
+                                    </Text>
+                                    <Text style={styles.bubbleReplyContentOther} numberOfLines={1}>
+                                      {msg.replyTo.content}
+                                    </Text>
+                                  </View>
+                                )}
+                                <Text style={styles.bubbleText}>{displayedContent}</Text>
+                                {msg.translations && (
+                                  <TouchableOpacity
+                                    activeOpacity={0.7}
+                                    onPress={() => toggleTranslate(msg.id)}
+                                    style={styles.translateRow}
+                                  >
+                                    <TranslateIcon size={12} color={C.blueGlow} />
+                                    <Text style={styles.translateText}>
+                                      {hasTranslation ? 'Show Original' : 'Translate to Hindi'}
+                                    </Text>
+                                  </TouchableOpacity>
+                                )}
+                                <Text style={styles.timestampText}>{msg.timestamp}</Text>
+                              </View>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      )}
+                    </View>
                   </View>
-                </View>
                 </SwipeableMessageRow>
               );
             })}
@@ -2160,16 +2263,16 @@ function ChatScreen() {
                 </View>
               </View>
             )}
-            
+
             {/* Scroll spacer dynamically adjusts with keyboard height to keep latest messages just above the input box */}
             <Animated.View style={{ height: Animated.add(selectedRoomId ? 110 : 170, keyboardOffset) }} />
           </ScrollView>
 
           {/* Floating Attachments Drawer */}
           <Animated.View style={[
-            styles.attachmentPanel, 
-            { 
-              height: attachMenuHeight, 
+            styles.attachmentPanel,
+            {
+              height: attachMenuHeight,
               bottom: Animated.add(selectedRoomId ? Math.max(insets.bottom + 58, 74) : 140, keyboardOffset),
               borderWidth: isAttachmentOpen ? 1 : 0,
             }
@@ -2214,8 +2317,8 @@ function ChatScreen() {
 
           {/* BOTTOM MESSAGE INPUT BAR — lifts with keyboard, dynamically positioned when tab bar is hidden, respecting system bottom inset */}
           <Animated.View style={[
-            styles.bottomInputBarDetail, 
-            { 
+            styles.bottomInputBarDetail,
+            {
               bottom: keyboardOffset,
               paddingBottom: insets.bottom > 0 ? insets.bottom + 12 : 20
             }
@@ -2246,7 +2349,7 @@ function ChatScreen() {
               >
                 <Plus size={18} color="#FFF" style={{ transform: [{ rotate: isAttachmentOpen ? '45deg' : '0deg' }] }} />
               </TouchableOpacity>
-              
+
               <View style={styles.textInputWrapper}>
                 <TextInput
                   placeholder="Message..."
@@ -2387,7 +2490,7 @@ function ChatScreen() {
           </View>
 
           {/* Upload Button */}
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.uploadDocBtn}
             onPress={() => {
               setDocTitle('');
@@ -2438,7 +2541,7 @@ function ChatScreen() {
                       <View style={[styles.docStatusBadge, { borderColor: getStatusColor(doc.status) }]}>
                         <Text style={[styles.docStatusText, { color: getStatusColor(doc.status) }]}>{doc.status.toUpperCase()}</Text>
                       </View>
-                      <TouchableOpacity 
+                      <TouchableOpacity
                         style={styles.docDeleteBtn}
                         onPress={() => handleDeleteDoc(doc.id)}
                       >
@@ -2482,12 +2585,12 @@ function ChatScreen() {
                   <View style={[
                     styles.memberRoleBadge,
                     member.role === 'Organizer' ? styles.roleBadgeOrganizer :
-                    member.role === 'Guide' ? styles.roleBadgeGuide : styles.roleBadgeTourist
+                      member.role === 'Guide' ? styles.roleBadgeGuide : styles.roleBadgeTourist
                   ]}>
                     <Text style={[
                       styles.memberRoleBadgeText,
                       member.role === 'Organizer' ? { color: '#0066FF' } :
-                      member.role === 'Guide' ? { color: '#10B981' } : { color: '#94A3B8' }
+                        member.role === 'Guide' ? { color: '#10B981' } : { color: '#94A3B8' }
                     ]}>
                       {member.role.toUpperCase()}
                     </Text>
@@ -2602,10 +2705,10 @@ function ChatScreen() {
       {isSettingsOpen && (
         <View style={styles.settingsOverlay}>
           <SafeAreaView style={{ flex: 1 }}>
-            
+
             {/* Floating Close Button */}
-            <TouchableOpacity 
-              onPress={() => setIsSettingsOpen(false)} 
+            <TouchableOpacity
+              onPress={() => setIsSettingsOpen(false)}
               style={styles.settingsAbsoluteCloseBtn}
               activeOpacity={0.7}
             >
@@ -2613,7 +2716,7 @@ function ChatScreen() {
             </TouchableOpacity>
 
             <ScrollView contentContainerStyle={styles.settingsScrollContent} showsVerticalScrollIndicator={false}>
-              
+
               {/* Group Meta Display */}
               <View style={styles.settingsAvatarBlock}>
                 <Image source={{ uri: activeRoom?.avatar }} style={styles.settingsAvatarImg} />
@@ -2684,172 +2787,172 @@ function ChatScreen() {
               {isTripDetailsExpanded && (
                 <>
                   {/* 1. Trip Progress Timeline */}
-              <View style={styles.settingSectionCard}>
-                <View style={styles.sectionHeader}>
-                  <MapPin size={16} color="#0066FF" style={{ marginRight: 6 }} />
-                  <Text style={styles.sectionHeaderTitle}>Itinerary Timeline</Text>
-                </View>
-                <View style={styles.timelineRow}>
-                  {activeTrip.cities.map((city, idx) => {
-                    const isLast = idx === activeTrip.cities.length - 1;
-                    const isPassed = idx <= 1;
-                    return (
-                      <View key={city} style={styles.timelineStepWrap}>
-                        <View style={styles.timelineDotContainer}>
-                          <View style={[
-                            styles.timelineDot,
-                            isPassed ? styles.timelineDotActive : styles.timelineDotInactive
-                          ]}>
-                            {isPassed && <Check size={8} color="#FFF" />}
-                          </View>
-                          {!isLast && <View style={[
-                            styles.timelineLine,
-                            isPassed ? styles.timelineLineActive : styles.timelineLineInactive
-                          ]} />}
-                        </View>
-                        <Text style={[
-                          styles.timelineCityText,
-                          isPassed ? styles.timelineCityTextActive : styles.timelineCityTextInactive
-                        ]} numberOfLines={1}>
-                          {city}
-                        </Text>
-                      </View>
-                    );
-                  })}
-                </View>
-                <View style={styles.meetingPointPanel}>
-                  <Clock size={14} color="#0066FF" style={{ marginRight: 6 }} />
-                  <Text style={styles.meetingTitle}>Assembly point:</Text>
-                  <Text style={styles.meetingLocation} numberOfLines={1}>{activeTrip.meetingPoint}</Text>
-                </View>
-              </View>
-
-              {/* 2. Group Expenses & Split */}
-              <View style={styles.settingSectionCard}>
-                <View style={styles.sectionHeader}>
-                  <DollarSign size={16} color="#0066FF" style={{ marginRight: 6 }} />
-                  <Text style={styles.sectionHeaderTitle}>Group Budget & Splits</Text>
-                </View>
-                
-                <View style={styles.budgetOverviewRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.budgetLabel}>Shared Pool Expense</Text>
-                    <Text style={styles.budgetValue}>₹{getExpensesTotal()}</Text>
-                  </View>
-                  <View style={{ flex: 1, alignItems: 'flex-end' }}>
-                    <Text style={styles.budgetLabel}>Budget / Person</Text>
-                    <Text style={[styles.budgetValue, { color: C.green }]}>₹{activeTrip.budget}</Text>
-                  </View>
-                </View>
-
-                <TouchableOpacity 
-                  style={[styles.settingsOutlineBtn, { borderColor: '#0066FF' }]}
-                  onPress={() => {
-                    setIsSettingsOpen(false);
-                    setActiveModal('EXPENSE');
-                  }}
-                >
-                  <DollarSign size={14} color="#0066FF" style={{ marginRight: 4 }} />
-                  <Text style={[styles.settingsOutlineBtnText, { color: '#0066FF' }]}>Log Shared Expense Bill</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* 3. Group Polls & Decisions */}
-              <View style={styles.settingSectionCard}>
-                <View style={styles.sectionHeader}>
-                  <BarChart2 size={16} color="#0066FF" style={{ marginRight: 6 }} />
-                  <Text style={styles.sectionHeaderTitle}>Group Polls</Text>
-                </View>
-
-                {tripPolls[selectedTripId] ? (
-                  <View style={styles.settingsPollMiniCard}>
-                    <Text style={styles.miniPollQuestion}>{tripPolls[selectedTripId].question}</Text>
-                    <Text style={styles.miniPollSubText}>
-                      Active in room thread • {tripPolls[selectedTripId].options.reduce((a,b)=> a+b.votes, 0)} votes cast
-                    </Text>
-                  </View>
-                ) : (
-                  <Text style={styles.noActiveLabel}>No active polls</Text>
-                )}
-
-                <TouchableOpacity 
-                  style={[styles.settingsOutlineBtn, { borderColor: '#0066FF' }]}
-                  onPress={() => {
-                    setIsSettingsOpen(false);
-                    setActiveModal('POLL');
-                  }}
-                >
-                  <BarChart2 size={14} color="#0066FF" style={{ marginRight: 4 }} />
-                  <Text style={[styles.settingsOutlineBtnText, { color: '#0066FF' }]}>Create Group Poll</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* 4. Tour Guide details */}
-              <View style={styles.settingSectionCard}>
-                <View style={styles.sectionHeader}>
-                  <Compass size={16} color="#0066FF" style={{ marginRight: 6 }} />
-                  <Text style={styles.sectionHeaderTitle}>Your Travel Guide</Text>
-                </View>
-
-                <View style={styles.settingsGuideCard}>
-                  <Image source={{ uri: activeGuide?.avatar }} style={styles.guideSettingsAvatar} />
-                  <View style={styles.guideSettingsMeta}>
-                    <Text style={styles.guideSettingsName}>{activeGuide?.name}</Text>
-                    <View style={styles.guideSettingsRatingRow}>
-                      <Star size={12} color={C.yellow} fill={C.yellow} />
-                      <Text style={styles.guideSettingsRatingText}>{activeGuide?.rating}</Text>
-                      <Text style={styles.guideSettingsLangText}>• {activeGuide?.languages.join(', ')}</Text>
+                  <View style={styles.settingSectionCard}>
+                    <View style={styles.sectionHeader}>
+                      <MapPin size={16} color="#0066FF" style={{ marginRight: 6 }} />
+                      <Text style={styles.sectionHeaderTitle}>Itinerary Timeline</Text>
                     </View>
-                    <Text style={styles.guideSettingsExpertise} numberOfLines={1}>
-                      Exp: {activeGuide?.expertise.join(', ')}
-                    </Text>
+                    <View style={styles.timelineRow}>
+                      {activeTrip.cities.map((city, idx) => {
+                        const isLast = idx === activeTrip.cities.length - 1;
+                        const isPassed = idx <= 1;
+                        return (
+                          <View key={city} style={styles.timelineStepWrap}>
+                            <View style={styles.timelineDotContainer}>
+                              <View style={[
+                                styles.timelineDot,
+                                isPassed ? styles.timelineDotActive : styles.timelineDotInactive
+                              ]}>
+                                {isPassed && <Check size={8} color="#FFF" />}
+                              </View>
+                              {!isLast && <View style={[
+                                styles.timelineLine,
+                                isPassed ? styles.timelineLineActive : styles.timelineLineInactive
+                              ]} />}
+                            </View>
+                            <Text style={[
+                              styles.timelineCityText,
+                              isPassed ? styles.timelineCityTextActive : styles.timelineCityTextInactive
+                            ]} numberOfLines={1}>
+                              {city}
+                            </Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                    <View style={styles.meetingPointPanel}>
+                      <Clock size={14} color="#0066FF" style={{ marginRight: 6 }} />
+                      <Text style={styles.meetingTitle}>Assembly point:</Text>
+                      <Text style={styles.meetingLocation} numberOfLines={1}>{activeTrip.meetingPoint}</Text>
+                    </View>
                   </View>
-                </View>
-              </View>
 
-              {/* 5. Safety Desk Controls & SOS Trigger */}
-              <View style={[styles.settingSectionCard, { borderColor: 'rgba(239,68,68,0.2)' }]}>
-                <View style={styles.sectionHeader}>
-                  <ShieldAlert size={16} color="#0066FF" style={{ marginRight: 6 }} />
-                  <Text style={styles.sectionHeaderTitle}>Safety Command & Emergency Control</Text>
-                </View>
+                  {/* 2. Group Expenses & Split */}
+                  <View style={styles.settingSectionCard}>
+                    <View style={styles.sectionHeader}>
+                      <DollarSign size={16} color="#0066FF" style={{ marginRight: 6 }} />
+                      <Text style={styles.sectionHeaderTitle}>Group Budget & Splits</Text>
+                    </View>
 
-                <View style={styles.safetyControlRow}>
-                  <View style={styles.controlInfo}>
-                    <Text style={styles.controlTitle}>Live Location Pinging</Text>
-                    <Text style={styles.controlDesc}>Sends background telemetry updates</Text>
-                  </View>
-                  <Text style={{ fontSize: 10, fontWeight: '700', color: '#0066FF', letterSpacing: 0.5 }}>ACTIVE</Text>
-                </View>
+                    <View style={styles.budgetOverviewRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.budgetLabel}>Shared Pool Expense</Text>
+                        <Text style={styles.budgetValue}>₹{getExpensesTotal()}</Text>
+                      </View>
+                      <View style={{ flex: 1, alignItems: 'flex-end' }}>
+                        <Text style={styles.budgetLabel}>Budget / Person</Text>
+                        <Text style={[styles.budgetValue, { color: C.green }]}>₹{activeTrip.budget}</Text>
+                      </View>
+                    </View>
 
-                <View style={styles.safetyControlRow}>
-                  <View style={styles.controlInfo}>
-                    <Text style={styles.controlTitle}>Government Aadhaar verification</Text>
-                    <Text style={styles.controlDesc}>Aadhaar status: verified</Text>
-                  </View>
-                  <CheckCircle size={16} color="#0066FF" />
-                </View>
-
-                {sosCountdown !== null ? (
-                  <View style={styles.settingsArmedBox}>
-                    <Text style={styles.armedLabel}>ARMING SOS IN</Text>
-                    <Text style={styles.armedTimer}>{sosCountdown}</Text>
-                    <TouchableOpacity style={styles.armedCancelTouch} onPress={cancelSOS}>
-                      <Text style={styles.armedCancelText}>CANCEL</Text>
+                    <TouchableOpacity
+                      style={[styles.settingsOutlineBtn, { borderColor: '#0066FF' }]}
+                      onPress={() => {
+                        setIsSettingsOpen(false);
+                        setActiveModal('EXPENSE');
+                      }}
+                    >
+                      <DollarSign size={14} color="#0066FF" style={{ marginRight: 4 }} />
+                      <Text style={[styles.settingsOutlineBtnText, { color: '#0066FF' }]}>Log Shared Expense Bill</Text>
                     </TouchableOpacity>
                   </View>
-                ) : (
-                  <TouchableOpacity 
-                    style={styles.settingsSOSBtn}
-                    onPress={startSOSCountdown}
-                  >
-                    <ShieldAlert size={18} color="#FFF" style={{ marginRight: 6 }} />
-                    <Text style={styles.settingsSOSBtnText}>TRIGGER PANIC SOS ALERT</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </>
-          )}
+
+                  {/* 3. Group Polls & Decisions */}
+                  <View style={styles.settingSectionCard}>
+                    <View style={styles.sectionHeader}>
+                      <BarChart2 size={16} color="#0066FF" style={{ marginRight: 6 }} />
+                      <Text style={styles.sectionHeaderTitle}>Group Polls</Text>
+                    </View>
+
+                    {tripPolls[selectedTripId] ? (
+                      <View style={styles.settingsPollMiniCard}>
+                        <Text style={styles.miniPollQuestion}>{tripPolls[selectedTripId].question}</Text>
+                        <Text style={styles.miniPollSubText}>
+                          Active in room thread • {tripPolls[selectedTripId].options.reduce((a, b) => a + b.votes, 0)} votes cast
+                        </Text>
+                      </View>
+                    ) : (
+                      <Text style={styles.noActiveLabel}>No active polls</Text>
+                    )}
+
+                    <TouchableOpacity
+                      style={[styles.settingsOutlineBtn, { borderColor: '#0066FF' }]}
+                      onPress={() => {
+                        setIsSettingsOpen(false);
+                        setActiveModal('POLL');
+                      }}
+                    >
+                      <BarChart2 size={14} color="#0066FF" style={{ marginRight: 4 }} />
+                      <Text style={[styles.settingsOutlineBtnText, { color: '#0066FF' }]}>Create Group Poll</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* 4. Tour Guide details */}
+                  <View style={styles.settingSectionCard}>
+                    <View style={styles.sectionHeader}>
+                      <Compass size={16} color="#0066FF" style={{ marginRight: 6 }} />
+                      <Text style={styles.sectionHeaderTitle}>Your Travel Guide</Text>
+                    </View>
+
+                    <View style={styles.settingsGuideCard}>
+                      <Image source={{ uri: activeGuide?.avatar }} style={styles.guideSettingsAvatar} />
+                      <View style={styles.guideSettingsMeta}>
+                        <Text style={styles.guideSettingsName}>{activeGuide?.name}</Text>
+                        <View style={styles.guideSettingsRatingRow}>
+                          <Star size={12} color={C.yellow} fill={C.yellow} />
+                          <Text style={styles.guideSettingsRatingText}>{activeGuide?.rating}</Text>
+                          <Text style={styles.guideSettingsLangText}>• {activeGuide?.languages.join(', ')}</Text>
+                        </View>
+                        <Text style={styles.guideSettingsExpertise} numberOfLines={1}>
+                          Exp: {activeGuide?.expertise.join(', ')}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* 5. Safety Desk Controls & SOS Trigger */}
+                  <View style={[styles.settingSectionCard, { borderColor: 'rgba(239,68,68,0.2)' }]}>
+                    <View style={styles.sectionHeader}>
+                      <ShieldAlert size={16} color="#0066FF" style={{ marginRight: 6 }} />
+                      <Text style={styles.sectionHeaderTitle}>Safety Command & Emergency Control</Text>
+                    </View>
+
+                    <View style={styles.safetyControlRow}>
+                      <View style={styles.controlInfo}>
+                        <Text style={styles.controlTitle}>Live Location Pinging</Text>
+                        <Text style={styles.controlDesc}>Sends background telemetry updates</Text>
+                      </View>
+                      <Text style={{ fontSize: 10, fontWeight: '700', color: '#0066FF', letterSpacing: 0.5 }}>ACTIVE</Text>
+                    </View>
+
+                    <View style={styles.safetyControlRow}>
+                      <View style={styles.controlInfo}>
+                        <Text style={styles.controlTitle}>Government Aadhaar verification</Text>
+                        <Text style={styles.controlDesc}>Aadhaar status: verified</Text>
+                      </View>
+                      <CheckCircle size={16} color="#0066FF" />
+                    </View>
+
+                    {sosCountdown !== null ? (
+                      <View style={styles.settingsArmedBox}>
+                        <Text style={styles.armedLabel}>ARMING SOS IN</Text>
+                        <Text style={styles.armedTimer}>{sosCountdown}</Text>
+                        <TouchableOpacity style={styles.armedCancelTouch} onPress={cancelSOS}>
+                          <Text style={styles.armedCancelText}>CANCEL</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.settingsSOSBtn}
+                        onPress={startSOSCountdown}
+                      >
+                        <ShieldAlert size={18} color="#FFF" style={{ marginRight: 6 }} />
+                        <Text style={styles.settingsSOSBtnText}>TRIGGER PANIC SOS ALERT</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </>
+              )}
 
               {/* 6. Group Members List (Core Info shown directly) */}
               {activeRoom?.type === 'GROUP' && (
@@ -2882,12 +2985,12 @@ function ChatScreen() {
                           <View style={[
                             styles.roleBadge,
                             member.role === 'Organizer' ? styles.roleBadgeOrganizer :
-                            member.role === 'Guide' ? styles.roleBadgeGuide : styles.roleBadgeTourist
+                              member.role === 'Guide' ? styles.roleBadgeGuide : styles.roleBadgeTourist
                           ]}>
                             <Text style={[
                               styles.roleBadgeText,
                               member.role === 'Organizer' ? { color: '#0066FF' } :
-                              member.role === 'Guide' ? { color: '#10B981' } : { color: '#94A3B8' }
+                                member.role === 'Guide' ? { color: '#10B981' } : { color: '#94A3B8' }
                             ]}>
                               {member.role.toUpperCase()}
                             </Text>
@@ -2939,7 +3042,7 @@ function ChatScreen() {
       {activeModal !== 'NONE' && (
         <View style={styles.modalOverlay}>
           <View style={styles.modalContentCard}>
-            
+
             {activeModal === 'POLL' && (
               <View>
                 <Text style={styles.modalHeading}>Create Group Poll</Text>
@@ -3085,7 +3188,7 @@ function ChatScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContentCard}>
             <Text style={styles.modalHeading}>Upload Document</Text>
-            
+
             {isUploading ? (
               <View style={{ paddingVertical: 20, alignItems: 'center' }}>
                 <Text style={[styles.modalSubLabel, { marginBottom: 12, color: C.textSec }]}>Uploading document to vault...</Text>
@@ -3104,7 +3207,7 @@ function ChatScreen() {
                   onChangeText={setDocTitle}
                   style={styles.modalInput}
                 />
-                
+
                 <Text style={styles.modalSubLabel}>Details / Subtitle</Text>
                 <TextInput
                   placeholder="e.g. DL #DL-03-2026194, PNR, Policy ID..."
@@ -4553,7 +4656,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
   },
-  
+
   // Swipe to Reply & Reply UI Styles
   inputRowContainer: {
     flexDirection: 'row',
@@ -4628,7 +4731,7 @@ const styles = StyleSheet.create({
     color: C.textSec,
     fontSize: 11,
   },
-  
+
   // Long Press Options Modal Styles
   optionsModalOverlay: {
     position: 'absolute',

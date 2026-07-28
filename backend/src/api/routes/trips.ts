@@ -619,9 +619,10 @@ router.get('/:id/members', async (req, res) => {
           {
             id: 'creator-u1',
             userId: 'u1',
-            name: 'Aarav Sharma (Creator)',
-            avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+            name: 'Vikram Singh',
+            avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
             isCreator: true,
+            role: 'Organizer',
           },
           {
             id: 'member-u2',
@@ -629,18 +630,95 @@ router.get('/:id/members', async (req, res) => {
             name: 'Priya Nair',
             avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150',
             isCreator: false,
+            role: 'Tourist',
           },
           {
             id: 'member-u3',
             userId: 'u3',
-            name: 'Vikram Singh',
-            avatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=150',
+            name: 'Suman Gupta',
+            avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150',
             isCreator: false,
+            role: 'Tourist',
+          }
+        ];
+        return res.status(200).json({ status: 'success', data: mockMembers });
+      } else if (id === 'trip-2') {
+        const mockMembers = [
+          {
+            id: 'creator-u4',
+            userId: 'u4',
+            name: 'Aditya Sen',
+            avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+            isCreator: true,
+            role: 'Organizer',
+          },
+          {
+            id: 'member-u2',
+            userId: 'u2',
+            name: 'Priya Nair',
+            avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150',
+            isCreator: false,
+            role: 'Tourist',
+          },
+          {
+            id: 'member-u3',
+            userId: 'u3',
+            name: 'Suman Gupta',
+            avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150',
+            isCreator: false,
+            role: 'Tourist',
+          }
+        ];
+        return res.status(200).json({ status: 'success', data: mockMembers });
+      } else if (id === 'trip-3') {
+        const mockMembers = [
+          {
+            id: 'creator-u2',
+            userId: 'u2',
+            name: 'Priya Nair',
+            avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150',
+            isCreator: true,
+            role: 'Organizer',
+          },
+          {
+            id: 'member-u3',
+            userId: 'u3',
+            name: 'Suman Gupta',
+            avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150',
+            isCreator: false,
+            role: 'Tourist',
+          },
+          {
+            id: 'member-u5',
+            userId: 'u5',
+            name: 'Neha Sharma',
+            avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
+            isCreator: false,
+            role: 'Tourist',
+          }
+        ];
+        return res.status(200).json({ status: 'success', data: mockMembers });
+      } else {
+        const mockMembers = [
+          {
+            id: `creator-${id}`,
+            userId: 'creator-id',
+            name: 'Aarav Sharma',
+            avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+            isCreator: true,
+            role: 'Organizer',
+          },
+          {
+            id: `member-${id}-1`,
+            userId: 'm1',
+            name: 'Neha Sharma',
+            avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
+            isCreator: false,
+            role: 'Tourist',
           }
         ];
         return res.status(200).json({ status: 'success', data: mockMembers });
       }
-      return res.status(404).json({ status: 'error', message: 'Trip not found' });
     }
 
     const creatorName = trip.creator.profile

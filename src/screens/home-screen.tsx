@@ -72,7 +72,6 @@ const roles: { value: UserRole; label: string; sub: string; Icon: typeof Globe; 
 
 const quickAccessItems: { label: string; Icon: typeof MapPin; gradient: [string, string]; iconColor: string; isNew: boolean; route?: string }[] = [
   { label: 'Nearby', Icon: MapPin, gradient: ['#111322', '#1B1E30'], iconColor: '#38BDF8', isNew: false, route: '/nearby-trips' },
-  { label: 'Trips', Icon: Plane, gradient: ['#111322', '#1B1E30'], iconColor: '#818CF8', isNew: false, route: '/search' },
   { label: 'Bookings', Icon: CalendarCheck, gradient: ['#111322', '#1B1E30'], iconColor: '#34D399', isNew: false, route: '/bookings' },
   { label: 'Budget Tracker', Icon: Wallet, gradient: ['#111322', '#1B1E30'], iconColor: '#F59E0B', isNew: true, route: '/budget-tracker' },
 ];
@@ -876,7 +875,7 @@ function HomeScreen() {
                   end={{ x: 1, y: 1 }}
                   style={styles.quickIconTile}
                 >
-                  <item.Icon size={19} color={item.iconColor} strokeWidth={2.2} />
+                  <item.Icon size={15} color={item.iconColor} strokeWidth={2.2} />
                 </LinearGradient>
                 {item.isNew && (
                   <View style={styles.newBadgeGold}>
@@ -1313,47 +1312,47 @@ const styles = StyleSheet.create({
   // ── Quick Access Grid ───────────────────────────────
   quickCard: {
     flexDirection: 'row',
-    marginHorizontal: 16,
-    borderRadius: 30,
-    paddingVertical: 14,
-    paddingHorizontal: 12,
+    marginHorizontal: 36,
+    borderRadius: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
     marginBottom: 20,
     borderWidth: 1,
     borderColor: '#1A1D30',
     shadowColor: '#0066FF',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 3,
   },
   quickItem: {
     flex: 1,
     alignItems: 'center',
   },
   quickIconTile: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 6,
+    marginBottom: 4,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.2)',
   },
   quickLabel: {
-    fontSize: 10.5,
+    fontSize: 9.5,
     fontWeight: '600',
     color: C.white,
     textAlign: 'center',
   },
   newBadgeGold: {
     position: 'absolute',
-    top: -4,
-    right: -8,
+    top: -5,
+    right: -10,
     backgroundColor: '#F59E0B',
-    paddingHorizontal: 5,
-    paddingVertical: 1.5,
-    borderRadius: 6,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 5,
     borderWidth: 1,
     borderColor: '#0F1224',
   },

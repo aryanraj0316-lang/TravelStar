@@ -1,3 +1,6 @@
+import { eventBus } from '@/services/event-bus';
+import { useApp } from '@/store/AppContext';
+import { CheckCheck, ChevronRight, X } from 'lucide-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
@@ -6,9 +9,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { CheckCheck, ChevronRight, X } from 'lucide-react-native';
-import { eventBus } from '@/services/event-bus';
-import { useApp } from '@/store/AppContext';
 
 interface InAppNotif {
   id: string;
@@ -111,11 +111,11 @@ const styles = StyleSheet.create({
   container: {
     position: 'absolute',
     top: 0,
+    left: 0,
     right: 0,
     zIndex: 9999,
-    paddingHorizontal: 16,
-    paddingTop: 56, // below status bar / safe area
-    alignItems: 'flex-end',
+    paddingHorizontal: 12,
+    paddingTop: 52, // below status bar / safe area
   },
   banner: {
     flexDirection: 'row',
@@ -127,8 +127,6 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 14,
     gap: 12,
-    width: 320,
-    maxWidth: '95%',
     shadowColor: '#10B981',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,

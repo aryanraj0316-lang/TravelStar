@@ -1,5 +1,5 @@
 // @ts-ignore
-import { io, Socket } from 'socket.io-client/dist/socket.io.js';
+import { io } from 'socket.io-client/dist/socket.io.js';
 import { getHostUrl } from './api';
 
 type MessageListener = (data: { roomId: string; message: any }) => void;
@@ -11,7 +11,6 @@ type NotificationListener = (data: any) => void;
 
 class SocketService {
   private socket: any = null;
-  private currentUserId: string | null = null;
   private messageListeners: MessageListener[] = [];
   private sosListeners: SOSListener[] = [];
   private sosResolvedListeners: SOSListener[] = [];
@@ -21,15 +20,7 @@ class SocketService {
   private notificationListeners: NotificationListener[] = [];
 
   connect(userId?: string) {
-    if (this.socket && this.socket.connected) {
-      if (this.currentUserId !== userId) {
-        this.disconnect();
-      } else {
-        return;
-      }
-    }
-
-    this.currentUserId = userId || null;
+    if (this.socket && this.socket.connected) return;
 
     try {
       const serverUrl = getHostUrl();
@@ -89,7 +80,6 @@ class SocketService {
       this.socket.disconnect();
       this.socket = null;
     }
-    this.currentUserId = null;
   }
 
   joinRoom(roomId: string) {

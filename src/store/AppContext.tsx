@@ -186,17 +186,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setProfile((prev) => {
       const nextProfile = {
+        ...prev,
         name: 'Guest Traveler',
-        avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
-        role: 'TOURIST' as UserRole,
+        email: '',
+        phoneNumber: '',
         isVerified: false,
         aadhaarStatus: 'NONE' as const,
-        guideLicenseStatus: 'NONE' as const,
-        walletBalance: 0,
-        rewardPoints: 0,
-        id: undefined,
-        email: undefined,
-        phoneNumber: undefined,
       };
       try {
         safeStorage.setItem('savedProfile', JSON.stringify(nextProfile)).catch(() => { });
@@ -509,7 +504,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setStoriesList(remoteStories);
       }
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Reactive: refresh trips, join requests, and socket when login/room changes ──
@@ -595,7 +590,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else {
         setRequestedTrips(new Set());
       }
-    }).catch(() => {});
+    }).catch(() => { });
   }, [isLoggedIn]);
 
   const refreshTrips = useCallback(() => {
@@ -603,7 +598,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (remoteTrips && remoteTrips.length > 0) {
         setTrips(remoteTrips);
       }
-    }).catch(() => {});
+    }).catch(() => { });
   }, []);
 
   const reloadIncomingRequestsCount = useCallback(() => {
@@ -639,7 +634,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else {
         setHasUnreadNotification(false);
       }
-    }).catch(() => {});
+    }).catch(() => { });
   };
 
   const checkUnreadChats = () => {
@@ -651,7 +646,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else {
         setHasUnreadChat(false);
       }
-    }).catch(() => {});
+    }).catch(() => { });
   };
 
   useEffect(() => {
@@ -685,21 +680,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     apiService.createTrip(tripWithMeta).then(() => {
       // Re-fetch all trips from backend so isMyTrip is correctly calculated server-side
       refreshTrips();
-    }).catch(() => {});
+    }).catch(() => { });
   };
 
   const joinTrip = (tripId: string) => {
-  // Optimistic UI: mark as "requested", but do NOT touch availableSeats/membersCount here.
-  // Seats are only decremented on the backend once the organizer approves the JoinRequest
-  // (see /interactions/join-request/:id/status). Decrementing locally here caused seats
-  // to be counted twice — once fraudulently on request, once for real on approval.
-  setRequestedTrips((prev) => {
-    const next = new Set(prev);
-    next.add(tripId);
-    return next;
-  });
-  apiService.createJoinRequest(tripId).catch(() => {});
-};
+    // Optimistic UI: mark as "requested", but do NOT touch availableSeats/membersCount here.
+    // Seats are only decremented on the backend once the organizer approves the JoinRequest
+    // (see /interactions/join-request/:id/status). Decrementing locally here caused seats
+    // to be counted twice — once fraudulently on request, once for real on approval.
+    setRequestedTrips((prev) => {
+      const next = new Set(prev);
+      next.add(tripId);
+      return next;
+    });
+    apiService.createJoinRequest(tripId).catch(() => { });
+  };
 
   const sendMessage = (content: string, mediaType: 'NONE' | 'IMAGE' | 'VOICE' = 'NONE') => {
     socketService.sendMessage(activeRoomId || 'trip-1', profile.name, currentRole, content, mediaType);
