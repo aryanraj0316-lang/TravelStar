@@ -111,11 +111,11 @@ const styles = StyleSheet.create({
   container: {
     position: 'absolute',
     top: 0,
-    left: 0,
     right: 0,
     zIndex: 9999,
-    paddingHorizontal: 12,
-    paddingTop: 52, // below status bar / safe area
+    paddingHorizontal: 16,
+    paddingTop: 56, // below status bar / safe area
+    alignItems: 'flex-end',
   },
   banner: {
     flexDirection: 'row',
@@ -127,6 +127,8 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 14,
     gap: 12,
+    width: 320,
+    maxWidth: '95%',
     shadowColor: '#10B981',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,

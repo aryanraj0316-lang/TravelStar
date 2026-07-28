@@ -138,6 +138,8 @@ function ProfileScreen() {
     login,
     logout,
     setNavbarHidden,
+    hasUnreadNotification,
+    checkUnreadNotifications,
   } = useApp();
 
   const lastScrollYRef = useRef(0);
@@ -180,16 +182,7 @@ function ProfileScreen() {
     }
   }, [isLoggedIn]);
 
-  const [unreadNotif, setUnreadNotif] = useState(false);
 
-  const checkUnreadNotifications = async () => {
-    try {
-      const data = await apiService.getNotifications();
-      if (data) {
-        setUnreadNotif(data.some((n: any) => n.unread));
-      }
-    } catch (e) {}
-  };
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
@@ -463,7 +456,7 @@ function ProfileScreen() {
               onPress={() => router.push('/notifications')}
             >
               <Bell size={16} color="#FFF" />
-              {unreadNotif && <View style={styles.topNotifDot} />}
+              {hasUnreadNotification && <View style={styles.topNotifDot} />}
             </TouchableOpacity>
 
             <TouchableOpacity

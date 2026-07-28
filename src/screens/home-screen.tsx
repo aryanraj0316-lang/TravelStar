@@ -591,7 +591,7 @@ function HomeScreen() {
     };
   }, [navigation]);
 
-  const { currentRole, setCurrentRole, profile, setNavbarHidden, trips, setActiveRoomId, isLoggedIn } = useApp();
+  const { currentRole, setCurrentRole, profile, setNavbarHidden, trips, setActiveRoomId, isLoggedIn, hasUnreadNotification, checkUnreadNotifications } = useApp();
   const router = useRouter();
   const [activeDot, setActiveDot] = useState(0);
   const trendingRef = useRef<ScrollView>(null);
@@ -606,7 +606,6 @@ function HomeScreen() {
   const [destinations, setDestinations] = useState<any[]>(DEFAULT_DESTINATIONS);
   const [weatherLocations, setWeatherLocations] = useState<any[]>(DEFAULT_WEATHER);
   const [alerts, setAlerts] = useState<any[]>(DEFAULT_ALERTS);
-  const [unreadNotif, setUnreadNotif] = useState(false);
 
   useEffect(() => {
     // Fetch unified feed (stories + guide reels merged) from backend
@@ -632,8 +631,17 @@ function HomeScreen() {
       if (data && data.length > 0) setAlerts(data);
     });
     apiService.getNotifications().then((data) => {
-      if (data) setUnreadNotif(data.some((n: any) => n.unread));
+      if (data) checkUnreadNotifications();
     }).catch(() => {});
+
+    // Listen for real-time notifications to refresh the badge
+    const unsubNotif = eventBus.on('inAppNotification', () => {
+      checkUnreadNotifications();
+    });
+
+    return () => {
+      unsubNotif();
+    };
   }, []);
 
   const infiniteTrendingDests = [...destinations, ...destinations];
@@ -728,7 +736,7 @@ function HomeScreen() {
               onPress={() => router.push('/notifications')}
             >
               <Bell size={16} color={C.white} strokeWidth={1.8} />
-              {unreadNotif && <View style={styles.bellDot} />}
+              {hasUnreadNotification && <View style={styles.bellDot} />}
             </TouchableOpacity>
             <TouchableOpacity
               activeOpacity={0.85}
@@ -1225,13 +1233,13 @@ const styles = StyleSheet.create({
   },
   bellDot: {
     position: 'absolute',
-    top: 5,
-    right: 5,
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: '#F59E0B',
-    borderWidth: 1.2,
+    top: 2,
+    right: 2,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#EF4444',
+    borderWidth: 1.5,
     borderColor: C.bg,
   },
   avatarWrap: {

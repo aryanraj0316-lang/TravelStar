@@ -136,6 +136,7 @@ interface AppContextType {
   hasUnreadChat: boolean;
   clearChatUnread: () => void;
   checkUnreadNotifications: () => void;
+  hasUnreadNotification: boolean;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -145,6 +146,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [requestedTrips, setRequestedTrips] = useState<Set<string>>(new Set());
   const [pendingRequestsCount, setPendingRequestsCount] = useState<number>(0);
   const [hasUnreadChat, setHasUnreadChat] = useState<boolean>(false);
+  const [hasUnreadNotification, setHasUnreadNotification] = useState<boolean>(false);
   const activeTabNameRef = useRef<string>('index');
 
   useEffect(() => {
@@ -184,12 +186,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setProfile((prev) => {
       const nextProfile = {
-        ...prev,
         name: 'Guest Traveler',
-        email: '',
-        phoneNumber: '',
+        avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
+        role: 'TOURIST' as UserRole,
         isVerified: false,
         aadhaarStatus: 'NONE' as const,
+        guideLicenseStatus: 'NONE' as const,
+        walletBalance: 0,
+        rewardPoints: 0,
+        id: undefined,
+        email: undefined,
+        phoneNumber: undefined,
       };
       try {
         safeStorage.setItem('savedProfile', JSON.stringify(nextProfile)).catch(() => { });
@@ -507,7 +514,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // ── Reactive: refresh trips, join requests, and socket when login/room changes ──
   useEffect(() => {
-    if (!isLoggedIn) {
+    if (!isLoggedIn || !profile.id) {
       socketService.disconnect();
       return;
     }
@@ -577,7 +584,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsubAddedToChat();
       unsubNotification();
     };
-  }, [activeRoomId, isLoggedIn]);
+  }, [activeRoomId, isLoggedIn, profile.id]);
 
   const reloadJoinRequests = useCallback(() => {
     if (!isLoggedIn) return;
@@ -621,12 +628,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!isLoggedIn) return;
     apiService.getNotifications().then((notifs) => {
       if (notifs && notifs.length > 0) {
+        const hasAnyUnread = notifs.some((n: any) => n.unread === true);
+        setHasUnreadNotification(hasAnyUnread);
         const hasUnreadJoinAccepted = notifs.some(
-          (n: any) => (n.type === 'JOIN_ACCEPTED' || n.category === 'CHAT_ADDED' || n.category === 'JOIN_ACCEPTED') && n.unread === true
+          (n: any) => (n.category === 'CHAT_ADDED' || n.category === 'JOIN_ACCEPTED') && n.unread === true
         );
         if (hasUnreadJoinAccepted) {
           setHasUnreadChat(true);
         }
+      } else {
+        setHasUnreadNotification(false);
       }
     }).catch(() => {});
   };
@@ -795,6 +806,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     hasUnreadChat,
     clearChatUnread,
     checkUnreadNotifications,
+    hasUnreadNotification,
   }), [
     currentRole,
     profile,
@@ -810,6 +822,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     requestedTrips,
     pendingRequestsCount,
     hasUnreadChat,
+    hasUnreadNotification,
   ]);
 
   return (
