@@ -36,7 +36,7 @@ import {
   Users as UsersIcon,
   X
 } from 'lucide-react-native';
-import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -528,20 +528,23 @@ function ChatScreen() {
           }));
 
           const lastMsg = history[history.length - 1];
-          setInboxRooms((prevRooms) =>
-            prevRooms.map((room) => {
-              if (room.id === selectedRoomId) {
-                return {
-                  ...room,
-                  latestMessage: `${lastMsg.senderName === profile.name ? 'You' : lastMsg.senderName}: ${lastMsg.content}`,
-                  latestTime: lastMsg.timestamp,
-                  unread: false,
-                  unreadCount: 0,
-                };
-              }
-              return room;
-            })
-          );
+          setInboxRooms((prevRooms) => {
+            const nowIso = new Date().toISOString();
+            const existingRoom = prevRooms.find((r) => r.id === selectedRoomId);
+            const otherRooms = prevRooms.filter((r) => r.id !== selectedRoomId);
+
+            if (existingRoom) {
+              const updatedRoom: ChatRoom = {
+                ...existingRoom,
+                latestMessage: `${lastMsg.senderName === profile.name ? 'You' : lastMsg.senderName}: ${lastMsg.content}`,
+                latestTime: lastMsg.timestamp,
+                unreadCount: 0,
+                lastMessageAt: nowIso,
+              };
+              return [updatedRoom, ...otherRooms];
+            }
+            return prevRooms;
+          });
         }
       }).catch((e: any) => {
         console.warn('Failed to load chat messages:', e);
@@ -620,38 +623,38 @@ function ChatScreen() {
       });
 
       setInboxRooms((prevRooms) => {
-        const exists = prevRooms.some((room) => room.id === key);
+        const nowIso = new Date().toISOString();
         const isMe = latestMsg.senderId === profile.id || !!(profile.name && latestMsg.senderName === profile.name);
-        
-        if (exists) {
-          return prevRooms.map((room) => {
-            if (room.id === key) {
-              return {
-                ...room,
-                latestMessage: `${latestMsg.senderName === profile.name ? 'You' : latestMsg.senderName}: ${latestMsg.content}`,
-                latestTime: latestMsg.timestamp,
-                unreadCount: room.id === activeRoomId ? 0 : room.unreadCount + 1,
-                lastMessageAt: new Date().toISOString(),
-              };
-            }
-            return room;
-          });
+        const senderLabel = isMe ? 'You' : (latestMsg.senderName || 'System');
+        const snippetText = `${senderLabel}: ${latestMsg.content}`;
+
+        const existingRoom = prevRooms.find((room) => room.id === key);
+        const otherRooms = prevRooms.filter((room) => room.id !== key);
+
+        if (existingRoom) {
+          const updatedRoom: ChatRoom = {
+            ...existingRoom,
+            latestMessage: snippetText,
+            latestTime: latestMsg.timestamp || 'Just Now',
+            unreadCount: key === activeRoomId ? 0 : existingRoom.unreadCount + 1,
+            lastMessageAt: nowIso,
+          };
+          return [updatedRoom, ...otherRooms];
         } else {
-          // If the room doesn't exist, create it on-the-fly and insert it at the top
           const roomType = key.includes('guide') || key.includes('dm') ? 'GUIDE' : 'GROUP';
           const newRoom: ChatRoom = {
             id: key,
             tripId: latestMsg.roomId?.startsWith('room-') ? latestMsg.roomId.replace('room-', '').split('-')[0] : 'trip-1',
-            name: key.includes('group') ? 'New Group Chat' : latestMsg.senderName,
+            name: key.includes('group') ? 'New Group Chat' : (latestMsg.senderName || 'New Chat'),
             avatar: isMe ? profile.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
             type: roomType,
-            latestMessage: `${latestMsg.senderName === profile.name ? 'You' : latestMsg.senderName}: ${latestMsg.content}`,
-            latestTime: latestMsg.timestamp,
+            latestMessage: snippetText,
+            latestTime: latestMsg.timestamp || 'Just Now',
             unreadCount: (key === activeRoomId || isMe) ? 0 : 1,
             badge: roomType === 'GUIDE' ? 'Guide' : 'Group Chat',
-            lastMessageAt: new Date().toISOString(),
+            lastMessageAt: nowIso,
           };
-          return [newRoom, ...prevRooms];
+          return [newRoom, ...otherRooms];
         }
       });
     }
@@ -1023,17 +1026,19 @@ function ChatScreen() {
   }, [selectedTripId, selectedRoomId]);
 
   // Auto scroll
-  const scrollToBottom = () => {
-    setTimeout(() => {
-      scrollViewRef.current?.scrollToEnd({ animated: true });
-    }, 150);
-  };
+  const scrollTimerRef = useRef<any>(null);
+  const scrollToBottom = useCallback((animated = true) => {
+    if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
+    scrollTimerRef.current = setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated });
+    }, 40);
+  }, []);
 
   useEffect(() => {
     if (selectedRoomId) {
-      scrollToBottom();
+      scrollToBottom(true);
     }
-  }, [selectedRoomId, tripMessages]);
+  }, [selectedRoomId, tripMessages, scrollToBottom]);
 
   // Translate toggle
   const toggleTranslate = (id: string) => {
@@ -1070,21 +1075,24 @@ function ChatScreen() {
       [key]: [...(prev[key] || []), newMsg]
     }));
 
-    // Update the WhatsApp Inbox snippet text dynamically!
-    setInboxRooms(prevRooms =>
-      prevRooms.map(room => {
-        if (room.id === selectedRoomId) {
-          return {
-            ...room,
-            latestMessage: `You: ${msgData.content || 'Attachment shared'}`,
-            latestTime: newMsg.timestamp,
-            unreadCount: 0,
-            lastMessageAt: new Date().toISOString(),
-          };
-        }
-        return room;
-      })
-    );
+    // Update the WhatsApp Inbox snippet text dynamically and move room to index 0 (TOP)!
+    setInboxRooms(prevRooms => {
+      const nowIso = new Date().toISOString();
+      const existingRoom = prevRooms.find(r => r.id === selectedRoomId);
+      const otherRooms = prevRooms.filter(r => r.id !== selectedRoomId);
+
+      if (existingRoom) {
+        const updatedRoom: ChatRoom = {
+          ...existingRoom,
+          latestMessage: `You: ${msgData.content || 'Attachment shared'}`,
+          latestTime: newMsg.timestamp,
+          unreadCount: 0,
+          lastMessageAt: nowIso,
+        };
+        return [updatedRoom, ...otherRooms];
+      }
+      return prevRooms;
+    });
 
     scrollToBottom();
   };
@@ -1472,29 +1480,31 @@ function ChatScreen() {
   });
 
   // Filtered and sorted rooms listing (pins at the top!)
-  const filteredRooms = inboxRooms
-    .filter(room => {
-      const matchesSearch = room.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        room.latestMessage.toLowerCase().includes(searchQuery.toLowerCase());
+  const filteredRooms = useMemo(() => {
+    return inboxRooms
+      .filter(room => {
+        const matchesSearch = room.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          room.latestMessage.toLowerCase().includes(searchQuery.toLowerCase());
 
-      if (!matchesSearch) return false;
+        if (!matchesSearch) return false;
 
-      if (inboxFilter === 'ALL') return true;
-      if (inboxFilter === 'GROUPS') return room.type === 'GROUP';
-      if (inboxFilter === 'GUIDES') return room.type === 'GUIDE';
+        if (inboxFilter === 'ALL') return true;
+        if (inboxFilter === 'GROUPS') return room.type === 'GROUP';
+        if (inboxFilter === 'GUIDES') return room.type === 'GUIDE';
 
-      return true;
-    })
-    .sort((a, b) => {
-      const aPinned = pinnedRoomIds.has(a.id) ? 1 : 0;
-      const bPinned = pinnedRoomIds.has(b.id) ? 1 : 0;
-      if (aPinned !== bPinned) {
-        return bPinned - aPinned;
-      }
-      const aTime = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
-      const bTime = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
-      return bTime - aTime;
-    });
+        return true;
+      })
+      .sort((a, b) => {
+        const aPinned = pinnedRoomIds.has(a.id) ? 1 : 0;
+        const bPinned = pinnedRoomIds.has(b.id) ? 1 : 0;
+        if (aPinned !== bPinned) {
+          return bPinned - aPinned;
+        }
+        const aTime = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+        const bTime = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+        return bTime - aTime;
+      });
+  }, [inboxRooms, searchQuery, inboxFilter, pinnedRoomIds]);
 
   // Find Room info of the selected room
   let activeRoom = inboxRooms.find(r => r.id === selectedRoomId);
@@ -1997,7 +2007,7 @@ function ChatScreen() {
             ref={scrollViewRef}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.scrollContent}
-            onContentSizeChange={scrollToBottom}
+            onContentSizeChange={() => scrollToBottom(false)}
           >
             {currentMessages.map((msg, idx) => {
               const hasTranslation = !!translatedMsgs.has(msg.id);
@@ -2595,9 +2605,14 @@ function ChatScreen() {
                       {member.role.toUpperCase()}
                     </Text>
                   </View>
-                  <View style={styles.memberChatIconBox}>
-                    <MessageSquare size={14} color="#0066FF" />
-                  </View>
+                  <TouchableOpacity
+                    style={styles.dmMemberBtn}
+                    onPress={() => handleMemberClick(member)}
+                    activeOpacity={0.8}
+                  >
+                    <MessageSquare size={12} color="#FFF" style={{ marginRight: 3 }} />
+                    <Text style={styles.dmMemberBtnText}>DM</Text>
+                  </TouchableOpacity>
                 </View>
               </TouchableOpacity>
             ))}
@@ -2996,7 +3011,14 @@ function ChatScreen() {
                             </Text>
                           </View>
 
-                          <MessageSquare size={14} color="#0066FF" />
+                          <TouchableOpacity
+                            style={styles.dmMemberBtn}
+                            onPress={() => handleMemberClick(member)}
+                            activeOpacity={0.8}
+                          >
+                            <MessageSquare size={12} color="#FFF" style={{ marginRight: 3 }} />
+                            <Text style={styles.dmMemberBtnText}>DM</Text>
+                          </TouchableOpacity>
                         </TouchableOpacity>
                       );
                     })}
@@ -3246,6 +3268,26 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: C.bg,
+  },
+  dmMemberBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0066FF',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    marginLeft: 8,
+    shadowColor: '#0066FF',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  dmMemberBtnText: {
+    color: '#FFF',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
 
   // WhatsApp-style Inbox List View
