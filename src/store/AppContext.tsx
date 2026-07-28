@@ -4,6 +4,7 @@ import { apiService } from '../services/api';
 import { socketService } from '../services/socket';
 import { eventBus } from '../services/event-bus';
 
+
 export type UserRole = 'TOURIST' | 'GUIDE' | 'ORGANIZER' | 'FAMILY_TRAVELER' | 'ADMIN';
 
 export interface UserProfile {
@@ -511,7 +512,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return;
     }
 
-    socketService.connect();
+    socketService.connect(profile.id);
     if (activeRoomId) {
       socketService.joinRoom(activeRoomId);
     } else {
@@ -556,10 +557,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       reloadJoinRequests();
     });
 
+    const unsubNotification = socketService.onNotification((data) => {
+      // Refresh notification badge count
+      checkUnreadNotifications();
+      // Show in-app banner (component handles navigation)
+      eventBus.emit('inAppNotification', {
+        id: data.id || `notif-${Date.now()}`,
+        title: data.title || 'Notification',
+        content: data.content || 'Your request was updated.',
+        chatRoomId: data.chatRoomId,
+        tripId: data.tripId,
+        category: data.category,
+      });
+    });
+
     return () => {
       unsubMsg();
       unsubSOS();
       unsubAddedToChat();
+      unsubNotification();
     };
   }, [activeRoomId, isLoggedIn]);
 

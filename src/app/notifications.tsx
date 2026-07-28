@@ -443,7 +443,7 @@ export default function NotificationsScreen() {
         contentContainerStyle={styles.feedScrollContent}
       >
         {/* ── JOIN REQUEST ACCEPTANCES ── */}
-        {(activeTab === 'ALL' || activeTab === 'TRIPS') && notifications.some(n => n.type === 'JOIN_ACCEPTED') && (
+        {(activeTab === 'ALL' || activeTab === 'TRIPS') && notifications.some(n => n.category === 'JOIN_ACCEPTED' || n.category === 'CHAT_ADDED') && (
           <View style={styles.sectionBlock}>
             <View style={styles.sectionHeaderRow}>
               <View style={styles.sectionHeaderTitleGroup}>
@@ -452,7 +452,7 @@ export default function NotificationsScreen() {
               </View>
             </View>
 
-            {notifications.filter(n => n.type === 'JOIN_ACCEPTED' || n.category === 'CHAT_ADDED' || n.category === 'JOIN_ACCEPTED').map((notif: any) => (
+            {notifications.filter(n => n.category === 'JOIN_ACCEPTED' || n.category === 'CHAT_ADDED').map((notif: any) => (
               <TouchableOpacity
                 key={notif.id}
                 style={[
@@ -471,6 +471,7 @@ export default function NotificationsScreen() {
                   checkUnreadNotifications();
                   if (notif.chatRoomId) {
                     setActiveRoomId(notif.chatRoomId);
+                    router.back();
                     eventBus.emit('switchTab', 'chat');
                   }
                 }}

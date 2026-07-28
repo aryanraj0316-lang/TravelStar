@@ -414,6 +414,19 @@ const handleStatusChange = async (req: any, res: any) => {
           chatRoomId: targetChatRoomId,
           tripName: request.trip.name,
         });
+
+        // Emit live notificationReceived event to user's personal room
+        io.to(request.userId).emit('notificationReceived', {
+          id: `notif-${Date.now()}`,
+          userId: request.userId,
+          type: 'TRIP',
+          category: 'JOIN_ACCEPTED',
+          title: 'Join Request Accepted 🎉',
+          content: `Your request to join ${request.trip.name} has been accepted!`,
+          unread: true,
+          tripId: request.tripId,
+          chatRoomId: targetChatRoomId,
+        });
       }
 
       // 1. JOIN_ACCEPTED notification

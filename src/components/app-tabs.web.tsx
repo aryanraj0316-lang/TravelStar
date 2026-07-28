@@ -10,7 +10,7 @@ import { Colors, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useApp } from '@/store/AppContext';
 import { eventBus } from '@/services/event-bus';
 
-import HomeScreen from '../app/index';
+import HomeScreen from '../screens/home-screen';
 import SearchScreen from '../app/search';
 import CreateTripScreen from '../app/create';
 import MapScreen from '../app/map';

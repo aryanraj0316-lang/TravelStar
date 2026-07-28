@@ -28,12 +28,13 @@ import Animated, {
 import { eventBus } from '@/services/event-bus';
 import { useApp } from '@/store/AppContext';
 
-import HomeScreen from '../app/index';
+import HomeScreen from '../screens/home-screen';
 import SearchScreen from '../app/search';
 import CreateTripScreen from '../app/create';
 import MapScreen from '../app/map';
 import ChatScreen from '../app/chat';
 import ProfileScreen from '../app/profile';
+import { InAppNotificationBanner } from './InAppNotificationBanner';
 
 const TabContext = React.createContext<{
   activeTabName: string;
@@ -330,6 +331,7 @@ export default function AppTabs() {
         </ScrollView>
 
         <CustomTabBar />
+        <InAppNotificationBanner />
       </View>
     </TabContext.Provider>
   );

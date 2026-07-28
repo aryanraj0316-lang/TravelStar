@@ -1,11 +1,10 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
+import { DarkTheme, DefaultTheme, ThemeProvider, Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useColorScheme } from 'react-native';
 import { enableScreens } from 'react-native-screens';
 import { Image } from 'expo-image';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
 import { AppProvider } from '@/store/AppContext';
 
 enableScreens();
@@ -38,13 +37,17 @@ const CustomLightTheme = {
   },
 };
 
-export default function TabLayout() {
+export default function RootLayout() {
   const colorScheme = useColorScheme();
   return (
     <AppProvider>
       <ThemeProvider value={colorScheme === 'dark' ? CustomDarkTheme : CustomLightTheme}>
         <AnimatedSplashOverlay />
-        <AppTabs />
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="index" />
+          <Stack.Screen name="auth" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="stories" options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
+        </Stack>
       </ThemeProvider>
     </AppProvider>
   );

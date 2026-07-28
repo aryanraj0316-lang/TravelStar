@@ -7,6 +7,7 @@ type SOSListener = (data: any) => void;
 type LocationListener = (data: any) => void;
 type AddedToChatListener = (data: { tripId: string; chatRoomId: string; tripName: string }) => void;
 type WalletListener = (data: any) => void;
+type NotificationListener = (data: any) => void;
 
 class SocketService {
   private socket: any = null;
@@ -16,8 +17,9 @@ class SocketService {
   private locationListeners: LocationListener[] = [];
   private addedToChatListeners: AddedToChatListener[] = [];
   private walletListeners: WalletListener[] = [];
+  private notificationListeners: NotificationListener[] = [];
 
-  connect() {
+  connect(userId?: string) {
     if (this.socket && this.socket.connected) return;
 
     try {
@@ -28,6 +30,7 @@ class SocketService {
         reconnection: true,
         reconnectionAttempts: 10,
         reconnectionDelay: 1000,
+        query: userId ? { userId } : undefined,
       });
 
       this.socket.on('connect', () => {
@@ -39,6 +42,10 @@ class SocketService {
 
       this.socket.on('addedToChat', (data: any) => {
         this.addedToChatListeners.forEach((l) => l(data));
+      });
+
+      this.socket.on('notificationReceived', (data: any) => {
+        this.notificationListeners.forEach((l) => l(data));
       });
 
       this.socket.on('sosReceived', (data: any) => {
@@ -158,6 +165,13 @@ class SocketService {
     this.walletListeners.push(listener);
     return () => {
       this.walletListeners = this.walletListeners.filter((l) => l !== listener);
+    };
+  }
+
+  onNotification(listener: NotificationListener) {
+    this.notificationListeners.push(listener);
+    return () => {
+      this.notificationListeners = this.notificationListeners.filter((l) => l !== listener);
     };
   }
 }
