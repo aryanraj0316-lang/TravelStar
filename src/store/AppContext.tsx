@@ -1,7 +1,8 @@
 import { safeStorage } from '@/services/storage';
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { apiService } from '../services/api';
 import { socketService } from '../services/socket';
+import { eventBus } from '../services/event-bus';
 
 export type UserRole = 'TOURIST' | 'GUIDE' | 'ORGANIZER' | 'FAMILY_TRAVELER' | 'ADMIN';
 
@@ -133,8 +134,6 @@ interface AppContextType {
   reloadIncomingRequestsCount: () => void;
   hasUnreadChat: boolean;
   clearChatUnread: () => void;
-  activeTabName: string;
-  setActiveTabName: (name: string) => void;
   checkUnreadNotifications: () => void;
 }
 
@@ -145,7 +144,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [requestedTrips, setRequestedTrips] = useState<Set<string>>(new Set());
   const [pendingRequestsCount, setPendingRequestsCount] = useState<number>(0);
   const [hasUnreadChat, setHasUnreadChat] = useState<boolean>(false);
-  const [activeTabName, setActiveTabName] = useState<string>('index');
+  const activeTabNameRef = useRef<string>('index');
+
+  useEffect(() => {
+    const unsub = eventBus.on('tabChanged', (name: string) => {
+      activeTabNameRef.current = name;
+    });
+    return unsub;
+  }, []);
   const [profile, setProfile] = useState<UserProfile>({
     name: 'Aarav Sharma',
     avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
@@ -516,7 +522,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
 
         // Set unread chat dot if message is from a different room OR user is not currently viewing the Chat tab
-        if (data.roomId !== activeRoomId || activeTabName !== 'chat') {
+        if (data.roomId !== activeRoomId || activeTabNameRef.current !== 'chat') {
           setHasUnreadChat(true);
         }
       }
@@ -542,7 +548,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsubSOS();
       unsubAddedToChat();
     };
-  }, [activeRoomId, isLoggedIn, activeTabName]);
+  }, [activeRoomId, isLoggedIn]);
 
   const reloadJoinRequests = useCallback(() => {
     if (!isLoggedIn) return;
@@ -725,47 +731,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     apiService.createStory(newStory);
   };
 
+  const providerValue = useMemo(() => ({
+    currentRole,
+    setCurrentRole,
+    profile,
+    updateProfile,
+    isLoggedIn,
+    login,
+    logout,
+    trips,
+    addTrip,
+    joinTrip,
+    guides,
+    messages,
+    sendMessage,
+    sosAlerts,
+    triggerSOS,
+    resolveSOS,
+    walletTransactions,
+    addWalletFunds,
+    withdrawWalletFunds,
+    activeRoomId,
+    setActiveRoomId,
+    navbarHidden,
+    setNavbarHidden,
+    storiesList,
+    addStory,
+    requestedTrips,
+    setRequestedTrips,
+    reloadJoinRequests,
+    refreshTrips,
+    pendingRequestsCount,
+    reloadIncomingRequestsCount,
+    hasUnreadChat,
+    clearChatUnread,
+    checkUnreadNotifications,
+  }), [
+    currentRole,
+    profile,
+    isLoggedIn,
+    trips,
+    guides,
+    messages,
+    sosAlerts,
+    walletTransactions,
+    activeRoomId,
+    navbarHidden,
+    storiesList,
+    requestedTrips,
+    pendingRequestsCount,
+    hasUnreadChat,
+  ]);
+
   return (
-    <AppContext.Provider
-      value={{
-        currentRole,
-        setCurrentRole,
-        profile,
-        updateProfile,
-        isLoggedIn,
-        login,
-        logout,
-        trips,
-        addTrip,
-        joinTrip,
-        guides,
-        messages,
-        sendMessage,
-        sosAlerts,
-        triggerSOS,
-        resolveSOS,
-        walletTransactions,
-        addWalletFunds,
-        withdrawWalletFunds,
-        activeRoomId,
-        setActiveRoomId,
-        navbarHidden,
-        setNavbarHidden,
-        storiesList,
-        addStory,
-        requestedTrips,
-        setRequestedTrips,
-        reloadJoinRequests,
-        refreshTrips,
-        pendingRequestsCount,
-        reloadIncomingRequestsCount,
-        hasUnreadChat,
-        clearChatUnread,
-        activeTabName,
-        setActiveTabName,
-        checkUnreadNotifications,
-      }}
-    >
+    <AppContext.Provider value={providerValue}>
       {children}
     </AppContext.Provider>
   );

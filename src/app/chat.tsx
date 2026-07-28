@@ -42,7 +42,7 @@ import {
   Video,
   X
 } from 'lucide-react-native';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, memo } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -410,7 +410,10 @@ interface ChatRoom {
   lastMessageAt?: string;
 }
 
-export default function ChatScreen() {
+function ChatScreen() {
+  useEffect(() => {
+    console.log('Screen mounted: ChatScreen');
+  }, []);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const lastScrollYRef = useRef(0);
@@ -5322,3 +5325,5 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 });
+
+export default memo(ChatScreen);

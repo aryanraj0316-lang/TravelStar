@@ -154,7 +154,10 @@ const LIGHT = {
   capsuleBg: '#EEF1F6',
 };
 
-export default function SearchScreen() {
+function SearchScreen() {
+  useEffect(() => {
+    console.log('Screen mounted: SearchScreen');
+  }, []);
   const router = useRouter();
   const navigation = useNavigation();
   const scheme = useColorScheme();
@@ -2105,3 +2108,5 @@ const styles = StyleSheet.create({
   requestedStatusBadge: {},
   requestedStatusText: {},
 });
+
+export default React.memo(SearchScreen);

@@ -568,7 +568,10 @@ function FeaturedTripsCarousel({ isFocused }: { isFocused: boolean }) {
 }
 
 // ─── Component ──────────────────────────────────────────────────────
-export default function HomeScreen() {
+function HomeScreen() {
+  useEffect(() => {
+    console.log('Screen mounted: HomeScreen');
+  }, []);
   const navigation = useNavigation();
   const [isFocused, setIsFocused] = useState(true);
 
@@ -1795,3 +1798,5 @@ const styles = StyleSheet.create({
     color: C.white,
   },
 });
+
+export default React.memo(HomeScreen);

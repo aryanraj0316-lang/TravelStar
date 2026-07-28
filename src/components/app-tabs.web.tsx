@@ -1,93 +1,150 @@
-import {
-  Tabs,
-  TabList,
-  TabTrigger,
-  TabSlot,
-  TabTriggerSlotProps,
-  TabListProps,
-} from 'expo-router/ui';
-import { SymbolView } from 'expo-symbols';
+import React, { useCallback, useState, useEffect } from 'react';
 import { Pressable, useColorScheme, View, StyleSheet } from 'react-native';
+import { SymbolView } from 'expo-symbols';
 
 import { ExternalLink } from './external-link';
 import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
 
 import { Colors, MaxContentWidth, Spacing } from '@/constants/theme';
+import { useApp } from '@/store/AppContext';
+import { eventBus } from '@/services/event-bus';
+
+import HomeScreen from '../app/index';
+import SearchScreen from '../app/search';
+import CreateTripScreen from '../app/create';
+import MapScreen from '../app/map';
+import ChatScreen from '../app/chat';
+import ProfileScreen from '../app/profile';
+
+const TabContext = React.createContext<{
+  activeTabName: string;
+  setActiveTabName: (name: string) => void;
+}>({ activeTabName: 'index', setActiveTabName: () => {} });
 
 export default function AppTabs() {
-  return (
-    <Tabs>
-      <TabSlot style={{ height: '100%' }} />
-      <TabList asChild>
-        <CustomTabList>
-          <TabTrigger name="home" href="/" asChild>
-            <TabButton>Home</TabButton>
-          </TabTrigger>
-          <TabTrigger name="search" href="/search" asChild>
-            <TabButton>Search</TabButton>
-          </TabTrigger>
-          <TabTrigger name="create" href="/create" asChild>
-            <TabButton>Create</TabButton>
-          </TabTrigger>
-          <TabTrigger name="map" href="/map" asChild>
-            <TabButton>Map</TabButton>
-          </TabTrigger>
-          <TabTrigger name="chat" href="/chat" asChild>
-            <TabButton>Chat</TabButton>
-          </TabTrigger>
-          <TabTrigger name="profile" href="/profile" asChild>
-            <TabButton>Profile</TabButton>
-          </TabTrigger>
-        </CustomTabList>
-      </TabList>
-    </Tabs>
-  );
-}
+  const [activeTabName, setActiveTabName] = useState('index');
 
-export function TabButton({ children, isFocused, ...props }: TabTriggerSlotProps) {
-  return (
-    <Pressable {...props} style={({ pressed }) => pressed && styles.pressed}>
-      <ThemedView
-        type={isFocused ? 'backgroundSelected' : 'backgroundElement'}
-        style={styles.tabButtonView}>
-        <ThemedText type="small" themeColor={isFocused ? 'text' : 'textSecondary'}>
-          {children}
-        </ThemedText>
-      </ThemedView>
-    </Pressable>
-  );
-}
+  useEffect(() => {
+    eventBus.emit('tabChanged', activeTabName);
+  }, [activeTabName]);
 
-export function CustomTabList(props: TabListProps) {
+  const handleTabPress = useCallback((name: string) => {
+    setActiveTabName(name);
+  }, []);
+
   const scheme = useColorScheme();
   const colors = Colors[scheme === 'unspecified' ? 'light' : scheme];
 
   return (
-    <View {...props} style={styles.tabListContainer}>
-      <ThemedView type="backgroundElement" style={styles.innerContainer}>
-        <ThemedText type="smallBold" style={styles.brandText}>
-          TravelConnect India
-        </ThemedText>
+    <TabContext.Provider value={{ activeTabName, setActiveTabName }}>
+      <View style={{ flex: 1, backgroundColor: '#060814' }}>
+        <View style={[styles.screenContainer, { display: activeTabName === 'index' ? 'flex' : 'none' }]}>
+          <HomeScreen />
+        </View>
+        <View style={[styles.screenContainer, { display: activeTabName === 'search' ? 'flex' : 'none' }]}>
+          <SearchScreen />
+        </View>
+        <View style={[styles.screenContainer, { display: activeTabName === 'create' ? 'flex' : 'none' }]}>
+          <CreateTripScreen />
+        </View>
+        <View style={[styles.screenContainer, { display: activeTabName === 'map' ? 'flex' : 'none' }]}>
+          <MapScreen />
+        </View>
+        <View style={[styles.screenContainer, { display: activeTabName === 'chat' ? 'flex' : 'none' }]}>
+          <ChatScreen />
+        </View>
+        <View style={[styles.screenContainer, { display: activeTabName === 'profile' ? 'flex' : 'none' }]}>
+          <ProfileScreen />
+        </View>
 
-        {props.children}
+        <View style={styles.tabListContainer}>
+          <ThemedView type="backgroundElement" style={styles.innerContainer}>
+            <ThemedText type="smallBold" style={styles.brandText}>
+              TravelConnect India
+            </ThemedText>
 
-        <ExternalLink href="https://docs.expo.dev" asChild>
-          <Pressable style={styles.externalPressable}>
-            <ThemedText type="link">Docs</ThemedText>
-            <SymbolView
-              tintColor={colors.text}
-              name={{ ios: 'arrow.up.right.square', web: 'link' }}
-              size={12}
-            />
-          </Pressable>
-        </ExternalLink>
-      </ThemedView>
-    </View>
+            <Pressable onPress={() => handleTabPress('index')} style={({ pressed }) => pressed && styles.pressed}>
+              <ThemedView
+                type={activeTabName === 'index' ? 'backgroundSelected' : 'backgroundElement'}
+                style={styles.tabButtonView}>
+                <ThemedText type="small" themeColor={activeTabName === 'index' ? 'text' : 'textSecondary'}>
+                  Home
+                </ThemedText>
+              </ThemedView>
+            </Pressable>
+
+            <Pressable onPress={() => handleTabPress('search')} style={({ pressed }) => pressed && styles.pressed}>
+              <ThemedView
+                type={activeTabName === 'search' ? 'backgroundSelected' : 'backgroundElement'}
+                style={styles.tabButtonView}>
+                <ThemedText type="small" themeColor={activeTabName === 'search' ? 'text' : 'textSecondary'}>
+                  Search
+                </ThemedText>
+              </ThemedView>
+            </Pressable>
+
+            <Pressable onPress={() => handleTabPress('create')} style={({ pressed }) => pressed && styles.pressed}>
+              <ThemedView
+                type={activeTabName === 'create' ? 'backgroundSelected' : 'backgroundElement'}
+                style={styles.tabButtonView}>
+                <ThemedText type="small" themeColor={activeTabName === 'create' ? 'text' : 'textSecondary'}>
+                  Create
+                </ThemedText>
+              </ThemedView>
+            </Pressable>
+
+            <Pressable onPress={() => handleTabPress('map')} style={({ pressed }) => pressed && styles.pressed}>
+              <ThemedView
+                type={activeTabName === 'map' ? 'backgroundSelected' : 'backgroundElement'}
+                style={styles.tabButtonView}>
+                <ThemedText type="small" themeColor={activeTabName === 'map' ? 'text' : 'textSecondary'}>
+                  Map
+                </ThemedText>
+              </ThemedView>
+            </Pressable>
+
+            <Pressable onPress={() => handleTabPress('chat')} style={({ pressed }) => pressed && styles.pressed}>
+              <ThemedView
+                type={activeTabName === 'chat' ? 'backgroundSelected' : 'backgroundElement'}
+                style={styles.tabButtonView}>
+                <ThemedText type="small" themeColor={activeTabName === 'chat' ? 'text' : 'textSecondary'}>
+                  Chat
+                </ThemedText>
+              </ThemedView>
+            </Pressable>
+
+            <Pressable onPress={() => handleTabPress('profile')} style={({ pressed }) => pressed && styles.pressed}>
+              <ThemedView
+                type={activeTabName === 'profile' ? 'backgroundSelected' : 'backgroundElement'}
+                style={styles.tabButtonView}>
+                <ThemedText type="small" themeColor={activeTabName === 'profile' ? 'text' : 'textSecondary'}>
+                  Profile
+                </ThemedText>
+              </ThemedView>
+            </Pressable>
+
+            <ExternalLink href="https://docs.expo.dev" asChild>
+              <Pressable style={styles.externalPressable}>
+                <ThemedText type="link">Docs</ThemedText>
+                <SymbolView
+                  tintColor={colors.text}
+                  name={{ ios: 'arrow.up.right.square', web: 'link' }}
+                  size={12}
+                />
+              </Pressable>
+            </ExternalLink>
+          </ThemedView>
+        </View>
+      </View>
+    </TabContext.Provider>
   );
 }
 
 const styles = StyleSheet.create({
+  screenContainer: {
+    flex: 1,
+  },
   tabListContainer: {
     position: 'absolute',
     width: '100%',

@@ -29,7 +29,7 @@ import {
   X,
   Zap
 } from 'lucide-react-native';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
 import {
   Alert,
   Animated,
@@ -799,7 +799,10 @@ const getNavigationSteps = (startIndex: number, coords: any[]) => {
   ];
 };
 
-export default function MapScreen() {
+function MapScreen() {
+  useEffect(() => {
+    console.log('Screen mounted: MapScreen');
+  }, []);
   const { triggerSOS, trips, joinTrip, profile, isLoggedIn, requestedTrips, reloadJoinRequests } = useApp();
   const { tripId } = useLocalSearchParams<{ tripId: string }>();
   const router = useRouter();
@@ -2405,3 +2408,5 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
 });
+
+export default memo(MapScreen);

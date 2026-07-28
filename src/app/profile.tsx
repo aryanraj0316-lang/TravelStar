@@ -119,7 +119,10 @@ const AVATAR_PRESETS = [
   'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
 ];
 
-export default function ProfileScreen() {
+function ProfileScreen() {
+  useEffect(() => {
+    console.log('Screen mounted: ProfileScreen');
+  }, []);
   const router = useRouter();
   const navigation = useNavigation();
   const isDark = useColorScheme() === 'dark';
@@ -2156,3 +2159,5 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
   },
 });
+
+export default React.memo(ProfileScreen);

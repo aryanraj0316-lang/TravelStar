@@ -29,7 +29,7 @@ import {
   X,
   XCircle
 } from 'lucide-react-native';
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect, memo } from 'react';
 import {
   Alert,
   Dimensions,
@@ -266,7 +266,10 @@ const TRIP_CATEGORIES = ['Adventure', 'Religious', 'Family', 'Road Trip', 'Beach
 
 
 
-export default function CreateTripScreen() {
+function CreateTripScreen() {
+  useEffect(() => {
+    console.log('Screen mounted: CreateTripScreen');
+  }, []);
   const router = useRouter();
   const lastScrollYRef = useRef(0);
   const scrollAccumulatorRef = useRef(0);
@@ -3371,3 +3374,5 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 });
+
+export default memo(CreateTripScreen);

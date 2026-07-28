@@ -1,5 +1,4 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { Tabs } from 'expo-router';
 import {
   Home,
   Map,
@@ -8,21 +7,36 @@ import {
   Search,
   User,
 } from 'lucide-react-native';
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback, memo } from 'react';
 import {
-  Animated,
   Dimensions,
   Pressable,
   StyleSheet,
   Text,
-  TouchableOpacity,
   useColorScheme,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+} from 'react-native-reanimated';
 
 import { eventBus } from '@/services/event-bus';
 import { useApp } from '@/store/AppContext';
+
+import HomeScreen from '../app/index';
+import SearchScreen from '../app/search';
+import CreateTripScreen from '../app/create';
+import MapScreen from '../app/map';
+import ChatScreen from '../app/chat';
+import ProfileScreen from '../app/profile';
+
+const TabContext = React.createContext<{
+  activeTabName: string;
+  setActiveTabName: (name: string) => void;
+}>({ activeTabName: 'index', setActiveTabName: () => {} });
 
 const TAB_ICONS: Record<string, typeof Home> = {
   index: Home,
@@ -43,31 +57,35 @@ const TAB_LABELS: Record<string, string> = {
 };
 
 // ─── Animated Tab Item ──────────────────────────────────────────────
-function AnimatedTabButton({
+const AnimatedTabButton = React.memo(function AnimatedTabButton({
   routeName,
   isFocused,
   onPress,
-  onLongPress,
   isDark,
   showDot,
 }: {
   routeName: string;
   isFocused: boolean;
   onPress: () => void;
-  onLongPress: () => void;
   isDark: boolean;
   showDot?: boolean;
 }) {
-  const scaleAnim = useRef(new Animated.Value(isFocused ? 1 : 0)).current;
+  const scale = useSharedValue(isFocused ? 1 : 0);
 
   useEffect(() => {
-    Animated.spring(scaleAnim, {
-      toValue: isFocused ? 1 : 0,
-      friction: 8,
-      tension: 180,
-      useNativeDriver: true,
-    }).start();
+    scale.value = withSpring(isFocused ? 1 : 0, {
+      damping: 15,
+      stiffness: 180,
+    });
   }, [isFocused]);
+
+  const animatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [
+        { scale: scale.value * 0.12 + 0.94 },
+      ],
+    };
+  });
 
   const Icon = TAB_ICONS[routeName] || Home;
   const label = TAB_LABELS[routeName] || routeName;
@@ -75,16 +93,9 @@ function AnimatedTabButton({
   return (
     <Pressable
       onPress={onPress}
-      onLongPress={onLongPress}
       style={styles.tabButton}
     >
-      <Animated.View
-        style={{
-          transform: [
-            { scale: scaleAnim.interpolate({ inputRange: [0, 1], outputRange: [0.94, 1.06] }) },
-          ],
-        }}
-      >
+      <Animated.View style={animatedStyle}>
         {isFocused ? (
           <LinearGradient
             colors={['#0044CC', '#0066FF']}
@@ -111,73 +122,27 @@ function AnimatedTabButton({
       </Animated.View>
     </Pressable>
   );
-}
+});
 
 // ─── Custom Floating Glass Capsule Dock ──────────────────────────────
-function CustomTabBar({ state, descriptors, navigation }: any) {
+const CustomTabBar = React.memo(function CustomTabBar() {
   const scheme = useColorScheme();
   const isDark = scheme === 'dark' || true;
   const insets = useSafeAreaInsets();
-  const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-  const activeIndex = state.index;
-  const currentRouteName = state.routes[activeIndex]?.name;
-  const prevIndexRef = useRef(activeIndex);
+  const {
+    activeRoomId,
+    navbarHidden,
+    setNavbarHidden,
+    pendingRequestsCount,
+    hasUnreadChat,
+  } = useApp();
+
+  const { activeTabName, setActiveTabName } = React.useContext(TabContext);
+
+  const currentRouteName = activeTabName;
   const [dockWidth, setDockWidth] = useState(0);
   const tabCenterXRef = useRef<Record<number, number>>({});
-
-  // ── Animations ──────────────────────────────────────────────────────
-  // Dock: slides from 0 to -(dockWidth + margin) to go fully off-screen
-  const dockSlideAnim = useRef(new Animated.Value(0)).current;
-  // Peek icon: starts fully off-screen left (-44), slides to -22 (half visible)
-  const peekSlideAnim = useRef(new Animated.Value(-50)).current;
-  const peekOpacityAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    prevIndexRef.current = activeIndex;
-  }, [activeIndex]);
-
-  const { activeRoomId, navbarHidden, setNavbarHidden, pendingRequestsCount, hasUnreadChat, setActiveTabName } = useApp();
-
-  useEffect(() => {
-    if (currentRouteName) {
-      setActiveTabName(currentRouteName);
-    }
-  }, [currentRouteName]);
-
-  // ── Core slide in/out logic (downward slide) ────────────────────────────────
-  useEffect(() => {
-    const unsub = eventBus.on('toggleNavbar', (hidden: boolean) => {
-      Animated.timing(dockSlideAnim, {
-        toValue: hidden ? 150 : 0,
-        duration: 100,
-        useNativeDriver: true,
-      }).start();
-    });
-    return unsub;
-  }, []);
-
-  useEffect(() => {
-    if (navbarHidden) {
-      Animated.timing(dockSlideAnim, {
-        toValue: 150,
-        duration: 100,
-        useNativeDriver: true,
-      }).start();
-    } else {
-      Animated.timing(dockSlideAnim, {
-        toValue: 0,
-        duration: 100,
-        useNativeDriver: true,
-      }).start();
-    }
-  }, [navbarHidden]);
-
-  // ── Reset when changing tabs ──────────────────────────────────────
-  useEffect(() => {
-    setNavbarHidden(false);
-    dockSlideAnim.setValue(0);
-  }, [currentRouteName]);
 
   const shouldHideTabBar =
     (currentRouteName === 'chat' && activeRoomId !== null) ||
@@ -190,114 +155,131 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
     currentRouteName === 'about' ||
     (currentRouteName !== 'index' && navbarHidden);
 
-  const visibleRoutes = state.routes.filter(
-    (r: any) => ['index', 'search', 'create', 'map', 'chat', 'profile'].includes(r.name)
-  );
+  const dockTranslateY = useSharedValue(0);
 
-  const handleTabPress = (routeKey: string, routeName: string) => {
-    const isFocused = currentRouteName === routeName;
-    const event = navigation.emit({
-      type: 'tabPress',
-      target: routeKey,
-      canPreventDefault: true,
+  useEffect(() => {
+    dockTranslateY.value = withSpring(shouldHideTabBar ? 150 : 0, {
+      damping: 20,
+      stiffness: 200,
     });
-    if (!isFocused && !event.defaultPrevented) {
-      navigation.navigate(routeName);
-    }
-  };
+  }, [shouldHideTabBar]);
 
-  // Active icon for the peek element
-  const ActiveIcon = TAB_ICONS[currentRouteName] || Home;
+  useEffect(() => {
+    const unsub = eventBus.on('toggleNavbar', (hidden: boolean) => {
+      dockTranslateY.value = withSpring(hidden ? 150 : 0, {
+        damping: 20,
+        stiffness: 200,
+      });
+    });
+    return unsub;
+  }, [dockTranslateY]);
+
+  const dockAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ translateY: dockTranslateY.value }],
+      display: shouldHideTabBar ? 'none' : 'flex',
+    };
+  });
+
+  const handleTabPress = useCallback((routeName: string) => {
+    setActiveTabName(routeName);
+    setNavbarHidden(false);
+  }, [setActiveTabName, setNavbarHidden]);
+
+  const visibleRoutes = [
+    { name: 'index', key: 'index-route' },
+    { name: 'search', key: 'search-route' },
+    { name: 'create', key: 'create-route' },
+    { name: 'map', key: 'map-route' },
+    { name: 'chat', key: 'chat-route' },
+    { name: 'profile', key: 'profile-route' },
+  ];
+
   const bottomOffset = Math.max(insets.bottom, 12);
-  const shouldHideNavbar = navbarHidden && currentRouteName !== 'index';
 
   return (
-    <>
-      {/* ── Full dock ─────────────────────────────────────────────────────── */}
-      <Animated.View
-        style={[
-          styles.floatingDockWrap,
-          {
-            bottom: bottomOffset,
-            transform: [{ translateY: dockSlideAnim }],
-            display: shouldHideTabBar ? 'none' : 'flex',
-          }
-        ]}
-        onLayout={(e) => setDockWidth(e.nativeEvent.layout.width)}
-      >
-        <LinearGradient
-          colors={isDark ? ['#0C1020', '#050710'] : ['#FFFFFF', '#F1F5F9']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[
-            styles.tabBarContainer,
-            {
-              borderColor: isDark ? '#1A1D30' : '#CBD5E1',
-            },
-          ]}
-        >
-          {visibleRoutes.map((route: any, idx: number) => {
-            const isFocused = currentRouteName === route.name;
-
-            return (
-              <View
-                key={route.key}
-                style={{ flex: 1, alignItems: 'center' }}
-                onLayout={(e) => {
-                  const { x, width } = e.nativeEvent.layout;
-                  tabCenterXRef.current[idx] = x + width / 2 - 21;
-                }}
-              >
-                <AnimatedTabButton
-                  routeName={route.name}
-                  isFocused={isFocused}
-                  onPress={() => handleTabPress(route.key, route.name)}
-                  onLongPress={() => {
-                    navigation.emit({
-                      type: 'tabLongPress',
-                      target: route.key,
-                    });
-                  }}
-                  isDark={isDark}
-                  showDot={
-                    (route.name === 'create' && pendingRequestsCount > 0) ||
-                    (route.name === 'chat' && hasUnreadChat)
-                  }
-                />
-              </View>
-            );
-          })}
-        </LinearGradient>
-      </Animated.View>
-    </>
-  );
-}
-
-// ─── Main App Tabs Navigator ────────────────────────────────────────
-const renderTabBar = (props: any) => <CustomTabBar {...props} />;
-
-// ─── Main App Tabs Navigator ────────────────────────────────────────
-export default function AppTabs() {
-  return (
-    <Tabs
-      backBehavior="history"
-      tabBar={renderTabBar}
-      detachInactiveScreens={true}
-      screenOptions={{
-        headerShown: false,
-        animation: 'none',
-        lazy: false,
-        freezeOnBlur: true,
-      }}
+    <Animated.View
+      style={[
+        styles.floatingDockWrap,
+        { bottom: bottomOffset },
+        dockAnimatedStyle
+      ]}
+      onLayout={(e) => setDockWidth(e.nativeEvent.layout.width)}
     >
-      <Tabs.Screen name="index" options={{ title: 'Home' }} />
-      <Tabs.Screen name="search" options={{ title: 'Search' }} />
-      <Tabs.Screen name="create" options={{ title: 'Create' }} />
-      <Tabs.Screen name="map" options={{ title: 'Map' }} />
-      <Tabs.Screen name="chat" options={{ title: 'Chat' }} />
-      <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
-      <Tabs.Screen name="auth" options={{ title: 'Auth' }} />
-    </Tabs>
+      <LinearGradient
+        colors={isDark ? ['#0C1020', '#050710'] : ['#FFFFFF', '#F1F5F9']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[
+          styles.tabBarContainer,
+          {
+            borderColor: isDark ? '#1A1D30' : '#CBD5E1',
+          },
+        ]}
+      >
+        {visibleRoutes.map((route, idx) => {
+          const isFocused = currentRouteName === route.name;
+
+          return (
+            <View
+              key={route.key}
+              style={{ flex: 1, alignItems: 'center' }}
+              onLayout={(e) => {
+                const { x, width } = e.nativeEvent.layout;
+                tabCenterXRef.current[idx] = x + width / 2 - 21;
+              }}
+            >
+              <AnimatedTabButton
+                routeName={route.name}
+                isFocused={isFocused}
+                onPress={() => handleTabPress(route.name)}
+                isDark={isDark}
+                showDot={
+                  (route.name === 'create' && pendingRequestsCount > 0) ||
+                  (route.name === 'chat' && hasUnreadChat)
+                }
+              />
+            </View>
+          );
+        })}
+      </LinearGradient>
+    </Animated.View>
+  );
+});
+
+// ─── Main App Tabs Layout Swapper (Keep-Alive) ────────────────────────
+export default function AppTabs() {
+  const [activeTabName, setActiveTabName] = useState('index');
+
+  useEffect(() => {
+    eventBus.emit('tabChanged', activeTabName);
+  }, [activeTabName]);
+
+  return (
+    <TabContext.Provider value={{ activeTabName, setActiveTabName }}>
+      <View style={{ flex: 1, backgroundColor: '#060814' }}>
+        <View style={[styles.screenContainer, { display: activeTabName === 'index' ? 'flex' : 'none' }]}>
+          <HomeScreen />
+        </View>
+        <View style={[styles.screenContainer, { display: activeTabName === 'search' ? 'flex' : 'none' }]}>
+          <SearchScreen />
+        </View>
+        <View style={[styles.screenContainer, { display: activeTabName === 'create' ? 'flex' : 'none' }]}>
+          <CreateTripScreen />
+        </View>
+        <View style={[styles.screenContainer, { display: activeTabName === 'map' ? 'flex' : 'none' }]}>
+          <MapScreen />
+        </View>
+        <View style={[styles.screenContainer, { display: activeTabName === 'chat' ? 'flex' : 'none' }]}>
+          <ChatScreen />
+        </View>
+        <View style={[styles.screenContainer, { display: activeTabName === 'profile' ? 'flex' : 'none' }]}>
+          <ProfileScreen />
+        </View>
+
+        <CustomTabBar />
+      </View>
+    </TabContext.Provider>
   );
 }
 
@@ -322,6 +304,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 18,
     elevation: 8,
+  },
+  screenContainer: {
+    flex: 1,
   },
   tabButton: {
     alignItems: 'center',

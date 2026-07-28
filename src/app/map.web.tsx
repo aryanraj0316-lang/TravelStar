@@ -27,7 +27,7 @@ import {
   X,
   Zap
 } from 'lucide-react-native';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState, memo } from 'react';
 import {
   Alert,
   ScrollView,
@@ -230,7 +230,10 @@ const getNavigationSteps = (startIndex: number, coords: any[]) => {
   ];
 };
 
-export default function WebMapScreen() {
+function WebMapScreen() {
+  useEffect(() => {
+    console.log('Screen mounted: WebMapScreen');
+  }, []);
   const isDark = useColorScheme() === 'dark';
   const { triggerSOS, trips } = useApp();
   const { tripId } = useLocalSearchParams<{ tripId: string }>();
@@ -2056,3 +2059,5 @@ const styles = StyleSheet.create({
     } as any),
   },
 });
+
+export default memo(WebMapScreen);
