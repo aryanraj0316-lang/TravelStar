@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
+  Pressable,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -72,10 +73,9 @@ function AnimatedTabButton({
   const label = TAB_LABELS[routeName] || routeName;
 
   return (
-    <TouchableOpacity
+    <Pressable
       onPress={onPress}
       onLongPress={onLongPress}
-      activeOpacity={0.8}
       style={styles.tabButton}
     >
       <Animated.View
@@ -109,7 +109,7 @@ function AnimatedTabButton({
           </View>
         )}
       </Animated.View>
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 
@@ -179,9 +179,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
     dockSlideAnim.setValue(0);
   }, [currentRouteName]);
 
-  // ── Hide entirely when in chat room or stories ───────────────────────
-  // ── Hide entirely when in chat room, stories, monsoon advisory, destination details, or map ──
-  if (
+  const shouldHideTabBar =
     (currentRouteName === 'chat' && activeRoomId !== null) ||
     currentRouteName === 'stories' ||
     currentRouteName === 'destination-details' ||
@@ -190,20 +188,14 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
     currentRouteName === 'map' ||
     currentRouteName === 'support' ||
     currentRouteName === 'about' ||
-    (currentRouteName !== 'index' && navbarHidden)
-  ) {
-    return null;
-  }
+    (currentRouteName !== 'index' && navbarHidden);
 
   const visibleRoutes = state.routes.filter(
     (r: any) => ['index', 'search', 'create', 'map', 'chat', 'profile'].includes(r.name)
   );
 
-  const handleTabPress = (routeKey: string, routeName: string, index: number) => {
-    const isFocused = activeIndex === index;
-    if (!isFocused) {
-      prevIndexRef.current = index;
-    }
+  const handleTabPress = (routeKey: string, routeName: string) => {
+    const isFocused = currentRouteName === routeName;
     const event = navigation.emit({
       type: 'tabPress',
       target: routeKey,
@@ -228,6 +220,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
           {
             bottom: bottomOffset,
             transform: [{ translateY: dockSlideAnim }],
+            display: shouldHideTabBar ? 'none' : 'flex',
           }
         ]}
         onLayout={(e) => setDockWidth(e.nativeEvent.layout.width)}
@@ -244,7 +237,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
           ]}
         >
           {visibleRoutes.map((route: any, idx: number) => {
-            const isFocused = activeIndex === idx;
+            const isFocused = currentRouteName === route.name;
 
             return (
               <View
@@ -258,7 +251,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
                 <AnimatedTabButton
                   routeName={route.name}
                   isFocused={isFocused}
-                  onPress={() => handleTabPress(route.key, route.name, idx)}
+                  onPress={() => handleTabPress(route.key, route.name)}
                   onLongPress={() => {
                     navigation.emit({
                       type: 'tabLongPress',
@@ -281,15 +274,20 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
 }
 
 // ─── Main App Tabs Navigator ────────────────────────────────────────
+const renderTabBar = (props: any) => <CustomTabBar {...props} />;
+
+// ─── Main App Tabs Navigator ────────────────────────────────────────
 export default function AppTabs() {
   return (
     <Tabs
       backBehavior="history"
-      tabBar={(props) => <CustomTabBar {...props} />}
+      tabBar={renderTabBar}
+      detachInactiveScreens={true}
       screenOptions={{
         headerShown: false,
-        animation: 'fade',
-        lazy: true,
+        animation: 'none',
+        lazy: false,
+        freezeOnBlur: true,
       }}
     >
       <Tabs.Screen name="index" options={{ title: 'Home' }} />

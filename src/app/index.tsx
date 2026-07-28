@@ -1,7 +1,7 @@
 import { apiService } from '@/services/api';
 import { useApp, UserRole } from '@/store/AppContext';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useRouter, useNavigation } from 'expo-router';
 import {
   AlertTriangle,
   Bell,
@@ -111,7 +111,7 @@ const DEFAULT_ALERTS = [
 ];
 
 // ─── Apple-Style Live Character Formation Greeting Component ────────
-function AppleMultilingualGreeting() {
+function AppleMultilingualGreeting({ isFocused }: { isFocused: boolean }) {
   const wordSequences = [
     ['N', 'Na', 'Nam', 'Nama', 'Namas', 'Namast', 'Namaste', 'Namaste 🙏'],
     ['न', 'नम', 'नमस्', 'नमस्त', 'नमस्ते', 'नमस्ते 🙏'],
@@ -122,6 +122,7 @@ function AppleMultilingualGreeting() {
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
+    if (!isFocused) return;
     let isMounted = true;
     const currentSequence = wordSequences[wordIdx];
 
@@ -165,7 +166,7 @@ function AppleMultilingualGreeting() {
       isMounted = false;
       clearTimeout(charTimer);
     };
-  }, [wordIdx]);
+  }, [wordIdx, isFocused]);
 
   const currentText = wordSequences[wordIdx][stepIdx] || '';
 
@@ -178,7 +179,7 @@ function AppleMultilingualGreeting() {
   );
 }
 
-function FloatingTouristWeatherCard({ locations }: { locations: any[] }) {
+function FloatingTouristWeatherCard({ locations, isFocused }: { locations: any[]; isFocused: boolean }) {
   // Base image: always static at (0,0), fully visible
   const [baseIndex, setBaseIndex] = useState(0);
   // Sliding image: only exists while animating, starts off-screen and slides to (0,0)
@@ -188,7 +189,7 @@ function FloatingTouristWeatherCard({ locations }: { locations: any[] }) {
   const isAnimatingRef = useRef(false);
 
   useEffect(() => {
-    if (locations.length <= 1) return;
+    if (!isFocused || locations.length <= 1) return;
     const interval = setInterval(() => {
       if (isAnimatingRef.current) return; // guard against overlap
       isAnimatingRef.current = true;
@@ -219,7 +220,7 @@ function FloatingTouristWeatherCard({ locations }: { locations: any[] }) {
     }, 3200);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [locations, isFocused]);
 
   // Slide direction alternates based on the sliding image index
   const dir = slidingIndex !== null ? slidingIndex % 4 : 0;
@@ -293,14 +294,14 @@ function FloatingTouristWeatherCard({ locations }: { locations: any[] }) {
   );
 }
 
-function RotatingMonsoonAlertCard({ alerts }: { alerts: any[] }) {
+function RotatingMonsoonAlertCard({ alerts, isFocused }: { alerts: any[]; isFocused: boolean }) {
   const router = useRouter();
   const [alertIndex, setAlertIndex] = useState(0);
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const isAnimatingRef = useRef(false);
 
   useEffect(() => {
-    if (alerts.length <= 1) return;
+    if (!isFocused || alerts.length <= 1) return;
     const timer = setInterval(() => {
       if (isAnimatingRef.current) return;
       isAnimatingRef.current = true;
@@ -328,7 +329,7 @@ function RotatingMonsoonAlertCard({ alerts }: { alerts: any[] }) {
     }, 5000); // 5 seconds interval
 
     return () => clearInterval(timer);
-  }, []);
+  }, [alerts, isFocused]);
 
   if (alerts.length === 0) return <View style={{ flex: 1 }} />;
   const activeAlert = alerts[alertIndex % alerts.length];
@@ -394,7 +395,7 @@ function RotatingMonsoonAlertCard({ alerts }: { alerts: any[] }) {
   );
 }
 
-function FeaturedTripsCarousel() {
+function FeaturedTripsCarousel({ isFocused }: { isFocused: boolean }) {
   const { trips, setActiveRoomId } = useApp();
   const router = useRouter();
   const carouselRef = useRef<ScrollView>(null);
@@ -405,7 +406,7 @@ function FeaturedTripsCarousel() {
   const infiniteTrips = [...organizerTrips, ...organizerTrips, ...organizerTrips];
 
   useEffect(() => {
-    if (organizerTrips.length <= 1) return;
+    if (!isFocused || organizerTrips.length <= 1) return;
 
     const cardWidth = SCREEN_WIDTH - 40;
     const stepWidth = cardWidth + 10;
@@ -422,7 +423,7 @@ function FeaturedTripsCarousel() {
     }, 30);
 
     return () => clearInterval(interval);
-  }, [organizerTrips]);
+  }, [organizerTrips, isFocused]);
 
   const getTripImage = (id: string, name: string) => {
     if (id === 'trip-1') return 'https://images.unsplash.com/photo-1548013146-72479768bada?w=600&q=80';
@@ -568,6 +569,25 @@ function FeaturedTripsCarousel() {
 
 // ─── Component ──────────────────────────────────────────────────────
 export default function HomeScreen() {
+  const navigation = useNavigation();
+  const [isFocused, setIsFocused] = useState(true);
+
+  useEffect(() => {
+    const unsubscribeFocus = navigation.addListener('focus', () => {
+      setIsFocused(true);
+    });
+    const unsubscribeBlur = navigation.addListener('blur', () => {
+      setIsFocused(false);
+    });
+
+    setIsFocused(navigation.isFocused());
+
+    return () => {
+      unsubscribeFocus();
+      unsubscribeBlur();
+    };
+  }, [navigation]);
+
   const { currentRole, setCurrentRole, profile, setNavbarHidden, trips, setActiveRoomId, isLoggedIn } = useApp();
   const router = useRouter();
   const [activeDot, setActiveDot] = useState(0);
@@ -616,7 +636,7 @@ export default function HomeScreen() {
   const infiniteTrendingDests = [...destinations, ...destinations];
 
   useEffect(() => {
-    if (destinations.length <= 1) return;
+    if (!isFocused || destinations.length <= 1) return;
     const itemWidth = TRENDING_CARD_WIDTH + 12;
 
     const interval = setInterval(() => {
@@ -632,7 +652,7 @@ export default function HomeScreen() {
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [destinations, activeDot]);
+  }, [destinations, activeDot, isFocused]);
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
@@ -670,7 +690,7 @@ export default function HomeScreen() {
             ════════════════════════════════════════════════ */}
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
-            <AppleMultilingualGreeting />
+            <AppleMultilingualGreeting isFocused={isFocused} />
             <Text style={styles.userName}>{profile.name}</Text>
             <Text style={styles.userSub}>Explore more. Experience better.</Text>
           </View>
@@ -868,12 +888,12 @@ export default function HomeScreen() {
             ════════════════════════════════════════════════ */}
         <View style={styles.weatherAlertRow}>
           {/* Animated Floating Weather Card */}
-          <FloatingTouristWeatherCard locations={weatherLocations} />
+          <FloatingTouristWeatherCard locations={weatherLocations} isFocused={isFocused} />
 
           {/* Alerts Stack — Stretched Monsoon Card */}
           <View style={styles.alertsColumn}>
             {/* Monsoon Warning (Full Height in Column) */}
-            <RotatingMonsoonAlertCard alerts={alerts} />
+            <RotatingMonsoonAlertCard alerts={alerts} isFocused={isFocused} />
           </View>
         </View>
 
@@ -883,7 +903,7 @@ export default function HomeScreen() {
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Featured Group Trips</Text>
         </View>
-        <FeaturedTripsCarousel />
+        <FeaturedTripsCarousel isFocused={isFocused} />
 
         {/* ════════════════════════════════════════════════
             TRENDING DESTINATIONS — Carousel + dots
