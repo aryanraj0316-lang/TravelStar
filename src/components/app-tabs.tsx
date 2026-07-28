@@ -15,12 +15,14 @@ import {
   Text,
   useColorScheme,
   View,
+  ScrollView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
-  withSpring,
+  withTiming,
+  Easing,
 } from 'react-native-reanimated';
 
 import { eventBus } from '@/services/event-bus';
@@ -73,9 +75,9 @@ const AnimatedTabButton = React.memo(function AnimatedTabButton({
   const scale = useSharedValue(isFocused ? 1 : 0);
 
   useEffect(() => {
-    scale.value = withSpring(isFocused ? 1 : 0, {
-      damping: 15,
-      stiffness: 180,
+    scale.value = withTiming(isFocused ? 1 : 0, {
+      duration: 120,
+      easing: Easing.out(Easing.ease),
     });
   }, [isFocused]);
 
@@ -158,17 +160,17 @@ const CustomTabBar = React.memo(function CustomTabBar() {
   const dockTranslateY = useSharedValue(0);
 
   useEffect(() => {
-    dockTranslateY.value = withSpring(shouldHideTabBar ? 150 : 0, {
-      damping: 20,
-      stiffness: 200,
+    dockTranslateY.value = withTiming(shouldHideTabBar ? 150 : 0, {
+      duration: 150,
+      easing: Easing.out(Easing.ease),
     });
   }, [shouldHideTabBar]);
 
   useEffect(() => {
     const unsub = eventBus.on('toggleNavbar', (hidden: boolean) => {
-      dockTranslateY.value = withSpring(hidden ? 150 : 0, {
-        damping: 20,
-        stiffness: 200,
+      dockTranslateY.value = withTiming(hidden ? 150 : 0, {
+        duration: 150,
+        easing: Easing.out(Easing.ease),
       });
     });
     return unsub;
@@ -250,32 +252,70 @@ const CustomTabBar = React.memo(function CustomTabBar() {
 // ─── Main App Tabs Layout Swapper (Keep-Alive) ────────────────────────
 export default function AppTabs() {
   const [activeTabName, setActiveTabName] = useState('index');
+  const scrollRef = useRef<ScrollView>(null);
+  const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
   useEffect(() => {
     eventBus.emit('tabChanged', activeTabName);
   }, [activeTabName]);
 
+  const visibleRoutes = [
+    { name: 'index', index: 0 },
+    { name: 'search', index: 1 },
+    { name: 'create', index: 2 },
+    { name: 'map', index: 3 },
+    { name: 'chat', index: 4 },
+    { name: 'profile', index: 5 },
+  ];
+
+  const handleTabPress = useCallback((routeName: string) => {
+    setActiveTabName(routeName);
+    const targetIdx = visibleRoutes.find(r => r.name === routeName)?.index ?? 0;
+    scrollRef.current?.scrollTo({ x: targetIdx * SCREEN_WIDTH, animated: false });
+  }, [SCREEN_WIDTH]);
+
+  const onScrollEnd = (e: any) => {
+    const contentOffset = e.nativeEvent.contentOffset.x;
+    const pageIndex = Math.round(contentOffset / SCREEN_WIDTH);
+    const targetRoute = visibleRoutes.find(r => r.index === pageIndex);
+    if (targetRoute && targetRoute.name !== activeTabName) {
+      setActiveTabName(targetRoute.name);
+    }
+  };
+
   return (
-    <TabContext.Provider value={{ activeTabName, setActiveTabName }}>
+    <TabContext.Provider value={{ activeTabName, setActiveTabName: handleTabPress }}>
       <View style={{ flex: 1, backgroundColor: '#060814' }}>
-        <View style={[styles.screenContainer, { display: activeTabName === 'index' ? 'flex' : 'none' }]}>
-          <HomeScreen />
-        </View>
-        <View style={[styles.screenContainer, { display: activeTabName === 'search' ? 'flex' : 'none' }]}>
-          <SearchScreen />
-        </View>
-        <View style={[styles.screenContainer, { display: activeTabName === 'create' ? 'flex' : 'none' }]}>
-          <CreateTripScreen />
-        </View>
-        <View style={[styles.screenContainer, { display: activeTabName === 'map' ? 'flex' : 'none' }]}>
-          <MapScreen />
-        </View>
-        <View style={[styles.screenContainer, { display: activeTabName === 'chat' ? 'flex' : 'none' }]}>
-          <ChatScreen />
-        </View>
-        <View style={[styles.screenContainer, { display: activeTabName === 'profile' ? 'flex' : 'none' }]}>
-          <ProfileScreen />
-        </View>
+        <ScrollView
+          ref={scrollRef}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          bounces={false}
+          scrollEnabled={activeTabName !== 'map'}
+          onMomentumScrollEnd={onScrollEnd}
+          style={{ flex: 1 }}
+          contentContainerStyle={{ width: SCREEN_WIDTH * 6 }}
+        >
+          <View style={{ width: SCREEN_WIDTH, height: '100%' }}>
+            <HomeScreen />
+          </View>
+          <View style={{ width: SCREEN_WIDTH, height: '100%' }}>
+            <SearchScreen />
+          </View>
+          <View style={{ width: SCREEN_WIDTH, height: '100%' }}>
+            <CreateTripScreen />
+          </View>
+          <View style={{ width: SCREEN_WIDTH, height: '100%' }}>
+            <MapScreen />
+          </View>
+          <View style={{ width: SCREEN_WIDTH, height: '100%' }}>
+            <ChatScreen />
+          </View>
+          <View style={{ width: SCREEN_WIDTH, height: '100%' }}>
+            <ProfileScreen />
+          </View>
+        </ScrollView>
 
         <CustomTabBar />
       </View>
