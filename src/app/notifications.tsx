@@ -22,6 +22,7 @@ import {
   Sun,
   Waves,
 } from 'lucide-react-native';
+import { eventBus } from '../services/event-bus';
 import React, { useEffect, useState } from 'react';
 import { apiService } from '../services/api';
 import { useApp } from '../store/AppContext';
@@ -470,7 +471,7 @@ export default function NotificationsScreen() {
                   checkUnreadNotifications();
                   if (notif.chatRoomId) {
                     setActiveRoomId(notif.chatRoomId);
-                    router.push('/chat');
+                    eventBus.emit('switchTab', 'chat');
                   }
                 }}
               >

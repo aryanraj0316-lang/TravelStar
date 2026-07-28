@@ -25,13 +25,20 @@ const TabContext = React.createContext<{
 export default function AppTabs() {
   const [activeTabName, setActiveTabName] = useState('index');
 
+  const handleTabPress = useCallback((name: string) => {
+    setActiveTabName(name);
+  }, []);
+
   useEffect(() => {
     eventBus.emit('tabChanged', activeTabName);
   }, [activeTabName]);
 
-  const handleTabPress = useCallback((name: string) => {
-    setActiveTabName(name);
-  }, []);
+  useEffect(() => {
+    const unsub = eventBus.on('switchTab', (routeName: string) => {
+      handleTabPress(routeName);
+    });
+    return unsub;
+  }, [handleTabPress]);
 
   const scheme = useColorScheme();
   const colors = Colors[scheme === 'unspecified' ? 'light' : scheme];

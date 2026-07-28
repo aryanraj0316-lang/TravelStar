@@ -1732,7 +1732,10 @@ function CreateTripScreen() {
                     onPress={() => {
                       setSelectedCreation(null);
                       setShowCreationsModal(false);
-                      router.push({ pathname: '/map', params: { tripId: selectedCreation.id } });
+                      eventBus.emit('switchTab', 'map');
+                      setTimeout(() => {
+                        eventBus.emit('focusTripOnMap', selectedCreation.id);
+                      }, 100);
                     }}
                   >
                     <Compass size={12} color="#FFF" style={{ marginRight: 4 }} />
@@ -1751,7 +1754,7 @@ function CreateTripScreen() {
                         setActiveRoomId(selectedCreation.chatRoomId);
                         setSelectedCreation(null);
                         setShowCreationsModal(false);
-                        router.push('/chat');
+                        eventBus.emit('switchTab', 'chat');
                       }
                     }}
                   >

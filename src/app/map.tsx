@@ -3,6 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import { useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
 import { apiService } from '@/services/api';
+import { eventBus } from '@/services/event-bus';
 import {
   AlertCircle,
   ArrowLeft,
@@ -800,8 +801,14 @@ const getNavigationSteps = (startIndex: number, coords: any[]) => {
 };
 
 function MapScreen() {
+  const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
+
   useEffect(() => {
     console.log('Screen mounted: MapScreen');
+    const unsub = eventBus.on('focusTripOnMap', (id: string) => {
+      setSelectedTripId(id);
+    });
+    return unsub;
   }, []);
   const { triggerSOS, trips, joinTrip, profile, isLoggedIn, requestedTrips, reloadJoinRequests } = useApp();
   const { tripId } = useLocalSearchParams<{ tripId: string }>();
@@ -849,7 +856,7 @@ function MapScreen() {
   }, []);
 
   // Resolve dynamic route coords from the active trip or nearby place
-  let activeTrip = trips.find((t) => t.id === tripId);
+  let activeTrip = trips.find((t) => t.id === (selectedTripId || tripId));
 
   const [bottomCardHeight, setBottomCardHeight] = useState(180);
   const panelTranslateY = useRef(new Animated.Value(0)).current;
@@ -916,8 +923,9 @@ function MapScreen() {
     } as any;
   }
 
-  const activeRouteCoords = activeTrip
-    ? activeTrip.coordinates || activeTrip.cities
+  const activeRouteCoords = useMemo(() => {
+    if (!activeTrip) return ROUTE_COORDS;
+    return activeTrip.coordinates || activeTrip.cities
       .map((city) => {
         const clean = city.trim();
         const found = CITY_COORDS[clean] || Object.entries(CITY_COORDS).find(([k]) => clean.toLowerCase().includes(k.toLowerCase()))?.[1];
@@ -933,8 +941,8 @@ function MapScreen() {
           const lon = 74.0 + (Math.abs((hash >> 8) % 100) / 100) * 10.0;
           return { latitude: lat, longitude: lon, name: clean };
         }
-      })
-    : ROUTE_COORDS;
+      });
+  }, [activeTrip]);
 
   // SOS pulse animation
   useEffect(() => {
@@ -1027,7 +1035,7 @@ function MapScreen() {
           <View style={styles.filterBarHeader}>
             <TouchableOpacity
               style={styles.backButton}
-              onPress={() => router.back()}
+              onPress={() => eventBus.emit('switchTab', 'index')}
               activeOpacity={0.8}
             >
               <ArrowLeft size={22} color="#000" strokeWidth={3} />

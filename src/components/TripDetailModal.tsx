@@ -29,6 +29,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '@/store/AppContext';
+import { eventBus } from '@/services/event-bus';
 
 export interface TripDetailModalProps {
   visible: boolean;
@@ -155,7 +156,10 @@ export default function TripDetailModal({
                       activeOpacity={0.8}
                       onPress={() => {
                         onClose();
-                        router.push({ pathname: '/map', params: { tripId: trip.id } });
+                        eventBus.emit('switchTab', 'map');
+                        setTimeout(() => {
+                          eventBus.emit('focusTripOnMap', trip.id);
+                        }, 100);
                       }}
                     >
                       <Navigation size={12} color="#FFF" style={{ marginRight: 4 }} />

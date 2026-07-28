@@ -1,6 +1,7 @@
 import { ThemedText } from '@/components/themed-text';
 import GlassCard from '@/components/ui/GlassCard';
 import { useApp } from '@/store/AppContext';
+import { eventBus } from '@/services/event-bus';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
@@ -27,7 +28,7 @@ import {
   X,
   Zap
 } from 'lucide-react-native';
-import React, { useCallback, useEffect, useRef, useState, memo } from 'react';
+import React, { useCallback, useEffect, useRef, useState, memo, useMemo } from 'react';
 import {
   Alert,
   ScrollView,
@@ -231,8 +232,14 @@ const getNavigationSteps = (startIndex: number, coords: any[]) => {
 };
 
 function WebMapScreen() {
+  const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
+
   useEffect(() => {
     console.log('Screen mounted: WebMapScreen');
+    const unsub = eventBus.on('focusTripOnMap', (id: string) => {
+      setSelectedTripId(id);
+    });
+    return unsub;
   }, []);
   const isDark = useColorScheme() === 'dark';
   const { triggerSOS, trips } = useApp();
@@ -299,7 +306,7 @@ function WebMapScreen() {
   };
 
   // Resolve dynamic route coords from the active trip or nearby place
-  let activeTrip = trips.find((t) => t.id === tripId);
+  let activeTrip = trips.find((t) => t.id === (selectedTripId || tripId));
 
   const [bottomCardHeight, setBottomCardHeight] = useState(180);
 
@@ -348,8 +355,9 @@ function WebMapScreen() {
     } as any;
   }
 
-  const activeRouteCoords = activeTrip
-    ? activeTrip.coordinates || activeTrip.cities
+  const activeRouteCoords = useMemo(() => {
+    if (!activeTrip) return ROUTE_COORDS;
+    return activeTrip.coordinates || activeTrip.cities
       .map((city) => {
         const clean = city.trim();
         const found = CITY_COORDS[clean] || Object.entries(CITY_COORDS).find(([k]) => clean.toLowerCase().includes(k.toLowerCase()))?.[1];
@@ -365,8 +373,8 @@ function WebMapScreen() {
           const lon = 74.0 + (Math.abs((hash >> 8) % 100) / 100) * 10.0;
           return { latitude: lat, longitude: lon, name: clean };
         }
-      })
-    : ROUTE_COORDS;
+      });
+  }, [activeTrip]);
 
   const filteredPins = MAP_PINS.filter((p) => {
     if (mapFilter === 'ALL') return true;
@@ -841,7 +849,7 @@ function WebMapScreen() {
         <View style={styles.topFilterOverlay}>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => router.back()}
+            onPress={() => eventBus.emit('switchTab', 'index')}
             activeOpacity={0.8}
           >
             <ArrowLeft size={22} color="#000" strokeWidth={3} />

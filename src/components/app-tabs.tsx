@@ -249,39 +249,50 @@ const CustomTabBar = React.memo(function CustomTabBar() {
   );
 });
 
+const VISIBLE_ROUTES = [
+  { name: 'index', index: 0 },
+  { name: 'search', index: 1 },
+  { name: 'create', index: 2 },
+  { name: 'map', index: 3 },
+  { name: 'chat', index: 4 },
+  { name: 'profile', index: 5 },
+];
+
 // ─── Main App Tabs Layout Swapper (Keep-Alive) ────────────────────────
 export default function AppTabs() {
   const [activeTabName, setActiveTabName] = useState('index');
   const scrollRef = useRef<ScrollView>(null);
   const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
+  const handleTabPress = useCallback((routeName: string) => {
+    setActiveTabName(routeName);
+    const targetIdx = VISIBLE_ROUTES.find(r => r.name === routeName)?.index ?? 0;
+    setTimeout(() => {
+      scrollRef.current?.scrollTo({ x: targetIdx * SCREEN_WIDTH, animated: false });
+    }, 0);
+  }, [SCREEN_WIDTH]);
+
   useEffect(() => {
     eventBus.emit('tabChanged', activeTabName);
   }, [activeTabName]);
 
-  const visibleRoutes = [
-    { name: 'index', index: 0 },
-    { name: 'search', index: 1 },
-    { name: 'create', index: 2 },
-    { name: 'map', index: 3 },
-    { name: 'chat', index: 4 },
-    { name: 'profile', index: 5 },
-  ];
-
-  const handleTabPress = useCallback((routeName: string) => {
-    setActiveTabName(routeName);
-    const targetIdx = visibleRoutes.find(r => r.name === routeName)?.index ?? 0;
-    scrollRef.current?.scrollTo({ x: targetIdx * SCREEN_WIDTH, animated: false });
-  }, [SCREEN_WIDTH]);
+  useEffect(() => {
+    const unsub = eventBus.on('switchTab', (routeName: string) => {
+      handleTabPress(routeName);
+    });
+    return unsub;
+  }, [handleTabPress]);
 
   const onScrollEnd = (e: any) => {
     const contentOffset = e.nativeEvent.contentOffset.x;
     const pageIndex = Math.round(contentOffset / SCREEN_WIDTH);
-    const targetRoute = visibleRoutes.find(r => r.index === pageIndex);
+    const targetRoute = VISIBLE_ROUTES.find(r => r.index === pageIndex);
     if (targetRoute && targetRoute.name !== activeTabName) {
       setActiveTabName(targetRoute.name);
     }
   };
+
+  const activeIdx = VISIBLE_ROUTES.find(r => r.name === activeTabName)?.index ?? 0;
 
   return (
     <TabContext.Provider value={{ activeTabName, setActiveTabName: handleTabPress }}>
@@ -294,6 +305,7 @@ export default function AppTabs() {
           bounces={false}
           scrollEnabled={activeTabName !== 'map'}
           onMomentumScrollEnd={onScrollEnd}
+          contentOffset={{ x: activeIdx * SCREEN_WIDTH, y: 0 }}
           style={{ flex: 1 }}
           contentContainerStyle={{ width: SCREEN_WIDTH * 6 }}
         >

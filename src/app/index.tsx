@@ -541,7 +541,7 @@ function FeaturedTripsCarousel({ isFocused }: { isFocused: boolean }) {
                     <TouchableOpacity
                       style={styles.joinBtn}
                       onPress={() => {
-                        router.push('/search');
+                        eventBus.emit('switchTab', 'search');
                       }}
                     >
                       <Text style={styles.joinBtnText}>Join Now</Text>
@@ -550,7 +550,7 @@ function FeaturedTripsCarousel({ isFocused }: { isFocused: boolean }) {
                       style={[styles.joinBtn, { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#0066FF', paddingVertical: 4 }]}
                       onPress={() => {
                         setActiveRoomId(getRoomId(trip));
-                        router.push('/chat');
+                        eventBus.emit('switchTab', 'chat');
                       }}
                     >
                       <MessageSquare size={9} color="#0066FF" style={{ marginRight: 2 }} />

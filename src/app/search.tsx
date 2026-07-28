@@ -218,7 +218,7 @@ function SearchScreen() {
     const trip = trips.find(t => t.id === tripId);
     const roomId = trip?.chatRoomId || `room-${tripId}`;
     setActiveRoomId(roomId);
-    router.push('/chat');
+    eventBus.emit('switchTab', 'chat');
   };
 
   const toggleLike = (id: string) => {

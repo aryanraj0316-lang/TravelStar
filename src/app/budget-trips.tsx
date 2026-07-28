@@ -20,6 +20,7 @@ import {
   Bike,
   Clock
 } from 'lucide-react-native';
+import { eventBus } from '@/services/event-bus';
 import React, { useState } from 'react';
 import {
   Alert,
@@ -411,7 +412,12 @@ export default function BudgetTripsScreen() {
                   key={deal.id}
                   activeOpacity={0.85}
                   style={styles.dealCard}
-                  onPress={() => router.push({ pathname: '/map', params: { tripId: deal.id } })}
+                  onPress={() => {
+                    eventBus.emit('switchTab', 'map');
+                    setTimeout(() => {
+                      eventBus.emit('focusTripOnMap', deal.id);
+                    }, 100);
+                  }}
                 >
                   <Image source={typeof deal.imageUrl === 'string' ? { uri: deal.imageUrl } : deal.imageUrl} style={styles.dealImg} />
                   <LinearGradient colors={['rgba(6,8,20,0.2)', 'rgba(6,8,20,0.95)']} style={StyleSheet.absoluteFill} />
