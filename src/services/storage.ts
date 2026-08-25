@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { logger } from '@/lib/logger';
 import { Platform } from 'react-native';
 
 const isWeb = Platform.OS === 'web' || typeof window !== 'undefined';
@@ -15,7 +16,7 @@ export const safeStorage = {
       if (e?.message?.includes('Native module is null')) {
         return memoryStorage.get(key) || null;
       }
-      console.warn(`[SafeStorage] getItem failed for ${key}:`, e);
+      logger.warn(`[SafeStorage] getItem failed for ${key}:`, e);
       return memoryStorage.get(key) || null;
     }
   },
@@ -30,7 +31,7 @@ export const safeStorage = {
     } catch (e: any) {
       memoryStorage.set(key, value);
       if (!e?.message?.includes('Native module is null')) {
-        console.warn(`[SafeStorage] setItem failed for ${key}:`, e);
+        logger.warn(`[SafeStorage] setItem failed for ${key}:`, e);
       }
     }
   },
@@ -45,7 +46,7 @@ export const safeStorage = {
     } catch (e: any) {
       memoryStorage.delete(key);
       if (!e?.message?.includes('Native module is null')) {
-        console.warn(`[SafeStorage] removeItem failed for ${key}:`, e);
+        logger.warn(`[SafeStorage] removeItem failed for ${key}:`, e);
       }
     }
   }

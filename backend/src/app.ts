@@ -3,6 +3,11 @@ import dotenv from 'dotenv';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
+
+dotenv.config();
+
+import { env } from './config/env';
+import { authenticateJWT } from './middleware/auth';
 import authRoutes from './api/routes/auth';
 import guideRoutes from './api/routes/guides';
 import paymentRoutes from './api/routes/payments';
@@ -18,31 +23,131 @@ import chatRoutes from './api/routes/chats';
 import feedRoutes from './api/routes/feed';
 import { errorHandler } from './middleware/error';
 
-dotenv.config();
-
 const app = express();
 
-// Secure headers
-app.use(helmet());
+// Trust the proxy so req.ip is the real client address behind a load balancer —
+// per-IP rate limiting is meaningless without this.
+app.set('trust proxy', 1);
 
-// Enable CORS for mobile and web apps
-app.use(cors({
-  origin: '*',
-}));
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:', 'https:'],
+        connectSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+      },
+    },
+    referrerPolicy: { policy: 'no-referrer' },
+    noSniff: true,
+    frameguard: { action: 'deny' },
+  })
+);
 
-// Body parser
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(
+  cors({
+    origin(origin, callback) {
+      // Allow non-browser clients (curl, native apps) which send no Origin.
+      if (!origin) return callback(null, true);
+      if (env.CORS_ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+      // Expo's web dev server picks whatever port is free, so a fixed list of
+      // dev ports is too brittle to be useful — allow any localhost origin in
+      // development only. Production still requires an exact match above.
+      if (env.NODE_ENV === 'development' && /^https?:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)) {
+        return callback(null, true);
+      }
+      const corsError: Error & { statusCode?: number } = new Error('Not allowed by CORS');
+      corsError.statusCode = 403;
+      return callback(corsError);
+    },
+    credentials: true,
+  })
+);
 
-// Rate limiter: prevent brute force & DOS
-const limiter = rateLimit({
+// JSON endpoints do not need 10mb. Media uploads get their own limit when
+// those routes exist (Phase 8).
+app.use(express.json({ limit: '256kb' }));
+app.use(express.urlencoded({ extended: true, limit: '256kb' }));
+
+// ── Rate limits ─────────────────────────────────────────────────────────────
+
+// Integration tests exercise register/login/SOS far more densely than any
+// real client would in the same window (many independent test cases, all
+// from the same in-process IP), so the strict per-route limits below would
+// otherwise fail tests on request volume rather than on the behavior being
+// tested. The global limiter stays active even in tests — 1000/15min is
+// generous enough not to interfere.
+const skipInTest = () => env.NODE_ENV === 'test';
+
+const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 1000,
-  message: 'Too many requests from this IP, please try again after 15 minutes',
+  message: { status: 'error', code: 'RATE_LIMITED', message: 'Too many requests. Please slow down.' },
 });
-app.use('/api/', limiter);
 
-// API Routes
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  skip: skipInTest,
+  // Limit per IP *and* per email so one attacker cannot spray many accounts
+  // from one IP, nor one account from many IPs.
+  keyGenerator: (req) => {
+    const email = typeof req.body?.email === 'string' ? req.body.email.toLowerCase() : '';
+    return `${req.ip}:${email}`;
+  },
+  message: { status: 'error', code: 'RATE_LIMITED', message: 'Too many sign-in attempts. Please try again later.' },
+});
+
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 3,
+  skip: skipInTest,
+  message: { status: 'error', code: 'RATE_LIMITED', message: 'Too many accounts created from this address.' },
+});
+
+const passwordResetLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  skip: skipInTest,
+  message: { status: 'error', code: 'RATE_LIMITED', message: 'Too many reset requests. Please try again later.' },
+});
+
+const sosLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  skip: skipInTest,
+  keyGenerator: (req) => req.user?.id ?? req.ip ?? 'unknown',
+  message: { status: 'error', code: 'RATE_LIMITED', message: 'Too many SOS alerts raised.' },
+});
+
+const writeLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  keyGenerator: (req) => req.user?.id ?? req.ip ?? 'unknown',
+  skip: (req) => skipInTest() || req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS',
+  message: { status: 'error', code: 'RATE_LIMITED', message: 'Too many requests. Please slow down.' },
+});
+
+app.use('/api/', globalLimiter);
+
+app.use('/api/v1/auth/login', loginLimiter);
+app.use('/api/v1/auth/register', registerLimiter);
+app.use('/api/v1/auth/forgot-password', passwordResetLimiter);
+app.use('/api/v1/auth/reset-password', passwordResetLimiter);
+
+// Authenticate everything under /api/v1 by default. The public allowlist lives
+// in the middleware itself, so no route can silently opt out of auth.
+app.use('/api/v1', authenticateJWT);
+
+app.use('/api/v1/safety/sos', sosLimiter);
+app.use('/api/v1', writeLimiter);
+
+// ── Routes ──────────────────────────────────────────────────────────────────
+
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/trips', tripRoutes);
 app.use('/api/v1/guides', guideRoutes);
@@ -57,12 +162,14 @@ app.use('/api/v1/interactions', interactionRoutes);
 app.use('/api/v1/chats', chatRoutes);
 app.use('/api/v1/feed', feedRoutes);
 
-// Health check
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok', service: 'TravelConnect Backend', timestamp: new Date() });
+  res.status(200).json({ status: 'ok', service: 'TravelStar Backend', timestamp: new Date() });
 });
 
-// Global Error Handler middleware
+app.use('/api/v1', (req, res) => {
+  res.status(404).json({ status: 'error', code: 'NOT_FOUND', message: 'Endpoint not found.' });
+});
+
 app.use(errorHandler);
 
 export default app;

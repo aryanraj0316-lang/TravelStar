@@ -1,355 +1,515 @@
-import { Router } from 'express';
-import jwt from 'jsonwebtoken';
+import { Router, type Request } from 'express';
+import { z } from 'zod';
 import prisma from '../../services/db';
+import { logger } from '../../lib/logger';
+import { requireUserId } from '../../lib/auth-context';
+import {
+  hashPassword,
+  verifyPassword,
+  validatePasswordStrength,
+  MIN_PASSWORD_LENGTH,
+} from '../../services/password';
+import {
+  issueAccessToken,
+  issueRefreshToken,
+  rotateRefreshToken,
+  revokeRefreshToken,
+  revokeAllUserSessions,
+  generateResetToken,
+  hashResetToken,
+  type SessionMeta,
+} from '../../services/session';
+import { isLockedOut, recordFailure, recordSuccess } from '../../services/login-attempts';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_jwt_key_travelconnect_12345';
 
-// Default In-Memory Profile Fallback
-let activeProfile: any = {
-  id: 'user-1',
-  name: 'Aarav Sharma',
-  email: 'aarav@example.com',
-  phoneNumber: '+91 98765 43210',
-  avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
-  role: 'TOURIST',
-  isVerified: true,
-  aadhaarStatus: 'VERIFIED',
-  guideLicenseStatus: 'NONE',
-  walletBalance: 2450.0,
-  rewardPoints: 120,
-  gender: 'Male',
-  bio: 'Backpacker & Mountain Enthusiast 🏔️ | Exploring Incredible India 🇮🇳',
-  emergencyContact: '+91 98111 22334',
-  languages: 'Hindi, English, Punjabi',
-  travelStyles: 'Mountains, Backpacking, Photography',
-  pushNotifications: true,
-  locationSharing: true,
-  selectedLanguage: 'English',
-};
+const DEFAULT_AVATAR =
+  'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80';
 
-// Register New User (PostgreSQL + Prisma)
+interface UserWithRelations {
+  id: string;
+  email: string | null;
+  phoneNumber: string | null;
+  role: string;
+  profile: {
+    firstName: string;
+    lastName: string;
+    avatarUrl: string | null;
+    gender: string | null;
+    bio: string | null;
+    languages: string[];
+    travelStyle: string[];
+    pushNotifications: boolean;
+    locationSharing: boolean;
+    selectedLanguage: string;
+    verifiedBadge: boolean;
+  } | null;
+  wallet: { balance: number; rewardPoints: number } | null;
+  emergencyContacts?: { phoneNumber: string }[];
+  guideProfile?: { verifiedStatus: string } | null;
+}
+
+/** Single place that shapes a user row into the client-facing profile object. */
+function toClientProfile(user: UserWithRelations) {
+  return {
+    id: user.id,
+    name: user.profile
+      ? `${user.profile.firstName} ${user.profile.lastName}`.trim()
+      : (user.email?.split('@')[0] ?? 'Traveler'),
+    email: user.email ?? '',
+    phoneNumber: user.phoneNumber ?? '',
+    avatar: user.profile?.avatarUrl ?? DEFAULT_AVATAR,
+    role: user.role,
+    isVerified: user.profile?.verifiedBadge ?? false,
+    // No KYC/Aadhaar verification flow exists yet (docs/REMEDIATION.md Phase 12) —
+    // NONE is the honest current status, not a placeholder for a fake "VERIFIED".
+    aadhaarStatus: 'NONE' as const,
+    guideLicenseStatus: user.guideProfile?.verifiedStatus ?? 'NONE',
+    walletBalance: user.wallet?.balance ?? 0,
+    rewardPoints: user.wallet?.rewardPoints ?? 0,
+    gender: user.profile?.gender ?? '',
+    bio: user.profile?.bio ?? '',
+    emergencyContact: user.emergencyContacts?.[0]?.phoneNumber ?? '',
+    languages: user.profile?.languages?.join(', ') ?? '',
+    travelStyles: user.profile?.travelStyle?.join(', ') ?? '',
+    pushNotifications: user.profile?.pushNotifications ?? true,
+    locationSharing: user.profile?.locationSharing ?? false,
+    selectedLanguage: user.profile?.selectedLanguage ?? 'English',
+  };
+}
+
+const USER_INCLUDE = {
+  profile: true,
+  wallet: true,
+  emergencyContacts: true,
+  guideProfile: true,
+} as const;
+
+function requestMeta(req: Request): SessionMeta {
+  const ua = req.headers['user-agent'];
+  return {
+    userAgent: typeof ua === 'string' ? ua : undefined,
+    ip: req.ip,
+  };
+}
+
+// ── Register ────────────────────────────────────────────────────────────────
+
+const registerSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  email: z.string().trim().toLowerCase().email(),
+  password: z.string().min(MIN_PASSWORD_LENGTH).max(200),
+});
+
 router.post('/register', async (req, res) => {
-  const { name, email, password, role } = req.body;
-  const userEmail = email || `user_${Date.now()}@travelstar.com`;
+  const parsed = registerSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      status: 'error',
+      code: 'VALIDATION_FAILED',
+      message: 'Please check the details you entered.',
+      details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+    });
+  }
+
+  const { name, email, password } = parsed.data;
+
+  const weak = validatePasswordStrength(password);
+  if (weak) {
+    return res.status(400).json({ status: 'error', code: 'WEAK_PASSWORD', message: weak });
+  }
 
   try {
-    // Check if user already exists
-    let user = await prisma.user.findFirst({
-      where: { email: userEmail },
-      include: { profile: true, wallet: true },
-    });
-
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
-          email: userEmail,
-          passwordHash: password || 'default_password',
-          role: role || 'TOURIST',
-          verificationStatus: 'VERIFIED',
-          profile: {
-            create: {
-              firstName: (name || 'New User').split(' ')[0],
-              lastName: (name || 'New User').split(' ')[1] || '',
-              avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
-              verifiedBadge: true,
-            },
-          },
-          wallet: {
-            create: {
-              balance: 500.0, // Welcome bonus
-              rewardPoints: 50,
-            },
-          },
-        },
-        include: {
-          profile: true,
-          wallet: true,
-        },
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      // Never issue a token from the registration path for an existing account.
+      return res.status(409).json({
+        status: 'error',
+        code: 'EMAIL_ALREADY_REGISTERED',
+        message: 'An account with this email already exists. Please sign in instead.',
       });
     }
 
-    activeProfile = {
+    const passwordHash = await hashPassword(password);
+    const nameParts = name.split(' ');
+
+    // Role is never taken from the request body — self-assigning GUIDE/ADMIN
+    // is privilege escalation. Everyone starts as TOURIST.
+    const user = await prisma.user.create({
+      data: {
+        email,
+        passwordHash,
+        role: 'TOURIST',
+        verificationStatus: 'NONE',
+        profile: {
+          create: {
+            firstName: nameParts[0] ?? 'New',
+            lastName: nameParts.slice(1).join(' ') || '',
+            avatarUrl: DEFAULT_AVATAR,
+            verifiedBadge: false,
+          },
+        },
+        wallet: { create: { balance: 0, rewardPoints: 0 } },
+      },
+      include: USER_INCLUDE,
+    });
+
+    const accessToken = issueAccessToken({
       id: user.id,
-      name: name || (user.profile ? `${user.profile.firstName} ${user.profile.lastName}`.trim() : 'New User'),
-      email: user.email || userEmail,
-      phoneNumber: user.phoneNumber || '',
-      avatar: user.profile?.avatarUrl || activeProfile.avatar,
-      role: (role || user.role) as any,
-      isVerified: true,
-      aadhaarStatus: 'VERIFIED',
-      guideLicenseStatus: (role || user.role) === 'GUIDE' ? 'VERIFIED' : 'NONE',
-      walletBalance: user.wallet?.balance || 500.0,
-      rewardPoints: user.wallet?.rewardPoints || 50,
-      gender: user.profile?.gender || activeProfile.gender,
-      bio: user.profile?.bio || activeProfile.bio,
-      emergencyContact: '',
-      languages: user.profile?.languages ? user.profile.languages.join(', ') : activeProfile.languages,
-      travelStyles: user.profile?.travelStyle ? user.profile.travelStyle.join(', ') : activeProfile.travelStyles,
-      pushNotifications: user.profile?.pushNotifications !== undefined ? user.profile.pushNotifications : activeProfile.pushNotifications,
-      locationSharing: user.profile?.locationSharing !== undefined ? user.profile.locationSharing : activeProfile.locationSharing,
-      selectedLanguage: user.profile?.selectedLanguage || activeProfile.selectedLanguage,
+      userId: user.id,
+      role: user.role,
+      email: user.email ?? undefined,
+    });
+    const refreshToken = await issueRefreshToken(user.id, requestMeta(req));
+
+    return res.status(201).json({
+      status: 'success',
+      token: accessToken,
+      refreshToken,
+      user: toClientProfile(user as unknown as UserWithRelations),
+    });
+  } catch (err) {
+    logger.error('[Auth] Registration failed:', err);
+    return res.status(500).json({ status: 'error', code: 'INTERNAL', message: 'Registration failed. Please try again.' });
+  }
+});
+
+// ── Login ───────────────────────────────────────────────────────────────────
+
+const loginSchema = z.object({
+  email: z.string().trim().toLowerCase().email(),
+  password: z.string().min(1).max(200),
+});
+
+router.post('/login', async (req, res) => {
+  const parsed = loginSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      status: 'error',
+      code: 'VALIDATION_FAILED',
+      message: 'Please enter a valid email and password.',
+    });
+  }
+
+  const { email, password } = parsed.data;
+
+  if (isLockedOut(email)) {
+    return res.status(429).json({
+      status: 'error',
+      code: 'ACCOUNT_LOCKED',
+      message: 'Too many failed attempts. Please try again in 15 minutes.',
+    });
+  }
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { email },
+      include: USER_INCLUDE,
+    });
+
+    // Same response for "no such user" and "wrong password" so the endpoint
+    // cannot be used to enumerate which emails are registered.
+    const invalid = () => {
+      recordFailure(email);
+      return res.status(401).json({
+        status: 'error',
+        code: 'INVALID_CREDENTIALS',
+        message: 'Incorrect email or password.',
+      });
     };
 
-    const token = jwt.sign({ id: user.id, userId: user.id, role: activeProfile.role }, JWT_SECRET, { expiresIn: '7d' });
+    if (!user?.passwordHash) return invalid();
+
+    const ok = await verifyPassword(user.passwordHash, password);
+    if (!ok) return invalid();
+
+    recordSuccess(email);
+
+    const accessToken = issueAccessToken({
+      id: user.id,
+      userId: user.id,
+      role: user.role,
+      email: user.email ?? undefined,
+    });
+    const refreshToken = await issueRefreshToken(user.id, requestMeta(req));
 
     return res.status(200).json({
       status: 'success',
-      token,
-      user: activeProfile,
-      message: 'Account created & saved to PostgreSQL DB',
+      token: accessToken,
+      refreshToken,
+      user: toClientProfile(user as unknown as UserWithRelations),
     });
   } catch (err) {
-    console.warn('[Postgres DB Warn] Registration failed:', err);
-    return res.status(500).json({ status: 'error', message: 'Registration failed due to database connection issue. Please try again.' });
+    logger.error('[Auth] Login failed:', err);
+    return res.status(500).json({ status: 'error', code: 'INTERNAL', message: 'Sign in failed. Please try again.' });
   }
 });
 
-// Login User
-router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
+// ── Refresh ─────────────────────────────────────────────────────────────────
+
+const refreshSchema = z.object({ refreshToken: z.string().min(1) });
+
+router.post('/refresh', async (req, res) => {
+  const parsed = refreshSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ status: 'error', code: 'VALIDATION_FAILED', message: 'Missing refresh token.' });
+  }
 
   try {
-    const user = await prisma.user.findFirst({
-      where: { email },
-      include: { profile: true, wallet: true, emergencyContacts: true },
+    const result = await rotateRefreshToken(parsed.data.refreshToken, requestMeta(req));
+    if (!result.ok) {
+      return res.status(401).json({
+        status: 'error',
+        code: result.reason === 'REUSED' ? 'REFRESH_TOKEN_REUSED' : 'REFRESH_TOKEN_INVALID',
+        message: 'Your session has expired. Please sign in again.',
+      });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: result.userId },
+      include: USER_INCLUDE,
+    });
+    if (!user) {
+      return res.status(401).json({ status: 'error', code: 'REFRESH_TOKEN_INVALID', message: 'Your session has expired. Please sign in again.' });
+    }
+
+    const accessToken = issueAccessToken({
+      id: user.id,
+      userId: user.id,
+      role: user.role,
+      email: user.email ?? undefined,
     });
 
-    if (user) {
-      if (user.passwordHash && user.passwordHash !== password) {
-        return res.status(401).json({ status: 'error', message: 'Invalid password. Please try again.' });
-      }
-
-      activeProfile = {
-        id: user.id,
-        name: user.profile ? `${user.profile.firstName} ${user.profile.lastName}`.trim() : activeProfile.name,
-        email: user.email || email,
-        phoneNumber: user.phoneNumber || '',
-        avatar: user.profile?.avatarUrl || activeProfile.avatar,
-        role: user.role as any,
-        isVerified: true,
-        aadhaarStatus: 'VERIFIED',
-        guideLicenseStatus: user.role === 'GUIDE' ? 'VERIFIED' : 'NONE',
-        walletBalance: user.wallet?.balance || activeProfile.walletBalance,
-        rewardPoints: user.wallet?.rewardPoints || activeProfile.rewardPoints,
-        gender: user.profile?.gender || activeProfile.gender,
-        bio: user.profile?.bio || activeProfile.bio,
-        languages: user.profile?.languages ? user.profile.languages.join(', ') : activeProfile.languages,
-        travelStyles: user.profile?.travelStyle ? user.profile.travelStyle.join(', ') : activeProfile.travelStyles,
-        emergencyContact: user.emergencyContacts?.[0]?.phoneNumber || activeProfile.emergencyContact,
-        pushNotifications: user.profile?.pushNotifications !== undefined ? user.profile.pushNotifications : activeProfile.pushNotifications,
-        locationSharing: user.profile?.locationSharing !== undefined ? user.profile.locationSharing : activeProfile.locationSharing,
-        selectedLanguage: user.profile?.selectedLanguage || activeProfile.selectedLanguage,
-      };
-
-      const token = jwt.sign({ id: user.id, userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-      return res.status(200).json({
-        status: 'success',
-        token,
-        user: activeProfile,
-      });
-    } else {
-      return res.status(404).json({ status: 'error', message: 'This email is not registered. Please create an account first.' });
-    }
+    return res.status(200).json({
+      status: 'success',
+      token: accessToken,
+      refreshToken: result.refreshToken,
+      user: toClientProfile(user as unknown as UserWithRelations),
+    });
   } catch (err) {
-    console.warn('[Postgres DB Warn] Login failed:', err);
-    return res.status(500).json({ status: 'error', message: 'Database connection issue. Please try again.' });
+    logger.error('[Auth] Refresh failed:', err);
+    return res.status(500).json({ status: 'error', code: 'INTERNAL', message: 'Could not refresh session.' });
   }
 });
 
-// Get User Profile
+// ── Logout ──────────────────────────────────────────────────────────────────
+
+router.post('/logout', async (req, res) => {
+  const token = typeof req.body?.refreshToken === 'string' ? req.body.refreshToken : null;
+  try {
+    if (token) {
+      await revokeRefreshToken(token);
+    } else {
+      await revokeAllUserSessions(requireUserId(req));
+    }
+    return res.status(200).json({ status: 'success', message: 'Signed out.' });
+  } catch (err) {
+    logger.error('[Auth] Logout failed:', err);
+    return res.status(500).json({ status: 'error', code: 'INTERNAL', message: 'Could not sign out.' });
+  }
+});
+
+// ── Password reset ──────────────────────────────────────────────────────────
+
+const forgotSchema = z.object({ email: z.string().trim().toLowerCase().email() });
+
+router.post('/forgot-password', async (req, res) => {
+  const parsed = forgotSchema.safeParse(req.body);
+  // Always report success — revealing whether an email is registered is an
+  // account-enumeration leak.
+  const genericOk = () =>
+    res.status(200).json({
+      status: 'success',
+      message: 'If that email is registered, a reset link has been sent.',
+    });
+
+  if (!parsed.success) return genericOk();
+
+  try {
+    const user = await prisma.user.findUnique({ where: { email: parsed.data.email } });
+    if (user) {
+      const raw = generateResetToken();
+      await prisma.passwordResetToken.create({
+        data: {
+          userId: user.id,
+          tokenHash: hashResetToken(raw),
+          expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+        },
+      });
+      // TODO(email): send this via a real provider. Until then the link is only
+      // logged server-side so the flow is testable without leaking it to the client.
+      logger.warn(`[Auth] Password reset token for ${user.email}: ${raw}`);
+    }
+    return genericOk();
+  } catch (err) {
+    logger.error('[Auth] Forgot-password failed:', err);
+    return genericOk();
+  }
+});
+
+const resetSchema = z.object({
+  token: z.string().min(1),
+  password: z.string().min(MIN_PASSWORD_LENGTH).max(200),
+});
+
+router.post('/reset-password', async (req, res) => {
+  const parsed = resetSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      status: 'error',
+      code: 'VALIDATION_FAILED',
+      message: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`,
+    });
+  }
+
+  const weak = validatePasswordStrength(parsed.data.password);
+  if (weak) {
+    return res.status(400).json({ status: 'error', code: 'WEAK_PASSWORD', message: weak });
+  }
+
+  try {
+    const record = await prisma.passwordResetToken.findUnique({
+      where: { tokenHash: hashResetToken(parsed.data.token) },
+    });
+
+    if (!record || record.usedAt || record.expiresAt.getTime() < Date.now()) {
+      return res.status(400).json({
+        status: 'error',
+        code: 'RESET_TOKEN_INVALID',
+        message: 'This reset link is invalid or has expired.',
+      });
+    }
+
+    const passwordHash = await hashPassword(parsed.data.password);
+
+    await prisma.$transaction([
+      prisma.user.update({ where: { id: record.userId }, data: { passwordHash } }),
+      prisma.passwordResetToken.update({ where: { id: record.id }, data: { usedAt: new Date() } }),
+      // A password reset invalidates every existing session.
+      prisma.session.updateMany({
+        where: { userId: record.userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
+
+    return res.status(200).json({ status: 'success', message: 'Password updated. Please sign in.' });
+  } catch (err) {
+    logger.error('[Auth] Reset-password failed:', err);
+    return res.status(500).json({ status: 'error', code: 'INTERNAL', message: 'Could not reset password.' });
+  }
+});
+
+// ── Profile ─────────────────────────────────────────────────────────────────
+
 router.get('/profile', async (req, res) => {
-  let userId: string | null = null;
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.split(' ')[1];
-    try {
-      const decoded: any = jwt.verify(token, JWT_SECRET);
-      userId = decoded.id || decoded.userId;
-    } catch (e) {
-      // Invalid token, ignore
+  try {
+    const userId = requireUserId(req);
+    const user = await prisma.user.findUnique({ where: { id: userId }, include: USER_INCLUDE });
+    if (!user) {
+      return res.status(404).json({ status: 'error', code: 'USER_NOT_FOUND', message: 'Account not found.' });
     }
+    return res.status(200).json({ status: 'success', data: toClientProfile(user as unknown as UserWithRelations) });
+  } catch (err) {
+    logger.error('[Auth] Get profile failed:', err);
+    return res.status(500).json({ status: 'error', code: 'INTERNAL', message: 'Could not load your profile.' });
   }
-
-  if (userId) {
-    try {
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        include: { profile: true, wallet: true, emergencyContacts: true },
-      });
-      if (user) {
-        const userProfile = {
-          id: user.id,
-          name: user.profile ? `${user.profile.firstName} ${user.profile.lastName}`.trim() : activeProfile.name,
-          email: user.email || activeProfile.email,
-          phoneNumber: user.phoneNumber || '',
-          avatar: user.profile?.avatarUrl || activeProfile.avatar,
-          role: user.role as any,
-          isVerified: true,
-          aadhaarStatus: 'VERIFIED',
-          guideLicenseStatus: user.role === 'GUIDE' ? 'VERIFIED' : 'NONE',
-          walletBalance: user.wallet?.balance || activeProfile.walletBalance,
-          rewardPoints: user.wallet?.rewardPoints || activeProfile.rewardPoints,
-          gender: user.profile?.gender || activeProfile.gender,
-          bio: user.profile?.bio || activeProfile.bio,
-          languages: user.profile?.languages ? user.profile.languages.join(', ') : activeProfile.languages,
-          travelStyles: user.profile?.travelStyle ? user.profile.travelStyle.join(', ') : activeProfile.travelStyles,
-          emergencyContact: user.emergencyContacts?.[0]?.phoneNumber || activeProfile.emergencyContact,
-          pushNotifications: user.profile?.pushNotifications !== undefined ? user.profile.pushNotifications : activeProfile.pushNotifications,
-          locationSharing: user.profile?.locationSharing !== undefined ? user.profile.locationSharing : activeProfile.locationSharing,
-          selectedLanguage: user.profile?.selectedLanguage || activeProfile.selectedLanguage,
-        };
-        // Sync activeProfile fallback for non-token paths
-        activeProfile = userProfile;
-        return res.status(200).json({ status: 'success', data: userProfile });
-      }
-    } catch (err) {
-      console.warn('[Postgres DB Warn] Get profile failed:', err);
-    }
-  }
-  return res.status(200).json({ status: 'success', data: activeProfile });
 });
 
-// Update User Profile
+const updateProfileSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  avatar: z.string().url().max(2000).optional(),
+  gender: z.string().trim().max(40).optional(),
+  bio: z.string().trim().max(500).optional(),
+  phoneNumber: z.string().trim().max(30).optional(),
+  emergencyContact: z.string().trim().max(30).optional(),
+  languages: z.union([z.string(), z.array(z.string())]).optional(),
+  travelStyles: z.union([z.string(), z.array(z.string())]).optional(),
+  pushNotifications: z.boolean().optional(),
+  locationSharing: z.boolean().optional(),
+  selectedLanguage: z.string().trim().max(40).optional(),
+});
+
+function toStringArray(value: string | string[] | undefined): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (Array.isArray(value)) return value;
+  return value.split(',').map((s) => s.trim()).filter(Boolean);
+}
+
 router.put('/profile', async (req, res) => {
-  const updates = req.body;
-  let userId: string | null = null;
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.split(' ')[1];
-    try {
-      const decoded: any = jwt.verify(token, JWT_SECRET);
-      userId = decoded.id || decoded.userId;
-    } catch (e) {
-      // Invalid token, ignore
-    }
+  const parsed = updateProfileSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      status: 'error',
+      code: 'VALIDATION_FAILED',
+      message: 'Please check the details you entered.',
+      details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+    });
   }
 
-  // Update in-memory activeProfile fallback
-  activeProfile = {
-    ...activeProfile,
-    ...updates,
-  };
+  // `role` is deliberately absent from the schema: a client cannot change its
+  // own role. Role changes are an admin action.
+  const updates = parsed.data;
 
-  const targetUserId = userId || (activeProfile.id && !activeProfile.id.startsWith('user-') ? activeProfile.id : null);
+  try {
+    const userId = requireUserId(req);
 
-  if (targetUserId) {
-    try {
-      // Split name into firstName and lastName
-      const nameParts = (updates.name || activeProfile.name).split(' ');
-      const firstName = nameParts[0] || 'Aarav';
-      const lastName = nameParts.slice(1).join(' ') || '';
-
-      // Update User table fields (such as phone number)
-      const userUpdateData: any = {};
-      if (updates.phoneNumber !== undefined) {
-        userUpdateData.phoneNumber = updates.phoneNumber;
-      }
-
-      if (Object.keys(userUpdateData).length > 0) {
-        await prisma.user.update({
-          where: { id: targetUserId },
-          data: userUpdateData,
-        });
-      }
-
-      // Update Profile table fields
-      const profileUpdateData: any = {};
-      if (updates.name !== undefined) {
-        profileUpdateData.firstName = firstName;
-        profileUpdateData.lastName = lastName;
-      }
-      if (updates.avatar !== undefined) {
-        profileUpdateData.avatarUrl = updates.avatar;
-      }
-      if (updates.gender !== undefined) {
-        profileUpdateData.gender = updates.gender;
-      }
-      if (updates.bio !== undefined) {
-        profileUpdateData.bio = updates.bio;
-      }
-      if (updates.languages !== undefined) {
-        profileUpdateData.languages = typeof updates.languages === 'string'
-          ? updates.languages.split(',').map((l: string) => l.trim())
-          : updates.languages;
-      }
-      if (updates.travelStyles !== undefined) {
-        profileUpdateData.travelStyle = typeof updates.travelStyles === 'string'
-          ? updates.travelStyles.split(',').map((s: string) => s.trim())
-          : updates.travelStyles;
-      }
-
-      if (updates.pushNotifications !== undefined) {
-        profileUpdateData.pushNotifications = updates.pushNotifications;
-      }
-      if (updates.locationSharing !== undefined) {
-        profileUpdateData.locationSharing = updates.locationSharing;
-      }
-      if (updates.selectedLanguage !== undefined) {
-        profileUpdateData.selectedLanguage = updates.selectedLanguage;
-      }
-
-      await prisma.profile.update({
-        where: { userId: targetUserId },
-        data: profileUpdateData,
+    if (updates.phoneNumber !== undefined) {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { phoneNumber: updates.phoneNumber },
       });
-
-      // Update Emergency contact inside EmergencyContact table if provided
-      if (updates.emergencyContact) {
-        const contact = await prisma.emergencyContact.findFirst({
-          where: { userId: targetUserId },
-        });
-        if (contact) {
-          await prisma.emergencyContact.update({
-            where: { id: contact.id },
-            data: { phoneNumber: updates.emergencyContact },
-          });
-        } else {
-          await prisma.emergencyContact.create({
-            data: {
-              userId: targetUserId,
-              name: 'Emergency SOS Contact',
-              relation: 'SOS',
-              phoneNumber: updates.emergencyContact,
-            },
-          });
-        }
-      }
-
-      // Load updated user details
-      const user = await prisma.user.findUnique({
-        where: { id: targetUserId },
-        include: { profile: true, wallet: true, emergencyContacts: true },
-      });
-      if (user) {
-        activeProfile = {
-          id: user.id,
-          name: user.profile ? `${user.profile.firstName} ${user.profile.lastName}`.trim() : activeProfile.name,
-          email: user.email || activeProfile.email,
-          phoneNumber: user.phoneNumber || '',
-          avatar: user.profile?.avatarUrl || activeProfile.avatar,
-          role: user.role as any,
-          isVerified: true,
-          aadhaarStatus: 'VERIFIED',
-          guideLicenseStatus: user.role === 'GUIDE' ? 'VERIFIED' : 'NONE',
-          walletBalance: user.wallet?.balance || activeProfile.walletBalance,
-          rewardPoints: user.wallet?.rewardPoints || activeProfile.rewardPoints,
-          gender: user.profile?.gender || activeProfile.gender,
-          bio: user.profile?.bio || activeProfile.bio,
-          languages: user.profile?.languages ? user.profile.languages.join(', ') : activeProfile.languages,
-          travelStyles: user.profile?.travelStyle ? user.profile.travelStyle.join(', ') : activeProfile.travelStyles,
-          emergencyContact: user.emergencyContacts?.[0]?.phoneNumber || activeProfile.emergencyContact,
-          pushNotifications: user.profile?.pushNotifications !== undefined ? user.profile.pushNotifications : activeProfile.pushNotifications,
-          locationSharing: user.profile?.locationSharing !== undefined ? user.profile.locationSharing : activeProfile.locationSharing,
-          selectedLanguage: user.profile?.selectedLanguage || activeProfile.selectedLanguage,
-        };
-      }
-    } catch (err) {
-      console.warn('[Postgres DB Warn] Profile database update failed:', err);
     }
-  }
 
-  res.status(200).json({ status: 'success', data: activeProfile });
+    const profileData: Record<string, unknown> = {};
+    if (updates.name !== undefined) {
+      const parts = updates.name.split(' ');
+      profileData.firstName = parts[0] ?? '';
+      profileData.lastName = parts.slice(1).join(' ');
+    }
+    if (updates.avatar !== undefined) profileData.avatarUrl = updates.avatar;
+    if (updates.gender !== undefined) profileData.gender = updates.gender;
+    if (updates.bio !== undefined) profileData.bio = updates.bio;
+    if (updates.pushNotifications !== undefined) profileData.pushNotifications = updates.pushNotifications;
+    if (updates.locationSharing !== undefined) profileData.locationSharing = updates.locationSharing;
+    if (updates.selectedLanguage !== undefined) profileData.selectedLanguage = updates.selectedLanguage;
+
+    const languages = toStringArray(updates.languages);
+    if (languages) profileData.languages = languages;
+    const travelStyles = toStringArray(updates.travelStyles);
+    if (travelStyles) profileData.travelStyle = travelStyles;
+
+    if (Object.keys(profileData).length > 0) {
+      await prisma.profile.update({ where: { userId }, data: profileData });
+    }
+
+    if (updates.emergencyContact !== undefined) {
+      const contact = await prisma.emergencyContact.findFirst({ where: { userId } });
+      if (contact) {
+        await prisma.emergencyContact.update({
+          where: { id: contact.id },
+          data: { phoneNumber: updates.emergencyContact },
+        });
+      } else {
+        await prisma.emergencyContact.create({
+          data: {
+            userId,
+            name: 'Emergency SOS Contact',
+            relation: 'SOS',
+            phoneNumber: updates.emergencyContact,
+          },
+        });
+      }
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: userId }, include: USER_INCLUDE });
+    if (!user) {
+      return res.status(404).json({ status: 'error', code: 'USER_NOT_FOUND', message: 'Account not found.' });
+    }
+    return res.status(200).json({ status: 'success', data: toClientProfile(user as unknown as UserWithRelations) });
+  } catch (err) {
+    logger.error('[Auth] Update profile failed:', err);
+    return res.status(500).json({ status: 'error', code: 'INTERNAL', message: 'Could not save your profile.' });
+  }
 });
 
 export default router;

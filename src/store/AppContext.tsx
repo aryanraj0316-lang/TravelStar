@@ -1,6 +1,7 @@
 import { safeStorage } from '@/services/storage';
+import { logger } from '@/lib/logger';
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { apiService } from '../services/api';
+import { apiService, clearTokens } from '../services/api';
 import { socketService } from '../services/socket';
 import { eventBus } from '../services/event-bus';
 
@@ -141,6 +142,20 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+// What logout resets to. A logged-out session must not carry forward any
+// previous user's id, avatar, bio, wallet balance, or contact info — see
+// docs/REMEDIATION.md §2.12.
+const GUEST_PROFILE: UserProfile = {
+  name: 'Guest Traveler',
+  avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
+  role: 'TOURIST',
+  isVerified: false,
+  aadhaarStatus: 'NONE',
+  guideLicenseStatus: 'NONE',
+  walletBalance: 0,
+  rewardPoints: 0,
+};
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentRole, setCurrentRole] = useState<UserRole>('TOURIST');
   const [requestedTrips, setRequestedTrips] = useState<Set<string>>(new Set());
@@ -170,10 +185,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const login = () => {
     setIsLoggedIn(true);
-    try {
-      safeStorage.setItem('isLoggedIn', 'true').catch(() => { });
-    } catch (e) { }
+    safeStorage.setItem('isLoggedIn', 'true').catch((e) => logger.warn('[Auth] Failed to persist login state:', e));
   };
+
+  // Logout clears every trace of the previous session: revokes it server-side,
+  // wipes all local storage keys (tokens + cached profile), resets in-memory
+  // state to a genuine guest default (not a partially-cleared copy of the
+  // previous user), and disconnects the socket. See docs/REMEDIATION.md §2.12
+  // — the old version kept id/avatar/bio/walletBalance/emergencyContact on
+  // disk after "logging out".
   const logout = () => {
     setIsLoggedIn(false);
     setRequestedTrips(new Set());
@@ -182,32 +202,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setMessages([]);
     setHasUnreadChat(false);
     setSosAlerts([]);
+    setProfile(GUEST_PROFILE);
     socketService.disconnect();
 
-    setProfile((prev) => {
-      const nextProfile = {
-        ...prev,
-        name: 'Guest Traveler',
-        email: '',
-        phoneNumber: '',
-        isVerified: false,
-        aadhaarStatus: 'NONE' as const,
-      };
-      try {
-        safeStorage.setItem('savedProfile', JSON.stringify(nextProfile)).catch(() => { });
-      } catch (e) { }
-      return nextProfile;
-    });
-    try {
-      safeStorage.removeItem('isLoggedIn').catch(() => { });
-      safeStorage.removeItem('userToken').catch(() => { });
-    } catch (e) { }
+    apiService.logout().catch((e) => logger.warn('[Auth] Server-side logout failed:', e));
+
+    Promise.all([
+      clearTokens(),
+      safeStorage.removeItem('isLoggedIn'),
+      safeStorage.removeItem('savedProfile'),
+    ]).catch((e) => logger.warn('[Auth] Failed to fully clear local session:', e));
   };
 
   useEffect(() => {
+    const unsub = eventBus.on('sessionExpired', () => {
+      logout();
+    });
+    return unsub;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    // Never write a role change from an unauthenticated session — this used to
+    // fire unconditionally on every mount, including logged out, and (before
+    // §2.3's fix) mutated whichever profile the server last saw.
+    if (!isLoggedIn) return;
     setProfile((prev) => ({ ...prev, role: currentRole }));
-    apiService.updateProfile({ role: currentRole });
-  }, [currentRole]);
+    apiService.updateProfile({ role: currentRole }).catch((e) =>
+      logger.warn('[Profile] Failed to sync role change:', e)
+    );
+  }, [currentRole, isLoggedIn]);
 
   const [trips, setTrips] = useState<Trip[]>([
     {
@@ -386,29 +410,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     },
   ]);
 
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 'm-1',
-      senderName: 'Vikram Singh',
-      senderRole: 'Organizer',
-      content: 'Hey team! Welcome to the group chat for the Ranchi-Vrindavan spiritual trip. We will start from Ranchi Junction on 12th August.',
-      timestamp: '10:30 AM',
-    },
-    {
-      id: 'm-2',
-      senderName: 'Suman Gupta',
-      senderRole: 'Tourist',
-      content: 'Super excited! Is the train ticket booking included in the budget or do we pay extra?',
-      timestamp: '10:32 AM',
-    },
-    {
-      id: 'm-3',
-      senderName: 'Vikram Singh',
-      senderRole: 'Organizer',
-      content: 'Yes, it is included in the base package of ₹8500 per head.',
-      timestamp: '10:35 AM',
-    },
-  ]);
+  // No mock seed here on purpose: these used to be three hardcoded messages
+  // with no roomId, which meant they rendered in whichever chat room was
+  // currently open (docs/REMEDIATION.md §3.6). Real history loads via
+  // GET /chats/:id/messages; this array only accumulates live socket deltas.
+  const [messages, setMessages] = useState<Message[]>([]);
 
   const [sosAlerts, setSosAlerts] = useState<SOSAlert[]>([]);
   const [storiesList, setStoriesList] = useState<Story[]>([
@@ -458,11 +464,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (val) {
           try {
             setProfile(JSON.parse(val));
-          } catch (e) { }
+          } catch { }
         }
       }).catch(() => { });
     } catch (e) {
-      console.warn('[Storage Warning] Native module fallback:', e);
+      logger.warn('[Storage Warning] Native module fallback:', e);
     }
 
     // Auto-sign-in from backend profile (only on initial load)
@@ -475,7 +481,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
           try {
             safeStorage.setItem('savedProfile', JSON.stringify(merged)).catch(() => { });
-          } catch (e) { }
+          } catch { }
           return merged;
         });
       }
@@ -504,7 +510,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setStoriesList(remoteStories);
       }
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Reactive: refresh trips, join requests, and socket when login/room changes ──
@@ -514,7 +519,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return;
     }
 
-    socketService.connect(profile.id);
+    socketService.connect();
     if (activeRoomId) {
       socketService.joinRoom(activeRoomId);
     } else {
@@ -697,7 +702,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const sendMessage = (content: string, mediaType: 'NONE' | 'IMAGE' | 'VOICE' = 'NONE') => {
-    socketService.sendMessage(activeRoomId || 'trip-1', profile.name, currentRole, content, mediaType);
+    socketService.sendMessage(activeRoomId || 'trip-1', content, mediaType);
   };
 
   const triggerSOS = (lat: number, lng: number) => {
