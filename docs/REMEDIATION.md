@@ -1127,3 +1127,27 @@ Use this as your master checklist. Nothing may be marked complete until every ro
 ---
 
 **Begin with Phase 1. Produce your plan and wait for my confirmation before editing any file.**
+
+---
+
+## Progress
+
+Continuous run per user override (2026-08-25): phases executed without per-phase
+confirmation pauses. Each `[x]` below is only checked once the phase's own
+DoD items are actually re-verified against the current code, not just
+"code written" — see the note under each phase for exact status and, where
+partial, exactly what's blocking full completion.
+
+- [x] Phase 1 — Build baseline (done, verified: build ✅ typecheck ✅ tests ✅)
+- [x] Phase 2 — Security and authentication (done, verified: build ✅ typecheck ✅ tests ✅)
+- [x] Phase 3 — Real-time layer (done, verified: build ✅ typecheck ✅ tests ✅ — includes §3.8 Redis adapter/presence store added this run)
+- [x] Phase 4 — Data layer (done, verified: build ✅ typecheck ✅ tests ✅ — migrations, indexes, enums, referential integrity re-verified this run)
+- [x] Phase 5 — Backend correctness (done, verified: build ✅ typecheck ✅ tests ✅ — standard API envelope, async error handling, queryWithRetry all closed out this run)
+- [ ] Phase 6 — API contract and client data layer (not started)
+- [ ] Phase 7 — Navigation and app architecture (not started)
+- [ ] Phase 8 — Feature completion (not started)
+- [ ] Phase 9 — Design system, i18n, accessibility (not started)
+- [ ] Phase 10 — Performance (not started)
+- [ ] Phase 11 — Observability and operations (not started)
+- [ ] Phase 12 — Legal, privacy, and compliance (not started)
+- [ ] Phase 13 — Testing and release readiness (not started)
