@@ -1,28 +1,67 @@
 import { PrismaClient, UserRole, BookingType, BookingStatus, PaymentStatus } from '@prisma/client';
+import argon2 from 'argon2';
+import { logger } from '../src/lib/logger';
 
 const prisma = new PrismaClient();
 
-async function main() {
-  console.log('Seeding database...');
+/**
+ * This script deletes every user before seeding. Pointed at the wrong
+ * DATABASE_URL, that wipes production.
+ *
+ * There is no separate "local Postgres" convention in this project — the
+ * only configured DATABASE_URL is a hosted Neon instance, used for both dev
+ * and (eventually) prod. A hostname allowlist (e.g. "must contain
+ * localhost") can't distinguish a Neon dev branch from a Neon prod branch,
+ * so it would either block the team's real workflow or fail to catch the
+ * actual mistake it exists for. Instead this requires an explicit, separate
+ * opt-in that has to be set on purpose per run — never defaulted, never
+ * inferred from the URL.
+ */
+function assertSafeToSeed() {
+  const nodeEnv = process.env.NODE_ENV ?? 'development';
+  if (nodeEnv !== 'development' && nodeEnv !== 'test') {
+    throw new Error(`Refusing to seed: NODE_ENV is "${nodeEnv}", expected development or test.`);
+  }
 
-  // Clean existing tables to avoid duplicate key errors during seeding
-  await prisma.monsoonAdvisory.deleteMany().catch(() => {});
-  await prisma.emergencyContact.deleteMany().catch(() => {});
-  await prisma.booking.deleteMany().catch(() => {});
-  await prisma.guidePackage.deleteMany().catch(() => {});
-  await prisma.guideReel.deleteMany().catch(() => {});
-  await prisma.guideProfile.deleteMany().catch(() => {});
-  await prisma.travelStory.deleteMany().catch(() => {});
-  await prisma.weatherLocation.deleteMany().catch(() => {});
-  await prisma.wallet.deleteMany().catch(() => {});
-  await prisma.profile.deleteMany().catch(() => {});
-  await prisma.user.deleteMany().catch(() => {});
+  if (process.env.SEED_CONFIRM_WIPE !== 'yes-wipe-this-database') {
+    throw new Error(
+      'Refusing to seed: this deletes every user, wallet, and booking in the ' +
+        'database currently pointed to by DATABASE_URL. Confirm you mean to run ' +
+        'this against that specific database by setting:\n' +
+        '  SEED_CONFIRM_WIPE=yes-wipe-this-database'
+    );
+  }
+}
+
+const DEMO_PASSWORD = 'travelstar-dev-2026';
+
+async function main() {
+  assertSafeToSeed();
+  logger.log('Seeding database...');
+
+  const demoPasswordHash = await argon2.hash(DEMO_PASSWORD, { type: argon2.argon2id });
+
+  // Clear every table before reseeding. A manually maintained list of models
+  // to delete, in FK-safe order, silently drifts as the schema grows — the
+  // previous version of this script did exactly that, missed several
+  // dependent tables, and only "worked" because its errors were swallowed by
+  // a `.catch(() => {})`. TRUNCATE ... CASCADE clears the whole dependency
+  // graph in one statement regardless of table order, so there is nothing to
+  // keep in sync by hand.
+  const tables: { tablename: string }[] = await prisma.$queryRaw`
+    SELECT tablename FROM pg_tables
+    WHERE schemaname = 'public' AND tablename NOT LIKE '_prisma%'
+  `;
+  if (tables.length > 0) {
+    const identifiers = tables.map((t) => `"${t.tablename}"`).join(', ');
+    await prisma.$executeRawUnsafe(`TRUNCATE TABLE ${identifiers} RESTART IDENTITY CASCADE;`);
+  }
 
   // 1. Create a Tourist User
   const touristUser = await prisma.user.create({
     data: {
       email: 'tourist@travelstar.com',
-      passwordHash: 'password123',
+      passwordHash: demoPasswordHash,
       role: UserRole.TOURIST,
       verificationStatus: 'VERIFIED',
       profile: {
@@ -41,13 +80,13 @@ async function main() {
       },
     },
   });
-  console.log('Tourist user created:', touristUser.email);
+  logger.log('Tourist user created:', touristUser.email);
 
   // 2. Create a Guide User
   const guideUser = await prisma.user.create({
     data: {
       email: 'guide@travelstar.com',
-      passwordHash: 'password123',
+      passwordHash: demoPasswordHash,
       role: UserRole.GUIDE,
       verificationStatus: 'VERIFIED',
       profile: {
@@ -66,7 +105,7 @@ async function main() {
       },
     },
   });
-  console.log('Guide user created:', guideUser.email);
+  logger.log('Guide user created:', guideUser.email);
 
   // 3. Create Guide Profile
   const guideProfile = await prisma.guideProfile.create({
@@ -84,7 +123,7 @@ async function main() {
       rating: 4.9,
     },
   });
-  console.log('Guide profile created:', guideProfile.licenseNumber);
+  logger.log('Guide profile created:', guideProfile.licenseNumber);
 
   // 4. Create Guide Packages
   const pkg1 = await prisma.guidePackage.create({
@@ -98,7 +137,7 @@ async function main() {
     },
   });
 
-  const pkg2 = await prisma.guidePackage.create({
+  await prisma.guidePackage.create({
     data: {
       guideProfileId: guideProfile.id,
       title: 'North Sikkim Expedition Guide',
@@ -109,7 +148,7 @@ async function main() {
     },
   });
 
-  const pkg3 = await prisma.guidePackage.create({
+  await prisma.guidePackage.create({
     data: {
       guideProfileId: guideProfile.id,
       title: 'Munnar Tea Gardens Walking Tour',
@@ -119,7 +158,7 @@ async function main() {
       citiesIncluded: ['Munnar'],
     },
   });
-  console.log('Guide packages created.');
+  logger.log('Guide packages created.');
 
   // 5. Create Guide Reels
   await prisma.guideReel.createMany({
@@ -142,7 +181,7 @@ async function main() {
       },
     ],
   });
-  console.log('Guide reels created.');
+  logger.log('Guide reels created.');
 
   // 6. Create Travel Stories
   await prisma.travelStory.createMany({
@@ -169,7 +208,7 @@ async function main() {
       },
     ],
   });
-  console.log('Travel stories created.');
+  logger.log('Travel stories created.');
 
   // 7. Create Emergency Contact for the Guide
   await prisma.emergencyContact.create({
@@ -198,7 +237,7 @@ async function main() {
       },
     ],
   });
-  console.log('Monsoon advisories created.');
+  logger.log('Monsoon advisories created.');
 
   // 9. Weather locations seed
   await prisma.weatherLocation.createMany({
@@ -208,7 +247,7 @@ async function main() {
       { name: 'Munnar', place: 'Tea Gardens', temp: '22°C', condition: 'Mist & Clouds', aqi: 'Pure AQI • 12', humidity: '75%', image: 'https://images.unsplash.com/photo-1593693397690-362cb9666fc2?w=500&q=80', latitude: 10.0889, longitude: 77.0595 },
     ],
   });
-  console.log('Weather locations created.');
+  logger.log('Weather locations created.');
 
   // 10. Create Bookings to generate non-zero charts for the week
   // Let's create bookings spread across different days of the current/recent week
@@ -228,7 +267,7 @@ async function main() {
   const bookingAmounts = [2500, 5000, 1800, 3000, 4500];
 
   for (let i = 0; i < daysOfWeek.length; i++) {
-    const bDate = getDayOffsetDate(daysOfWeek[i]);
+    const bDate = getDayOffsetDate(daysOfWeek[i]!);
     await prisma.booking.create({
       data: {
         userId: touristUser.id,
@@ -237,20 +276,23 @@ async function main() {
         guideProfileId: guideProfile.id,
         bookingDate: bDate,
         travelDate: new Date(bDate.getTime() + 24 * 60 * 60 * 1000), // travel next day
-        amount: bookingAmounts[i],
+        amount: bookingAmounts[i]!,
         status: BookingStatus.CONFIRMED,
         paymentStatus: PaymentStatus.SUCCESS,
       },
     });
   }
-  console.log('Earnings bookings seeded.');
+  logger.log('Earnings bookings seeded.');
 
-  console.log('Seeding completed successfully.');
+  logger.log('Seeding completed successfully.');
+  logger.log(`Demo accounts — password for both: ${DEMO_PASSWORD}`);
+  logger.log(`  Tourist: ${touristUser.email}`);
+  logger.log(`  Guide:   ${guideUser.email}`);
 }
 
 main()
   .catch((e) => {
-    console.error(e);
+    logger.error(e);
     process.exit(1);
   })
   .finally(async () => {

@@ -70,6 +70,76 @@ enum TransactionType {
   REFERRAL
 }
 
+enum MediaType {
+  NONE
+  IMAGE
+  VOICE
+}
+
+enum AlertSeverity {
+  CRITICAL
+  WARNING
+  ADVISORY
+}
+
+// Values map to the exact strings already live in the database (with spaces
+// and "&") so the migration converting the column doesn't orphan existing
+// rows — see docs/REMEDIATION.md §4.5.
+enum AlertCategory {
+  FLOOD_RAIN   @map("FLOOD & RAIN")
+  LANDSLIDE
+  CLOUDBURST
+  TRAFFIC_RUSH @map("TRAFFIC RUSH")
+}
+
+// Deliberately a separate scale from AlertSeverity — MonsoonAdvisory and
+// Alert are different models with different severity vocabularies that
+// happened to both be called "severity".
+enum MonsoonSeverity {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum NotificationType {
+  TRIP
+  HAZARD
+  SEASONAL
+}
+
+enum NotificationCategory {
+  JOIN_ACCEPTED
+  CHAT_ADDED
+}
+
+enum MapPinType {
+  GUIDE
+  GROUP
+  TOURIST
+  ATTRACTION
+}
+
+enum SOSAlertStatus {
+  ACTIVE
+  RESOLVED
+}
+
+enum TripMemberRole {
+  MEMBER
+  ORGANIZER
+  CO_LEAD
+}
+
+// Represents whether a trip is open, full, cancelled, or finished. Adding
+// this makes trip cancellation representable in the data model — the actual
+// cancel endpoint, refund handling, and UI are deferred (they depend on
+// Phase 5's payments decision), so nothing writes CANCELLED yet.
+enum TripStatus {
+  ACTIVE
+  CANCELLED
+  COMPLETED
+}
+
 model User {
   id                 String             @id @default(uuid())
   email              String?            @unique
@@ -81,65 +151,100 @@ model User {
   verificationStatus VerificationStatus @default(NONE)
 
   // Auth Relations
-  socialLogins      SocialLogin[]
-  
+  socialLogins SocialLogin[]
+
   // Profile
-  profile            Profile?
-  guideProfile       GuideProfile?
-  
+  profile      Profile?
+  guideProfile GuideProfile?
+
   // App Relations
-  createdTrips       Trip[]             @relation("TripCreator")
-  tripMemberships    TripMember[]
-  joinRequests       JoinRequest[]
-  
+  createdTrips    Trip[]        @relation("TripCreator")
+  tripMemberships TripMember[]
+  joinRequests    JoinRequest[]
+  tripLikes       TripLike[]
+
   // Group Relations
-  createdGroups      Group[]            @relation("GroupCreator")
-  groupMemberships   GroupMember[]
-  groupPosts         GroupPost[]
-  groupComments      GroupComment[]
-  votes              PollVote[]
-  
+  createdGroups    Group[]        @relation("GroupCreator")
+  groupMemberships GroupMember[]
+  groupPosts       GroupPost[]
+  groupComments    GroupComment[]
+  votes            PollVote[]
+  expensesPaid     Expense[]      @relation("ExpensePaidBy")
+
   // Payments & Wallet
-  wallet             Wallet?
-  transactions       Transaction[]
-  bookings           Booking[]          @relation("UserBookings")
-  
+  wallet       Wallet?
+  transactions Transaction[]
+  bookings     Booking[]     @relation("UserBookings")
+
   // Safety
-  sosAlerts          SOSAlert[]
-  emergencyContacts  EmergencyContact[]
-  liveLocations      LiveLocation[]
+  sosAlerts         SOSAlert[]
+  emergencyContacts EmergencyContact[]
+  liveLocations     LiveLocation[]
+
+  // Notifications
+  notifications Notification[]
 
   // Social Relations
-  followers          Follow[]           @relation("Following")
-  following          Follow[]           @relation("Follower")
-  blogs              Blog[]
-  likes              Like[]
-  comments           Comment[]
+  followers Follow[]  @relation("Following")
+  following Follow[]  @relation("Follower")
+  blogs     Blog[]
+  likes     Like[]
+  comments  Comment[]
 
   // Chat Relations
-  chatMemberships    ChatRoomMember[]
-  sentMessages       Message[]          @relation("MessageSender")
-  readReceipts       MessageReadReceipt[]
-  initiatedCalls     CallLog[]          @relation("CallInitiator")
-  receivedCalls      CallLog[]          @relation("CallReceiver")
+  chatMemberships ChatRoomMember[]
+  sentMessages    Message[]            @relation("MessageSender")
+  readReceipts    MessageReadReceipt[]
+  initiatedCalls  CallLog[]            @relation("CallInitiator")
+  receivedCalls   CallLog[]            @relation("CallReceiver")
 
   // Admin Logs
-  adminActions       AdminLog[]
+  adminActions AdminLog[]
+
+  // Auth sessions
+  sessions            Session[]
+  passwordResetTokens PasswordResetToken[]
+}
+
+model Session {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  userAgent String?
+  ip        String?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
 }
 
 model SocialLogin {
   id         String   @id @default(uuid())
   userId     String
-  provider   String   // 'google', 'facebook', 'apple'
+  provider   String // 'google', 'facebook', 'apple'
   providerId String   @unique
   createdAt  DateTime @default(now())
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Profile {
-  id               String             @id @default(uuid())
-  userId           String             @unique
-  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id               String   @id @default(uuid())
+  userId           String   @unique
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   firstName        String
   lastName         String
   avatarUrl        String?
@@ -147,49 +252,51 @@ model Profile {
   bio              String?
   age              Int?
   gender           String?
-  languages        String[]           // Array of languages spoken
-  country          String             @default("India")
+  languages        String[] // Array of languages spoken
+  country          String   @default("India")
   state            String?
   city             String?
-  interests        String[]           // List of user interests
-  budgetPreference String?            // 'budget', 'moderate', 'luxury'
-  travelStyle      String[]           // 'adventure', 'luxury', 'religious', 'backpacking', 'family', 'solo'
-  verifiedBadge    Boolean            @default(false)
-  rating           Float              @default(5.0)
-  
-  // Documents for verification
-  aadhaarNumber      String?
-  aadhaarPhotoUrl    String?
-  govIdType          String?            // 'Passport', 'PAN', 'VoterID'
-  govIdPhotoUrl      String?
-  faceVerificationImg String?
-  selfieVerification String?
+  interests        String[] // List of user interests
+  budgetPreference String? // 'budget', 'moderate', 'luxury'
+  travelStyle      String[] // 'adventure', 'luxury', 'religious', 'backpacking', 'family', 'solo'
+  verifiedBadge    Boolean  @default(false)
+  rating           Float    @default(5.0)
 
-  pushNotifications   Boolean            @default(true)
-  locationSharing     Boolean            @default(true)
-  selectedLanguage    String             @default("English")
-  updatedAt        DateTime           @updatedAt
+  // Documents for verification
+  aadhaarNumber       String?
+  aadhaarPhotoUrl     String?
+  govIdType           String? // 'Passport', 'PAN', 'VoterID'
+  govIdPhotoUrl       String?
+  faceVerificationImg String?
+  selfieVerification  String?
+
+  pushNotifications Boolean  @default(true)
+  locationSharing   Boolean  @default(true)
+  selectedLanguage  String   @default("English")
+  updatedAt         DateTime @updatedAt
 }
 
 model GuideProfile {
-  id               String             @id @default(uuid())
-  userId           String             @unique
-  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  licenseNumber    String             @unique
-  licensePhotoUrl  String
-  experienceYears  Int
-  expertisePlaces  String[]           // List of places/destinations
-  languagesSpoken  String[]
-  hourlyRate       Float
-  dailyRate        Float
-  availability     Json               // Weekly/custom calendar representation
-  verifiedStatus   VerificationStatus @default(PENDING)
-  rating           Float              @default(5.0)
-  
-  packages         GuidePackage[]
-  bookings         Booking[]          @relation("GuideBookings")
-  reviews          Review[]
-  reels            GuideReel[]
+  id              String             @id @default(uuid())
+  userId          String             @unique
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  licenseNumber   String             @unique
+  licensePhotoUrl String
+  experienceYears Int
+  expertisePlaces String[] // List of places/destinations
+  languagesSpoken String[]
+  hourlyRate      Decimal            @db.Decimal(12, 2)
+  dailyRate       Decimal            @db.Decimal(12, 2)
+  availability    Json // Weekly/custom calendar representation
+  verifiedStatus  VerificationStatus @default(PENDING)
+  rating          Float              @default(5.0)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  packages GuidePackage[]
+  bookings Booking[]      @relation("GuideBookings")
+  reviews  Review[]
+  reels    GuideReel[]
 }
 
 model GuidePackage {
@@ -198,10 +305,13 @@ model GuidePackage {
   guide          GuideProfile @relation(fields: [guideProfileId], references: [id], onDelete: Cascade)
   title          String
   description    String
-  price          Float
+  price          Decimal      @db.Decimal(12, 2)
   durationDays   Int
   citiesIncluded String[]
   createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([guideProfileId])
 }
 
 model GuideReel {
@@ -214,87 +324,97 @@ model GuideReel {
   viewsCount     Int          @default(0)
   likesCount     Int          @default(0)
   createdAt      DateTime     @default(now())
+
+  @@index([guideProfileId])
 }
 
 model Trip {
-  id            String         @id @default(uuid())
-  creatorId     String
-  creator       User           @relation("TripCreator", fields: [creatorId], references: [id])
-  name          String
-  description   String
-  cities        String[]       // Multi-city route details (e.g. ['Ranchi', 'Delhi', 'Mathura'])
-  startDate     DateTime
-  endDate       DateTime
-  durationDays  Int
-  budget        Float
+  id             String         @id @default(uuid())
+  creatorId      String
+  creator        User           @relation("TripCreator", fields: [creatorId], references: [id])
+  name           String
+  description    String
+  cities         String[] // Multi-city route details (e.g. ['Ranchi', 'Delhi', 'Mathura'])
+  startDate      DateTime
+  endDate        DateTime
+  durationDays   Int
+  budget         Decimal        @db.Decimal(12, 2)
   availableSeats Int
-  totalSeats    Int
-  meetingPoint  String
+  totalSeats     Int
+  meetingPoint   String
   vehicleDetails String?
   hotelDetails   String?
-  foodIncluded  Boolean        @default(false)
-  guideIncluded Boolean        @default(false)
-  hotelIncluded Boolean        @default(false)
-  cabIncluded   Boolean        @default(false)
-  privacy       PrivacySetting @default(PUBLIC)
-  rules         String?
-  requirements  String?
-  ageLimitMin   Int?
-  ageLimitMax   Int?
-  genderPref    String?        // 'Any', 'MaleOnly', 'FemaleOnly'
-  coverImage    String?
-  category      String?
-  languages     String[]
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  chatRoom      ChatRoom?
+  foodIncluded   Boolean        @default(false)
+  guideIncluded  Boolean        @default(false)
+  hotelIncluded  Boolean        @default(false)
+  cabIncluded    Boolean        @default(false)
+  privacy        PrivacySetting @default(PUBLIC)
+  status         TripStatus     @default(ACTIVE)
+  rules          String?
+  requirements   String?
+  ageLimitMin    Int?
+  ageLimitMax    Int?
+  genderPref     String? // 'Any', 'MaleOnly', 'FemaleOnly'
+  coverImage     String?
+  category       String?
+  languages      String[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  chatRoom       ChatRoom?
 
-  members       TripMember[]
-  requests      JoinRequest[]
-  bookings      Booking[]
+  members  TripMember[]
+  requests JoinRequest[]
+  bookings Booking[]
+  likes    TripLike[]
+
+  @@index([creatorId])
+  @@index([createdAt])
 }
 
 model TripMember {
-  id       String   @id @default(uuid())
+  id       String         @id @default(uuid())
   tripId   String
-  trip     Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  trip     Trip           @relation(fields: [tripId], references: [id], onDelete: Cascade)
   userId   String
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  joinedAt DateTime @default(now())
-  role     String   @default("MEMBER") // 'ORGANIZER', 'CO_LEAD', 'MEMBER'
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt DateTime       @default(now())
+  role     TripMemberRole @default(MEMBER)
 
   @@unique([tripId, userId])
+  @@index([userId])
 }
 
 model JoinRequest {
-  id           String            @id @default(uuid())
-  tripId       String
-  trip         Trip              @relation(fields: [tripId], references: [id], onDelete: Cascade)
-  userId       String
-  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  status       JoinRequestStatus @default(PENDING)
-  message      String?
-  fromCity     String?           // For Family Connect: where the user joins from
-  toCity       String?           // For Family Connect: where the user travels to
-  adjustedPrice Float?           // Auto-calculated adjusted payment for remaining cities
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
+  id            String            @id @default(uuid())
+  tripId        String
+  trip          Trip              @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status        JoinRequestStatus @default(PENDING)
+  message       String?
+  fromCity      String? // For Family Connect: where the user joins from
+  toCity        String? // For Family Connect: where the user travels to
+  adjustedPrice Decimal?          @db.Decimal(12, 2) // Auto-calculated adjusted payment for remaining cities
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
 
   @@unique([tripId, userId])
+  @@index([tripId])
+  @@index([status])
 }
 
 model Group {
-  id          String        @id @default(uuid())
+  id          String         @id @default(uuid())
   creatorId   String
-  creator     User          @relation("GroupCreator", fields: [creatorId], references: [id])
+  creator     User           @relation("GroupCreator", fields: [creatorId], references: [id])
   name        String
   description String
-  joiningFee  Float         @default(0.0)
-  isPaid      Boolean       @default(false)
+  joiningFee  Decimal        @default(0.0) @db.Decimal(12, 2)
+  isPaid      Boolean        @default(false)
   privacy     PrivacySetting @default(PUBLIC)
   avatarUrl   String?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
 
   members       GroupMember[]
   posts         GroupPost[]
@@ -326,7 +446,10 @@ model GroupPost {
   content   String
   imageUrl  String?
   createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
   comments  GroupComment[]
+
+  @@index([groupId])
 }
 
 model GroupComment {
@@ -337,6 +460,9 @@ model GroupComment {
   author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
   content   String
   createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([postId])
 }
 
 model Announcement {
@@ -377,68 +503,84 @@ model PollVote {
 }
 
 model Expense {
-  id          String       @id @default(uuid())
+  id          String   @id @default(uuid())
   groupId     String
-  group       Group        @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  group       Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
   description String
-  amount      Float
+  amount      Decimal  @db.Decimal(12, 2)
   paidById    String
-  splitData   Json         // Details of how expenses are split between members
-  createdAt   DateTime     @default(now())
+  paidBy      User     @relation("ExpensePaidBy", fields: [paidById], references: [id], onDelete: Cascade)
+  splitData   Json // Details of how expenses are split between members
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([groupId])
 }
 
 model Attendance {
-  id          String      @id @default(uuid())
-  memberId    String
-  member      GroupMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  date        DateTime
-  isPresent   Boolean     @default(true)
-  remarks     String?
+  id        String      @id @default(uuid())
+  memberId  String
+  member    GroupMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  date      DateTime    @db.Date
+  isPresent Boolean     @default(true)
+  remarks   String?
 
   @@unique([memberId, date])
 }
 
 model Booking {
-  id              String        @id @default(uuid())
-  userId          String
-  user            User          @relation("UserBookings", fields: [userId], references: [id])
-  type            BookingType
-  targetId        String        // ID of the trip, guide package, hotel, vehicle etc.
-  guideProfileId  String?
-  guide           GuideProfile? @relation("GuideBookings", fields: [guideProfileId], references: [id])
-  tripId          String?
-  trip            Trip?         @relation(fields: [tripId], references: [id])
-  bookingDate     DateTime      @default(now())
-  travelDate      DateTime
-  amount          Float
-  status          BookingStatus @default(PENDING)
-  paymentStatus   PaymentStatus @default(PENDING)
-  ticketData      Json?         // QR codes, offline validation info
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  id             String        @id @default(uuid())
+  userId         String
+  user           User          @relation("UserBookings", fields: [userId], references: [id])
+  type           BookingType
+  // Fallback identifier for booking types with no modeled entity yet (HOTEL,
+  // VEHICLE, LOCAL_EXPERIENCE, TEMPLE_DARSHAN, ADVENTURE_ACTIVITY — none of
+  // those have a table in this schema, so there is nothing to point a real
+  // FK at without inventing product surface that doesn't exist elsewhere in
+  // the app). TRIP and GUIDE bookings must use tripId/guideProfileId below,
+  // not this field — those are the two types that do have a real relation.
+  targetId       String?
+  guideProfileId String?
+  guide          GuideProfile? @relation("GuideBookings", fields: [guideProfileId], references: [id])
+  tripId         String?
+  trip           Trip?         @relation(fields: [tripId], references: [id])
+  bookingDate    DateTime      @default(now())
+  travelDate     DateTime
+  amount         Decimal       @db.Decimal(12, 2)
+  status         BookingStatus @default(PENDING)
+  paymentStatus  PaymentStatus @default(PENDING)
+  ticketData     Json? // QR codes, offline validation info
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
-  payments        Payment[]
+  payments Payment[]
+
+  @@index([userId])
+  @@index([guideProfileId])
+  @@index([bookingDate])
 }
 
 model Payment {
-  id            String        @id @default(uuid())
-  bookingId     String
-  booking       Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  gateway       String        // 'RAZORPAY', 'STRIPE', 'WALLET'
-  gatewayTxnId  String        @unique
-  amount        Float
-  status        PaymentStatus @default(PENDING)
-  couponCode    String?
-  gstInvoiceId  String?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  id           String        @id @default(uuid())
+  bookingId    String
+  booking      Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  gateway      String // 'RAZORPAY', 'STRIPE', 'WALLET' — left as a string; unused today (see docs/REMEDIATION.md §5.5, no code creates a Payment row yet) and pending the Phase 5 payments decision
+  gatewayTxnId String        @unique
+  amount       Decimal       @db.Decimal(12, 2)
+  status       PaymentStatus @default(PENDING)
+  couponCode   String?
+  gstInvoiceId String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([bookingId])
 }
 
 model Wallet {
   id           String              @id @default(uuid())
   userId       String              @unique
   user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  balance      Float               @default(0.0)
+  balance      Decimal             @default(0.0) @db.Decimal(12, 2)
   rewardPoints Int                 @default(0)
   transactions WalletTransaction[]
 }
@@ -447,26 +589,30 @@ model WalletTransaction {
   id        String          @id @default(uuid())
   walletId  String
   wallet    Wallet          @relation(fields: [walletId], references: [id], onDelete: Cascade)
-  amount    Float
+  amount    Decimal         @db.Decimal(12, 2)
   type      TransactionType
   remark    String?
   createdAt DateTime        @default(now())
+
+  @@index([walletId])
 }
 
 model Transaction {
-  id           String        @id @default(uuid())
-  userId       String
-  user         User          @relation(fields: [userId], references: [id])
-  amount       Float
-  type         TransactionType
-  status       PaymentStatus @default(SUCCESS)
-  description  String?
-  createdAt    DateTime      @default(now())
+  id          String          @id @default(uuid())
+  userId      String
+  user        User            @relation(fields: [userId], references: [id])
+  amount      Decimal         @db.Decimal(12, 2)
+  type        TransactionType
+  status      PaymentStatus   @default(SUCCESS)
+  description String?
+  createdAt   DateTime        @default(now())
+
+  @@index([userId])
 }
 
 model ChatRoom {
   id        String           @id @default(uuid())
-  name      String?          // Dynamic name or specific name for groups
+  name      String? // Dynamic name or specific name for groups
   isGroup   Boolean          @default(false)
   createdAt DateTime         @default(now())
   members   ChatRoomMember[]
@@ -484,6 +630,7 @@ model ChatRoomMember {
   joinedAt   DateTime @default(now())
 
   @@unique([chatRoomId, userId])
+  @@index([userId])
 }
 
 model Message {
@@ -493,11 +640,14 @@ model Message {
   senderId   String
   sender     User                 @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
   content    String?
-  mediaType  String?              // 'IMAGE', 'VIDEO', 'FILE', 'VOICE', 'GIF', 'NONE'
+  mediaType  MediaType?
   mediaUrl   String?
   isSystem   Boolean              @default(false)
   createdAt  DateTime             @default(now())
   readBy     MessageReadReceipt[]
+
+  @@index([chatRoomId, createdAt])
+  @@index([senderId])
 }
 
 model MessageReadReceipt {
@@ -512,34 +662,39 @@ model MessageReadReceipt {
 }
 
 model CallLog {
-  id          String   @id @default(uuid())
+  id          String    @id @default(uuid())
   initiatorId String
-  initiator   User     @relation("CallInitiator", fields: [initiatorId], references: [id])
+  initiator   User      @relation("CallInitiator", fields: [initiatorId], references: [id])
   receiverId  String
-  receiver    User     @relation("CallReceiver", fields: [receiverId], references: [id])
-  isVideo     Boolean  @default(false)
-  startedAt   DateTime @default(now())
+  receiver    User      @relation("CallReceiver", fields: [receiverId], references: [id])
+  isVideo     Boolean   @default(false)
+  startedAt   DateTime  @default(now())
   endedAt     DateTime?
   durationSec Int?
 }
 
 model SOSAlert {
-  id        String   @id @default(uuid())
+  id        String         @id @default(uuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   latitude  Float
   longitude Float
-  alertTime DateTime @default(now())
-  status    String   @default("ACTIVE") // 'ACTIVE', 'RESOLVED'
+  alertTime DateTime       @default(now())
+  status    SOSAlertStatus @default(ACTIVE)
+
+  @@index([userId])
+  @@index([status])
 }
 
 model EmergencyContact {
   id          String @id @default(uuid())
   userId      String
-  user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   name        String
   relation    String
   phoneNumber String
+
+  @@index([userId])
 }
 
 model LiveLocation {
@@ -549,6 +704,8 @@ model LiveLocation {
   latitude  Float
   longitude Float
   updatedAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 model Review {
@@ -559,6 +716,9 @@ model Review {
   rating         Float
   comment        String
   createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([guideProfileId])
 }
 
 model Blog {
@@ -569,6 +729,7 @@ model Blog {
   content   String
   coverImg  String?
   createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   likes     Like[]
   comments  Comment[]
 }
@@ -592,6 +753,8 @@ model Comment {
   author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
   content   String
   createdAt DateTime @default(now())
+
+  @@index([blogId])
 }
 
 model Follow {
@@ -603,6 +766,7 @@ model Follow {
   createdAt   DateTime @default(now())
 
   @@unique([followerId, followingId])
+  @@index([followingId])
 }
 
 model AppBanner {
@@ -615,12 +779,12 @@ model AppBanner {
 }
 
 model Coupon {
-  id        String    @id @default(uuid())
-  code      String    @unique
-  discount  Float     // Percent or Flat amount
-  isPercent Boolean   @default(true)
+  id        String   @id @default(uuid())
+  code      String   @unique
+  discount  Float // Percent or Flat amount
+  isPercent Boolean  @default(true)
   expiresAt DateTime
-  active    Boolean   @default(true)
+  active    Boolean  @default(true)
 }
 
 model AdminLog {
@@ -633,28 +797,38 @@ model AdminLog {
 }
 
 model MapPin {
-  id        String   @id @default(uuid())
-  type      String   // 'GUIDE', 'GROUP', 'TOURIST', 'ATTRACTION'
+  id        String     @id @default(uuid())
+  type      MapPinType
   name      String
   latitude  Float
   longitude Float
   detail    String
+  // Points at a User (GUIDE/TOURIST) or Group (GROUP) row depending on
+  // `type`; ATTRACTION has no modeled entity. Not a real FK for the same
+  // reason as Booking.targetId above — no backend route touches this model
+  // yet (docs/REMEDIATION.md §8.8, Map, is where it gets wired up), and
+  // guessing which relation to attach without a real caller risks getting it
+  // wrong silently.
   targetId  String?
-  createdAt DateTime @default(now())
+  createdAt DateTime   @default(now())
 }
 
 model Notification {
-  id         String   @id @default(uuid())
+  id         String                @id @default(uuid())
   userId     String?
-  type       String   // 'TRIP', 'SEASONAL', 'HAZARD'
+  user       User?                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type       NotificationType
   title      String
   content    String
   time       String
-  unread     Boolean  @default(true)
+  unread     Boolean               @default(true)
   chatRoomId String?
   tripId     String?
-  category   String?
-  createdAt  DateTime @default(now())
+  category   NotificationCategory?
+  createdAt  DateTime              @default(now())
+
+  @@index([userId])
+  @@index([unread])
 }
 
 model Destination {
@@ -666,6 +840,9 @@ model Destination {
   rank      Int      @default(0)
   featured  Boolean  @default(false)
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([rank])
 }
 
 model WeatherLocation {
@@ -684,28 +861,31 @@ model WeatherLocation {
 }
 
 model MonsoonAdvisory {
-  id          String   @id @default(uuid())
+  id          String          @id @default(uuid())
   region      String
-  severity    String   // 'HIGH' | 'MEDIUM' | 'LOW'
+  severity    MonsoonSeverity
   alertTitle  String
   description String
-  updatedAt   DateTime @updatedAt
-  createdAt   DateTime @default(now())
+  updatedAt   DateTime        @updatedAt
+  createdAt   DateTime        @default(now())
 }
 
 model Alert {
-  id            String   @id @default(uuid())
-  severity      String   // 'CRITICAL', 'WARNING', 'ADVISORY'
+  id            String        @id @default(uuid())
+  severity      AlertSeverity
   title         String
-  category      String   // 'LANDSLIDE', 'FLOOD & RAIN', etc.
+  category      AlertCategory
   location      String
   time          String
   desc          String
   affectedRoute String
   precautions   String[]
   image         String
-  active        Boolean  @default(true)
-  createdAt     DateTime @default(now())
+  active        Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([active])
 }
 
 model TravelStory {
@@ -724,10 +904,11 @@ model TravelStory {
 model TripLike {
   id        String   @id @default(uuid())
   tripId    String
-  
-  /// Client-side device identifier (or user email) for tracking likes
-  userId    String   @default("default-user")
+  trip      Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
 
   @@unique([tripId, userId])
+  @@index([tripId])
 }
