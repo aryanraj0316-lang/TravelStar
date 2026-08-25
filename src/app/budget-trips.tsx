@@ -1,4 +1,4 @@
-import { Trip, useApp } from '@/store/AppContext';
+import { useApp } from '@/store/AppContext';
 import TripDetailModal from '@/components/TripDetailModal';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -10,8 +10,6 @@ import {
   Flame,
   IndianRupee,
   MapPin,
-  ShieldCheck,
-  Sparkles,
   User,
   Users,
   Check,
@@ -23,8 +21,6 @@ import {
 import { eventBus } from '@/services/event-bus';
 import React, { useState } from 'react';
 import {
-  Alert,
-  Dimensions,
   Image,
   ScrollView,
   StatusBar,
@@ -35,8 +31,6 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const C = {
   bg: '#060814',
@@ -194,7 +188,7 @@ const BUDGET_TRIPS_DATA: BudgetTripItem[] = [
 
 export default function BudgetTripsScreen() {
   const router = useRouter();
-  const { trips, joinTrip, profile, isLoggedIn } = useApp();
+  const { trips, profile, isLoggedIn } = useApp();
 
   const [userMaxBudget, setUserMaxBudget] = useState<number>(50000);
   const [budgetTextInput, setBudgetTextInput] = useState<string>('50000');

@@ -1,9 +1,10 @@
 import { ThemedText } from '@/components/themed-text';
+import { logger } from '@/lib/logger';
 import GlassCard from '@/components/ui/GlassCard';
 import { useApp } from '@/store/AppContext';
 import { eventBus } from '@/services/event-bus';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import {
   AlertCircle,
   ArrowLeft,
@@ -235,7 +236,7 @@ function WebMapScreen() {
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
 
   useEffect(() => {
-    console.log('Screen mounted: WebMapScreen');
+    logger.log('Screen mounted: WebMapScreen');
     const unsub = eventBus.on('focusTripOnMap', (id: string) => {
       setSelectedTripId(id);
     });
@@ -244,7 +245,6 @@ function WebMapScreen() {
   const isDark = useColorScheme() === 'dark';
   const { triggerSOS, trips } = useApp();
   const { tripId } = useLocalSearchParams<{ tripId: string }>();
-  const router = useRouter();
   const [mapFilter, setMapFilter] = useState<'ALL' | 'GUIDES' | 'GROUPS' | 'TOURISTS' | 'ATTRACTIONS' | 'NONE'>('ALL');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [sosTriggered, setSosTriggered] = useState(false);
@@ -284,7 +284,7 @@ function WebMapScreen() {
         if (data.type === 'CHECKPOINT_CLICKED') {
           setSelectedLegIndex(data.index);
         }
-      } catch (err) { }
+      } catch { }
     };
     window.addEventListener('message', handleMapMessage);
     return () => window.removeEventListener('message', handleMapMessage);
@@ -308,10 +308,7 @@ function WebMapScreen() {
   // Resolve dynamic route coords from the active trip or nearby place
   let activeTrip = trips.find((t) => t.id === (selectedTripId || tripId));
 
-  const [bottomCardHeight, setBottomCardHeight] = useState(180);
-
-  // Dynamic bottom offset for SOS button based on panel height measurements
-  const sosBottomOffset = 16 + bottomCardHeight + 12;
+  const [, setBottomCardHeight] = useState(180);
 
   const filterOptions = [
     { value: 'ALL', label: 'All Categories', icon: Compass },
@@ -376,13 +373,6 @@ function WebMapScreen() {
       });
   }, [activeTrip]);
 
-  const filteredPins = MAP_PINS.filter((p) => {
-    if (mapFilter === 'ALL') return true;
-    if (mapFilter === 'GUIDES' && p.type === 'GUIDE') return true;
-    if (mapFilter === 'GROUPS' && p.type === 'GROUP') return true;
-    if (mapFilter === 'TOURISTS' && p.type === 'TOURIST') return true;
-    return false;
-  });
 
   const legs = [];
   if (activeRouteCoords && activeRouteCoords.length > 1) {

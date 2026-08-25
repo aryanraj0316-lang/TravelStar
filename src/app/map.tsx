@@ -1,8 +1,8 @@
 import { useApp } from '@/store/AppContext';
+import { logger } from '@/lib/logger';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
-import { useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
-import { apiService } from '@/services/api';
+import { useLocalSearchParams, useNavigation } from 'expo-router';
 import { eventBus } from '@/services/event-bus';
 import {
   AlertCircle,
@@ -804,7 +804,7 @@ function MapScreen() {
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
 
   useEffect(() => {
-    console.log('Screen mounted: MapScreen');
+    logger.log('Screen mounted: MapScreen');
     const unsub = eventBus.on('focusTripOnMap', (id: string) => {
       setSelectedTripId(id);
     });
@@ -812,7 +812,6 @@ function MapScreen() {
   }, []);
   const { triggerSOS, trips, joinTrip, profile, isLoggedIn, requestedTrips, reloadJoinRequests } = useApp();
   const { tripId } = useLocalSearchParams<{ tripId: string }>();
-  const router = useRouter();
   const navigation = useNavigation();
 
   // Reload requested trips on focus
@@ -850,7 +849,7 @@ function MapScreen() {
       try {
         await Location.requestForegroundPermissionsAsync();
       } catch (e) {
-        console.log('Error requesting location permission:', e);
+        logger.log('Error requesting location permission:', e);
       }
     })();
   }, []);
@@ -870,9 +869,6 @@ function MapScreen() {
     }).start();
   }, [showNavigationOverlay, bottomCardHeight]);
 
-  // Dynamic bottom offset for SOS button based on panel height measurements
-  const sosBottomOffset = 16 + bottomCardHeight + 12;
-
   const filterOptions = [
     { value: 'ALL', label: 'All Categories', icon: Compass },
     { value: 'GUIDES', label: 'Guides', icon: Users },
@@ -891,7 +887,7 @@ function MapScreen() {
         return;
       }
     } catch (e) {
-      console.log('Location permission error:', e);
+      logger.log('Location permission error:', e);
     }
     postMapMessage({ type: 'LOCATE_SELF' });
   };
@@ -1026,7 +1022,7 @@ function MapScreen() {
               } else if (data.type === 'GEOLOCATION_ERROR') {
                 Alert.alert('Location Error', data.message);
               }
-            } catch (err) { }
+            } catch { }
           }}
         />
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { safeStorage } from '@/services/storage';
+import { setTokens } from '@/services/api';
 import {
   View,
   Text,
@@ -31,7 +31,7 @@ import GlassCard from '@/components/ui/GlassCard';
 import { useApp, UserRole } from '@/store/AppContext';
 import { apiService } from '@/services/api';
 
-const ROLES: Array<{ id: UserRole; title: string; subtitle: string; icon: string }> = [
+const ROLES: { id: UserRole; title: string; subtitle: string; icon: string }[] = [
   { id: 'TOURIST', title: 'Tourist', subtitle: 'Explore & Join Trips', icon: '🧳' },
   { id: 'GUIDE', title: 'Verified Guide', subtitle: 'Offer Tours & Earn', icon: '🧭' },
   { id: 'ORGANIZER', title: 'Trip Organizer', subtitle: 'Host Group Journeys', icon: '⛺' },
@@ -65,8 +65,8 @@ export default function AuthScreen() {
           Alert.alert('Login Failed ❌', 'Invalid response from server.');
           return;
         }
-        if (response.token) {
-          await safeStorage.setItem('userToken', response.token);
+        if (response.token && response.refreshToken) {
+          await setTokens(response.token, response.refreshToken);
         }
         const userObj = response.user;
         setCurrentRole(userObj.role || selectedRole);
@@ -109,29 +109,40 @@ export default function AuthScreen() {
           Alert.alert('Signup Failed ❌', 'Invalid response from server.');
           return;
         }
-        if (response.token) {
-          await safeStorage.setItem('userToken', response.token);
+        if (response.token && response.refreshToken) {
+          await setTokens(response.token, response.refreshToken);
         }
 
         const userObj = response.user;
-        setCurrentRole(selectedRole);
+        // The server controls role assignment (every new account starts as
+        // TOURIST — see backend/src/api/routes/auth.ts) regardless of what was
+        // picked in the role selector above, so reflect what the server
+        // actually returned rather than the client's wishful selection.
+        setCurrentRole(userObj.role || selectedRole);
         updateProfile(userObj);
         login();
         // Refresh trips with new token so isMyTrip is correctly computed
         setTimeout(() => refreshTrips(), 300);
 
-        Alert.alert('Account Created 🎉', 'Welcome to TravelConnect India!', [
-          {
-            text: 'Start Exploring',
-            onPress: () => {
-              if (router.canGoBack()) {
-                router.back();
-              } else {
-                router.replace('/');
+        const roleChanged = userObj.role && userObj.role !== selectedRole;
+        Alert.alert(
+          'Account Created 🎉',
+          roleChanged
+            ? `Welcome to TravelStar! Your account starts as a Tourist — Guide and Organizer access is granted after a short verification step, available from your profile.`
+            : 'Welcome to TravelStar!',
+          [
+            {
+              text: 'Start Exploring',
+              onPress: () => {
+                if (router.canGoBack()) {
+                  router.back();
+                } else {
+                  router.replace('/');
+                }
               }
-            }
-          },
-        ]);
+            },
+          ]
+        );
       } catch (err: any) {
         Alert.alert('Signup Failed ❌', err?.message || 'An error occurred during registration.');
       } finally {
@@ -162,7 +173,7 @@ export default function AuthScreen() {
 
             <View style={styles.brandBadge}>
               <Compass size={18} color="#0066FF" style={{ marginRight: 6 }} />
-              <Text style={styles.brandTitle}>TravelConnect</Text>
+              <Text style={styles.brandTitle}>TravelStar</Text>
             </View>
 
             <View style={{ width: 40 }} />

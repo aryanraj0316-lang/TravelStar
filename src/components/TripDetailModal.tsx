@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
-  Image,
   Dimensions,
   Alert,
 } from 'react-native';
@@ -21,12 +20,9 @@ import {
   Utensils,
   Bike,
   Bus,
-  Route,
   Navigation,
   CheckCircle,
 } from 'lucide-react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '@/store/AppContext';
 import { eventBus } from '@/services/event-bus';
@@ -56,7 +52,6 @@ export default function TripDetailModal({
   trip,
   onClose,
 }: TripDetailModalProps) {
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { joinTrip, profile, isLoggedIn, requestedTrips, setRequestedTrips } = useApp();
 

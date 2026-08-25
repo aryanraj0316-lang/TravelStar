@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { logger } from '@/lib/logger';
 import {
   ScrollView,
   StyleSheet,
@@ -22,8 +23,6 @@ import {
   ArrowLeft,
   Search,
   Users,
-  MessageSquare,
-  DollarSign,
   MapPin,
   Calendar,
   TrendingUp,
@@ -33,7 +32,6 @@ import {
   Plus,
   FileText,
   Camera,
-  Map,
   Clock,
   Compass,
   Car,
@@ -128,7 +126,7 @@ export default function TravelGuideScreen() {
 
   const [activeTab, setActiveTab] = useState<'leads' | 'upload' | 'planning' | 'weather' | 'safety'>('leads');
   const [guideProfile, setGuideProfile] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
   const [earnings, setEarnings] = useState<any>(null);
   const [packages, setPackages] = useState<any[]>([]);
   const [reels, setReels] = useState<any[]>([]);
@@ -138,13 +136,13 @@ export default function TravelGuideScreen() {
 
   // Live weather state (fetched from API)
   const [liveWeatherData, setLiveWeatherData] = useState<any>(null);
-  const [weatherLoading, setWeatherLoading] = useState(false);
+  const [, setWeatherLoading] = useState(false);
 
   // Safety state (fetched from API)
   const [sosAlerts, setSosAlerts] = useState<any[]>([]);
-  const [monsoonAdvisories, setMonsoonAdvisories] = useState<any[]>([]);
-  const [userEmergencyContacts, setUserEmergencyContacts] = useState<any[]>([]);
-  const [safetyLoading, setSafetyLoading] = useState(false);
+  const [, setMonsoonAdvisories] = useState<any[]>([]);
+  const [, setUserEmergencyContacts] = useState<any[]>([]);
+  const [, setSafetyLoading] = useState(false);
 
   // Leads state (fetched from API)
   const [leadsLoading, setLeadsLoading] = useState(false);
@@ -183,7 +181,7 @@ export default function TravelGuideScreen() {
         fetchLiveWeather(guide.id);
       }
     } catch (e) {
-      console.warn('[TravelGuide] Load profile failed:', e);
+      logger.warn('[TravelGuide] Load profile failed:', e);
     } finally {
       setLoading(false);
     }
@@ -197,7 +195,7 @@ export default function TravelGuideScreen() {
         setLeads(res);
       }
     } catch (e) {
-      console.warn('[TravelGuide] Fetch leads failed:', e);
+      logger.warn('[TravelGuide] Fetch leads failed:', e);
     } finally {
       setLeadsLoading(false);
     }
@@ -215,7 +213,7 @@ export default function TravelGuideScreen() {
       if (advisoryRes && Array.isArray(advisoryRes)) setMonsoonAdvisories(advisoryRes);
       if (contactsRes && Array.isArray(contactsRes)) setUserEmergencyContacts(contactsRes);
     } catch (e) {
-      console.warn('[TravelGuide] Fetch safety data failed:', e);
+      logger.warn('[TravelGuide] Fetch safety data failed:', e);
     } finally {
       setSafetyLoading(false);
     }
@@ -234,7 +232,7 @@ export default function TravelGuideScreen() {
         setLiveWeatherData(weatherRes);
       }
     } catch (e) {
-      console.warn('[TravelGuide] Fetch live weather failed:', e);
+      logger.warn('[TravelGuide] Fetch live weather failed:', e);
     } finally {
       setWeatherLoading(false);
     }
@@ -247,7 +245,7 @@ export default function TravelGuideScreen() {
         setEarnings(res.data);
       }
     } catch (e) {
-      console.warn('[TravelGuide] Fetch earnings failed:', e);
+      logger.warn('[TravelGuide] Fetch earnings failed:', e);
     }
   };
 
@@ -258,7 +256,7 @@ export default function TravelGuideScreen() {
         setPackages(res.data);
       }
     } catch (e) {
-      console.warn('[TravelGuide] Fetch packages failed:', e);
+      logger.warn('[TravelGuide] Fetch packages failed:', e);
     }
   };
 
@@ -269,7 +267,7 @@ export default function TravelGuideScreen() {
         setReels(res.data);
       }
     } catch (e) {
-      console.warn('[TravelGuide] Fetch reels failed:', e);
+      logger.warn('[TravelGuide] Fetch reels failed:', e);
     }
   };
 
@@ -280,7 +278,7 @@ export default function TravelGuideScreen() {
         setLiveStatus(res.data);
       }
     } catch (e) {
-      console.warn('[TravelGuide] Fetch live status failed:', e);
+      logger.warn('[TravelGuide] Fetch live status failed:', e);
     }
   };
 
@@ -294,7 +292,7 @@ export default function TravelGuideScreen() {
         setLiveStatus((prev: any) => ({ ...prev, location: res.data }));
       }
     } catch (e) {
-      console.warn('Failed to broadcast live location:', e);
+      logger.warn('Failed to broadcast live location:', e);
     }
   };
 
@@ -323,7 +321,7 @@ export default function TravelGuideScreen() {
       }
       setPkgModalVisible(false);
       fetchPackages(guideProfile.id);
-    } catch (e) {
+    } catch {
       Alert.alert('Error', 'Failed to save package details.');
     }
   };
@@ -342,7 +340,7 @@ export default function TravelGuideScreen() {
             try {
                await apiService.deleteGuidePackage(guideProfile.id, pkgId);
                fetchPackages(guideProfile.id);
-            } catch (e) {
+            } catch {
                Alert.alert('Error', 'Failed to delete package.');
             }
           }
@@ -369,7 +367,7 @@ export default function TravelGuideScreen() {
         Alert.alert('Video selected!', 'Click Publish Broadcast to upload your travel reel.');
       }
     } catch (e) {
-      console.warn('Video pick error:', e);
+      logger.warn('Video pick error:', e);
     }
   };
 
@@ -490,7 +488,7 @@ export default function TravelGuideScreen() {
       setMediaPrice('');
       Alert.alert('Published!', `Your ${uploadCategory.toLowerCase()} has been uploaded and is now visible to all tourists in their feed.`);
     } catch (e) {
-      console.warn('[TravelGuide] Publish media failed:', e);
+      logger.warn('[TravelGuide] Publish media failed:', e);
       Alert.alert('Upload Failed', 'Could not publish your content. Please try again.');
     }
   };

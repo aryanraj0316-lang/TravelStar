@@ -1,4 +1,5 @@
 import { useApp } from '@/store/AppContext';
+import { logger } from '@/lib/logger';
 import { apiService } from '@/services/api';
 import TripDetailModal from '@/components/TripDetailModal';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -11,14 +12,12 @@ import {
   Bus,
   Calendar,
   Check,
-  CheckCircle,
   ChevronRight,
   Clock,
   Flame,
   Grid2x2,
   Headphones,
   Heart,
-  Hotel,
   Home as HomeIcon,
   MapPin,
   Mountain,
@@ -29,16 +28,12 @@ import {
   Sparkles,
   UserCheck,
   Users,
-  Utensils,
   Wallet,
   X,
-  Star,
-  MessageSquare
 } from 'lucide-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
-  Dimensions,
   Image,
   Modal,
   Pressable,
@@ -50,10 +45,8 @@ import {
   useColorScheme,
   View,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { eventBus } from '@/services/event-bus';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // Category definitions matching the screenshot
 const CATEGORIES = [
@@ -156,7 +149,7 @@ const LIGHT = {
 
 function SearchScreen() {
   useEffect(() => {
-    console.log('Screen mounted: SearchScreen');
+    logger.log('Screen mounted: SearchScreen');
   }, []);
   const router = useRouter();
   const navigation = useNavigation();
@@ -164,10 +157,8 @@ function SearchScreen() {
   const isDark = scheme === 'dark';
   const C = isDark ? DARK : LIGHT;
   const lastScrollYRef = useRef(0);
-  const scrollAccumulatorRef = useRef(0);
   const navbarHiddenRef = useRef(false);
-  const { trips, joinTrip, setActiveRoomId, profile, isLoggedIn, requestedTrips, setRequestedTrips, reloadJoinRequests, setNavbarHidden } = useApp();
-  const insets = useSafeAreaInsets();
+  const { trips, joinTrip, setActiveRoomId, profile, isLoggedIn, requestedTrips, setRequestedTrips, reloadJoinRequests } = useApp();
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [likedTrips, setLikedTrips] = useState<Set<string>>(new Set());

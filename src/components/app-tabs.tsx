@@ -7,7 +7,7 @@ import {
   Search,
   User,
 } from 'lucide-react-native';
-import React, { useEffect, useRef, useState, useCallback, memo } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   Dimensions,
   Pressable,
@@ -144,7 +144,7 @@ const CustomTabBar = React.memo(function CustomTabBar() {
   const { activeTabName, setActiveTabName } = React.useContext(TabContext);
 
   const currentRouteName = activeTabName;
-  const [dockWidth, setDockWidth] = useState(0);
+  const [, setDockWidth] = useState(0);
   const tabCenterXRef = useRef<Record<number, number>>({});
 
   const shouldHideTabBar =

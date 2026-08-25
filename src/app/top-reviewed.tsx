@@ -19,7 +19,6 @@ import {
 } from 'lucide-react-native';
 import React, { useState } from 'react';
 import {
-  Dimensions,
   Image,
   ScrollView,
   StatusBar,
@@ -29,8 +28,6 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const C = {
   bg: '#060814',
@@ -191,7 +188,6 @@ export default function TopReviewedScreen() {
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [selectedTrip, setSelectedTrip] = useState<any | null>(null);
   const [showJoinModal, setShowJoinModal] = useState(false);
-  const [requestedTrips, setRequestedTrips] = useState<Set<string>>(new Set());
 
   const handleRouteSelect = (routeItem: any) => {
     let matchId = 'creation-2';

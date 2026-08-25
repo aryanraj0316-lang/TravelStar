@@ -3,9 +3,7 @@ import { useRouter } from 'expo-router';
 import {
   ArrowLeft,
   Calendar,
-  CheckCircle,
   ChevronRight,
-  Clock,
   Compass,
   DollarSign,
   Info,

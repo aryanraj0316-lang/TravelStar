@@ -3,18 +3,12 @@ import { apiService } from '@/services/api';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
-  ArrowLeft,
-  ChevronLeft,
-  ChevronRight,
   Heart,
-  MessageCircle,
-  Play,
   Send,
   X,
 } from 'lucide-react-native';
 import React, { useRef, useState, useEffect } from 'react';
 import {
-  Dimensions,
   Image,
   StyleSheet,
   Text,
@@ -27,8 +21,6 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 interface Story {
   id: string;
@@ -272,7 +264,7 @@ export default function StoriesScreen() {
     }));
     try {
       await apiService.likeStory(activeStory.id);
-    } catch (e) {}
+    } catch {}
   };
 
   return (

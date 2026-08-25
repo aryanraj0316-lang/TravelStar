@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { logger } from '@/lib/logger';
 import {
   ScrollView,
   StyleSheet,
@@ -19,33 +20,19 @@ import { useApp } from '@/store/AppContext';
 import { apiService } from '@/services/api';
 import {
   ArrowLeft,
-  Search,
   Users,
   MessageSquare,
   DollarSign,
-  MapPin,
   Calendar,
   TrendingUp,
   Plus,
   FileText,
-  Map,
   Clock,
-  Compass,
   Car,
-  Train,
-  Plane,
-  Calculator,
   Hotel,
-  Home,
-  Tent,
   ExternalLink,
-  Sun,
   Activity,
   ShieldAlert,
-  PhoneCall,
-  HeartPulse,
-  Shield,
-  AlertTriangle,
   CheckCircle,
   X,
   Check,
@@ -179,7 +166,7 @@ export default function GroupOrganizerScreen() {
         setJoinRequests(pending);
       }
     } catch (e) {
-      console.warn('Failed to fetch incoming requests:', e);
+      logger.warn('Failed to fetch incoming requests:', e);
     }
   };
 
@@ -201,7 +188,7 @@ export default function GroupOrganizerScreen() {
         setMembers(mappedMembers);
       }
     } catch (e) {
-      console.warn('Failed to fetch tour members:', e);
+      logger.warn('Failed to fetch tour members:', e);
     }
   };
 
@@ -280,7 +267,7 @@ export default function GroupOrganizerScreen() {
         fetchTourMembers(currentTour.id);
       }
     } catch (e) {
-      console.warn('Approve request failed:', e);
+      logger.warn('Approve request failed:', e);
       Alert.alert('Error', 'Failed to approve join request.');
     }
   };
@@ -291,7 +278,7 @@ export default function GroupOrganizerScreen() {
       Alert.alert('Rejected', `Declined group chat join request for "${userName}".`);
       fetchIncoming();
     } catch (e) {
-      console.warn('Reject request failed:', e);
+      logger.warn('Reject request failed:', e);
       Alert.alert('Error', 'Failed to reject join request.');
     }
   };

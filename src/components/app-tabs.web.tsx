@@ -7,7 +7,6 @@ import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
 
 import { Colors, MaxContentWidth, Spacing } from '@/constants/theme';
-import { useApp } from '@/store/AppContext';
 import { eventBus } from '@/services/event-bus';
 
 import HomeScreen from '../screens/home-screen';
@@ -68,7 +67,7 @@ export default function AppTabs() {
         <View style={styles.tabListContainer}>
           <ThemedView type="backgroundElement" style={styles.innerContainer}>
             <ThemedText type="smallBold" style={styles.brandText}>
-              TravelConnect India
+              TravelStar
             </ThemedText>
 
             <Pressable onPress={() => handleTabPress('index')} style={({ pressed }) => pressed && styles.pressed}>

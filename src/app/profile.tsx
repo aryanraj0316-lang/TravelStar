@@ -1,13 +1,10 @@
-import GlassCard from '@/components/ui/GlassCard';
+import { logger } from '@/lib/logger';
 import DummyPaymentModal from '@/components/ui/DummyPaymentModal';
 import AuthScreen from './auth';
-import { useApp, UserRole } from '@/store/AppContext';
-import { apiService } from '@/services/api';
+import { useApp } from '@/store/AppContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useNavigation } from 'expo-router';
 import {
-  ArrowDownLeft,
-  ArrowUpRight,
   Bell,
   Bookmark,
   Briefcase,
@@ -15,32 +12,19 @@ import {
   Check,
   CheckCircle,
   ChevronRight,
-  Coins,
-  Compass,
   CreditCard,
   Download,
   Globe,
   HelpCircle,
-  History,
   Image as ImageIcon,
   LifeBuoy,
-  Lock,
   LogOut,
   MapPin,
   Maximize2,
   Pencil,
-  PhoneCall,
-  Plus,
   QrCode,
-  Settings,
   Share2,
-  Shield,
-  ShieldCheck,
-  Sliders,
-  Sparkles,
   Trash2,
-  User,
-  Wallet,
   X
 } from 'lucide-react-native';
 import React, { useState, useEffect, useRef } from 'react';
@@ -63,52 +47,9 @@ import { eventBus } from '@/services/event-bus';
 let ImagePicker: any = null;
 try {
   ImagePicker = require('expo-image-picker');
-} catch (e) {
+} catch {
   ImagePicker = null;
 }
-
-// Mock Trip History Data
-const TRIP_HISTORY = [
-  {
-    id: 'BOOK-98421',
-    title: 'Ranchi to Vrindavan Spiritual Tour',
-    route: ['Ranchi', 'Delhi', 'Mathura', 'Vrindavan'],
-    date: '12 Aug 2026 - 17 Aug 2026',
-    status: 'UPCOMING',
-    seats: 2,
-    amount: 17000,
-    ticketCode: 'TS-VRN-98421',
-    meetingPoint: 'Ranchi Junction Platform 1',
-    organizer: 'Vikram Singh',
-    image: 'https://images.unsplash.com/photo-1548013146-72479768bada?w=500&q=80',
-  },
-  {
-    id: 'BOOK-84192',
-    title: 'Leh-Ladakh High Altitude Bike Expedition',
-    route: ['Delhi', 'Manali', 'Leh', 'Pangong'],
-    date: '10 Jun 2026 - 20 Jun 2026',
-    status: 'COMPLETED',
-    seats: 1,
-    amount: 16500,
-    ticketCode: 'TS-LEH-84192',
-    meetingPoint: 'Delhi Aerocity Metro Gate 2',
-    organizer: 'Rajesh Kumar',
-    image: 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=500&q=80',
-  },
-  {
-    id: 'BOOK-72104',
-    title: 'Kerala Backwaters & Tea Gardens Escape',
-    route: ['Kochi', 'Munnar', 'Alleppey'],
-    date: '15 Jan 2026 - 20 Jan 2026',
-    status: 'COMPLETED',
-    seats: 2,
-    amount: 30000,
-    ticketCode: 'TS-KRL-72104',
-    meetingPoint: 'Kochi Airport Terminal 1',
-    organizer: 'Ananya Nair',
-    image: 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=500&q=80',
-  },
-];
 
 const AVATAR_PRESETS = [
   'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80',
@@ -121,21 +62,16 @@ const AVATAR_PRESETS = [
 
 function ProfileScreen() {
   useEffect(() => {
-    console.log('Screen mounted: ProfileScreen');
+    logger.log('Screen mounted: ProfileScreen');
   }, []);
   const router = useRouter();
   const navigation = useNavigation();
   const isDark = useColorScheme() === 'dark';
   const {
-    currentRole,
-    setCurrentRole,
     profile,
     updateProfile,
-    walletTransactions,
     addWalletFunds,
-    withdrawWalletFunds,
     isLoggedIn,
-    login,
     logout,
     setNavbarHidden,
     hasUnreadNotification,
@@ -143,17 +79,10 @@ function ProfileScreen() {
   } = useApp();
 
   const lastScrollYRef = useRef(0);
-  const scrollAccumulatorRef = useRef(0);
   const navbarHiddenRef = useRef(false);
 
-  // Navigation tab state
-  const [activeTab, setActiveTab] = useState<'DETAILS' | 'HISTORY' | 'WALLET' | 'DASHBOARD' | 'SETTINGS'>('DETAILS');
-  const [historyFilter, setHistoryFilter] = useState<'ALL' | 'UPCOMING' | 'COMPLETED'>('ALL');
 
   // Input states
-  const [aadhaarInput, setAadhaarInput] = useState('');
-  const [fundingAmount, setFundingAmount] = useState('');
-  const [withdrawalAmount, setWithdrawalAmount] = useState('');
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showSavedPlacesModal, setShowSavedPlacesModal] = useState(false);
@@ -262,11 +191,6 @@ function ProfileScreen() {
     }
   }, [profile]);
 
-  // Guide dashboard states
-  const [hourlyRate, setHourlyRate] = useState('350');
-  const [dailyRate, setDailyRate] = useState('2200');
-
-
   // Device image pickers
   const pickImageFromDevice = async () => {
     try {
@@ -322,30 +246,10 @@ function ProfileScreen() {
   };
 
   // Ticket Modal state
-  const [selectedTicket, setSelectedTicket] = useState<any>(null);
+  const [selectedTicket] = useState<any>(null);
   const [showTicketModal, setShowTicketModal] = useState(false);
 
   // Handlers
-  const handleAadhaarVerify = () => {
-    if (aadhaarInput.length !== 12) {
-      Alert.alert('Invalid Aadhaar', 'Aadhaar must be a 12-digit number.');
-      return;
-    }
-    updateProfile({ aadhaarStatus: 'PENDING' });
-    setTimeout(() => {
-      updateProfile({ aadhaarStatus: 'VERIFIED', isVerified: true });
-      Alert.alert('Verification Success', 'Your profile is now verified. Verified badge added!');
-    }, 1500);
-  };
-
-  const handleApplyGuideLicense = () => {
-    updateProfile({ guideLicenseStatus: 'PENDING' });
-    setTimeout(() => {
-      updateProfile({ guideLicenseStatus: 'VERIFIED' });
-      Alert.alert('License Approved', 'Your tour guide license is verified.');
-    }, 1500);
-  };
-
   const handleSaveProfile = () => {
     if (!editName.trim()) {
       Alert.alert('Required Field', 'Profile Name cannot be empty.');
@@ -370,7 +274,7 @@ function ProfileScreen() {
   };
 
   const handleLogout = () => {
-    Alert.alert('Sign Out of Account', 'Are you sure you want to sign out of TravelConnect?', [
+    Alert.alert('Sign Out of Account', 'Are you sure you want to sign out of TravelStar?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Sign Out',
@@ -382,11 +286,6 @@ function ProfileScreen() {
       },
     ]);
   };
-
-  const filteredHistory = TRIP_HISTORY.filter((item) => {
-    if (historyFilter === 'ALL') return true;
-    return item.status === historyFilter;
-  });
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={[styles.safeArea, { backgroundColor: '#070913' }]}>

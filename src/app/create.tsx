@@ -1,4 +1,5 @@
 import { useApp } from '@/store/AppContext';
+import { logger } from '@/lib/logger';
 import { apiService } from '@/services/api';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -268,13 +269,12 @@ const TRIP_CATEGORIES = ['Adventure', 'Religious', 'Family', 'Road Trip', 'Beach
 
 function CreateTripScreen() {
   useEffect(() => {
-    console.log('Screen mounted: CreateTripScreen');
+    logger.log('Screen mounted: CreateTripScreen');
   }, []);
   const router = useRouter();
   const lastScrollYRef = useRef(0);
-  const scrollAccumulatorRef = useRef(0);
   const navbarHiddenRef = useRef(false);
-  const { trips, addTrip, profile, reloadIncomingRequestsCount, setActiveRoomId, setNavbarHidden } = useApp();
+  const { trips, addTrip, profile, reloadIncomingRequestsCount, setActiveRoomId } = useApp();
   const scrollRef = useRef<ScrollView>(null);
 
   const [tripName, setTripName] = useState('');
@@ -322,7 +322,7 @@ function CreateTripScreen() {
               changed = true;
             }
           } catch (e) {
-            console.warn('Geocoding failed for city:', city, e);
+            logger.warn('Geocoding failed for city:', city, e);
           }
         }
       }
@@ -376,7 +376,7 @@ function CreateTripScreen() {
   const [shortDesc, setShortDesc] = useState('');
   const [transportMode, setTransportMode] = useState('AC Vehicle');
   const [selectedTripType, setSelectedTripType] = useState('Group');
-  const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [, setToastMsg] = useState<string | null>(null);
 
   const [joinRequests, setJoinRequests] = useState<any[]>([]);
   const [creationMembers, setCreationMembers] = useState<any[]>([]);
@@ -387,7 +387,7 @@ function CreateTripScreen() {
         setCreationMembers(data);
       }
     } catch (e) {
-      console.warn('[Create] Failed to fetch trip members:', e);
+      logger.warn('[Create] Failed to fetch trip members:', e);
     }
   };
   const fetchIncomingRequests = async () => {
@@ -398,7 +398,7 @@ function CreateTripScreen() {
       }
       reloadIncomingRequestsCount();
     } catch (e) {
-      console.warn('[Create] Failed to fetch incoming requests:', e);
+      logger.warn('[Create] Failed to fetch incoming requests:', e);
     }
   };
 
@@ -407,10 +407,6 @@ function CreateTripScreen() {
       fetchIncomingRequests();
     }
   }, [profile?.id]);
-
-  const [participants, setParticipants] = useState([
-    { id: 'p-1', name: 'Aarav Sharma (Creator)', isCreator: true },
-  ]);
 
   // Essential Packing Checklist
   const [checklist, setChecklist] = useState([
@@ -450,7 +446,7 @@ function CreateTripScreen() {
         setCustomCoverUri(result.assets[0].uri);
       }
     } catch (e) {
-      console.log('Gallery pick error:', e);
+      logger.log('Gallery pick error:', e);
     }
   };
 
@@ -586,7 +582,7 @@ function CreateTripScreen() {
       if (selectedCreation) {
         fetchCreationMembers(selectedCreation.id);
       }
-    } catch (e) {
+    } catch {
       showToast('❌ Failed to accept request');
     }
   };
@@ -599,7 +595,7 @@ function CreateTripScreen() {
       if (selectedCreation) {
         fetchCreationMembers(selectedCreation.id);
       }
-    } catch (e) {
+    } catch {
       showToast('❌ Failed to decline request');
     }
   };

@@ -1,9 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import {
-  AlertTriangle,
   ArrowLeft,
-  Bell,
   Calendar,
   Car,
   CheckCheck,
@@ -16,7 +14,6 @@ import {
   Mountain,
   Navigation,
   Plane,
-  Share2,
   ShieldAlert,
   Sparkles,
   Sun,
@@ -27,8 +24,6 @@ import React, { useEffect, useState } from 'react';
 import { apiService } from '../services/api';
 import { useApp } from '../store/AppContext';
 import {
-  Animated,
-  Dimensions,
   Image,
   ScrollView,
   StatusBar,
@@ -39,7 +34,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const C = {
   bg: '#0A0C16',
@@ -466,7 +460,7 @@ export default function NotificationsScreen() {
                 onPress={async () => {
                   try {
                     await apiService.markNotificationRead(notif.id);
-                  } catch (e) {}
+                  } catch {}
                   loadNotifications();
                   checkUnreadNotifications();
                   if (notif.chatRoomId) {

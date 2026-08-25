@@ -9,32 +9,21 @@ import {
   Text,
   StatusBar,
   Image,
-  Dimensions,
-  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import {
   MapPin,
-  Compass,
-  Sparkles,
   ArrowLeft,
   Navigation,
   Star,
   IndianRupee,
-  ChevronRight,
   TrendingDown,
   Award,
   Zap,
   Info,
-  X,
-  Car,
-  Clock,
-  ShieldCheck,
 } from 'lucide-react-native';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const C = {
   bg: '#060814',
@@ -165,8 +154,6 @@ export default function NearbyTripsScreen() {
   const [nearbyPlaces, setNearbyPlaces] = useState<NearbyPlace[]>(NEARBY_PLACES);
   const [selectedTrip, setSelectedTrip] = useState<any | null>(null);
   const [showJoinModal, setShowJoinModal] = useState(false);
-  const [requestedTrips, setRequestedTrips] = useState<Set<string>>(new Set());
-
   const handlePlaceSelect = (place: NearbyPlace) => {
     const mockTrip = {
       id: place.id,

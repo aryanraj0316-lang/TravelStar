@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, View, ViewStyle, useColorScheme } from 'react-native';
+import { StyleSheet, View, useColorScheme } from 'react-native';
 
 interface GlassCardProps {
   children: React.ReactNode;

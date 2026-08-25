@@ -1,4 +1,4 @@
-import { MONSOON_ALERTS } from '@/constants/alerts';
+import { apiService } from '@/services/api';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import {
@@ -8,15 +8,15 @@ import {
   Check,
   Clock,
   CloudRain,
-  CloudSnow,
   MapPin,
   Mountain,
   Phone,
   ShieldAlert,
   Waves
 } from 'lucide-react-native';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Dimensions,
   Image,
   ScrollView,
@@ -27,6 +27,28 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+interface HazardAlert {
+  id: string;
+  severity: 'CRITICAL' | 'WARNING' | 'ADVISORY';
+  title: string;
+  category: string;
+  location: string;
+  time: string;
+  desc: string;
+  affectedRoute: string;
+  precautions: string[];
+  image: string;
+}
+
+// Human-readable labels for the AlertCategory enum values the API returns
+// (e.g. "FLOOD_RAIN") — see backend/prisma/schema.prisma.
+const CATEGORY_LABELS: Record<string, string> = {
+  FLOOD_RAIN: 'Flood & Rain',
+  LANDSLIDE: 'Landslide',
+  CLOUDBURST: 'Cloudburst',
+  TRAFFIC_RUSH: 'Traffic Rush',
+};
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -50,9 +72,26 @@ type SeverityFilter = 'ALL' | 'CRITICAL' | 'WARNING' | 'ADVISORY';
 export default function MonsoonAdvisoryScreen() {
   const router = useRouter();
   const [filter, setFilter] = useState<SeverityFilter>('ALL');
+  const [alerts, setAlerts] = useState<HazardAlert[] | null>(null);
+  const [loadError, setLoadError] = useState(false);
+
+  const loadAlerts = () => {
+    apiService.getAlerts().then((data) => {
+      if (data) {
+        setAlerts(data as HazardAlert[]);
+        setLoadError(false);
+      } else {
+        setLoadError(true);
+      }
+    }).catch(() => setLoadError(true));
+  };
+
+  useEffect(() => {
+    loadAlerts();
+  }, []);
 
   // Filter alerts based on current state selection
-  const filteredAlerts = MONSOON_ALERTS.filter((alert) => {
+  const filteredAlerts = (alerts ?? []).filter((alert) => {
     if (filter === 'ALL') return true;
     return alert.severity === filter;
   });
@@ -61,13 +100,11 @@ export default function MonsoonAdvisoryScreen() {
     switch (category) {
       case 'LANDSLIDE':
         return <Mountain size={18} color={C.red} />;
-      case 'FLOOD & RAIN':
+      case 'FLOOD_RAIN':
         return <Waves size={18} color={C.cyan} />;
-      case 'SNOWFALL':
-        return <CloudSnow size={18} color={C.white} />;
       case 'CLOUDBURST':
         return <CloudRain size={18} color={C.orange} />;
-      case 'TRAFFIC RUSH':
+      case 'TRAFFIC_RUSH':
         return <Car size={18} color={C.orange} />;
       default:
         return <AlertTriangle size={18} color={C.orange} />;
@@ -146,8 +183,8 @@ export default function MonsoonAdvisoryScreen() {
           {(['ALL', 'CRITICAL', 'WARNING', 'ADVISORY'] as const).map((tab) => {
             const isActive = filter === tab;
             const count = tab === 'ALL'
-              ? MONSOON_ALERTS.length
-              : MONSOON_ALERTS.filter(a => a.severity === tab).length;
+              ? (alerts ?? []).length
+              : (alerts ?? []).filter(a => a.severity === tab).length;
 
             return (
               <TouchableOpacity
@@ -179,7 +216,18 @@ export default function MonsoonAdvisoryScreen() {
 
         {/* ─── Active Alerts List ─────────────────────────────────────────── */}
         <View style={styles.alertsList}>
-          {filteredAlerts.length === 0 ? (
+          {alerts === null && !loadError ? (
+            <View style={styles.emptyContainer}>
+              <ActivityIndicator color={C.blue} />
+            </View>
+          ) : loadError ? (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>Couldn&apos;t load hazard alerts.</Text>
+              <TouchableOpacity onPress={loadAlerts} activeOpacity={0.8} style={{ marginTop: 12 }}>
+                <Text style={[styles.emptyText, { color: C.blue, fontWeight: '700' }]}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : filteredAlerts.length === 0 ? (
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>No active alerts found in this category.</Text>
             </View>
@@ -196,7 +244,7 @@ export default function MonsoonAdvisoryScreen() {
                         {getAlertIcon(alert.category)}
                       </View>
                       <View>
-                        <Text style={styles.categoryLabel}>{alert.category}</Text>
+                        <Text style={styles.categoryLabel}>{CATEGORY_LABELS[alert.category] ?? alert.category}</Text>
                         <View style={styles.locationRow}>
                           <MapPin size={10} color={C.textSec} />
                           <Text style={styles.locationText} numberOfLines={1}>

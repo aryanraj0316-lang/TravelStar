@@ -1,4 +1,5 @@
 import { LinearGradient } from 'expo-linear-gradient';
+import { logger } from '@/lib/logger';
 import { useRouter } from 'expo-router';
 import {
   AlertCircle,
@@ -41,7 +42,6 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
-  Dimensions,
   Image,
   Keyboard,
   PanResponder,
@@ -61,11 +61,9 @@ import { useApp } from '../store/AppContext';
 let ImagePicker: any = null;
 try {
   ImagePicker = require('expo-image-picker');
-} catch (e) {
+} catch {
   ImagePicker = null;
 }
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // Color Palette matching search theme exactly
 const C = {
@@ -408,14 +406,13 @@ interface ChatRoom {
 
 function ChatScreen() {
   useEffect(() => {
-    console.log('Screen mounted: ChatScreen');
+    logger.log('Screen mounted: ChatScreen');
   }, []);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const lastScrollYRef = useRef(0);
-  const scrollAccumulatorRef = useRef(0);
   const navbarHiddenRef = useRef(false);
-  const { trips, guides, profile, sosAlerts, triggerSOS, resolveSOS, activeRoomId, setActiveRoomId, messages, sendMessage, clearChatUnread, refreshTrips, setNavbarHidden } = useApp();
+  const { trips, guides, profile, sosAlerts, triggerSOS, resolveSOS, activeRoomId, setActiveRoomId, messages, sendMessage, clearChatUnread, refreshTrips } = useApp();
 
   useEffect(() => {
     clearChatUnread();
@@ -490,7 +487,7 @@ function ChatScreen() {
         });
       }
     } catch (e) {
-      console.warn('Failed to load chat rooms from backend:', e);
+      logger.warn('Failed to load chat rooms from backend:', e);
     }
   };
 
@@ -547,7 +544,7 @@ function ChatScreen() {
           });
         }
       }).catch((e: any) => {
-        console.warn('Failed to load chat messages:', e);
+        logger.warn('Failed to load chat messages:', e);
       });
     }
   }, [selectedRoomId]);
@@ -703,7 +700,7 @@ function ChatScreen() {
           }
         })
         .catch((err) => {
-          console.warn('Failed to fetch trip members:', err);
+          logger.warn('Failed to fetch trip members:', err);
           setDbMembers([]);
         });
     }
@@ -753,7 +750,7 @@ function ChatScreen() {
       ],
     };
   });
-  const [tripPolls, setTripPolls] = useState<Record<string, typeof INITIAL_TRIP_POLLS['trip-1']>>(INITIAL_TRIP_POLLS);
+  const [tripPolls] = useState<Record<string, typeof INITIAL_TRIP_POLLS['trip-1']>>(INITIAL_TRIP_POLLS);
   const [tripExpenses, setTripExpenses] = useState<Record<string, TripExpense[]>>(INITIAL_TRIP_EXPENSES);
 
   // Inbox Rooms state - updates snippet text in real-time
@@ -1125,7 +1122,7 @@ function ChatScreen() {
       if (ClipboardObj && typeof ClipboardObj.setString === 'function') {
         ClipboardObj.setString(content);
       }
-    } catch (e) {
+    } catch {
       // Fallback if Clipboard module is unlinked or not bundled in Expo client
     }
     Alert.alert('Success', 'Message text copied to clipboard.');
