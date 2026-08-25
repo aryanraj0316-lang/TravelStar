@@ -1,56 +1,53 @@
-# Welcome to your Expo app 👋
+# TravelStar
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A React Native (Expo Router) + Express + Prisma + PostgreSQL travel application.
+
+See [docs/REMEDIATION.md](docs/REMEDIATION.md) for the production-readiness program this codebase is being taken through, and [docs/CONVENTIONS.md](docs/CONVENTIONS.md) for the conventions enforced across the codebase.
+
+## Project layout
+
+- `/` — the Expo Router app (iOS, Android, web)
+- `backend/` — the Express + Prisma API and Socket.io server
 
 ## Get started
 
-1. Install dependencies
+1. Install dependencies (installs both the app and, if you `cd backend`, the API):
 
    ```bash
    npm install
+   cd backend && npm install
    ```
 
-2. Start the app
+2. Configure the backend environment: copy `backend/.env.example` to `backend/.env` and fill in real values.
+
+3. Start the backend API:
 
    ```bash
-   npx expo start
+   npm run backend
    ```
 
-In the output, you'll find options to open the app in a
+4. Start the app:
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+   ```bash
+   npm run start
+   ```
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+   In the output, you'll find options to open the app in a development build, an Android emulator, an iOS simulator, or Expo Go.
 
-## Get a fresh project
+## Quality gates
 
-When you're ready, run:
+Run from the root, and again from `backend/`:
 
 ```bash
-npm run reset-project
+npm run typecheck
+npm run lint
+npm run format
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
-
-### Other setup steps
-
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+`backend/` additionally has `npm run build` (compiles to `dist/`) and `npm test`.
 
 ## Learn more
 
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- [Expo documentation](https://docs.expo.dev/versions/v57.0.0/) — this project is pinned to Expo SDK 57; always check the versioned docs before making Expo-related changes, per [AGENTS.md](AGENTS.md).
+- [Expo Router](https://docs.expo.dev/router/introduction)
+- [Prisma](https://www.prisma.io/docs)

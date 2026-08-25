@@ -1,14 +1,15 @@
 {
   "expo": {
-    "name": "Tourism",
-    "slug": "Tourism",
+    "name": "TravelStar",
+    "slug": "travelstar",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "tourism",
-    "userInterfaceStyle": "automatic",
+    "scheme": "travelstar",
+    "userInterfaceStyle": "dark",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.travelstar.app"
     },
     "android": {
       "adaptiveIcon": {
@@ -18,7 +19,7 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.Tourism"
+      "package": "com.travelstar.app"
     },
     "web": {
       "output": "static",
@@ -40,7 +41,10 @@
           "photosPermission": "Allow TravelStar to access your photos to select your profile picture.",
           "cameraPermission": "Allow TravelStar to access your camera to take a profile picture."
         }
-      ]
+      ],
+      "expo-image",
+      "expo-web-browser",
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,

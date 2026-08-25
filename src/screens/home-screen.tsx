@@ -1,4 +1,5 @@
 import { apiService } from '@/services/api';
+import { logger } from '@/lib/logger';
 import { useApp, UserRole } from '@/store/AppContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useNavigation } from 'expo-router';
@@ -569,7 +570,7 @@ function FeaturedTripsCarousel({ isFocused }: { isFocused: boolean }) {
 // ─── Component ──────────────────────────────────────────────────────
 function HomeScreen() {
   useEffect(() => {
-    console.log('Screen mounted: HomeScreen');
+    logger.log('Screen mounted: HomeScreen');
   }, []);
   const navigation = useNavigation();
   const [isFocused, setIsFocused] = useState(true);
@@ -590,14 +591,13 @@ function HomeScreen() {
     };
   }, [navigation]);
 
-  const { currentRole, setCurrentRole, profile, setNavbarHidden, trips, setActiveRoomId, isLoggedIn, hasUnreadNotification, checkUnreadNotifications } = useApp();
+  const { currentRole, setCurrentRole, profile, isLoggedIn, hasUnreadNotification, checkUnreadNotifications } = useApp();
   const router = useRouter();
   const [activeDot, setActiveDot] = useState(0);
   const trendingRef = useRef<ScrollView>(null);
   const scrollXRef = useRef(0);
   const isInteractingRef = useRef(false);
   const lastScrollYRef = useRef(0);
-  const scrollAccumulatorRef = useRef(0);
   const navbarHiddenRef = useRef(false);
 
   // ── Dynamic DB state ──────────────────────────────────────────────
