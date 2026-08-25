@@ -182,7 +182,8 @@ model User {
   liveLocations     LiveLocation[]
 
   // Notifications
-  notifications Notification[]
+  notifications      Notification[]
+  notificationReads  NotificationRead[]
 
   // Social Relations
   followers Follow[]  @relation("Following")
@@ -826,9 +827,29 @@ model Notification {
   tripId     String?
   category   NotificationCategory?
   createdAt  DateTime              @default(now())
+  reads      NotificationRead[]
 
   @@index([userId])
   @@index([unread])
+}
+
+// Per-user read state for broadcast notifications (userId: null on
+// Notification — sent to every user at once). A personal notification's
+// read state lives directly on its own `unread` column; a broadcast's does
+// not, since it's shared, so "read" for a given user is recorded here
+// instead of mutating the shared row (docs/REMEDIATION.md §5.8 — the old
+// code flipped `unread` on the shared row, marking a broadcast read for
+// every user the moment any one of them opened it).
+model NotificationRead {
+  id             String       @id @default(uuid())
+  notificationId String
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  readAt         DateTime     @default(now())
+
+  @@unique([notificationId, userId])
+  @@index([userId])
 }
 
 model Destination {

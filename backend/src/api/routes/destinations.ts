@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 
@@ -19,19 +20,28 @@ router.get('/', async (req, res) => {
   }
 });
 
+const createDestinationSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  tags: z.string().trim().min(1).max(300).default('Travel • Explore'),
+  rating: z.number().min(0).max(5).default(4.5),
+  image: z.string().url().max(2000),
+  rank: z.number().int().min(0).default(0),
+});
+
 // Create a new destination (admin or customer post — visible to all)
 router.post('/', async (req, res) => {
-  const { name, tags, rating, image, rank } = req.body;
-  try {
-    const destination = await prisma.destination.create({
-      data: {
-        name: name || 'New Destination',
-        tags: tags || 'Travel • Explore',
-        rating: parseFloat(rating) || 4.5,
-        image: image || 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&q=80',
-        rank: parseInt(rank) || 0,
-      },
+  const parsed = createDestinationSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      status: 'error',
+      code: 'VALIDATION_FAILED',
+      message: 'Please check the destination details.',
+      details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
     });
+  }
+
+  try {
+    const destination = await prisma.destination.create({ data: parsed.data });
     res.status(201).json({ status: 'success', data: destination });
   } catch (err) {
     logger.warn('[Destinations] Create error:', err);

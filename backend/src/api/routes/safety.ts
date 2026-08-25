@@ -1,10 +1,20 @@
-import { Router } from 'express';
+import { Router, Response } from 'express';
+import { z } from 'zod';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 import { requireUserId, isAdmin } from '../../lib/auth-context';
 import { getSosAudienceUserIds } from '../../services/sos-audience';
 
 const router = Router();
+
+function validationError(res: Response, issues: z.ZodIssue[]) {
+  return res.status(400).json({
+    status: 'error',
+    code: 'VALIDATION_FAILED',
+    message: 'Please check the submitted data.',
+    details: issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+  });
+}
 
 // GET /safety/sos — List all active SOS alerts (Prisma-backed, persists across restarts)
 router.get('/sos', async (req, res) => {
@@ -37,17 +47,25 @@ router.get('/sos', async (req, res) => {
   }
 });
 
+const sosSchema = z.object({
+  userName: z.string().trim().max(100).optional(),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+});
+
 // POST /safety/sos — Trigger a new SOS alert (Prisma-backed + socket broadcast)
 router.post('/sos', async (req, res) => {
   const userId = requireUserId(req);
-  const { userName, latitude, longitude } = req.body;
+  const parsed = sosSchema.safeParse(req.body);
+  if (!parsed.success) return validationError(res, parsed.error.issues);
+  const { userName, latitude, longitude } = parsed.data;
 
   try {
     const newAlert = await prisma.sOSAlert.create({
       data: {
         userId,
-        latitude: parseFloat(latitude) || 28.6139,
-        longitude: parseFloat(longitude) || 77.209,
+        latitude,
+        longitude,
       },
     });
 
@@ -123,15 +141,6 @@ router.post('/sos/:id/resolve', async (req, res) => {
   }
 });
 
-// POST /safety/location — Register user coordinates
-router.post('/location', (req, res) => {
-  const { userId, latitude, longitude } = req.body;
-  res.status(200).json({
-    status: 'success',
-    message: `Coordinates registered for user ${userId || 'guest'} (${latitude}, ${longitude})`,
-  });
-});
-
 // GET /safety/contacts — Get user's emergency contacts (Prisma-backed, user-scoped)
 router.get('/contacts', async (req, res) => {
   const userId = requireUserId(req);
@@ -148,21 +157,26 @@ router.get('/contacts', async (req, res) => {
   }
 });
 
+const contactSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  relation: z.string().trim().min(1).max(50).default('Other'),
+  phoneNumber: z.string().trim().regex(/^\+?[0-9\s-]{7,15}$/, 'Enter a valid phone number'),
+});
+
 // POST /safety/contacts — Create a new emergency contact
 router.post('/contacts', async (req, res) => {
   const userId = requireUserId(req);
 
-  const { name, relation, phoneNumber } = req.body;
-  if (!name || !phoneNumber) {
-    return res.status(400).json({ status: 'error', message: 'Name and phoneNumber are required' });
-  }
+  const parsed = contactSchema.safeParse(req.body);
+  if (!parsed.success) return validationError(res, parsed.error.issues);
+  const { name, relation, phoneNumber } = parsed.data;
 
   try {
     const contact = await prisma.emergencyContact.create({
       data: {
         userId,
         name,
-        relation: relation || 'Other',
+        relation,
         phoneNumber,
       },
     });

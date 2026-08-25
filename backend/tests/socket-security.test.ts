@@ -51,7 +51,7 @@ function connectClient(token: string | undefined): Promise<ClientSocket> {
   });
 }
 
-function waitForEvent<T = any>(socket: ClientSocket, event: string, timeoutMs = 2000): Promise<T> {
+function waitForEvent<T = unknown>(socket: ClientSocket, event: string, timeoutMs = 2000): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`Timed out waiting for "${event}"`)), timeoutMs);
     socket.once(event, (data: T) => {

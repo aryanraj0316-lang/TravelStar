@@ -78,8 +78,8 @@ export const authenticateJWT = (
     return;
   }
 
-  jwt.verify(token, env.JWT_SECRET, (err, decoded: any) => {
-    if (err) {
+  jwt.verify(token, env.JWT_SECRET, (err, decoded: jwt.JwtPayload | string | undefined) => {
+    if (err || typeof decoded !== 'object' || !decoded) {
       // On a public route, an invalid/expired token degrades to an anonymous
       // request rather than a hard failure — the caller is still allowed to
       // browse, just without the personalization a valid token would add.

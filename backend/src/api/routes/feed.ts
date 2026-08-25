@@ -1,16 +1,24 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 
 const router = Router();
 
+const feedQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+  cursor: z.coerce.date().optional(),
+});
+
 // GET /api/v1/feed — Unified public feed (TravelStory + GuideReel merged)
 router.get('/', async (req, res) => {
-  try {
-    const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
-    const cursor = req.query.cursor as string | undefined;
+  const parsed = feedQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(400).json({ status: 'error', code: 'VALIDATION_FAILED', message: 'Invalid feed query.' });
+  }
 
-    const cursorDate = cursor ? new Date(cursor) : undefined;
+  try {
+    const { limit, cursor: cursorDate } = parsed.data;
     const cursorFilter = cursorDate ? { createdAt: { lt: cursorDate } } : {};
 
     // Fetch both content types in parallel

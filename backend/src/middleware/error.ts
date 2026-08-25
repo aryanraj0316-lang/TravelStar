@@ -1,21 +1,30 @@
 import { Request, Response, NextFunction } from 'express';
 import { logger } from '../lib/logger';
 
+interface HttpError extends Error {
+  statusCode?: number;
+}
+
+function isHttpError(err: unknown): err is HttpError {
+  return err instanceof Error;
+}
+
 export const errorHandler = (
-  err: any,
-  req: Request,
+  err: unknown,
+  _req: Request,
   res: Response,
   _next: NextFunction
 ) => {
-  logger.error(err.stack);
+  const httpError: HttpError = isHttpError(err) ? err : new Error('Internal Server Error');
+  logger.error(httpError.stack);
 
-  const statusCode = err.statusCode || 500;
-  const message = err.message || 'Internal Server Error';
+  const statusCode = httpError.statusCode || 500;
+  const message = httpError.message || 'Internal Server Error';
 
   res.status(statusCode).json({
     status: 'error',
     statusCode,
     message,
-    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+    stack: process.env.NODE_ENV === 'development' ? httpError.stack : undefined,
   });
 };

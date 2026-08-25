@@ -381,7 +381,6 @@ router.post('/', async (req, res) => {
 // same seat-claiming logic (services/trip-membership.ts) so both paths are
 // race-safe the same way — see docs/REMEDIATION.md §5.4.
 router.post('/:id/join', async (req, res) => {
-  const { id } = req.params!.id ? req.params : { id: undefined };
   const tripId = req.params.id;
   const userId = requireUserId(req);
 

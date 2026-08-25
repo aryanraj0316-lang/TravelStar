@@ -1,8 +1,20 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 
 const router = Router();
+
+const FETCH_TIMEOUT_MS = 5000;
+
+interface OpenMeteoResponse {
+  current?: {
+    temperature_2m: number;
+    relative_humidity_2m: number;
+    weather_code: number;
+    wind_speed_10m: number;
+  };
+}
 
 // Map Open-Meteo WMO weather codes to human-readable conditions
 function mapWeatherCode(code: number): string {
@@ -27,10 +39,17 @@ function mapWeatherCode(code: number): string {
 async function fetchLiveWeather(lat: number, lon: number): Promise<{ temp: string; condition: string; humidity: string; windSpeed: string } | null> {
   try {
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&timezone=auto`;
-    const response = await fetch(url);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    let response: Response;
+    try {
+      response = await fetch(url, { signal: controller.signal });
+    } finally {
+      clearTimeout(timeout);
+    }
     if (!response.ok) return null;
 
-    const data: any = await response.json();
+    const data = (await response.json()) as OpenMeteoResponse;
     const current = data.current;
     if (!current) return null;
 
@@ -86,14 +105,18 @@ router.get('/', async (req, res) => {
   }
 });
 
+const liveWeatherQuerySchema = z.object({
+  lat: z.coerce.number().min(-90).max(90),
+  lon: z.coerce.number().min(-180).max(180),
+});
+
 // GET /weather/live — Live weather at specific coordinates (for guide's current position)
 router.get('/live', async (req, res) => {
-  const lat = parseFloat(req.query.lat as string);
-  const lon = parseFloat(req.query.lon as string);
-
-  if (isNaN(lat) || isNaN(lon)) {
-    return res.status(400).json({ status: 'error', message: 'lat and lon query parameters required' });
+  const parsed = liveWeatherQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(400).json({ status: 'error', code: 'VALIDATION_FAILED', message: 'Valid lat and lon query parameters are required.' });
   }
+  const { lat, lon } = parsed.data;
 
   try {
     const live = await fetchLiveWeather(lat, lon);

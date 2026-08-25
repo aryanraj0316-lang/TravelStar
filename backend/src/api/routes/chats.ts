@@ -1,9 +1,16 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 import { requireUserId } from '../../lib/auth-context';
 
 const router = Router();
+
+const roomIdParamSchema = z.object({ id: z.string().uuid() });
+const messagesQuerySchema = z.object({
+  cursor: z.string().uuid().optional(),
+  take: z.coerce.number().int().min(1).max(100).default(50),
+});
 
 /**
  * Asserts the caller is a member of the given chat room. Every route below
@@ -58,7 +65,30 @@ router.get('/', async (req, res) => {
       }
     });
 
-    const rooms = await Promise.all(memberships.map(async (m) => {
+    // Single query for unread counts across every room instead of one
+    // `count()` per room (docs/REMEDIATION.md §5.9) — the per-room
+    // `createdAt >= joinedAt` cutoff still varies per membership, so the
+    // grouping happens in memory over this one result set.
+    const roomIds = memberships.map((m) => m.chatRoomId);
+    const unreadCandidates = roomIds.length
+      ? await prisma.message.findMany({
+          where: {
+            chatRoomId: { in: roomIds },
+            senderId: { not: tokenUserId },
+            readBy: { none: { userId: tokenUserId } },
+          },
+          select: { id: true, chatRoomId: true, createdAt: true },
+        })
+      : [];
+    const joinedAtByRoom = new Map(memberships.map((m) => [m.chatRoomId, m.joinedAt]));
+    const unreadCountByRoom = new Map<string, number>();
+    for (const msg of unreadCandidates) {
+      const joinedAt = joinedAtByRoom.get(msg.chatRoomId);
+      if (joinedAt && msg.createdAt < joinedAt) continue;
+      unreadCountByRoom.set(msg.chatRoomId, (unreadCountByRoom.get(msg.chatRoomId) ?? 0) + 1);
+    }
+
+    const rooms = memberships.map((m) => {
       const room = m.chatRoom;
       const trip = room.trip;
       const lastMsg = room.messages[0];
@@ -66,19 +96,7 @@ router.get('/', async (req, res) => {
         ? `${lastMsg.sender?.profile?.firstName || 'User'}: ${lastMsg.content || ''}`
         : 'System: Welcome to the group chat! Start planning together.';
 
-      const unreadCount = await prisma.message.count({
-        where: {
-          chatRoomId: room.id,
-          senderId: { not: tokenUserId },
-          createdAt: { gte: m.joinedAt },
-          readBy: {
-            none: {
-              userId: tokenUserId
-            }
-          }
-        }
-      });
-
+      const unreadCount = unreadCountByRoom.get(room.id) ?? 0;
       const sortDate = lastMsg?.createdAt || room.createdAt;
 
       return {
@@ -92,11 +110,11 @@ router.get('/', async (req, res) => {
           ? new Date(lastMsg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           : 'Just Now',
         unread: unreadCount > 0,
-        unreadCount: unreadCount,
+        unreadCount,
         badge: 'Member',
         lastMessageAt: sortDate.toISOString(),
       };
-    }));
+    });
 
     rooms.sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
 
@@ -109,11 +127,15 @@ router.get('/', async (req, res) => {
 
 // 2. Get chat room details by ID
 router.get('/:id', async (req, res) => {
-  const { id } = req.params;
+  const parsedParams = roomIdParamSchema.safeParse(req.params);
+  if (!parsedParams.success) {
+    return res.status(400).json({ status: 'error', code: 'VALIDATION_FAILED', message: 'Invalid chat room id.' });
+  }
+  const { id } = parsedParams.data;
   const tokenUserId = requireUserId(req);
 
   try {
-    if (!(await assertChatRoomMember(res, id!, tokenUserId))) return;
+    if (!(await assertChatRoomMember(res, id, tokenUserId))) return;
 
     const room = await prisma.chatRoom.findUnique({
       where: { id },
@@ -158,13 +180,21 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// 3. Get message history by chat room ID
+// 3. Get message history by chat room ID — cursor-paginated, newest page
+// first (docs/REMEDIATION.md §5.9). `cursor` is the id of the oldest message
+// already loaded by the caller; omit it for the first page.
 router.get('/:id/messages', async (req, res) => {
-  const { id } = req.params;
+  const parsedParams = roomIdParamSchema.safeParse(req.params);
+  const parsedQuery = messagesQuerySchema.safeParse(req.query);
+  if (!parsedParams.success || !parsedQuery.success) {
+    return res.status(400).json({ status: 'error', code: 'VALIDATION_FAILED', message: 'Invalid request.' });
+  }
+  const { id } = parsedParams.data;
+  const { cursor, take } = parsedQuery.data;
   const tokenUserId = requireUserId(req);
 
   try {
-    if (!(await assertChatRoomMember(res, id!, tokenUserId))) return;
+    if (!(await assertChatRoomMember(res, id, tokenUserId))) return;
 
     const dbMessages = await prisma.message.findMany({
       where: { chatRoomId: id },
@@ -176,32 +206,44 @@ router.get('/:id/messages', async (req, res) => {
           include: { trip: true }
         }
       },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { createdAt: 'desc' },
+      take: take + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
 
-    const history = dbMessages.map((m) => {
-      let name = 'System';
-      let role = 'SYSTEM';
+    const hasMore = dbMessages.length > take;
+    const page = hasMore ? dbMessages.slice(0, take) : dbMessages;
 
-      if (!m.isSystem) {
-        name = m.sender?.profile
-          ? `${m.sender.profile.firstName} ${m.sender.profile.lastName}`.trim()
-          : (m.sender?.email ? (m.sender.email.split('@')[0] ?? 'Member') : 'Member');
-        role = m.senderId === m.chatRoom?.trip?.creatorId ? 'Organizer' : 'Tourist';
-      }
+    const history = page
+      .map((m) => {
+        let name = 'System';
+        let role = 'SYSTEM';
 
-      return {
-        id: m.id,
-        senderId: m.senderId,
-        senderName: name,
-        senderRole: role,
-        content: m.content || '',
-        timestamp: new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        mediaType: m.mediaType || 'NONE',
-      };
+        if (!m.isSystem) {
+          name = m.sender?.profile
+            ? `${m.sender.profile.firstName} ${m.sender.profile.lastName}`.trim()
+            : (m.sender?.email ? (m.sender.email.split('@')[0] ?? 'Member') : 'Member');
+          role = m.senderId === m.chatRoom?.trip?.creatorId ? 'Organizer' : 'Tourist';
+        }
+
+        return {
+          id: m.id,
+          senderId: m.senderId,
+          senderName: name,
+          senderRole: role,
+          content: m.content || '',
+          timestamp: new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          mediaType: m.mediaType || 'NONE',
+          createdAt: m.createdAt,
+        };
+      })
+      .reverse(); // chronological order for display
+
+    return res.status(200).json({
+      status: 'success',
+      data: history,
+      meta: { nextCursor: hasMore ? page[0]?.id ?? null : null },
     });
-
-    return res.status(200).json({ status: 'success', data: history });
   } catch (err) {
     logger.warn('[Chats] Get message history error:', err);
     return res.status(500).json({ status: 'error', message: 'Failed to retrieve chat messages' });
@@ -210,11 +252,15 @@ router.get('/:id/messages', async (req, res) => {
 
 // 4. Mark all messages in a chat room as read for the current user
 router.post('/:id/read', async (req, res) => {
-  const { id } = req.params;
+  const parsedParams = roomIdParamSchema.safeParse(req.params);
+  if (!parsedParams.success) {
+    return res.status(400).json({ status: 'error', code: 'VALIDATION_FAILED', message: 'Invalid chat room id.' });
+  }
+  const { id } = parsedParams.data;
   const tokenUserId = requireUserId(req);
 
   try {
-    if (!(await assertChatRoomMember(res, id!, tokenUserId))) return;
+    if (!(await assertChatRoomMember(res, id, tokenUserId))) return;
 
     const messagesToRead = await prisma.message.findMany({
       where: {

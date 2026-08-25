@@ -1,23 +1,34 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
+import { z } from 'zod';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 import { requireUserId } from '../../lib/auth-context';
+import { claimSeatAndJoin, releaseSeatAndLeave } from '../../services/trip-membership';
 
 const router = Router();
+
+function validationError(res: Response, issues: z.ZodIssue[]) {
+  return res.status(400).json({
+    status: 'error',
+    code: 'VALIDATION_FAILED',
+    message: 'Please check the submitted data.',
+    details: issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+  });
+}
 
 // ──────────────────────────────────────────────────────────
 //  TRIP LIKES
 // ──────────────────────────────────────────────────────────
 
+const likeSchema = z.object({ tripId: z.string().uuid() });
+
 // Toggle like on a trip
 router.post('/like', async (req, res) => {
-  const { tripId } = req.body;
+  const parsed = likeSchema.safeParse(req.body);
+  if (!parsed.success) return validationError(res, parsed.error.issues);
+  const { tripId } = parsed.data;
   // Identity always comes from the token, never the request body.
   const uid = requireUserId(req);
-
-  if (!tripId) {
-    return res.status(400).json({ status: 'error', message: 'tripId is required' });
-  }
 
   try {
     // Check if already liked
@@ -67,16 +78,22 @@ router.get('/likes', async (req, res) => {
 //  JOIN REQUESTS
 // ──────────────────────────────────────────────────────────
 
+const joinRequestSchema = z.object({
+  tripId: z.string().uuid(),
+  midway: z.boolean().default(false),
+  fromCity: z.string().trim().min(1).max(200).optional(),
+  toCity: z.string().trim().min(1).max(200).optional(),
+  adjustedPrice: z.number().positive().optional(),
+});
+
 // Create a join request
 router.post('/join-request', async (req, res) => {
-  const { tripId, midway, fromCity, toCity, adjustedPrice } = req.body;
+  const parsed = joinRequestSchema.safeParse(req.body);
+  if (!parsed.success) return validationError(res, parsed.error.issues);
+  const { tripId, midway, fromCity, toCity, adjustedPrice } = parsed.data;
   // Identity always comes from the token — a caller cannot file a request as
   // someone else by putting a userId in the body.
   const userId = requireUserId(req);
-
-  if (!tripId) {
-    return res.status(400).json({ status: 'error', message: 'tripId is required' });
-  }
 
   try {
     const trip = await prisma.trip.findUnique({ where: { id: tripId } });
@@ -102,9 +119,9 @@ router.post('/join-request', async (req, res) => {
         tripId,
         userId,
         status: 'PENDING',
-        fromCity: midway ? fromCity : null,
-        toCity: midway ? toCity : null,
-        adjustedPrice: adjustedPrice || null,
+        fromCity: midway ? (fromCity ?? null) : null,
+        toCity: midway ? (toCity ?? null) : null,
+        adjustedPrice: adjustedPrice ?? null,
       },
     });
 
@@ -133,17 +150,29 @@ router.get('/join-requests', async (req, res) => {
   }
 });
 
-// Cancel a join request
+// Cancel/withdraw a join request. Idempotent and seat-safe: if the request
+// had already been approved (a seat was consumed, a TripMember row and chat
+// membership exist), releaseSeatAndLeave undoes all three inside one
+// transaction. If it was still PENDING, this only removes the request row —
+// see docs/REMEDIATION.md §8.5.
 router.delete('/join-request/:tripId', async (req, res) => {
-  const { tripId } = req.params;
+  const tripId = req.params.tripId;
 
   try {
     const userId = requireUserId(req);
 
-    // Scoped to the caller's own request — cannot cancel someone else's.
-    await prisma.joinRequest.deleteMany({
-      where: { tripId, userId },
+    const existing = await prisma.joinRequest.findUnique({
+      where: { tripId_userId: { tripId, userId } },
     });
+
+    if (!existing) {
+      return res.status(200).json({ status: 'success', message: 'Join request cancelled' });
+    }
+
+    const result = await releaseSeatAndLeave(existing.id, null);
+    if (!result.ok) {
+      return res.status(200).json({ status: 'success', message: 'Join request cancelled' });
+    }
 
     return res.status(200).json({ status: 'success', message: 'Join request cancelled' });
   } catch (err) {
@@ -214,14 +243,20 @@ router.get('/incoming-requests', async (req, res) => {
   }
 });
 
-// Update join request status helper
-const handleStatusChange = async (req: any, res: any) => {
-  const { id } = req.params;
-  const { status } = req.body; // 'APPROVED' or 'REJECTED'
+const statusChangeSchema = z.object({
+  status: z.enum(['APPROVED', 'REJECTED']),
+});
 
-  if (!status || (status !== 'APPROVED' && status !== 'REJECTED')) {
-    return res.status(400).json({ status: 'error', message: 'Invalid status. Must be APPROVED or REJECTED.' });
-  }
+// Update join request status: approve claims a seat through the same
+// transactional path as instant-join (docs/REMEDIATION.md §5.4), reject
+// releases one if it had already been claimed.
+const handleStatusChange = async (req: Request, res: Response) => {
+  const parsedParams = z.object({ id: z.string().uuid() }).safeParse(req.params);
+  if (!parsedParams.success) return validationError(res, parsedParams.error.issues);
+  const { id } = parsedParams.data;
+  const parsed = statusChangeSchema.safeParse(req.body);
+  if (!parsed.success) return validationError(res, parsed.error.issues);
+  const { status } = parsed.data;
 
   try {
     const tokenUserId = requireUserId(req);
@@ -243,87 +278,43 @@ const handleStatusChange = async (req: any, res: any) => {
       return res.status(400).json({ status: 'error', message: 'Join request is not pending' });
     }
 
-    let targetChatRoomId: string | null = null;
+    if (status === 'REJECTED') {
+      const released = await releaseSeatAndLeave(request.id, 'REJECTED');
+      if (!released.ok) {
+        return res.status(404).json({ status: 'error', message: 'Join request not found' });
+      }
+      const updated = await prisma.joinRequest.findUnique({ where: { id } });
+      return res.status(200).json({ status: 'success', data: updated, chatRoomId: null });
+    }
 
-    const updated = await prisma.joinRequest.update({
-      where: { id },
-      data: { status },
+    const claim = await claimSeatAndJoin(request.tripId, request.userId, {
+      existingJoinRequestId: request.id,
+      fromCity: request.fromCity,
+      toCity: request.toCity,
+      adjustedPrice: request.adjustedPrice ? Number(request.adjustedPrice) : null,
     });
 
-    if (status === 'APPROVED') {
-      await prisma.tripMember.upsert({
-        where: {
-          tripId_userId: {
-            tripId: request.tripId,
-            userId: request.userId,
-          },
-        },
-        create: {
-          tripId: request.tripId,
-          userId: request.userId,
-          role: 'MEMBER',
-        },
-        update: {},
-      });
-
-      if (request.trip.availableSeats > 0) {
-        await prisma.trip.update({
-          where: { id: request.tripId },
-          data: {
-            availableSeats: {
-              decrement: 1,
-            },
-          },
-        });
+    if (!claim.ok) {
+      if (claim.reason === 'TRIP_NOT_FOUND') {
+        return res.status(404).json({ status: 'error', code: 'TRIP_NOT_FOUND', message: 'Trip not found.' });
       }
+      return res.status(409).json({ status: 'error', code: 'TRIP_FULL', message: 'No available seats on this trip.' });
+    }
 
-      // Find chat room associated with trip
-      let chatRoom = await prisma.chatRoom.findUnique({
-        where: { tripId: request.tripId }
-      });
+    const targetChatRoomId = claim.chatRoomId;
 
-      if (!chatRoom) {
-        chatRoom = await prisma.chatRoom.create({
-          data: {
-            isGroup: true,
-            name: request.trip.name,
-            tripId: request.tripId,
-          },
-        });
-        await prisma.chatRoomMember.create({
-          data: {
-            chatRoomId: chatRoom.id,
-            userId: request.trip.creatorId,
-          },
-        });
-      }
-      targetChatRoomId = chatRoom.id;
+    // Get applicant details to use their name in the message
+    const applicantUser = await prisma.user.findUnique({
+      where: { id: request.userId },
+      include: { profile: true },
+    });
+    const applicantName = applicantUser?.profile
+      ? `${applicantUser.profile.firstName} ${applicantUser.profile.lastName}`.trim()
+      : (applicantUser?.email ? applicantUser.email.split('@')[0] : 'Traveler');
 
-      await prisma.chatRoomMember.upsert({
-        where: {
-          chatRoomId_userId: {
-            chatRoomId: targetChatRoomId,
-            userId: request.userId,
-          },
-        },
-        create: {
-          chatRoomId: targetChatRoomId,
-          userId: request.userId,
-        },
-        update: {},
-      });
+    const systemMsgContent = `${applicantName} has joined the group`;
 
-      // Get applicant details to use their name in the message
-      const applicantUser = await prisma.user.findUnique({
-        where: { id: request.userId },
-        include: { profile: true },
-      });
-      const applicantName = applicantUser?.profile
-        ? `${applicantUser.profile.firstName} ${applicantUser.profile.lastName}`.trim()
-        : (applicantUser?.email ? applicantUser.email.split('@')[0] : 'Traveler');
-
-      const systemMsgContent = `${applicantName} has joined the group`;
-
+    if (targetChatRoomId) {
       // Save system message to database
       await prisma.message.create({
         data: {
@@ -370,38 +361,39 @@ const handleStatusChange = async (req: any, res: any) => {
           chatRoomId: targetChatRoomId,
         });
       }
-
-      // 1. JOIN_ACCEPTED notification
-      await prisma.notification.create({
-        data: {
-          userId: request.userId,
-          type: 'TRIP',
-          category: 'JOIN_ACCEPTED',
-          title: 'Join Request Accepted 🎉',
-          content: `Your request to join ${request.trip.name} has been accepted!`,
-          time: 'Just now',
-          unread: true,
-          tripId: request.tripId,
-          chatRoomId: targetChatRoomId,
-        },
-      });
-
-      // 2. CHAT_ADDED notification
-      await prisma.notification.create({
-        data: {
-          userId: request.userId,
-          type: 'TRIP',
-          category: 'CHAT_ADDED',
-          title: 'Added to Group Chat 💬',
-          content: `You've been added to the ${request.trip.name} group chat`,
-          time: 'Just now',
-          unread: true,
-          chatRoomId: targetChatRoomId,
-          tripId: request.tripId,
-        },
-      });
     }
 
+    // 1. JOIN_ACCEPTED notification
+    await prisma.notification.create({
+      data: {
+        userId: request.userId,
+        type: 'TRIP',
+        category: 'JOIN_ACCEPTED',
+        title: 'Join Request Accepted 🎉',
+        content: `Your request to join ${request.trip.name} has been accepted!`,
+        time: 'Just now',
+        unread: true,
+        tripId: request.tripId,
+        chatRoomId: targetChatRoomId,
+      },
+    });
+
+    // 2. CHAT_ADDED notification
+    await prisma.notification.create({
+      data: {
+        userId: request.userId,
+        type: 'TRIP',
+        category: 'CHAT_ADDED',
+        title: 'Added to Group Chat 💬',
+        content: `You've been added to the ${request.trip.name} group chat`,
+        time: 'Just now',
+        unread: true,
+        chatRoomId: targetChatRoomId,
+        tripId: request.tripId,
+      },
+    });
+
+    const updated = await prisma.joinRequest.findUnique({ where: { id: claim.joinRequestId } });
     return res.status(200).json({ status: 'success', data: updated, chatRoomId: targetChatRoomId });
   } catch (err) {
     logger.warn('[Interactions] Update join request status error:', err);

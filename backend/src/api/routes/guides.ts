@@ -7,6 +7,39 @@ import { requireRole } from '../../middleware/auth';
 
 const router = Router();
 
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+/**
+ * Start of the current week/month/year as a real UTC instant, boundaries
+ * computed in Asia/Kolkata local time (docs/CONVENTIONS.md §4 — this app's
+ * timezone) rather than the server's own timezone. Shifts "now" into a
+ * virtual UTC clock offset by +5:30, does the calendar math with UTC
+ * getters/setters (so it can't be perturbed by the host's DST rules), then
+ * shifts back to get the real UTC instant of that Kolkata-local midnight.
+ * Week starts Monday.
+ */
+function startOfPeriodIST(range: 'week' | 'month' | 'year'): Date {
+  const nowShifted = new Date(Date.now() + IST_OFFSET_MS);
+  let startShifted: Date;
+  if (range === 'week') {
+    const day = nowShifted.getUTCDay(); // 0 Sun .. 6 Sat
+    const daysSinceMonday = (day + 6) % 7;
+    startShifted = new Date(Date.UTC(nowShifted.getUTCFullYear(), nowShifted.getUTCMonth(), nowShifted.getUTCDate() - daysSinceMonday));
+  } else if (range === 'month') {
+    startShifted = new Date(Date.UTC(nowShifted.getUTCFullYear(), nowShifted.getUTCMonth(), 1));
+  } else {
+    startShifted = new Date(Date.UTC(nowShifted.getUTCFullYear(), 0, 1));
+  }
+  return new Date(startShifted.getTime() - IST_OFFSET_MS);
+}
+
+// Day-of-week bucket a booking date falls into, Monday-first (index 0 = Mon
+// ... 6 = Sun). `Date.getDay()` is Sunday-first (0 = Sun), hence the map.
+const MONDAY_FIRST_INDEX = [6, 0, 1, 2, 3, 4, 5] as const;
+export function dayOfWeekBucket(date: Date): number {
+  return MONDAY_FIRST_INDEX[date.getDay()] ?? 0;
+}
+
 /**
  * Asserts the caller owns the guide profile named by :id (admins bypass).
  * Returns the guide profile id on success, or null after having already sent
@@ -212,9 +245,19 @@ router.post('/:id/verify', requireRole(['ADMIN']), async (req, res) => {
   }
 });
 
+const earningsQuerySchema = z.object({
+  range: z.enum(['week', 'month', 'year']).default('week'),
+});
+
 // 2. GET Hub & Earnings details
 router.get('/:id/earnings', async (req, res) => {
   const { id } = req.params;
+  const parsedQuery = earningsQuerySchema.safeParse(req.query);
+  if (!parsedQuery.success) {
+    return res.status(400).json({ status: 'error', code: 'VALIDATION_FAILED', message: 'Invalid range parameter.' });
+  }
+  const { range } = parsedQuery.data;
+
   try {
     if (!(await assertOwnsGuideProfile(req, res, id!))) return;
 
@@ -232,12 +275,16 @@ router.get('/:id/earnings', async (req, res) => {
     }
 
     const walletBalance = (guideProfile.user?.wallet?.balance ?? 0).toString();
+    const periodStart = startOfPeriodIST(range);
 
-    // Fetch confirmed bookings for this guide
+    // Fetch confirmed bookings for this guide within the selected period —
+    // previously this bucketed every booking ever made into 7 weekday
+    // slots regardless of age (docs/REMEDIATION.md §5.7).
     const bookings = await prisma.booking.findMany({
       where: {
         guideProfileId: id,
         status: 'CONFIRMED',
+        bookingDate: { gte: periodStart },
       },
       include: {
         payments: true,
@@ -251,12 +298,20 @@ router.get('/:id/earnings', async (req, res) => {
     const completedTripsCount = await prisma.booking.count({
       where: {
         guideProfileId: id,
-        status: 'COMPLETED'
+        status: 'COMPLETED',
+        bookingDate: { gte: periodStart },
       }
     });
 
+    // Scoped to this guide's own leads (pending requests on trips matching
+    // their expertise cities), same definition /leads uses below — the
+    // previous version counted every PENDING join request in the database
+    // as "this guide's" leads (docs/REMEDIATION.md §5.7).
     const activeLeadsCount = await prisma.joinRequest.count({
-      where: { status: 'PENDING' }
+      where: {
+        status: 'PENDING',
+        trip: { cities: { hasSome: guideProfile.expertisePlaces || [] } },
+      },
     });
 
     // Populate daily chart heights based on day of week of booking date
@@ -271,10 +326,7 @@ router.get('/:id/earnings', async (req, res) => {
     ];
 
     bookings.forEach((b) => {
-      const dayIndex = new Date(b.bookingDate).getDay(); // 0 Sunday, 1 Monday...
-      const indexMap = [6, 0, 1, 2, 3, 4, 5];
-      const targetIndex = indexMap[dayIndex];
-      const target = targetIndex !== undefined ? chartData[targetIndex] : undefined;
+      const target = chartData[dayOfWeekBucket(new Date(b.bookingDate))];
       if (target) {
         target.amt += Number(b.amount);
       }
@@ -289,6 +341,7 @@ router.get('/:id/earnings', async (req, res) => {
     return res.status(200).json({
       status: 'success',
       data: {
+        range,
         walletBalance,
         totalEarnings,
         completedTripsCount,
@@ -318,21 +371,48 @@ router.get('/:id/packages', async (req, res) => {
   }
 });
 
+const packageSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  description: z.string().trim().max(2000).default(''),
+  price: z.number().positive(),
+  durationDays: z.number().int().min(1),
+  citiesIncluded: z.array(z.string().trim().min(1)).default([]),
+});
+const packageUpdateSchema = packageSchema.partial();
+
+/**
+ * A package's :id path segment only proves the caller owns *a* guide
+ * profile — without also checking the package itself belongs to that same
+ * profile, an owner of guide profile A could update or delete guide profile
+ * B's package just by supplying A's id and B's packageId.
+ */
+async function assertPackageBelongsToGuide(
+  res: { status: (c: number) => { json: (b: unknown) => unknown } },
+  packageId: string,
+  guideProfileId: string
+): Promise<boolean> {
+  const pkg = await prisma.guidePackage.findUnique({ where: { id: packageId }, select: { guideProfileId: true } });
+  if (!pkg || pkg.guideProfileId !== guideProfileId) {
+    res.status(404).json({ status: 'error', code: 'PACKAGE_NOT_FOUND', message: 'Package not found.' });
+    return false;
+  }
+  return true;
+}
+
 router.post('/:id/packages', async (req, res) => {
   const { id } = req.params;
-  const { title, description, price, durationDays, citiesIncluded } = req.body;
+  const parsed = packageSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ status: 'error', code: 'VALIDATION_FAILED', message: 'Please check the package details.' });
+  }
   try {
     if (!(await assertOwnsGuideProfile(req, res, id!))) return;
 
     const newPackage = await prisma.guidePackage.create({
       data: {
-        guideProfileId: id,
-        title,
-        description: description || '',
-        price: parseFloat(price) || 1000,
-        durationDays: parseInt(durationDays) || 1,
-        citiesIncluded: citiesIncluded || [],
-      } as any
+        guideProfileId: id!,
+        ...parsed.data,
+      },
     });
     return res.status(201).json({ status: 'success', data: newPackage });
   } catch (err) {
@@ -343,13 +423,20 @@ router.post('/:id/packages', async (req, res) => {
 
 router.put('/:id/packages/:packageId', async (req, res) => {
   const { id, packageId } = req.params;
-  const { title, description, price, durationDays, citiesIncluded } = req.body;
+  const parsed = packageUpdateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ status: 'error', code: 'VALIDATION_FAILED', message: 'Please check the package details.' });
+  }
   try {
     if (!(await assertOwnsGuideProfile(req, res, id!))) return;
+    if (!(await assertPackageBelongsToGuide(res, packageId!, id!))) return;
 
-    const data: Record<string, unknown> = { title, description, citiesIncluded };
-    if (price) data.price = parseFloat(price);
-    if (durationDays) data.durationDays = parseInt(durationDays);
+    // Strip undefined keys — zod's .partial() types them as `T | undefined`,
+    // which exactOptionalPropertyTypes treats as distinct from "absent" and
+    // Prisma's *UpdateInput types reject outright.
+    const data = Object.fromEntries(
+      Object.entries(parsed.data).filter(([, v]) => v !== undefined)
+    );
 
     const updated = await prisma.guidePackage.update({
       where: { id: packageId },
@@ -366,6 +453,7 @@ router.delete('/:id/packages/:packageId', async (req, res) => {
   const { id, packageId } = req.params;
   try {
     if (!(await assertOwnsGuideProfile(req, res, id!))) return;
+    if (!(await assertPackageBelongsToGuide(res, packageId!, id!))) return;
 
     await prisma.guidePackage.delete({
       where: { id: packageId },
