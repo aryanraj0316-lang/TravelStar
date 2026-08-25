@@ -312,7 +312,7 @@ router.post('/', async (req, res) => {
     const { newTrip, chatRoom } = await prisma.$transaction(async (tx) => {
       const trip = await tx.trip.create({
         data: {
-          id: data.id,
+          ...(data.id !== undefined ? { id: data.id } : {}),
           creatorId: user.id,
           name: data.name,
           description: 'Custom travel route created via TravelStar app.',
@@ -330,8 +330,8 @@ router.post('/', async (req, res) => {
           cabIncluded: data.cabIncluded,
           privacy: data.privacy,
           languages: ['Hindi', 'English'],
-          coverImage: data.coverImage,
-          category: data.category,
+          coverImage: data.coverImage ?? null,
+          category: data.category ?? null,
         },
       });
 

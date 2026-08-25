@@ -119,8 +119,6 @@ interface AppContextType {
   sosAlerts: SOSAlert[];
   triggerSOS: (lat: number, lng: number) => void;
   resolveSOS: (id: string) => void;
-  walletTransactions: any[];
-  addWalletFunds: (amount: number) => void;
   withdrawWalletFunds: (amount: number) => void;
   activeRoomId: string | null;
   setActiveRoomId: (id: string | null) => void;
@@ -441,12 +439,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createdAt: new Date().toISOString(),
     },
   ]);
-  const [walletTransactions, setWalletTransactions] = useState<any[]>([
-    { id: 't-1', amount: 1500, type: 'DEPOSIT', remark: 'Added via GPay', date: '2026-07-18' },
-    { id: 't-2', amount: -500, type: 'PAYMENT', remark: 'Trip booking advance', date: '2026-07-17' },
-    { id: 't-3', amount: 150, type: 'CASHBACK', remark: 'Referral cashback reward', date: '2026-07-16' },
-  ]);
-
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const [navbarHidden, setNavbarHidden] = useState(false);
 
@@ -490,12 +482,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     apiService.getGuides().then((remoteGuides) => {
       if (remoteGuides && remoteGuides.length > 0) {
         setGuides(remoteGuides);
-      }
-    });
-
-    apiService.getWalletTransactions().then((txns) => {
-      if (txns && txns.length > 0) {
-        setWalletTransactions(txns);
       }
     });
 
@@ -727,31 +713,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     socketService.resolveSOS(id);
   };
 
-  const addWalletFunds = (amount: number) => {
-    setProfile((prev) => ({ ...prev, walletBalance: prev.walletBalance + amount }));
-    const newTxn = {
-      id: `t-${Date.now()}`,
-      amount,
-      type: 'DEPOSIT',
-      remark: 'Added to wallet',
-      date: new Date().toISOString().split('T')[0],
-    };
-    setWalletTransactions((prev) => [newTxn, ...prev]);
-    apiService.addWalletFunds(amount);
-  };
-
+  // Guide earnings cash-out only — payments/wallet were removed for v1
+  // (REMEDIATION.md §5.5/5.6). This just decrements the locally-tracked
+  // balance; it is not backed by a ledger or any server persistence.
   const withdrawWalletFunds = (amount: number) => {
     if (profile.walletBalance >= amount) {
       setProfile((prev) => ({ ...prev, walletBalance: prev.walletBalance - amount }));
-      const newTxn = {
-        id: `t-${Date.now()}`,
-        amount: -amount,
-        type: 'WITHDRAWAL',
-        remark: 'Withdrawn to Bank A/C',
-        date: new Date().toISOString().split('T')[0],
-      };
-      setWalletTransactions((prev) => [newTxn, ...prev]);
-      apiService.withdrawWalletFunds(amount);
     }
   };
 
@@ -788,8 +755,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     sosAlerts,
     triggerSOS,
     resolveSOS,
-    walletTransactions,
-    addWalletFunds,
     withdrawWalletFunds,
     activeRoomId,
     setActiveRoomId,
@@ -815,7 +780,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     guides,
     messages,
     sosAlerts,
-    walletTransactions,
     activeRoomId,
     navbarHidden,
     storiesList,

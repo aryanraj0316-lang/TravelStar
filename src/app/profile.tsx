@@ -1,5 +1,4 @@
 import { logger } from '@/lib/logger';
-import DummyPaymentModal from '@/components/ui/DummyPaymentModal';
 import AuthScreen from './auth';
 import { useApp } from '@/store/AppContext';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -70,7 +69,6 @@ function ProfileScreen() {
   const {
     profile,
     updateProfile,
-    addWalletFunds,
     isLoggedIn,
     logout,
     setNavbarHidden,
@@ -83,7 +81,6 @@ function ProfileScreen() {
 
 
   // Input states
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showSavedPlacesModal, setShowSavedPlacesModal] = useState(false);
   const [savedPlaces, setSavedPlaces] = useState<any[]>([]);
@@ -858,16 +855,6 @@ function ProfileScreen() {
         </View>
       </Modal>
 
-      <DummyPaymentModal
-        visible={showPaymentModal}
-        onClose={() => setShowPaymentModal(false)}
-        amount={1500}
-        title="Spiritual Vrindavan Tour Advance Booking"
-        onSuccess={(details) => {
-          addWalletFunds(details.amount);
-        }}
-      />
-
       <Modal visible={showAuthModal} animationType="slide">
         <View style={{ flex: 1, backgroundColor: '#050710' }}>
           <AuthScreen />
@@ -1480,61 +1467,6 @@ const styles = StyleSheet.create({
   },
 
   // Wallet
-  walletCard: {
-    padding: 16,
-    borderRadius: 16,
-  },
-  walletRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  balanceText: {
-    fontSize: 26,
-    fontWeight: '800',
-    marginTop: 2,
-  },
-  rewardsBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(245, 158, 11, 0.12)',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-  },
-  walletActions: {
-    flexDirection: 'row',
-    marginTop: 16,
-  },
-  walletInput: {
-    height: 38,
-    borderRadius: 8,
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    fontSize: 12,
-    marginBottom: 6,
-  },
-  actionBtn: {
-    backgroundColor: '#0066FF',
-    height: 36,
-    borderRadius: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-  },
-  actionBtnText: {
-    color: '#FFF',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  transactionsHeader: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1,
-    marginTop: 16,
-    marginBottom: 8,
-  },
   txItem: {
     padding: 12,
     borderRadius: 12,

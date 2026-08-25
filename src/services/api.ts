@@ -253,39 +253,6 @@ export const apiService = {
     });
   },
 
-  // Wallet & Payments
-  async getWalletTransactions(): Promise<any[] | null> {
-    return request<any[]>('/payments/wallet/transactions');
-  },
-
-  async addWalletFunds(amount: number, remark?: string) {
-    return request('/payments/wallet/add', {
-      method: 'POST',
-      body: JSON.stringify({ amount, remark }),
-    });
-  },
-
-  async withdrawWalletFunds(amount: number, remark?: string) {
-    return request('/payments/wallet/withdraw', {
-      method: 'POST',
-      body: JSON.stringify({ amount, remark }),
-    });
-  },
-
-  async createBooking(type: string, targetId: string, amount: number) {
-    return request('/payments/book', {
-      method: 'POST',
-      body: JSON.stringify({ type, targetId, amount }),
-    });
-  },
-
-  async verifyPayment(bookingId: string, paymentId: string, signature: string) {
-    return request('/payments/verify', {
-      method: 'POST',
-      body: JSON.stringify({ bookingId, paymentId, signature }),
-    });
-  },
-
   // Safety
   async getSOSAlerts(): Promise<SOSAlert[] | null> {
     return request<SOSAlert[]>('/safety/sos');
