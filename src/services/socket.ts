@@ -1,6 +1,7 @@
-// @ts-ignore
-import { io } from 'socket.io-client/dist/socket.io.js';
+import { io, type Socket } from 'socket.io-client';
 import { getHostUrl } from './api';
+import { secureStorage } from './secureStorage';
+import { logger } from '@/lib/logger';
 
 type MessageListener = (data: { roomId: string; message: any }) => void;
 type SOSListener = (data: any) => void;
@@ -10,7 +11,10 @@ type WalletListener = (data: any) => void;
 type NotificationListener = (data: any) => void;
 
 class SocketService {
-  private socket: any = null;
+  private socket: Socket | null = null;
+
+  // Fresh arrays on every connect() — see disconnect(), which used to leave
+  // these populated so listeners accumulated across logout/login cycles.
   private messageListeners: MessageListener[] = [];
   private sosListeners: SOSListener[] = [];
   private sosResolvedListeners: SOSListener[] = [];
@@ -19,10 +23,16 @@ class SocketService {
   private walletListeners: WalletListener[] = [];
   private notificationListeners: NotificationListener[] = [];
 
-  connect(userId?: string) {
+  async connect() {
     if (this.socket && this.socket.connected) return;
 
     try {
+      const token = await secureStorage.getItem('accessToken').catch(() => null);
+      if (!token) {
+        logger.warn('[SocketService] No access token — skipping connect.');
+        return;
+      }
+
       const serverUrl = getHostUrl();
       this.socket = io(serverUrl, {
         transports: ['websocket', 'polling'],
@@ -30,7 +40,9 @@ class SocketService {
         reconnection: true,
         reconnectionAttempts: 10,
         reconnectionDelay: 1000,
-        query: userId ? { userId } : undefined,
+        // The server verifies this JWT in its io.use() middleware — identity
+        // is never taken from a client-suppliable query param.
+        auth: { token },
       });
 
       this.socket.on('connect', () => {
@@ -68,10 +80,10 @@ class SocketService {
       });
 
       this.socket.on('connect_error', (err: any) => {
-        console.warn(`[SocketService] Connection notice:`, err?.message || err);
+        logger.warn(`[SocketService] Connection notice:`, err?.message || err);
       });
     } catch (e) {
-      console.warn('[SocketService] Error initializing Socket.io client:', e);
+      logger.warn('[SocketService] Error initializing Socket.io client:', e);
     }
   }
 
@@ -80,20 +92,30 @@ class SocketService {
       this.socket.disconnect();
       this.socket = null;
     }
+    this.messageListeners = [];
+    this.sosListeners = [];
+    this.sosResolvedListeners = [];
+    this.locationListeners = [];
+    this.addedToChatListeners = [];
+    this.walletListeners = [];
+    this.notificationListeners = [];
   }
 
-  joinRoom(roomId: string) {
+  joinRoom(roomId: string, onJoined?: (ok: boolean) => void) {
     if (this.socket) {
-      this.socket.emit('joinRoom', roomId);
+      this.socket.emit('joinRoom', roomId, onJoined);
+    } else {
+      onJoined?.(false);
     }
   }
 
-  sendMessage(chatRoomId: string, senderName: string, senderRole: string, content: string, mediaType: string = 'NONE') {
+  // senderName/senderRole are no longer sent: the server derives both from
+  // the verified sender (socket.data.userId → their real profile), never
+  // from client-supplied display fields.
+  sendMessage(chatRoomId: string, content: string, mediaType: string = 'NONE') {
     if (this.socket) {
       this.socket.emit('sendMessage', {
         chatRoomId,
-        senderName,
-        senderRole,
         content,
         mediaType,
       });
@@ -116,10 +138,14 @@ class SocketService {
     }
   }
 
-  updateLocation(userId: string, latitude: number, longitude: number) {
+  // Server scopes this to the given trip's members and gates it on the
+  // caller's Profile.locationSharing — see backend/src/server.ts. Not called
+  // from any screen yet; live location sharing is a Phase 8 feature, but the
+  // server-side authorization holds regardless of whether a client uses it.
+  updateLocation(tripId: string, latitude: number, longitude: number) {
     if (this.socket) {
       this.socket.emit('updateLocation', {
-        userId,
+        tripId,
         latitude,
         longitude,
       });
