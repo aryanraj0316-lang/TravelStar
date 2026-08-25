@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import prisma from '../../services/db';
+import { logger } from '../../lib/logger';
 
 const router = Router();
 
@@ -80,8 +81,9 @@ router.get('/', async (req, res) => {
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       .slice(0, limit);
 
-    const nextCursor = merged.length === limit
-      ? merged[merged.length - 1].createdAt.toISOString()
+    const lastItem = merged[merged.length - 1];
+    const nextCursor = merged.length === limit && lastItem
+      ? lastItem.createdAt.toISOString()
       : null;
 
     return res.status(200).json({
@@ -90,7 +92,7 @@ router.get('/', async (req, res) => {
       nextCursor,
     });
   } catch (err) {
-    console.error('[Feed] Get unified feed error:', err);
+    logger.error('[Feed] Get unified feed error:', err);
     return res.status(500).json({ status: 'error', message: 'Failed to retrieve feed' });
   }
 });

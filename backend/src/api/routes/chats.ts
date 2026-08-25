@@ -1,30 +1,40 @@
 import { Router } from 'express';
-import jwt from 'jsonwebtoken';
 import prisma from '../../services/db';
+import { logger } from '../../lib/logger';
+import { requireUserId } from '../../lib/auth-context';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_jwt_key_travelconnect_12345';
 
-const getUserIdFromReq = (req: any): string | null => {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.split(' ')[1];
-    try {
-      const decoded: any = jwt.verify(token, JWT_SECRET);
-      return decoded.id || decoded.userId;
-    } catch (e) {
-      return null;
-    }
+/**
+ * Asserts the caller is a member of the given chat room. Every route below
+ * that reads or writes a specific room's data must call this first — without
+ * it, any authenticated user (not just an unauthenticated one) could read or
+ * mark-read any chat room's messages by guessing its id. This mirrors the
+ * membership check the socket layer enforces in backend/src/socket-server.ts
+ * (docs/REMEDIATION.md §3.2) for the REST path.
+ */
+async function assertChatRoomMember(
+  res: { status: (c: number) => { json: (b: unknown) => unknown } },
+  chatRoomId: string,
+  userId: string
+): Promise<boolean> {
+  const membership = await prisma.chatRoomMember.findUnique({
+    where: { chatRoomId_userId: { chatRoomId, userId } },
+  });
+  if (!membership) {
+    res.status(403).json({
+      status: 'error',
+      code: 'FORBIDDEN',
+      message: 'You are not a member of this chat room.',
+    });
+    return false;
   }
-  return null;
-};
+  return true;
+}
 
 // 1. Get list of all chat rooms for current user
 router.get('/', async (req, res) => {
-  const tokenUserId = getUserIdFromReq(req);
-  if (!tokenUserId) {
-    return res.status(401).json({ status: 'error', message: 'Unauthorized' });
-  }
+  const tokenUserId = requireUserId(req);
 
   try {
     const memberships = await prisma.chatRoomMember.findMany({
@@ -92,7 +102,7 @@ router.get('/', async (req, res) => {
 
     return res.status(200).json({ status: 'success', data: rooms });
   } catch (err) {
-    console.warn('[Chats] Get chat rooms list error:', err);
+    logger.warn('[Chats] Get chat rooms list error:', err);
     return res.status(500).json({ status: 'error', message: 'Failed to retrieve chat rooms' });
   }
 });
@@ -100,12 +110,11 @@ router.get('/', async (req, res) => {
 // 2. Get chat room details by ID
 router.get('/:id', async (req, res) => {
   const { id } = req.params;
-  const tokenUserId = getUserIdFromReq(req);
-  if (!tokenUserId) {
-    return res.status(401).json({ status: 'error', message: 'Unauthorized' });
-  }
+  const tokenUserId = requireUserId(req);
 
   try {
+    if (!(await assertChatRoomMember(res, id!, tokenUserId))) return;
+
     const room = await prisma.chatRoom.findUnique({
       where: { id },
       include: {
@@ -144,7 +153,7 @@ router.get('/:id', async (req, res) => {
       }
     });
   } catch (err) {
-    console.warn('[Chats] Get chat room details error:', err);
+    logger.warn('[Chats] Get chat room details error:', err);
     return res.status(500).json({ status: 'error', message: 'Failed to retrieve chat room details' });
   }
 });
@@ -152,12 +161,11 @@ router.get('/:id', async (req, res) => {
 // 3. Get message history by chat room ID
 router.get('/:id/messages', async (req, res) => {
   const { id } = req.params;
-  const tokenUserId = getUserIdFromReq(req);
-  if (!tokenUserId) {
-    return res.status(401).json({ status: 'error', message: 'Unauthorized' });
-  }
+  const tokenUserId = requireUserId(req);
 
   try {
+    if (!(await assertChatRoomMember(res, id!, tokenUserId))) return;
+
     const dbMessages = await prisma.message.findMany({
       where: { chatRoomId: id },
       include: {
@@ -178,7 +186,7 @@ router.get('/:id/messages', async (req, res) => {
       if (!m.isSystem) {
         name = m.sender?.profile
           ? `${m.sender.profile.firstName} ${m.sender.profile.lastName}`.trim()
-          : (m.sender?.email ? m.sender.email.split('@')[0] : 'Member');
+          : (m.sender?.email ? (m.sender.email.split('@')[0] ?? 'Member') : 'Member');
         role = m.senderId === m.chatRoom?.trip?.creatorId ? 'Organizer' : 'Tourist';
       }
 
@@ -195,7 +203,7 @@ router.get('/:id/messages', async (req, res) => {
 
     return res.status(200).json({ status: 'success', data: history });
   } catch (err) {
-    console.warn('[Chats] Get message history error:', err);
+    logger.warn('[Chats] Get message history error:', err);
     return res.status(500).json({ status: 'error', message: 'Failed to retrieve chat messages' });
   }
 });
@@ -203,12 +211,11 @@ router.get('/:id/messages', async (req, res) => {
 // 4. Mark all messages in a chat room as read for the current user
 router.post('/:id/read', async (req, res) => {
   const { id } = req.params;
-  const tokenUserId = getUserIdFromReq(req);
-  if (!tokenUserId) {
-    return res.status(401).json({ status: 'error', message: 'Unauthorized' });
-  }
+  const tokenUserId = requireUserId(req);
 
   try {
+    if (!(await assertChatRoomMember(res, id!, tokenUserId))) return;
+
     const messagesToRead = await prisma.message.findMany({
       where: {
         chatRoomId: id,
@@ -244,7 +251,7 @@ router.post('/:id/read', async (req, res) => {
 
     return res.status(200).json({ status: 'success', message: 'Messages marked as read' });
   } catch (err) {
-    console.warn('[Chats] Mark messages read error:', err);
+    logger.warn('[Chats] Mark messages read error:', err);
     return res.status(500).json({ status: 'error', message: 'Failed to mark messages as read' });
   }
 });

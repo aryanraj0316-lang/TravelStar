@@ -1,150 +1,154 @@
 import { Router } from 'express';
-import jwt from 'jsonwebtoken';
+import { z } from 'zod';
 import { RecommendationService } from '../../services/recommendation';
 import prisma from '../../services/db';
+import { logger } from '../../lib/logger';
+import { requireUserId } from '../../lib/auth-context';
+import { claimSeatAndJoin } from '../../services/trip-membership';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_jwt_key_travelconnect_12345';
 
-const getUserIdFromReq = (req: any): string | null => {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.split(' ')[1];
-    try {
-      const decoded: any = jwt.verify(token, JWT_SECRET);
-      return decoded.id || decoded.userId;
-    } catch (e) {
-      return null;
-    }
+/** Same heuristic used everywhere a Trip needs a display category/travelStyle
+ * derived from its name — there is no dedicated column for this, so this is
+ * the one place that decides it. */
+function deriveCategory(name: string): { travelStyle: string; category: string } {
+  const n = name.toLowerCase();
+  if (n.includes('spiritual') || n.includes('vrindavan') || n.includes('varanasi')) {
+    return { travelStyle: 'RELIGIOUS', category: 'Religious' };
   }
-  return null;
+  if (n.includes('kerala') || n.includes('backwaters') || n.includes('nature')) {
+    return { travelStyle: 'NATURE', category: 'Nature' };
+  }
+  if (n.includes('heritage') || n.includes('taj mahal')) {
+    return { travelStyle: 'HERITAGE', category: 'Heritage' };
+  }
+  return { travelStyle: 'ADVENTURE', category: 'Adventure' };
+}
+
+function deriveCoverImage(name: string, coverImage: string | null): string {
+  if (coverImage) return coverImage;
+  const n = name.toLowerCase();
+  if (n.includes('vrindavan')) return 'https://images.unsplash.com/photo-1548013146-72479768bada?w=600&q=80';
+  if (n.includes('ladakh')) return 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=600&q=80';
+  if (n.includes('kerala')) return 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=600&q=80';
+  if (n.includes('taj mahal')) return 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1000&q=80';
+  if (n.includes('golden triangle')) return 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=800&q=80';
+  return 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&q=80';
+}
+
+type TripWithCreator = {
+  id: string;
+  name: string;
+  creatorId: string;
+  creator: { role: string; profile: { firstName: string; lastName: string } | null } | null;
+  chatRoom: { id: string } | null;
+  cities: string[];
+  startDate: Date;
+  endDate: Date;
+  budget: { toString(): string };
+  availableSeats: number;
+  totalSeats: number;
+  meetingPoint: string;
+  guideIncluded: boolean;
+  foodIncluded: boolean;
+  hotelIncluded: boolean;
+  cabIncluded: boolean;
+  privacy: string;
+  coverImage: string | null;
+  category: string | null;
+  languages: string[];
 };
 
-// Persistent Mock Trips Data Store
-const trips: any[] = [];
+function mapTrip(t: TripWithCreator, tokenUserId: string | null) {
+  const creatorName = t.creator?.profile
+    ? `${t.creator.profile.firstName} ${t.creator.profile.lastName} (${t.creator.role === 'GUIDE' ? 'Guide' : 'Organizer'})`
+    : 'Unknown Organizer';
+  const { travelStyle, category } = deriveCategory(t.name);
 
-// List Trips (with optional query filters)
+  return {
+    id: t.id,
+    name: t.name,
+    creator: creatorName,
+    creatorId: t.creatorId,
+    isMyTrip: tokenUserId ? t.creatorId === tokenUserId : false,
+    chatRoomId: t.chatRoom?.id || null,
+    cities: t.cities,
+    startDate: t.startDate.toISOString().split('T')[0],
+    endDate: t.endDate.toISOString().split('T')[0],
+    budget: t.budget.toString(), // money crosses the wire as a string — docs/CONVENTIONS.md §3
+    availableSeats: t.availableSeats,
+    totalSeats: t.totalSeats,
+    meetingPoint: t.meetingPoint,
+    guideIncluded: t.guideIncluded,
+    foodIncluded: t.foodIncluded,
+    hotelIncluded: t.hotelIncluded,
+    cabIncluded: t.cabIncluded,
+    privacy: t.privacy,
+    membersCount: t.totalSeats - t.availableSeats,
+    coverImage: deriveCoverImage(t.name, t.coverImage),
+    category: t.category || category,
+    languages: t.languages,
+    travelStyle,
+  };
+}
+
+const TRIP_INCLUDE = {
+  creator: { include: { profile: true } },
+  chatRoom: true,
+} as const;
+
+const DEFAULT_PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 50;
+
+// List Trips (with optional query filters), pushed into SQL rather than
+// loading everything and filtering in JS — docs/REMEDIATION.md §5.9.
 router.get('/', async (req, res) => {
   const { category, search, maxBudget } = req.query;
-  const tokenUserId = getUserIdFromReq(req);
+  // Public browse route — anonymous callers get isMyTrip: false throughout.
+  const tokenUserId = req.user?.id ?? null;
+
+  const pageSize = Math.min(
+    MAX_PAGE_SIZE,
+    Math.max(1, parseInt(req.query.limit as string) || DEFAULT_PAGE_SIZE)
+  );
+
   try {
-    let dbTrips = await prisma.trip.findMany({
-      include: {
-        creator: {
-          include: { profile: true }
-        },
-        chatRoom: true
-      },
-      orderBy: {
-        createdAt: 'desc'
-      }
-    });
-
-    // Map database trips to frontend shape
-    const mapped = dbTrips.map((t) => {
-      const creatorName = t.creator?.profile
-        ? `${t.creator.profile.firstName} ${t.creator.profile.lastName} (${t.creator.role === 'GUIDE' ? 'Guide' : 'Organizer'})`
-        : 'Aarav Sharma (Organizer)';
-      
-      // Determine travelStyle and category
-      let travelStyle = 'ADVENTURE';
-      let categoryVal = 'Adventure';
-      if (t.name.toLowerCase().includes('spiritual') || t.name.toLowerCase().includes('vrindavan') || t.name.toLowerCase().includes('varanasi')) {
-        travelStyle = 'RELIGIOUS';
-        categoryVal = 'Religious';
-      } else if (t.name.toLowerCase().includes('kerala') || t.name.toLowerCase().includes('backwaters') || t.name.toLowerCase().includes('nature')) {
-        travelStyle = 'NATURE';
-        categoryVal = 'Nature';
-      } else if (t.name.toLowerCase().includes('heritage') || t.name.toLowerCase().includes('taj mahal')) {
-        travelStyle = 'HERITAGE';
-        categoryVal = 'Heritage';
-      }
-
-      return {
-        id: t.id,
-        name: t.name,
-        creator: creatorName,
-        creatorId: t.creatorId,
-        isMyTrip: tokenUserId ? t.creatorId === tokenUserId : false,
-        chatRoomId: t.chatRoom?.id || null,
-        cities: t.cities,
-        startDate: t.startDate.toISOString().split('T')[0],
-        endDate: t.endDate.toISOString().split('T')[0],
-        budget: t.budget,
-        availableSeats: t.availableSeats,
-        totalSeats: t.totalSeats,
-        meetingPoint: t.meetingPoint,
-        guideIncluded: t.guideIncluded,
-        foodIncluded: t.foodIncluded,
-        hotelIncluded: t.hotelIncluded,
-        cabIncluded: t.cabIncluded,
-        privacy: t.privacy,
-        membersCount: t.totalSeats - t.availableSeats,
-        coverImage: t.coverImage || (t.name.toLowerCase().includes('vrindavan') ? 'https://images.unsplash.com/photo-1548013146-72479768bada?w=600&q=80' :
-                    t.name.toLowerCase().includes('ladakh') ? 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=600&q=80' :
-                    t.name.toLowerCase().includes('kerala') ? 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=600&q=80' :
-                    t.name.toLowerCase().includes('taj mahal') ? 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1000&q=80' :
-                    t.name.toLowerCase().includes('golden triangle') ? 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=800&q=80' :
-                    'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&q=80'),
-        category: t.category || categoryVal,
-        languages: t.languages,
-        travelStyle: travelStyle,
-      };
-    });
-
-    let filtered = [...mapped];
-
+    const where: Record<string, unknown> = {};
     if (category && typeof category === 'string' && category !== 'All') {
-      filtered = filtered.filter((t) => t.category?.toLowerCase() === category.toLowerCase());
+      where.category = { equals: category, mode: 'insensitive' };
     }
-
-    if (search && typeof search === 'string') {
-      const q = search.toLowerCase();
-      filtered = filtered.filter(
-        (t) =>
-          t.name.toLowerCase().includes(q) ||
-          t.cities.some((c) => c.toLowerCase().includes(q)) ||
-          t.creator.toLowerCase().includes(q)
-      );
-    }
-
     if (maxBudget) {
       const limit = parseFloat(maxBudget as string);
       if (!isNaN(limit)) {
-        filtered = filtered.filter((t) => t.budget <= limit);
+        where.budget = { lte: limit };
       }
     }
+    if (search && typeof search === 'string') {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { cities: { has: search } },
+      ];
+    }
 
-    return res.status(200).json({ status: 'success', data: filtered });
+    const dbTrips = await prisma.trip.findMany({
+      where,
+      include: TRIP_INCLUDE,
+      orderBy: { createdAt: 'desc' },
+      take: pageSize,
+    });
+
+    return res.status(200).json({ status: 'success', data: dbTrips.map((t) => mapTrip(t, tokenUserId)) });
   } catch (err) {
-    console.warn('[Trips] DB error, returning memory trips:', err);
-    let filtered = [...trips];
-
-    if (category && typeof category === 'string' && category !== 'All') {
-      filtered = filtered.filter((t) => t.category?.toLowerCase() === category.toLowerCase());
-    }
-
-    if (search && typeof search === 'string') {
-      const q = search.toLowerCase();
-      filtered = filtered.filter(
-        (t) =>
-          t.name.toLowerCase().includes(q) ||
-          t.cities.some((c: string) => c.toLowerCase().includes(q)) ||
-          t.creator.toLowerCase().includes(q)
-      );
-    }
-
-    if (maxBudget) {
-      const limit = parseFloat(maxBudget as string);
-      if (!isNaN(limit)) {
-        filtered = filtered.filter((t) => t.budget <= limit);
-      }
-    }
-    return res.status(200).json({ status: 'success', data: filtered });
+    logger.error('[Trips] List error:', err);
+    return res.status(500).json({ status: 'error', message: 'Failed to retrieve trips' });
   }
 });
 
-// Get Nearby Places / Trips
+// Get Nearby Places — see docs/REMEDIATION.md §8.13 (Phase 8): this is
+// entirely hardcoded pending real geospatial search. Left as-is; it is not a
+// backend-correctness bug the way the rest of this file was, it is an
+// unbuilt feature, and building real geospatial search here would be
+// guessing at Phase 8 scope rather than fixing Phase 5 issues.
 router.get('/nearby', (req, res) => {
   const nearbyPlaces = [
     {
@@ -237,188 +241,109 @@ router.get('/nearby', (req, res) => {
 // Get Trip by ID
 router.get('/:id', async (req, res) => {
   const { id } = req.params;
-  const tokenUserId = getUserIdFromReq(req);
+  // Public browse route — anonymous callers get isMyTrip: false.
+  const tokenUserId = req.user?.id ?? null;
   try {
-    const t = await prisma.trip.findUnique({
-      where: { id },
-      include: {
-        creator: {
-          include: { profile: true }
-        },
-        chatRoom: true
-      }
-    });
+    const t = await prisma.trip.findUnique({ where: { id }, include: TRIP_INCLUDE });
     if (!t) {
-      const fallback = trips.find((item) => item.id === id);
-      if (fallback) {
-        return res.status(200).json({ status: 'success', data: fallback });
-      }
-      return res.status(404).json({ status: 'error', message: 'Trip not found' });
+      return res.status(404).json({ status: 'error', code: 'TRIP_NOT_FOUND', message: 'Trip not found' });
     }
-
-    const creatorName = t.creator?.profile
-      ? `${t.creator.profile.firstName} ${t.creator.profile.lastName} (${t.creator.role === 'GUIDE' ? 'Guide' : 'Organizer'})`
-      : 'Aarav Sharma (Organizer)';
-
-    let travelStyle = 'ADVENTURE';
-    let categoryVal = 'Adventure';
-    if (t.name.toLowerCase().includes('spiritual') || t.name.toLowerCase().includes('vrindavan') || t.name.toLowerCase().includes('varanasi')) {
-      travelStyle = 'RELIGIOUS';
-      categoryVal = 'Religious';
-    } else if (t.name.toLowerCase().includes('kerala') || t.name.toLowerCase().includes('backwaters') || t.name.toLowerCase().includes('nature')) {
-      travelStyle = 'NATURE';
-      categoryVal = 'Nature';
-    } else if (t.name.toLowerCase().includes('heritage') || t.name.toLowerCase().includes('taj mahal')) {
-      travelStyle = 'HERITAGE';
-      categoryVal = 'Heritage';
-    }
-
-    const mapped = {
-      id: t.id,
-      name: t.name,
-      creator: creatorName,
-      creatorId: t.creatorId,
-      isMyTrip: tokenUserId ? t.creatorId === tokenUserId : false,
-      chatRoomId: t.chatRoom?.id || null,
-      cities: t.cities,
-      startDate: t.startDate.toISOString().split('T')[0],
-      endDate: t.endDate.toISOString().split('T')[0],
-      budget: t.budget,
-      availableSeats: t.availableSeats,
-      totalSeats: t.totalSeats,
-      meetingPoint: t.meetingPoint,
-      guideIncluded: t.guideIncluded,
-      foodIncluded: t.foodIncluded,
-      hotelIncluded: t.hotelIncluded,
-      cabIncluded: t.cabIncluded,
-      privacy: t.privacy,
-      membersCount: t.totalSeats - t.availableSeats,
-      coverImage: t.coverImage || (t.name.toLowerCase().includes('vrindavan') ? 'https://images.unsplash.com/photo-1548013146-72479768bada?w=600&q=80' :
-                  t.name.toLowerCase().includes('ladakh') ? 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=600&q=80' :
-                  t.name.toLowerCase().includes('kerala') ? 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=600&q=80' :
-                  t.name.toLowerCase().includes('taj mahal') ? 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1000&q=80' :
-                  t.name.toLowerCase().includes('golden triangle') ? 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=800&q=80' :
-                  'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&q=80'),
-      category: t.category || categoryVal,
-      languages: t.languages,
-      travelStyle: travelStyle,
-    };
-    return res.status(200).json({ status: 'success', data: mapped });
-  } catch (e) {
-    const fallback = trips.find((item) => item.id === id);
-    if (fallback) {
-      return res.status(200).json({ status: 'success', data: fallback });
-    }
-    return res.status(404).json({ status: 'error', message: 'Trip not found' });
+    return res.status(200).json({ status: 'success', data: mapTrip(t, tokenUserId) });
+  } catch (err) {
+    logger.error('[Trips] Get by id error:', err);
+    return res.status(500).json({ status: 'error', message: 'Failed to retrieve trip' });
   }
 });
 
+const createTripSchema = z
+  .object({
+    id: z.string().uuid().optional(),
+    name: z.string().trim().min(1).max(200),
+    cities: z.array(z.string().trim().min(1)).min(1).max(20),
+    startDate: z.coerce.date(),
+    endDate: z.coerce.date(),
+    budget: z.number().positive(),
+    totalSeats: z.number().int().min(1).max(500),
+    meetingPoint: z.string().trim().min(1).max(300),
+    guideIncluded: z.boolean().default(false),
+    foodIncluded: z.boolean().default(false),
+    hotelIncluded: z.boolean().default(false),
+    cabIncluded: z.boolean().default(false),
+    privacy: z.enum(['PUBLIC', 'PRIVATE', 'INVITE_ONLY']).default('PUBLIC'),
+    coverImage: z.string().url().max(2000).optional(),
+    category: z.string().trim().max(100).optional(),
+  })
+  .refine((data) => data.endDate.getTime() > data.startDate.getTime(), {
+    message: 'endDate must be after startDate',
+    path: ['endDate'],
+  })
+  .refine((data) => data.startDate.getTime() > Date.now(), {
+    message: 'startDate must be in the future',
+    path: ['startDate'],
+  });
+
 // Create Trip
 router.post('/', async (req, res) => {
-  const {
-    id,
-    name,
-    creator,
-    creatorId,
-    cities,
-    startDate,
-    endDate,
-    budget,
-    totalSeats,
-    meetingPoint,
-    guideIncluded,
-    foodIncluded,
-    hotelIncluded,
-    cabIncluded,
-    privacy,
-    coverImage,
-    category,
-    coordinates,
-  } = req.body;
+  const parsed = createTripSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      status: 'error',
+      code: 'VALIDATION_FAILED',
+      message: 'Please check the trip details.',
+      details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+    });
+  }
+  const data = parsed.data;
 
   try {
-    // Get organizer user dynamically via creatorId or token
-    let user;
-    const tokenUserId = getUserIdFromReq(req);
-    const targetUserId = tokenUserId || creatorId;
-    if (targetUserId) {
-      user = await prisma.user.findUnique({
-        where: { id: targetUserId },
-        include: { profile: true }
-      });
-    }
-
+    // The creator is always the authenticated caller — a client cannot
+    // create a trip on someone else's behalf.
+    const userId = requireUserId(req);
+    const user = await prisma.user.findUnique({ where: { id: userId }, include: { profile: true } });
     if (!user) {
-      user = await prisma.user.findFirst({
-        include: { profile: true }
-      });
+      return res.status(404).json({ status: 'error', code: 'USER_NOT_FOUND', message: 'Account not found.' });
     }
 
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
-          email: 'aarav@example.com',
-          role: 'ORGANIZER',
-          profile: {
-            create: {
-              firstName: 'Aarav',
-              lastName: 'Sharma',
-              avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
-            }
-          }
-        },
-        include: { profile: true }
-      });
-    }
+    const durationDays = Math.max(
+      1,
+      Math.round((data.endDate.getTime() - data.startDate.getTime()) / (24 * 60 * 60 * 1000))
+    );
 
-    // Create record in Neon PostgreSQL Database along with ChatRoom and Member in transaction
     const { newTrip, chatRoom } = await prisma.$transaction(async (tx) => {
-      // 1. Create trip
       const trip = await tx.trip.create({
         data: {
-          id: id || undefined,
+          id: data.id,
           creatorId: user.id,
-          name: name || 'Custom Indian Expedition',
-          description: 'Custom travel route created via TravelConnect app.',
-          cities: cities && cities.length ? cities : ['Delhi', 'Agra'],
-          startDate: new Date(startDate || '2026-09-01'),
-          endDate: new Date(endDate || '2026-09-05'),
-          durationDays: 5,
-          budget: parseFloat(budget) || 5000,
-          availableSeats: parseInt(totalSeats) || 10,
-          totalSeats: parseInt(totalSeats) || 10,
-          meetingPoint: meetingPoint || 'Central Station',
-          guideIncluded: Boolean(guideIncluded),
-          foodIncluded: Boolean(foodIncluded),
-          hotelIncluded: Boolean(hotelIncluded),
-          cabIncluded: Boolean(cabIncluded),
-          privacy: (privacy || 'PUBLIC') as any,
+          name: data.name,
+          description: 'Custom travel route created via TravelStar app.',
+          cities: data.cities,
+          startDate: data.startDate,
+          endDate: data.endDate,
+          durationDays,
+          budget: data.budget,
+          availableSeats: data.totalSeats,
+          totalSeats: data.totalSeats,
+          meetingPoint: data.meetingPoint,
+          guideIncluded: data.guideIncluded,
+          foodIncluded: data.foodIncluded,
+          hotelIncluded: data.hotelIncluded,
+          cabIncluded: data.cabIncluded,
+          privacy: data.privacy,
           languages: ['Hindi', 'English'],
-          coverImage: coverImage || null,
-          category: category || null,
-        }
+          coverImage: data.coverImage,
+          category: data.category,
+        },
       });
 
-      // 2. Create chat room associated with trip
       const room = await tx.chatRoom.create({
-        data: {
-          isGroup: true,
-          name: name || 'Custom Indian Expedition',
-          tripId: trip.id,
-        },
+        data: { isGroup: true, name: data.name, tripId: trip.id },
       });
-
-      // 3. Add creator to chat room
-      await tx.chatRoomMember.create({
-        data: {
-          chatRoomId: room.id,
-          userId: user.id,
-        },
-      });
+      await tx.chatRoomMember.create({ data: { chatRoomId: room.id, userId: user.id } });
 
       return { newTrip: trip, chatRoom: room };
-    }) as any;
+    });
 
+    const { travelStyle, category } = deriveCategory(newTrip.name);
     const mappedTrip = {
       id: newTrip.id,
       name: newTrip.name,
@@ -428,7 +353,7 @@ router.post('/', async (req, res) => {
       cities: newTrip.cities,
       startDate: newTrip.startDate.toISOString().split('T')[0],
       endDate: newTrip.endDate.toISOString().split('T')[0],
-      budget: newTrip.budget,
+      budget: newTrip.budget.toString(),
       availableSeats: newTrip.availableSeats,
       totalSeats: newTrip.totalSeats,
       meetingPoint: newTrip.meetingPoint,
@@ -438,160 +363,147 @@ router.post('/', async (req, res) => {
       cabIncluded: newTrip.cabIncluded,
       privacy: newTrip.privacy,
       membersCount: 1,
-      coverImage: newTrip.coverImage || 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&q=80',
-      category: newTrip.category || 'Adventure',
-      languages: ['Hindi', 'English'],
-      travelStyle: 'ADVENTURE',
-      coordinates: coordinates || [],
+      coverImage: deriveCoverImage(newTrip.name, newTrip.coverImage),
+      category: newTrip.category || category,
+      languages: newTrip.languages,
+      travelStyle,
     };
 
-    trips.unshift(mappedTrip);
     return res.status(201).json({ status: 'success', data: mappedTrip });
   } catch (err) {
-    console.warn('[Postgres DB Warn] Trip creation fallback active:', err);
-    const fallbackTrip = {
-      id: id || `trip-${Date.now()}`,
-      name: name || 'Custom Indian Expedition',
-      creator: creator || 'Aarav Sharma (Organizer)',
-      cities: cities && cities.length ? cities : ['Delhi', 'Agra'],
-      startDate: startDate || '2026-09-01',
-      endDate: endDate || '2026-09-05',
-      budget: parseFloat(budget) || 5000,
-      availableSeats: parseInt(totalSeats) || 10,
-      totalSeats: parseInt(totalSeats) || 10,
-      meetingPoint: meetingPoint || 'Central Station',
-      guideIncluded: Boolean(guideIncluded),
-      foodIncluded: Boolean(foodIncluded),
-      hotelIncluded: Boolean(hotelIncluded),
-      cabIncluded: Boolean(cabIncluded),
-      privacy: privacy || 'PUBLIC',
-      membersCount: 1,
-      coverImage: coverImage || 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&q=80',
-      category: category || 'Adventure',
-      languages: ['Hindi', 'English'],
-      travelStyle: 'ADVENTURE',
-      coordinates: coordinates || [],
-    };
-    trips.unshift(fallbackTrip);
-    return res.status(201).json({ status: 'success', data: fallbackTrip });
+    logger.error('[Trips] Create error:', err);
+    return res.status(500).json({ status: 'error', message: 'Failed to create trip. Please try again.' });
   }
 });
 
-// Join Trip
+// Instant join — PUBLIC trips only. PRIVATE/INVITE_ONLY trips require the
+// creator's approval via POST /interactions/join-request, which shares the
+// same seat-claiming logic (services/trip-membership.ts) so both paths are
+// race-safe the same way — see docs/REMEDIATION.md §5.4.
 router.post('/:id/join', async (req, res) => {
-  const { id } = req.params;
-  let trip = trips.find((t) => t.id === id);
+  const { id } = req.params!.id ? req.params : { id: undefined };
+  const tripId = req.params.id;
+  const userId = requireUserId(req);
 
-  if (!trip) {
-    try {
-      const dbTrip = await prisma.trip.findUnique({
-        where: { id }
-      });
-      if (dbTrip) {
-        if (dbTrip.availableSeats > 0) {
-          const updatedDbTrip = await prisma.trip.update({
-            where: { id },
-            data: {
-              availableSeats: dbTrip.availableSeats - 1
-            }
-          });
-          trip = {
-            id: updatedDbTrip.id,
-            name: updatedDbTrip.name,
-            creator: 'Aarav Sharma (Organizer)',
-            cities: updatedDbTrip.cities,
-            startDate: updatedDbTrip.startDate.toISOString().split('T')[0],
-            endDate: updatedDbTrip.endDate.toISOString().split('T')[0],
-            budget: updatedDbTrip.budget,
-            availableSeats: updatedDbTrip.availableSeats,
-            totalSeats: updatedDbTrip.totalSeats,
-            meetingPoint: updatedDbTrip.meetingPoint,
-            guideIncluded: updatedDbTrip.guideIncluded,
-            foodIncluded: updatedDbTrip.foodIncluded,
-            privacy: updatedDbTrip.privacy,
-            membersCount: updatedDbTrip.totalSeats - updatedDbTrip.availableSeats,
-            coverImage: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&q=80',
-            category: 'Adventure',
-            languages: ['Hindi', 'English'],
-            travelStyle: 'ADVENTURE',
-          };
-          trips.push(trip);
-        } else {
-          return res.status(400).json({ status: 'error', message: 'No available seats on this trip' });
-        }
-      }
-    } catch (e) {
-      console.warn('[Postgres DB Warn] Database lookup error during join:', e);
+  try {
+    const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { privacy: true } });
+    if (!trip) {
+      return res.status(404).json({ status: 'error', code: 'TRIP_NOT_FOUND', message: 'Trip not found.' });
     }
+    if (trip.privacy !== 'PUBLIC') {
+      return res.status(400).json({
+        status: 'error',
+        code: 'APPROVAL_REQUIRED',
+        message: 'This trip requires the organiser\'s approval. Send a join request instead.',
+      });
+    }
+
+    const result = await claimSeatAndJoin(tripId, userId);
+
+    if (!result.ok) {
+      if (result.reason === 'TRIP_NOT_FOUND') {
+        return res.status(404).json({ status: 'error', code: 'TRIP_NOT_FOUND', message: 'Trip not found.' });
+      }
+      return res.status(409).json({ status: 'error', code: 'TRIP_FULL', message: 'No available seats on this trip.' });
+    }
+
+    const updated = await prisma.trip.findUnique({ where: { id: tripId }, include: TRIP_INCLUDE });
+    return res.status(200).json({
+      status: 'success',
+      data: updated ? mapTrip(updated, userId) : null,
+      message: result.alreadyMember ? 'You are already a member of this trip.' : 'Successfully joined trip.',
+    });
+  } catch (err) {
+    logger.error('[Trips] Join error:', err);
+    return res.status(500).json({ status: 'error', message: 'Failed to join trip.' });
   }
-
-  if (!trip) {
-    return res.status(404).json({ status: 'error', message: 'Trip not found' });
-  }
-
-  if (trip.availableSeats <= 0) {
-    return res.status(400).json({ status: 'error', message: 'No available seats on this trip' });
-  }
-
-  trip.availableSeats -= 1;
-  trip.membersCount += 1;
-
-  res.status(200).json({ status: 'success', data: trip, message: 'Successfully joined trip' });
 });
 
-// AI Recommendation generator
-router.post('/recommendations', (req, res) => {
-  const { currentLocation, interests, budgetLimit, languages, travelStyle } = req.body;
-
-  const userPrefs = {
-    currentLocation: currentLocation || 'Delhi',
-    interests: interests || [],
-    budgetLimit: parseFloat(budgetLimit) || 30000,
-    languages: languages || ['Hindi'],
-    travelStyle: travelStyle || 'RELIGIOUS',
-  };
-
-  const results = RecommendationService.getRecommendations(userPrefs, trips);
-  res.status(200).json({ status: 'success', data: results });
+// AI Recommendation generator — now scored against real trips instead of the
+// permanently-empty in-memory array (docs/REMEDIATION.md §5.3).
+const recommendationSchema = z.object({
+  currentLocation: z.string().trim().min(1).max(100).default('Delhi'),
+  interests: z.array(z.string()).default([]),
+  budgetLimit: z.number().positive().default(30000),
+  languages: z.array(z.string()).default(['Hindi']),
+  travelStyle: z.string().default('RELIGIOUS'),
 });
 
-// Midway Join (Family Connect segment calculation)
-router.post('/:id/midway-join', (req, res) => {
+router.post('/recommendations', async (req, res) => {
+  const parsed = recommendationSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ status: 'error', code: 'VALIDATION_FAILED', message: 'Invalid preferences.' });
+  }
+
+  try {
+    const dbTrips = await prisma.trip.findMany({
+      where: { availableSeats: { gt: 0 } },
+      take: 100,
+    });
+    const groups = dbTrips.map((t) => ({
+      id: t.id,
+      name: t.name,
+      cities: t.cities,
+      budget: Number(t.budget),
+      languages: t.languages,
+      travelStyle: deriveCategory(t.name).travelStyle,
+    }));
+
+    const results = RecommendationService.getRecommendations(parsed.data, groups);
+    res.status(200).json({ status: 'success', data: results });
+  } catch (err) {
+    logger.error('[Trips] Recommendations error:', err);
+    res.status(500).json({ status: 'error', message: 'Failed to generate recommendations.' });
+  }
+});
+
+// Midway Join (Family Connect segment price preview) — now reads the real
+// trip instead of the permanently-empty in-memory array
+// (docs/REMEDIATION.md §5.3). The exact pricing rule this uses is the
+// pre-existing proportional-by-segment formula; refining what "correct"
+// midway pricing means is a product decision for Phase 8, not something
+// this fix redesigns.
+router.post('/:id/midway-join', async (req, res) => {
   const { id } = req.params;
   const { fromCity, toCity } = req.body;
 
-  const trip = trips.find((t) => t.id === id);
-  if (!trip) {
-    return res.status(404).json({ status: 'error', message: 'Trip not found' });
-  }
+  try {
+    const trip = await prisma.trip.findUnique({ where: { id } });
+    if (!trip) {
+      return res.status(404).json({ status: 'error', code: 'TRIP_NOT_FOUND', message: 'Trip not found' });
+    }
 
-  const fromIndex = trip.cities.indexOf(fromCity);
-  const toIndex = trip.cities.indexOf(toCity);
+    const fromIndex = trip.cities.indexOf(fromCity);
+    const toIndex = trip.cities.indexOf(toCity);
 
-  if (fromIndex === -1 || toIndex === -1 || fromIndex >= toIndex) {
-    return res.status(400).json({
-      status: 'error',
-      message: 'Invalid midway segments selected for this trip route',
+    if (fromIndex === -1 || toIndex === -1 || fromIndex >= toIndex) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Invalid midway segments selected for this trip route',
+      });
+    }
+
+    const totalSegments = trip.cities.length - 1;
+    const requestedSegments = toIndex - fromIndex;
+    const fullPrice = Number(trip.budget);
+    const adjustedPrice = totalSegments > 0 ? Math.round((fullPrice / totalSegments) * requestedSegments) : fullPrice;
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        tripId: id,
+        fromCity,
+        toCity,
+        fullPrice: fullPrice.toString(),
+        adjustedPrice: adjustedPrice.toString(),
+        segmentsTraversed: trip.cities.slice(fromIndex, toIndex + 1),
+      },
     });
+  } catch (err) {
+    logger.error('[Trips] Midway-join error:', err);
+    res.status(500).json({ status: 'error', message: 'Failed to calculate midway price.' });
   }
-
-  const totalSegments = trip.cities.length - 1;
-  const requestedSegments = toIndex - fromIndex;
-  const adjustedPrice = Math.round((trip.budget / totalSegments) * requestedSegments);
-
-  res.status(200).json({
-    status: 'success',
-    data: {
-      tripId: id,
-      fromCity,
-      toCity,
-      fullPrice: trip.budget,
-      adjustedPrice,
-      segmentsTraversed: trip.cities.slice(fromIndex, toIndex + 1),
-    },
-  });
 });
-
 
 // Get trip members by trip ID
 router.get('/:id/members', async (req, res) => {
@@ -600,125 +512,13 @@ router.get('/:id/members', async (req, res) => {
     const trip = await prisma.trip.findUnique({
       where: { id },
       include: {
-        creator: {
-          include: { profile: true }
-        },
-        members: {
-          include: {
-            user: {
-              include: { profile: true }
-            }
-          }
-        }
-      }
+        creator: { include: { profile: true } },
+        members: { include: { user: { include: { profile: true } } } },
+      },
     });
 
     if (!trip) {
-      if (id === 'trip-1' || id === 'tour-1') {
-        const mockMembers = [
-          {
-            id: 'creator-u1',
-            userId: 'u1',
-            name: 'Vikram Singh',
-            avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
-            isCreator: true,
-            role: 'Organizer',
-          },
-          {
-            id: 'member-u2',
-            userId: 'u2',
-            name: 'Priya Nair',
-            avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150',
-            isCreator: false,
-            role: 'Tourist',
-          },
-          {
-            id: 'member-u3',
-            userId: 'u3',
-            name: 'Suman Gupta',
-            avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150',
-            isCreator: false,
-            role: 'Tourist',
-          }
-        ];
-        return res.status(200).json({ status: 'success', data: mockMembers });
-      } else if (id === 'trip-2') {
-        const mockMembers = [
-          {
-            id: 'creator-u4',
-            userId: 'u4',
-            name: 'Aditya Sen',
-            avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
-            isCreator: true,
-            role: 'Organizer',
-          },
-          {
-            id: 'member-u2',
-            userId: 'u2',
-            name: 'Priya Nair',
-            avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150',
-            isCreator: false,
-            role: 'Tourist',
-          },
-          {
-            id: 'member-u3',
-            userId: 'u3',
-            name: 'Suman Gupta',
-            avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150',
-            isCreator: false,
-            role: 'Tourist',
-          }
-        ];
-        return res.status(200).json({ status: 'success', data: mockMembers });
-      } else if (id === 'trip-3') {
-        const mockMembers = [
-          {
-            id: 'creator-u2',
-            userId: 'u2',
-            name: 'Priya Nair',
-            avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150',
-            isCreator: true,
-            role: 'Organizer',
-          },
-          {
-            id: 'member-u3',
-            userId: 'u3',
-            name: 'Suman Gupta',
-            avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150',
-            isCreator: false,
-            role: 'Tourist',
-          },
-          {
-            id: 'member-u5',
-            userId: 'u5',
-            name: 'Neha Sharma',
-            avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
-            isCreator: false,
-            role: 'Tourist',
-          }
-        ];
-        return res.status(200).json({ status: 'success', data: mockMembers });
-      } else {
-        const mockMembers = [
-          {
-            id: `creator-${id}`,
-            userId: 'creator-id',
-            name: 'Aarav Sharma',
-            avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
-            isCreator: true,
-            role: 'Organizer',
-          },
-          {
-            id: `member-${id}-1`,
-            userId: 'm1',
-            name: 'Neha Sharma',
-            avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
-            isCreator: false,
-            role: 'Tourist',
-          }
-        ];
-        return res.status(200).json({ status: 'success', data: mockMembers });
-      }
+      return res.status(404).json({ status: 'error', code: 'TRIP_NOT_FOUND', message: 'Trip not found' });
     }
 
     const creatorName = trip.creator.profile
@@ -752,7 +552,7 @@ router.get('/:id/members', async (req, res) => {
     const participants = [creatorItem, ...memberItems];
     return res.status(200).json({ status: 'success', data: participants });
   } catch (err) {
-    console.warn('[Trips] Get trip members error:', err);
+    logger.error('[Trips] Get trip members error:', err);
     return res.status(500).json({ status: 'error', message: 'Failed to fetch trip members' });
   }
 });

@@ -1,47 +1,10 @@
 import { Router } from 'express';
-import jwt from 'jsonwebtoken';
 import prisma from '../../services/db';
+import { logger } from '../../lib/logger';
+import { requireUserId, isAdmin } from '../../lib/auth-context';
+import { getSosAudienceUserIds } from '../../services/sos-audience';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_jwt_key_travelconnect_12345';
-
-const getUserIdFromReq = (req: any): string | null => {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.split(' ')[1];
-    try {
-      const decoded: any = jwt.verify(token, JWT_SECRET);
-      return decoded.id || decoded.userId;
-    } catch (e) {
-      return null;
-    }
-  }
-  return null;
-};
-
-// Seed monsoon advisories if table is empty
-const SEED_ADVISORIES = [
-  {
-    region: 'Himachal Pradesh & Ladakh',
-    severity: 'HIGH',
-    alertTitle: 'Flash Flood & Landslide Warning',
-    description: 'Heavy rainfall reported on Manali-Leh Highway near Rohtang & Baralacha Pass. Travelers advised to delay mountain passes.',
-  },
-  {
-    region: 'Kerala Backwaters',
-    severity: 'MEDIUM',
-    alertTitle: 'High Water Level Notice',
-    description: 'Houseboat operations in Alleppey operating with safety speed limits due to active monsoon currents.',
-  },
-  {
-    region: 'Vrindavan & Mathura',
-    severity: 'LOW',
-    alertTitle: 'Yamuna Water Level Normal',
-    description: 'Darshan queues and ghat entry operating smoothly with routine rain precautions.',
-  },
-];
-
-let advisoriesSeeded = false;
 
 // GET /safety/sos — List all active SOS alerts (Prisma-backed, persists across restarts)
 router.get('/sos', async (req, res) => {
@@ -69,30 +32,20 @@ router.get('/sos', async (req, res) => {
 
     res.status(200).json({ status: 'success', data: mapped });
   } catch (err) {
-    console.error('[Safety] Get SOS alerts error:', err);
+    logger.error('[Safety] Get SOS alerts error:', err);
     res.status(500).json({ status: 'error', message: 'Failed to retrieve SOS alerts' });
   }
 });
 
 // POST /safety/sos — Trigger a new SOS alert (Prisma-backed + socket broadcast)
 router.post('/sos', async (req, res) => {
-  const userId = getUserIdFromReq(req);
+  const userId = requireUserId(req);
   const { userName, latitude, longitude } = req.body;
 
   try {
-    // If authenticated, use token userId; otherwise try to find a guest user
-    let resolvedUserId: string | null = userId;
-    if (!resolvedUserId) {
-      const firstUser = await prisma.user.findFirst();
-      resolvedUserId = firstUser?.id ?? null;
-    }
-    if (!resolvedUserId) {
-      return res.status(401).json({ status: 'error', message: 'No user found for SOS alert' });
-    }
-
     const newAlert = await prisma.sOSAlert.create({
       data: {
-        userId: resolvedUserId,
+        userId,
         latitude: parseFloat(latitude) || 28.6139,
         longitude: parseFloat(longitude) || 77.209,
       },
@@ -100,17 +53,19 @@ router.post('/sos', async (req, res) => {
 
     const alertPayload = {
       id: newAlert.id,
-      userName: userName || `User ${resolvedUserId.slice(0, 8)}`,
+      userName: userName || `User ${userId.slice(0, 8)}`,
       latitude: newAlert.latitude,
       longitude: newAlert.longitude,
       timestamp: newAlert.alertTime.toLocaleTimeString(),
       status: newAlert.status,
     };
 
-    // Broadcast via socket
+    // Notify only the scoped audience (emergency contacts who are app users,
+    // fellow trip members, admins) — never every connected client.
     const io = req.app.get('socketio');
     if (io) {
-      io.emit('sosReceived', alertPayload);
+      const audience = await getSosAudienceUserIds(userId);
+      audience.forEach((uid: string) => io.to(uid).emit('sosReceived', alertPayload));
     }
 
     res.status(201).json({
@@ -120,7 +75,7 @@ router.post('/sos', async (req, res) => {
       message: 'SOS trigger received. Nearby local assistance, police, and emergency support notified.',
     });
   } catch (err) {
-    console.error('[Safety] Create SOS alert error:', err);
+    logger.error('[Safety] Create SOS alert error:', err);
     res.status(500).json({ status: 'error', message: 'Failed to create SOS alert' });
   }
 });
@@ -128,21 +83,42 @@ router.post('/sos', async (req, res) => {
 // POST /safety/sos/:id/resolve — Resolve an SOS alert
 router.post('/sos/:id/resolve', async (req, res) => {
   const { id } = req.params;
+  const userId = requireUserId(req);
   try {
+    const alert = await prisma.sOSAlert.findUnique({
+      where: { id },
+      select: { userId: true },
+    });
+
+    if (!alert) {
+      return res.status(404).json({ status: 'error', code: 'NOT_FOUND', message: 'SOS alert not found.' });
+    }
+
+    // Only the person in distress or an admin/responder may stand down an
+    // alert. Anyone else silently resolving it could leave someone stranded.
+    if (alert.userId !== userId && !isAdmin(req)) {
+      return res.status(403).json({
+        status: 'error',
+        code: 'FORBIDDEN',
+        message: 'You are not authorised to resolve this alert.',
+      });
+    }
+
     await prisma.sOSAlert.update({
       where: { id },
       data: { status: 'RESOLVED' },
     });
 
-    // Broadcast resolution via socket
+    // Notify the same scoped audience that received the original alert.
     const io = req.app.get('socketio');
     if (io) {
-      io.emit('sosResolved', { id });
+      const audience = await getSosAudienceUserIds(alert.userId);
+      audience.forEach((uid: string) => io.to(uid).emit('sosResolved', { id }));
     }
 
     res.status(200).json({ status: 'success', message: `SOS Alert ${id} marked as resolved` });
   } catch (err) {
-    console.error('[Safety] Resolve SOS error:', err);
+    logger.error('[Safety] Resolve SOS error:', err);
     res.status(500).json({ status: 'error', message: 'Failed to resolve SOS alert' });
   }
 });
@@ -158,31 +134,23 @@ router.post('/location', (req, res) => {
 
 // GET /safety/contacts — Get user's emergency contacts (Prisma-backed, user-scoped)
 router.get('/contacts', async (req, res) => {
-  const userId = getUserIdFromReq(req);
+  const userId = requireUserId(req);
 
   try {
-    if (userId) {
-      const contacts = await prisma.emergencyContact.findMany({
-        where: { userId },
-        orderBy: { name: 'asc' },
-      });
-      return res.status(200).json({ status: 'success', data: contacts });
-    }
-
-    // Fallback for unauthenticated: return empty list
-    return res.status(200).json({ status: 'success', data: [] });
+    const contacts = await prisma.emergencyContact.findMany({
+      where: { userId },
+      orderBy: { name: 'asc' },
+    });
+    return res.status(200).json({ status: 'success', data: contacts });
   } catch (err) {
-    console.error('[Safety] Get contacts error:', err);
+    logger.error('[Safety] Get contacts error:', err);
     return res.status(500).json({ status: 'error', message: 'Failed to retrieve emergency contacts' });
   }
 });
 
 // POST /safety/contacts — Create a new emergency contact
 router.post('/contacts', async (req, res) => {
-  const userId = getUserIdFromReq(req);
-  if (!userId) {
-    return res.status(401).json({ status: 'error', message: 'Unauthorized' });
-  }
+  const userId = requireUserId(req);
 
   const { name, relation, phoneNumber } = req.body;
   if (!name || !phoneNumber) {
@@ -200,7 +168,7 @@ router.post('/contacts', async (req, res) => {
     });
     return res.status(201).json({ status: 'success', data: contact });
   } catch (err) {
-    console.error('[Safety] Create contact error:', err);
+    logger.error('[Safety] Create contact error:', err);
     return res.status(500).json({ status: 'error', message: 'Failed to create emergency contact' });
   }
 });
@@ -208,41 +176,36 @@ router.post('/contacts', async (req, res) => {
 // DELETE /safety/contacts/:id — Delete an emergency contact
 router.delete('/contacts/:id', async (req, res) => {
   const { id } = req.params;
+  const userId = requireUserId(req);
   try {
-    await prisma.emergencyContact.delete({ where: { id } });
+    // Scoped by userId so one user cannot delete another's contacts.
+    const result = await prisma.emergencyContact.deleteMany({ where: { id, userId } });
+    if (result.count === 0) {
+      return res.status(404).json({ status: 'error', code: 'NOT_FOUND', message: 'Contact not found.' });
+    }
     return res.status(200).json({ status: 'success', message: 'Contact deleted' });
   } catch (err) {
-    console.error('[Safety] Delete contact error:', err);
+    logger.error('[Safety] Delete contact error:', err);
     return res.status(500).json({ status: 'error', message: 'Failed to delete contact' });
   }
 });
 
-// GET /safety/monsoon-advisory — Prisma-backed monsoon advisories with auto-seed
+// GET /safety/monsoon-advisory — reference data seeded once via
+// `npm run seed:reference`, not implicitly on read (docs/REMEDIATION.md §4.9).
+// Note: no client screen currently reads this endpoint — travel-guide.tsx
+// fetches it but discards the result, and the screen actually named
+// "monsoon-advisory" renders Alert-shaped data instead (see §4.10 fix in
+// src/app/monsoon-advisory.tsx). Left in place rather than deleted since
+// removing a whole model/endpoint is a bigger call than this cleanup pass.
 router.get('/monsoon-advisory', async (req, res) => {
   try {
-    let advisories = await prisma.monsoonAdvisory.findMany({
+    const advisories = await prisma.monsoonAdvisory.findMany({
       orderBy: { createdAt: 'desc' },
     });
-
-    if (advisories.length === 0 && !advisoriesSeeded) {
-      advisoriesSeeded = true;
-      await prisma.monsoonAdvisory.createMany({ data: SEED_ADVISORIES });
-      advisories = await prisma.monsoonAdvisory.findMany({
-        orderBy: { createdAt: 'desc' },
-      });
-    }
-
     res.status(200).json({ status: 'success', data: advisories });
   } catch (err) {
-    console.error('[Safety] Get monsoon advisories error:', err);
-    // Fallback to static data if DB fails
-    const fallback = SEED_ADVISORIES.map((a, i) => ({
-      id: `adv-${i + 1}`,
-      ...a,
-      updatedAt: new Date().toISOString(),
-      createdAt: new Date().toISOString(),
-    }));
-    res.status(200).json({ status: 'success', data: fallback });
+    logger.error('[Safety] Get monsoon advisories error:', err);
+    res.status(500).json({ status: 'error', message: 'Failed to retrieve monsoon advisories' });
   }
 });
 

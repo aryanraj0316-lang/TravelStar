@@ -32,10 +32,10 @@ describe('AI Recommendation Engine Unit Tests', () => {
     const recommendations = RecommendationService.getRecommendations(preferences, mockGroups);
 
     // First recommendation should be Ranchi Vrindavan
-    expect(recommendations[0].group.id).toBe('g-1');
-    
+    expect(recommendations[0]?.group.id).toBe('g-1');
+
     // Ranchi Vrindavan should have a high score because of location match, budget match, travelStyle match, and language overlap.
-    expect(recommendations[0].matchScore).toBeGreaterThanOrEqual(80);
+    expect(recommendations[0]?.matchScore).toBeGreaterThanOrEqual(80);
   });
 
   it('should calculate budget penalty correctly for expensive groups', () => {

@@ -1,23 +1,9 @@
 import { Router } from 'express';
-import jwt from 'jsonwebtoken';
 import prisma from '../../services/db';
+import { logger } from '../../lib/logger';
+import { requireUserId } from '../../lib/auth-context';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_jwt_key_travelconnect_12345';
-
-const getUserIdFromReq = (req: any): string | null => {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.split(' ')[1];
-    try {
-      const decoded: any = jwt.verify(token, JWT_SECRET);
-      return decoded.id || decoded.userId;
-    } catch (e) {
-      return null;
-    }
-  }
-  return null;
-};
 
 // ──────────────────────────────────────────────────────────
 //  TRIP LIKES
@@ -25,9 +11,9 @@ const getUserIdFromReq = (req: any): string | null => {
 
 // Toggle like on a trip
 router.post('/like', async (req, res) => {
-  const { tripId, userId } = req.body;
-  const tokenUserId = getUserIdFromReq(req);
-  const uid = tokenUserId || userId || 'default-user';
+  const { tripId } = req.body;
+  // Identity always comes from the token, never the request body.
+  const uid = requireUserId(req);
 
   if (!tripId) {
     return res.status(400).json({ status: 'error', message: 'tripId is required' });
@@ -53,15 +39,14 @@ router.post('/like', async (req, res) => {
       return res.status(201).json({ status: 'success', liked: true, message: 'Trip liked' });
     }
   } catch (err) {
-    console.warn('[Interactions] Like toggle error:', err);
+    logger.warn('[Interactions] Like toggle error:', err);
     return res.status(500).json({ status: 'error', message: 'Failed to toggle like' });
   }
 });
 
 // Get all trip IDs liked by a user
 router.get('/likes', async (req, res) => {
-  const tokenUserId = getUserIdFromReq(req);
-  const userId = tokenUserId || (req.query.userId as string) || 'default-user';
+  const userId = requireUserId(req);
 
   try {
     const likes = await prisma.tripLike.findMany({
@@ -73,7 +58,7 @@ router.get('/likes', async (req, res) => {
     const tripIds = likes.map((l) => l.tripId);
     return res.status(200).json({ status: 'success', data: tripIds });
   } catch (err) {
-    console.warn('[Interactions] Get likes error:', err);
+    logger.warn('[Interactions] Get likes error:', err);
     return res.status(200).json({ status: 'success', data: [] });
   }
 });
@@ -84,41 +69,27 @@ router.get('/likes', async (req, res) => {
 
 // Create a join request
 router.post('/join-request', async (req, res) => {
-  const { tripId, userId, midway, fromCity, toCity, adjustedPrice } = req.body;
+  const { tripId, midway, fromCity, toCity, adjustedPrice } = req.body;
+  // Identity always comes from the token — a caller cannot file a request as
+  // someone else by putting a userId in the body.
+  const userId = requireUserId(req);
 
   if (!tripId) {
     return res.status(400).json({ status: 'error', message: 'tripId is required' });
   }
 
   try {
-    // Get or create the user
-    let user = null;
-    const tokenUserId = getUserIdFromReq(req);
-    if (tokenUserId) {
-      user = await prisma.user.findUnique({ where: { id: tokenUserId } });
-    }
-    if (!user) {
-      user = await prisma.user.findFirst({
-        where: userId ? { id: userId } : undefined,
-      });
-    }
-    if (!user) {
-      user = await prisma.user.findFirst();
-    }
-
-    if (!user) {
-      return res.status(400).json({ status: 'error', message: 'No user found' });
-    }
-
     const trip = await prisma.trip.findUnique({ where: { id: tripId } });
-    if (trip && trip.creatorId === user.id) {
+    if (!trip) {
+      return res.status(404).json({ status: 'error', code: 'TRIP_NOT_FOUND', message: 'Trip not found.' });
+    }
+    if (trip.creatorId === userId) {
       return res.status(400).json({ status: 'error', message: 'You cannot request to join your own trip.' });
     }
 
-    // Upsert join request
     const existing = await prisma.joinRequest.findUnique({
       where: {
-        tripId_userId: { tripId, userId: user.id },
+        tripId_userId: { tripId, userId },
       },
     });
 
@@ -129,7 +100,7 @@ router.post('/join-request', async (req, res) => {
     const joinReq = await prisma.joinRequest.create({
       data: {
         tripId,
-        userId: user.id,
+        userId,
         status: 'PENDING',
         fromCity: midway ? fromCity : null,
         toCity: midway ? toCity : null,
@@ -139,7 +110,7 @@ router.post('/join-request', async (req, res) => {
 
     return res.status(201).json({ status: 'success', data: joinReq });
   } catch (err) {
-    console.warn('[Interactions] Join request error:', err);
+    logger.warn('[Interactions] Join request error:', err);
     return res.status(500).json({ status: 'error', message: 'Failed to create join request' });
   }
 });
@@ -147,27 +118,17 @@ router.post('/join-request', async (req, res) => {
 // Get all join requests for a user
 router.get('/join-requests', async (req, res) => {
   try {
-    let user = null;
-    const tokenUserId = getUserIdFromReq(req);
-    if (tokenUserId) {
-      user = await prisma.user.findUnique({ where: { id: tokenUserId } });
-    }
-    if (!user) {
-      user = await prisma.user.findFirst();
-    }
-    if (!user) {
-      return res.status(200).json({ status: 'success', data: [] });
-    }
+    const userId = requireUserId(req);
 
     const requests = await prisma.joinRequest.findMany({
-      where: { userId: user.id },
+      where: { userId },
       select: { tripId: true, status: true, fromCity: true, toCity: true, adjustedPrice: true },
       orderBy: { createdAt: 'desc' },
     });
 
     return res.status(200).json({ status: 'success', data: requests });
   } catch (err) {
-    console.warn('[Interactions] Get join requests error:', err);
+    logger.warn('[Interactions] Get join requests error:', err);
     return res.status(200).json({ status: 'success', data: [] });
   }
 });
@@ -177,25 +138,16 @@ router.delete('/join-request/:tripId', async (req, res) => {
   const { tripId } = req.params;
 
   try {
-    let user = null;
-    const tokenUserId = getUserIdFromReq(req);
-    if (tokenUserId) {
-      user = await prisma.user.findUnique({ where: { id: tokenUserId } });
-    }
-    if (!user) {
-      user = await prisma.user.findFirst();
-    }
-    if (!user) {
-      return res.status(404).json({ status: 'error', message: 'User not found' });
-    }
+    const userId = requireUserId(req);
 
+    // Scoped to the caller's own request — cannot cancel someone else's.
     await prisma.joinRequest.deleteMany({
-      where: { tripId, userId: user.id },
+      where: { tripId, userId },
     });
 
     return res.status(200).json({ status: 'success', message: 'Join request cancelled' });
   } catch (err) {
-    console.warn('[Interactions] Cancel join request error:', err);
+    logger.warn('[Interactions] Cancel join request error:', err);
     return res.status(500).json({ status: 'error', message: 'Failed to cancel join request' });
   }
 });
@@ -203,15 +155,13 @@ router.delete('/join-request/:tripId', async (req, res) => {
 // Get unread notification count
 router.get('/unread-count', async (req, res) => {
   try {
-    const tokenUserId = getUserIdFromReq(req);
-    if (!tokenUserId) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
     const count = await prisma.notification.count({
-      where: { unread: true, userId: tokenUserId },
+      where: { unread: true, userId: requireUserId(req) },
     });
 
     return res.status(200).json({ status: 'success', data: { count } });
   } catch (err) {
-    console.warn('[Interactions] Unread count error:', err);
+    logger.warn('[Interactions] Unread count error:', err);
     return res.status(200).json({ status: 'success', data: { count: 0 } });
   }
 });
@@ -219,15 +169,10 @@ router.get('/unread-count', async (req, res) => {
 // Get all incoming join requests for trips created by the logged-in user
 router.get('/incoming-requests', async (req, res) => {
   try {
-    const tokenUserId = getUserIdFromReq(req);
-    if (!tokenUserId) {
-      return res.status(401).json({ status: 'error', message: 'Unauthorized' });
-    }
-
     const requests = await prisma.joinRequest.findMany({
       where: {
         trip: {
-          creatorId: tokenUserId,
+          creatorId: requireUserId(req),
         },
       },
       include: {
@@ -264,7 +209,7 @@ router.get('/incoming-requests', async (req, res) => {
 
     return res.status(200).json({ status: 'success', data: mapped });
   } catch (err) {
-    console.warn('[Interactions] Get incoming requests error:', err);
+    logger.warn('[Interactions] Get incoming requests error:', err);
     return res.status(500).json({ status: 'error', message: 'Failed to fetch incoming requests' });
   }
 });
@@ -279,10 +224,7 @@ const handleStatusChange = async (req: any, res: any) => {
   }
 
   try {
-    const tokenUserId = getUserIdFromReq(req);
-    if (!tokenUserId) {
-      return res.status(401).json({ status: 'error', message: 'Unauthorized' });
-    }
+    const tokenUserId = requireUserId(req);
 
     const request = await prisma.joinRequest.findUnique({
       where: { id },
@@ -462,7 +404,7 @@ const handleStatusChange = async (req: any, res: any) => {
 
     return res.status(200).json({ status: 'success', data: updated, chatRoomId: targetChatRoomId });
   } catch (err) {
-    console.warn('[Interactions] Update join request status error:', err);
+    logger.warn('[Interactions] Update join request status error:', err);
     return res.status(500).json({ status: 'error', message: 'Failed to update join request status' });
   }
 };
