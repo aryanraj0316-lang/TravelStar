@@ -53,10 +53,10 @@ router.get('/', async (req, res) => {
       (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
     );
 
-    res.status(200).json({ status: 'success', data: list });
+    res.status(200).json({ ok: true, data: list });
   } catch (err) {
     logger.warn('[Postgres DB Warn] Get notifications failed:', err);
-    res.status(500).json({ status: 'error', message: 'Failed to retrieve notifications' });
+    res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve notifications' } });
   }
 });
 
@@ -83,10 +83,10 @@ router.post('/read-all', async (req, res) => {
       }),
     ]);
 
-    res.status(200).json({ status: 'success', message: 'All notifications marked as read' });
+    res.status(200).json({ ok: true, data: { message: 'All notifications marked as read' } });
   } catch (err) {
     logger.warn('[Postgres DB Warn] Read-all notifications failed:', err);
-    res.status(500).json({ status: 'error', message: 'Failed to mark notifications read' });
+    res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to mark notifications read' } });
   }
 });
 
@@ -95,14 +95,14 @@ router.post('/read-all', async (req, res) => {
 router.post('/:id/read', async (req, res) => {
   const parsedParams = idParamSchema.safeParse(req.params);
   if (!parsedParams.success) {
-    return res.status(400).json({ status: 'error', code: 'VALIDATION_FAILED', message: 'Invalid notification id.' });
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid notification id.' } });
   }
   const { id } = parsedParams.data;
   const userId = requireUserId(req);
   try {
     const notification = await prisma.notification.findUnique({ where: { id }, select: { userId: true } });
     if (!notification) {
-      return res.status(404).json({ status: 'error', code: 'NOT_FOUND', message: 'Notification not found.' });
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Notification not found.' } });
     }
 
     if (notification.userId === null) {
@@ -111,18 +111,18 @@ router.post('/:id/read', async (req, res) => {
         create: { notificationId: id, userId },
         update: {},
       });
-      return res.status(200).json({ status: 'success', message: 'Notification marked as read' });
+      return res.status(200).json({ ok: true, data: { message: 'Notification marked as read' } });
     }
 
     if (notification.userId !== userId) {
-      return res.status(403).json({ status: 'error', code: 'FORBIDDEN', message: 'Not your notification.' });
+      return res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'Not your notification.' } });
     }
 
     await prisma.notification.update({ where: { id }, data: { unread: false } });
-    res.status(200).json({ status: 'success', message: 'Notification marked as read' });
+    res.status(200).json({ ok: true, data: { message: 'Notification marked as read' } });
   } catch (err) {
     logger.warn('[Postgres DB Warn] Mark notification read failed:', err);
-    res.status(500).json({ status: 'error', message: 'Failed to mark notification read' });
+    res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to mark notification read' } });
   }
 });
 

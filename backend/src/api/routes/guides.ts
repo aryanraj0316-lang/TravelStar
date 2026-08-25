@@ -56,12 +56,12 @@ async function assertOwnsGuideProfile(
   });
 
   if (!guide) {
-    res.status(404).json({ status: 'error', code: 'GUIDE_PROFILE_NOT_FOUND', message: 'Guide profile not found.' });
+    res.status(404).json({ ok: false, error: { code: 'GUIDE_PROFILE_NOT_FOUND', message: 'Guide profile not found.' } });
     return false;
   }
 
   if (guide.userId !== requireUserId(req) && !isAdmin(req)) {
-    res.status(403).json({ status: 'error', code: 'FORBIDDEN', message: 'You do not have access to this guide profile.' });
+    res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'You do not have access to this guide profile.' } });
     return false;
   }
 
@@ -102,10 +102,10 @@ router.get('/', async (req, res) => {
       });
     }
 
-    return res.status(200).json({ status: 'success', data: mapped });
+    return res.status(200).json({ ok: true, data: mapped });
   } catch (err) {
     logger.error('[Guides] Get guides list error:', err);
-    return res.status(500).json({ status: 'error', message: 'Failed to retrieve guides' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve guides' } });
   }
 });
 
@@ -122,17 +122,13 @@ router.get('/profile', async (req, res) => {
     });
 
     if (!guide) {
-      return res.status(404).json({
-        status: 'error',
-        code: 'GUIDE_PROFILE_NOT_FOUND',
-        message: 'No guide profile yet. Apply to become a guide first.',
-      });
+      return res.status(404).json({ ok: false, error: { code: 'GUIDE_PROFILE_NOT_FOUND', message: 'No guide profile yet. Apply to become a guide first.' } });
     }
 
-    return res.status(200).json({ status: 'success', data: guide });
+    return res.status(200).json({ ok: true, data: guide });
   } catch (err) {
     logger.error('[Guides] Get profile error:', err);
-    return res.status(500).json({ status: 'error', message: 'Internal server error' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
   }
 });
 
@@ -151,12 +147,7 @@ const createGuideProfileSchema = z.object({
 router.post('/profile', async (req, res) => {
   const parsed = createGuideProfileSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({
-      status: 'error',
-      code: 'VALIDATION_FAILED',
-      message: 'Please provide your licence details to apply.',
-      details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
-    });
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Please provide your licence details to apply.', details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })) } });
   }
 
   const userId = requireUserId(req);
@@ -164,11 +155,7 @@ router.post('/profile', async (req, res) => {
   try {
     const existing = await prisma.guideProfile.findUnique({ where: { userId } });
     if (existing) {
-      return res.status(409).json({
-        status: 'error',
-        code: 'GUIDE_PROFILE_EXISTS',
-        message: 'You have already applied to become a guide.',
-      });
+      return res.status(409).json({ ok: false, error: { code: 'GUIDE_PROFILE_EXISTS', message: 'You have already applied to become a guide.' } });
     }
 
     const guide = await prisma.guideProfile.create({
@@ -181,10 +168,10 @@ router.post('/profile', async (req, res) => {
       include: { packages: true },
     });
 
-    return res.status(201).json({ status: 'success', data: guide });
+    return res.status(201).json({ ok: true, data: guide });
   } catch (err) {
     logger.error('[Guides] Create profile error:', err);
-    return res.status(500).json({ status: 'error', message: 'Could not submit your application.' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not submit your application.' } });
   }
 });
 
@@ -196,10 +183,10 @@ router.get('/pending', requireRole(['ADMIN']), async (req, res) => {
       include: { user: { include: { profile: true } } },
       orderBy: { id: 'asc' },
     });
-    return res.status(200).json({ status: 'success', data: pending });
+    return res.status(200).json({ ok: true, data: pending });
   } catch (err) {
     logger.error('[Guides] List pending error:', err);
-    return res.status(500).json({ status: 'error', message: 'Could not load the review queue.' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not load the review queue.' } });
   }
 });
 
@@ -208,11 +195,7 @@ const verifySchema = z.object({ decision: z.enum(['VERIFIED', 'REJECTED']) });
 router.post('/:id/verify', requireRole(['ADMIN']), async (req, res) => {
   const parsed = verifySchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({
-      status: 'error',
-      code: 'VALIDATION_FAILED',
-      message: 'decision must be VERIFIED or REJECTED.',
-    });
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'decision must be VERIFIED or REJECTED.' } });
   }
 
   const id = req.params.id!;
@@ -221,7 +204,7 @@ router.post('/:id/verify', requireRole(['ADMIN']), async (req, res) => {
   try {
     const guide = await prisma.guideProfile.findUnique({ where: { id } });
     if (!guide) {
-      return res.status(404).json({ status: 'error', code: 'GUIDE_PROFILE_NOT_FOUND', message: 'Guide profile not found.' });
+      return res.status(404).json({ ok: false, error: { code: 'GUIDE_PROFILE_NOT_FOUND', message: 'Guide profile not found.' } });
     }
 
     const [updated] = await prisma.$transaction([
@@ -238,10 +221,10 @@ router.post('/:id/verify', requireRole(['ADMIN']), async (req, res) => {
       }),
     ]);
 
-    return res.status(200).json({ status: 'success', data: updated });
+    return res.status(200).json({ ok: true, data: updated });
   } catch (err) {
     logger.error('[Guides] Verify error:', err);
-    return res.status(500).json({ status: 'error', message: 'Could not record the decision.' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not record the decision.' } });
   }
 });
 
@@ -254,7 +237,7 @@ router.get('/:id/earnings', async (req, res) => {
   const { id } = req.params;
   const parsedQuery = earningsQuerySchema.safeParse(req.query);
   if (!parsedQuery.success) {
-    return res.status(400).json({ status: 'error', code: 'VALIDATION_FAILED', message: 'Invalid range parameter.' });
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid range parameter.' } });
   }
   const { range } = parsedQuery.data;
 
@@ -271,7 +254,7 @@ router.get('/:id/earnings', async (req, res) => {
     });
 
     if (!guideProfile) {
-      return res.status(404).json({ status: 'error', message: 'Guide profile not found' });
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Guide profile not found' } });
     }
 
     const walletBalance = (guideProfile.user?.wallet?.balance ?? 0).toString();
@@ -338,9 +321,7 @@ router.get('/:id/earnings', async (req, res) => {
       c.amtText = c.amt > 0 ? `₹${Math.round(c.amt / 100) / 10}k` : '₹0';
     });
 
-    return res.status(200).json({
-      status: 'success',
-      data: {
+    return res.status(200).json({ ok: true, data: {
         range,
         walletBalance,
         totalEarnings,
@@ -348,11 +329,10 @@ router.get('/:id/earnings', async (req, res) => {
         activeLeadsCount,
         chartData,
         hasActivity: bookings.length > 0 || completedTripsCount > 0,
-      }
-    });
+      } });
   } catch (err) {
     logger.error('[Guides] Get earnings error:', err);
-    return res.status(500).json({ status: 'error', message: 'Failed to retrieve earnings stats' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve earnings stats' } });
   }
 });
 
@@ -364,10 +344,10 @@ router.get('/:id/packages', async (req, res) => {
       where: { guideProfileId: id },
       orderBy: { createdAt: 'desc' },
     });
-    return res.status(200).json({ status: 'success', data: packages });
+    return res.status(200).json({ ok: true, data: packages });
   } catch (err) {
     logger.error('[Guides] Get packages error:', err);
-    return res.status(500).json({ status: 'error', message: 'Failed to retrieve packages' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve packages' } });
   }
 });
 
@@ -393,7 +373,7 @@ async function assertPackageBelongsToGuide(
 ): Promise<boolean> {
   const pkg = await prisma.guidePackage.findUnique({ where: { id: packageId }, select: { guideProfileId: true } });
   if (!pkg || pkg.guideProfileId !== guideProfileId) {
-    res.status(404).json({ status: 'error', code: 'PACKAGE_NOT_FOUND', message: 'Package not found.' });
+    res.status(404).json({ ok: false, error: { code: 'PACKAGE_NOT_FOUND', message: 'Package not found.' } });
     return false;
   }
   return true;
@@ -403,7 +383,7 @@ router.post('/:id/packages', async (req, res) => {
   const { id } = req.params;
   const parsed = packageSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ status: 'error', code: 'VALIDATION_FAILED', message: 'Please check the package details.' });
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Please check the package details.' } });
   }
   try {
     if (!(await assertOwnsGuideProfile(req, res, id!))) return;
@@ -414,10 +394,10 @@ router.post('/:id/packages', async (req, res) => {
         ...parsed.data,
       },
     });
-    return res.status(201).json({ status: 'success', data: newPackage });
+    return res.status(201).json({ ok: true, data: newPackage });
   } catch (err) {
     logger.error('[Guides] Create package error:', err);
-    return res.status(500).json({ status: 'error', message: 'Failed to create package' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to create package' } });
   }
 });
 
@@ -425,7 +405,7 @@ router.put('/:id/packages/:packageId', async (req, res) => {
   const { id, packageId } = req.params;
   const parsed = packageUpdateSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ status: 'error', code: 'VALIDATION_FAILED', message: 'Please check the package details.' });
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Please check the package details.' } });
   }
   try {
     if (!(await assertOwnsGuideProfile(req, res, id!))) return;
@@ -442,10 +422,10 @@ router.put('/:id/packages/:packageId', async (req, res) => {
       where: { id: packageId },
       data,
     });
-    return res.status(200).json({ status: 'success', data: updated });
+    return res.status(200).json({ ok: true, data: updated });
   } catch (err) {
     logger.error('[Guides] Update package error:', err);
-    return res.status(500).json({ status: 'error', message: 'Failed to update package' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to update package' } });
   }
 });
 
@@ -458,10 +438,10 @@ router.delete('/:id/packages/:packageId', async (req, res) => {
     await prisma.guidePackage.delete({
       where: { id: packageId },
     });
-    return res.status(200).json({ status: 'success', message: 'Package deleted successfully' });
+    return res.status(200).json({ ok: true, data: { message: 'Package deleted successfully' } });
   } catch (err) {
     logger.error('[Guides] Delete package error:', err);
-    return res.status(500).json({ status: 'error', message: 'Failed to delete package' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to delete package' } });
   }
 });
 
@@ -473,10 +453,10 @@ router.get('/:id/reels', async (req, res) => {
       where: { guideProfileId: id },
       orderBy: { createdAt: 'desc' },
     });
-    return res.status(200).json({ status: 'success', data: reels });
+    return res.status(200).json({ ok: true, data: reels });
   } catch (err) {
     logger.error('[Guides] Get reels error:', err);
-    return res.status(500).json({ status: 'error', message: 'Failed to retrieve reels' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve reels' } });
   }
 });
 
@@ -494,10 +474,10 @@ router.post('/:id/reels', async (req, res) => {
         caption: caption || '',
       }
     });
-    return res.status(201).json({ status: 'success', data: newReel });
+    return res.status(201).json({ ok: true, data: newReel });
   } catch (err) {
     logger.error('[Guides] Create reel error:', err);
-    return res.status(500).json({ status: 'error', message: 'Failed to publish reel' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to publish reel' } });
   }
 });
 
@@ -510,7 +490,7 @@ router.get('/:id/live-status', async (req, res) => {
     });
 
     if (!guideProfile) {
-      return res.status(404).json({ status: 'error', message: 'Guide profile not found' });
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Guide profile not found' } });
     }
 
     const latestLoc = await prisma.liveLocation.findFirst({
@@ -527,20 +507,17 @@ router.get('/:id/live-status', async (req, res) => {
       orderBy: { bookingDate: 'desc' },
     });
 
-    return res.status(200).json({
-      status: 'success',
-      data: {
+    return res.status(200).json({ ok: true, data: {
         location: latestLoc,
         activeGuiding: activeBooking ? {
           bookingId: activeBooking.id,
           targetId: activeBooking.targetId,
           amount: activeBooking.amount,
         } : null,
-      }
-    });
+      } });
   } catch (err) {
     logger.error('[Guides] Get live status error:', err);
-    return res.status(500).json({ status: 'error', message: 'Failed to retrieve live status' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve live status' } });
   }
 });
 
@@ -556,7 +533,7 @@ router.post('/:id/live-status', async (req, res) => {
     });
 
     if (!guideProfile) {
-      return res.status(404).json({ status: 'error', message: 'Guide profile not found' });
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Guide profile not found' } });
     }
 
     const existingLoc = await prisma.liveLocation.findFirst({
@@ -583,10 +560,10 @@ router.post('/:id/live-status', async (req, res) => {
       });
     }
 
-    return res.status(200).json({ status: 'success', data: updatedLoc });
+    return res.status(200).json({ ok: true, data: updatedLoc });
   } catch (err) {
     logger.error('[Guides] Post live status error:', err);
-    return res.status(500).json({ status: 'error', message: 'Failed to update live location status' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to update live location status' } });
   }
 });
 
@@ -601,7 +578,7 @@ router.get('/:id/leads', async (req, res) => {
     });
 
     if (!guideProfile) {
-      return res.status(404).json({ status: 'error', message: 'Guide profile not found' });
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Guide profile not found' } });
     }
 
     const expertiseCities = guideProfile.expertisePlaces || [];
@@ -643,10 +620,10 @@ router.get('/:id/leads', async (req, res) => {
       };
     });
 
-    return res.status(200).json({ status: 'success', data: leads });
+    return res.status(200).json({ ok: true, data: leads });
   } catch (err) {
     logger.error('[Guides] Get leads error:', err);
-    return res.status(500).json({ status: 'error', message: 'Failed to retrieve leads' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve leads' } });
   }
 });
 

@@ -14,10 +14,10 @@ router.get('/', async (req, res) => {
     const stories = await prisma.travelStory.findMany({
       orderBy: { createdAt: 'desc' },
     });
-    res.status(200).json({ status: 'success', data: stories });
+    res.status(200).json({ ok: true, data: stories });
   } catch (err) {
     logger.error('[Stories] DB error:', err);
-    res.status(500).json({ status: 'error', message: 'Failed to retrieve stories' });
+    res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve stories' } });
   }
 });
 
@@ -35,12 +35,7 @@ const createStorySchema = z.object({
 router.post('/', async (req, res) => {
   const parsed = createStorySchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({
-      status: 'error',
-      code: 'VALIDATION_FAILED',
-      message: 'Please check the story details.',
-      details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
-    });
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Please check the story details.', details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })) } });
   }
 
   const userId = requireUserId(req);
@@ -66,10 +61,10 @@ router.post('/', async (req, res) => {
         hasReel,
       },
     });
-    res.status(201).json({ status: 'success', data: story });
+    res.status(201).json({ ok: true, data: story });
   } catch (err) {
     logger.warn('[Stories] Create error:', err);
-    res.status(500).json({ status: 'error', message: 'Failed to create story' });
+    res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to create story' } });
   }
 });
 
@@ -77,17 +72,17 @@ router.post('/', async (req, res) => {
 router.post('/:id/like', async (req, res) => {
   const parsedParams = z.object({ id: z.string().uuid() }).safeParse(req.params);
   if (!parsedParams.success) {
-    return res.status(400).json({ status: 'error', code: 'VALIDATION_FAILED', message: 'Invalid story id.' });
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid story id.' } });
   }
   try {
     const story = await prisma.travelStory.update({
       where: { id: parsedParams.data.id },
       data: { likesCount: { increment: 1 } },
     });
-    res.status(200).json({ status: 'success', data: story });
+    res.status(200).json({ ok: true, data: story });
   } catch (err) {
     logger.warn('[Stories] Like error:', err);
-    res.status(404).json({ status: 'error', message: 'Story not found' });
+    res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Story not found' } });
   }
 });
 

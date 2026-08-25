@@ -436,6 +436,7 @@ model GroupMember {
   attendance Attendance[]
 
   @@unique([groupId, userId])
+  @@index([userId])
 }
 
 model GroupPost {

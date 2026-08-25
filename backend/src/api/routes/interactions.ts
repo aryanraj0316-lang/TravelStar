@@ -8,12 +8,7 @@ import { claimSeatAndJoin, releaseSeatAndLeave } from '../../services/trip-membe
 const router = Router();
 
 function validationError(res: Response, issues: z.ZodIssue[]) {
-  return res.status(400).json({
-    status: 'error',
-    code: 'VALIDATION_FAILED',
-    message: 'Please check the submitted data.',
-    details: issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
-  });
+  return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Please check the submitted data.', details: issues.map((i) => ({ path: i.path.join('.'), message: i.message })) } });
 }
 
 // ──────────────────────────────────────────────────────────
@@ -41,17 +36,17 @@ router.post('/like', async (req, res) => {
     if (existing) {
       // Unlike
       await prisma.tripLike.delete({ where: { id: existing.id } });
-      return res.status(200).json({ status: 'success', liked: false, message: 'Trip unliked' });
+      return res.status(200).json({ ok: true, data: { liked: false, message: 'Trip unliked' } });
     } else {
       // Like
       await prisma.tripLike.create({
         data: { tripId, userId: uid },
       });
-      return res.status(201).json({ status: 'success', liked: true, message: 'Trip liked' });
+      return res.status(201).json({ ok: true, data: { liked: true, message: 'Trip liked' } });
     }
   } catch (err) {
     logger.warn('[Interactions] Like toggle error:', err);
-    return res.status(500).json({ status: 'error', message: 'Failed to toggle like' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to toggle like' } });
   }
 });
 
@@ -67,10 +62,10 @@ router.get('/likes', async (req, res) => {
     });
 
     const tripIds = likes.map((l) => l.tripId);
-    return res.status(200).json({ status: 'success', data: tripIds });
+    return res.status(200).json({ ok: true, data: tripIds });
   } catch (err) {
     logger.warn('[Interactions] Get likes error:', err);
-    return res.status(200).json({ status: 'success', data: [] });
+    return res.status(200).json({ ok: true, data: [] });
   }
 });
 
@@ -98,10 +93,10 @@ router.post('/join-request', async (req, res) => {
   try {
     const trip = await prisma.trip.findUnique({ where: { id: tripId } });
     if (!trip) {
-      return res.status(404).json({ status: 'error', code: 'TRIP_NOT_FOUND', message: 'Trip not found.' });
+      return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found.' } });
     }
     if (trip.creatorId === userId) {
-      return res.status(400).json({ status: 'error', message: 'You cannot request to join your own trip.' });
+      return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'You cannot request to join your own trip.' } });
     }
 
     const existing = await prisma.joinRequest.findUnique({
@@ -111,7 +106,7 @@ router.post('/join-request', async (req, res) => {
     });
 
     if (existing) {
-      return res.status(200).json({ status: 'success', data: existing, message: 'Join request already exists' });
+      return res.status(200).json({ ok: true, data: { ...existing, message: 'Join request already exists' } });
     }
 
     const joinReq = await prisma.joinRequest.create({
@@ -125,10 +120,10 @@ router.post('/join-request', async (req, res) => {
       },
     });
 
-    return res.status(201).json({ status: 'success', data: joinReq });
+    return res.status(201).json({ ok: true, data: joinReq });
   } catch (err) {
     logger.warn('[Interactions] Join request error:', err);
-    return res.status(500).json({ status: 'error', message: 'Failed to create join request' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to create join request' } });
   }
 });
 
@@ -143,10 +138,10 @@ router.get('/join-requests', async (req, res) => {
       orderBy: { createdAt: 'desc' },
     });
 
-    return res.status(200).json({ status: 'success', data: requests });
+    return res.status(200).json({ ok: true, data: requests });
   } catch (err) {
     logger.warn('[Interactions] Get join requests error:', err);
-    return res.status(200).json({ status: 'success', data: [] });
+    return res.status(200).json({ ok: true, data: [] });
   }
 });
 
@@ -166,18 +161,18 @@ router.delete('/join-request/:tripId', async (req, res) => {
     });
 
     if (!existing) {
-      return res.status(200).json({ status: 'success', message: 'Join request cancelled' });
+      return res.status(200).json({ ok: true, data: { message: 'Join request cancelled' } });
     }
 
     const result = await releaseSeatAndLeave(existing.id, null);
     if (!result.ok) {
-      return res.status(200).json({ status: 'success', message: 'Join request cancelled' });
+      return res.status(200).json({ ok: true, data: { message: 'Join request cancelled' } });
     }
 
-    return res.status(200).json({ status: 'success', message: 'Join request cancelled' });
+    return res.status(200).json({ ok: true, data: { message: 'Join request cancelled' } });
   } catch (err) {
     logger.warn('[Interactions] Cancel join request error:', err);
-    return res.status(500).json({ status: 'error', message: 'Failed to cancel join request' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to cancel join request' } });
   }
 });
 
@@ -188,10 +183,10 @@ router.get('/unread-count', async (req, res) => {
       where: { unread: true, userId: requireUserId(req) },
     });
 
-    return res.status(200).json({ status: 'success', data: { count } });
+    return res.status(200).json({ ok: true, data: { count } });
   } catch (err) {
     logger.warn('[Interactions] Unread count error:', err);
-    return res.status(200).json({ status: 'success', data: { count: 0 } });
+    return res.status(200).json({ ok: true, data: { count: 0 } });
   }
 });
 
@@ -236,10 +231,10 @@ router.get('/incoming-requests', async (req, res) => {
       };
     });
 
-    return res.status(200).json({ status: 'success', data: mapped });
+    return res.status(200).json({ ok: true, data: mapped });
   } catch (err) {
     logger.warn('[Interactions] Get incoming requests error:', err);
-    return res.status(500).json({ status: 'error', message: 'Failed to fetch incoming requests' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to fetch incoming requests' } });
   }
 });
 
@@ -267,24 +262,24 @@ const handleStatusChange = async (req: Request, res: Response) => {
     });
 
     if (!request) {
-      return res.status(404).json({ status: 'error', message: 'Join request not found' });
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Join request not found' } });
     }
 
     if (request.trip.creatorId !== tokenUserId) {
-      return res.status(403).json({ status: 'error', message: 'Forbidden. You are not the creator of this trip.' });
+      return res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'Forbidden. You are not the creator of this trip.' } });
     }
 
     if (status === 'APPROVED' && request.status !== 'PENDING') {
-      return res.status(400).json({ status: 'error', message: 'Join request is not pending' });
+      return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Join request is not pending' } });
     }
 
     if (status === 'REJECTED') {
       const released = await releaseSeatAndLeave(request.id, 'REJECTED');
       if (!released.ok) {
-        return res.status(404).json({ status: 'error', message: 'Join request not found' });
+        return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Join request not found' } });
       }
       const updated = await prisma.joinRequest.findUnique({ where: { id } });
-      return res.status(200).json({ status: 'success', data: updated, chatRoomId: null });
+      return res.status(200).json({ ok: true, data: { ...updated, chatRoomId: null } });
     }
 
     const claim = await claimSeatAndJoin(request.tripId, request.userId, {
@@ -296,9 +291,9 @@ const handleStatusChange = async (req: Request, res: Response) => {
 
     if (!claim.ok) {
       if (claim.reason === 'TRIP_NOT_FOUND') {
-        return res.status(404).json({ status: 'error', code: 'TRIP_NOT_FOUND', message: 'Trip not found.' });
+        return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found.' } });
       }
-      return res.status(409).json({ status: 'error', code: 'TRIP_FULL', message: 'No available seats on this trip.' });
+      return res.status(409).json({ ok: false, error: { code: 'TRIP_FULL', message: 'No available seats on this trip.' } });
     }
 
     const targetChatRoomId = claim.chatRoomId;
@@ -394,10 +389,10 @@ const handleStatusChange = async (req: Request, res: Response) => {
     });
 
     const updated = await prisma.joinRequest.findUnique({ where: { id: claim.joinRequestId } });
-    return res.status(200).json({ status: 'success', data: updated, chatRoomId: targetChatRoomId });
+    return res.status(200).json({ ok: true, data: { ...updated, chatRoomId: targetChatRoomId } });
   } catch (err) {
     logger.warn('[Interactions] Update join request status error:', err);
-    return res.status(500).json({ status: 'error', message: 'Failed to update join request status' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to update join request status' } });
   }
 };
 

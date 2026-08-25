@@ -11,6 +11,10 @@ const envSchema = z.object({
     .string()
     .default('http://localhost:8081,http://localhost:19006')
     .transform((v) => v.split(',').map((o) => o.trim()).filter(Boolean)),
+  // Optional: without it, sockets run single-instance (in-memory presence,
+  // no cross-instance room fan-out) — fine for local dev, not for a
+  // horizontally-scaled deployment. See docs/REMEDIATION.md §3.8.
+  REDIS_URL: z.string().min(1).optional(),
 });
 
 function loadEnv() {

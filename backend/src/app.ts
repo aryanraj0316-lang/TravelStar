@@ -1,3 +1,4 @@
+import 'express-async-errors';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import express from 'express';
@@ -8,6 +9,7 @@ dotenv.config();
 
 import { env } from './config/env';
 import { authenticateJWT } from './middleware/auth';
+import { requestId } from './middleware/request-id';
 import authRoutes from './api/routes/auth';
 import guideRoutes from './api/routes/guides';
 import safetyRoutes from './api/routes/safety';
@@ -27,6 +29,8 @@ const app = express();
 // Trust the proxy so req.ip is the real client address behind a load balancer —
 // per-IP rate limiting is meaningless without this.
 app.set('trust proxy', 1);
+
+app.use(requestId);
 
 app.use(
   helmet({
@@ -85,7 +89,7 @@ const skipInTest = () => env.NODE_ENV === 'test';
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 1000,
-  message: { status: 'error', code: 'RATE_LIMITED', message: 'Too many requests. Please slow down.' },
+  message: { ok: false, error: { code: 'RATE_LIMITED', message: 'Too many requests. Please slow down.' } },
 });
 
 const loginLimiter = rateLimit({
@@ -98,21 +102,21 @@ const loginLimiter = rateLimit({
     const email = typeof req.body?.email === 'string' ? req.body.email.toLowerCase() : '';
     return `${req.ip}:${email}`;
   },
-  message: { status: 'error', code: 'RATE_LIMITED', message: 'Too many sign-in attempts. Please try again later.' },
+  message: { ok: false, error: { code: 'RATE_LIMITED', message: 'Too many sign-in attempts. Please try again later.' } },
 });
 
 const registerLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 3,
   skip: skipInTest,
-  message: { status: 'error', code: 'RATE_LIMITED', message: 'Too many accounts created from this address.' },
+  message: { ok: false, error: { code: 'RATE_LIMITED', message: 'Too many accounts created from this address.' } },
 });
 
 const passwordResetLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 5,
   skip: skipInTest,
-  message: { status: 'error', code: 'RATE_LIMITED', message: 'Too many reset requests. Please try again later.' },
+  message: { ok: false, error: { code: 'RATE_LIMITED', message: 'Too many reset requests. Please try again later.' } },
 });
 
 const sosLimiter = rateLimit({
@@ -120,7 +124,7 @@ const sosLimiter = rateLimit({
   max: 10,
   skip: skipInTest,
   keyGenerator: (req) => req.user?.id ?? req.ip ?? 'unknown',
-  message: { status: 'error', code: 'RATE_LIMITED', message: 'Too many SOS alerts raised.' },
+  message: { ok: false, error: { code: 'RATE_LIMITED', message: 'Too many SOS alerts raised.' } },
 });
 
 const writeLimiter = rateLimit({
@@ -128,7 +132,7 @@ const writeLimiter = rateLimit({
   max: 60,
   keyGenerator: (req) => req.user?.id ?? req.ip ?? 'unknown',
   skip: (req) => skipInTest() || req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS',
-  message: { status: 'error', code: 'RATE_LIMITED', message: 'Too many requests. Please slow down.' },
+  message: { ok: false, error: { code: 'RATE_LIMITED', message: 'Too many requests. Please slow down.' } },
 });
 
 app.use('/api/', globalLimiter);
@@ -161,11 +165,11 @@ app.use('/api/v1/chats', chatRoutes);
 app.use('/api/v1/feed', feedRoutes);
 
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok', service: 'TravelStar Backend', timestamp: new Date() });
+  res.status(200).json({ ok: true, data: { status: 'ok', service: 'TravelStar Backend', timestamp: new Date().toISOString() } });
 });
 
 app.use('/api/v1', (req, res) => {
-  res.status(404).json({ status: 'error', code: 'NOT_FOUND', message: 'Endpoint not found.' });
+  res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Endpoint not found.' } });
 });
 
 app.use(errorHandler);

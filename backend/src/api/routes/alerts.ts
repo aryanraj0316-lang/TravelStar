@@ -15,10 +15,10 @@ router.get('/', async (req, res) => {
       where: { active: true },
       orderBy: { createdAt: 'desc' },
     });
-    res.status(200).json({ status: 'success', data: alerts });
+    res.status(200).json({ ok: true, data: alerts });
   } catch (err) {
     logger.error('[Alerts] DB error:', err);
-    res.status(500).json({ status: 'error', message: 'Failed to retrieve alerts' });
+    res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve alerts' } });
   }
 });
 
@@ -39,20 +39,15 @@ const createAlertSchema = z.object({
 router.post('/', requireRole(['ADMIN']), async (req, res) => {
   const parsed = createAlertSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({
-      status: 'error',
-      code: 'VALIDATION_FAILED',
-      message: 'Please check the alert details.',
-      details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
-    });
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Please check the alert details.', details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })) } });
   }
 
   try {
     const alert = await prisma.alert.create({ data: parsed.data });
-    res.status(201).json({ status: 'success', data: alert });
+    res.status(201).json({ ok: true, data: alert });
   } catch (err) {
     logger.error('[Alerts] Create error:', err);
-    res.status(500).json({ status: 'error', message: 'Failed to create alert' });
+    res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to create alert' } });
   }
 });
 

@@ -137,10 +137,10 @@ router.get('/', async (req, res) => {
       take: pageSize,
     });
 
-    return res.status(200).json({ status: 'success', data: dbTrips.map((t) => mapTrip(t, tokenUserId)) });
+    return res.status(200).json({ ok: true, data: dbTrips.map((t) => mapTrip(t, tokenUserId)) });
   } catch (err) {
     logger.error('[Trips] List error:', err);
-    return res.status(500).json({ status: 'error', message: 'Failed to retrieve trips' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve trips' } });
   }
 });
 
@@ -235,7 +235,7 @@ router.get('/nearby', (req, res) => {
       entryCost: 400,
     },
   ];
-  res.status(200).json({ status: 'success', data: nearbyPlaces });
+  res.status(200).json({ ok: true, data: nearbyPlaces });
 });
 
 // Get Trip by ID
@@ -246,12 +246,12 @@ router.get('/:id', async (req, res) => {
   try {
     const t = await prisma.trip.findUnique({ where: { id }, include: TRIP_INCLUDE });
     if (!t) {
-      return res.status(404).json({ status: 'error', code: 'TRIP_NOT_FOUND', message: 'Trip not found' });
+      return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found' } });
     }
-    return res.status(200).json({ status: 'success', data: mapTrip(t, tokenUserId) });
+    return res.status(200).json({ ok: true, data: mapTrip(t, tokenUserId) });
   } catch (err) {
     logger.error('[Trips] Get by id error:', err);
-    return res.status(500).json({ status: 'error', message: 'Failed to retrieve trip' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve trip' } });
   }
 });
 
@@ -286,12 +286,7 @@ const createTripSchema = z
 router.post('/', async (req, res) => {
   const parsed = createTripSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({
-      status: 'error',
-      code: 'VALIDATION_FAILED',
-      message: 'Please check the trip details.',
-      details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
-    });
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Please check the trip details.', details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })) } });
   }
   const data = parsed.data;
 
@@ -301,7 +296,7 @@ router.post('/', async (req, res) => {
     const userId = requireUserId(req);
     const user = await prisma.user.findUnique({ where: { id: userId }, include: { profile: true } });
     if (!user) {
-      return res.status(404).json({ status: 'error', code: 'USER_NOT_FOUND', message: 'Account not found.' });
+      return res.status(404).json({ ok: false, error: { code: 'USER_NOT_FOUND', message: 'Account not found.' } });
     }
 
     const durationDays = Math.max(
@@ -369,10 +364,10 @@ router.post('/', async (req, res) => {
       travelStyle,
     };
 
-    return res.status(201).json({ status: 'success', data: mappedTrip });
+    return res.status(201).json({ ok: true, data: mappedTrip });
   } catch (err) {
     logger.error('[Trips] Create error:', err);
-    return res.status(500).json({ status: 'error', message: 'Failed to create trip. Please try again.' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to create trip. Please try again.' } });
   }
 });
 
@@ -387,34 +382,32 @@ router.post('/:id/join', async (req, res) => {
   try {
     const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { privacy: true } });
     if (!trip) {
-      return res.status(404).json({ status: 'error', code: 'TRIP_NOT_FOUND', message: 'Trip not found.' });
+      return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found.' } });
     }
     if (trip.privacy !== 'PUBLIC') {
-      return res.status(400).json({
-        status: 'error',
-        code: 'APPROVAL_REQUIRED',
-        message: 'This trip requires the organiser\'s approval. Send a join request instead.',
-      });
+      return res.status(400).json({ ok: false, error: { code: 'APPROVAL_REQUIRED', message: 'This trip requires the organiser\'s approval. Send a join request instead.' } });
     }
 
     const result = await claimSeatAndJoin(tripId, userId);
 
     if (!result.ok) {
       if (result.reason === 'TRIP_NOT_FOUND') {
-        return res.status(404).json({ status: 'error', code: 'TRIP_NOT_FOUND', message: 'Trip not found.' });
+        return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found.' } });
       }
-      return res.status(409).json({ status: 'error', code: 'TRIP_FULL', message: 'No available seats on this trip.' });
+      return res.status(409).json({ ok: false, error: { code: 'TRIP_FULL', message: 'No available seats on this trip.' } });
     }
 
     const updated = await prisma.trip.findUnique({ where: { id: tripId }, include: TRIP_INCLUDE });
     return res.status(200).json({
-      status: 'success',
-      data: updated ? mapTrip(updated, userId) : null,
-      message: result.alreadyMember ? 'You are already a member of this trip.' : 'Successfully joined trip.',
+      ok: true,
+      data: {
+        trip: updated ? mapTrip(updated, userId) : null,
+        message: result.alreadyMember ? 'You are already a member of this trip.' : 'Successfully joined trip.',
+      },
     });
   } catch (err) {
     logger.error('[Trips] Join error:', err);
-    return res.status(500).json({ status: 'error', message: 'Failed to join trip.' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to join trip.' } });
   }
 });
 
@@ -431,7 +424,7 @@ const recommendationSchema = z.object({
 router.post('/recommendations', async (req, res) => {
   const parsed = recommendationSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ status: 'error', code: 'VALIDATION_FAILED', message: 'Invalid preferences.' });
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid preferences.' } });
   }
 
   try {
@@ -449,10 +442,10 @@ router.post('/recommendations', async (req, res) => {
     }));
 
     const results = RecommendationService.getRecommendations(parsed.data, groups);
-    res.status(200).json({ status: 'success', data: results });
+    res.status(200).json({ ok: true, data: results });
   } catch (err) {
     logger.error('[Trips] Recommendations error:', err);
-    res.status(500).json({ status: 'error', message: 'Failed to generate recommendations.' });
+    res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to generate recommendations.' } });
   }
 });
 
@@ -469,17 +462,14 @@ router.post('/:id/midway-join', async (req, res) => {
   try {
     const trip = await prisma.trip.findUnique({ where: { id } });
     if (!trip) {
-      return res.status(404).json({ status: 'error', code: 'TRIP_NOT_FOUND', message: 'Trip not found' });
+      return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found' } });
     }
 
     const fromIndex = trip.cities.indexOf(fromCity);
     const toIndex = trip.cities.indexOf(toCity);
 
     if (fromIndex === -1 || toIndex === -1 || fromIndex >= toIndex) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Invalid midway segments selected for this trip route',
-      });
+      return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid midway segments selected for this trip route' } });
     }
 
     const totalSegments = trip.cities.length - 1;
@@ -487,20 +477,17 @@ router.post('/:id/midway-join', async (req, res) => {
     const fullPrice = Number(trip.budget);
     const adjustedPrice = totalSegments > 0 ? Math.round((fullPrice / totalSegments) * requestedSegments) : fullPrice;
 
-    res.status(200).json({
-      status: 'success',
-      data: {
+    res.status(200).json({ ok: true, data: {
         tripId: id,
         fromCity,
         toCity,
         fullPrice: fullPrice.toString(),
         adjustedPrice: adjustedPrice.toString(),
         segmentsTraversed: trip.cities.slice(fromIndex, toIndex + 1),
-      },
-    });
+      } });
   } catch (err) {
     logger.error('[Trips] Midway-join error:', err);
-    res.status(500).json({ status: 'error', message: 'Failed to calculate midway price.' });
+    res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to calculate midway price.' } });
   }
 });
 
@@ -517,7 +504,7 @@ router.get('/:id/members', async (req, res) => {
     });
 
     if (!trip) {
-      return res.status(404).json({ status: 'error', code: 'TRIP_NOT_FOUND', message: 'Trip not found' });
+      return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found' } });
     }
 
     const creatorName = trip.creator.profile
@@ -549,10 +536,10 @@ router.get('/:id/members', async (req, res) => {
     });
 
     const participants = [creatorItem, ...memberItems];
-    return res.status(200).json({ status: 'success', data: participants });
+    return res.status(200).json({ ok: true, data: participants });
   } catch (err) {
     logger.error('[Trips] Get trip members error:', err);
-    return res.status(500).json({ status: 'error', message: 'Failed to fetch trip members' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to fetch trip members' } });
   }
 });
 

@@ -38,9 +38,9 @@ describe('POST /api/v1/auth/register', () => {
       .send({ name: 'Test User', email, password });
 
     expect(res.status).toBe(201);
-    expect(res.body.token).toBeTruthy();
-    expect(res.body.refreshToken).toBeTruthy();
-    expect(res.body.user.role).toBe('TOURIST');
+    expect(res.body.data.token).toBeTruthy();
+    expect(res.body.data.refreshToken).toBeTruthy();
+    expect(res.body.data.user.role).toBe('TOURIST');
   });
 
   it('never lets a client self-assign a role', async () => {
@@ -50,7 +50,7 @@ describe('POST /api/v1/auth/register', () => {
       .send({ name: 'Escalator', email: escalationEmail, password, role: 'ADMIN' });
 
     expect(res.status).toBe(201);
-    expect(res.body.user.role).toBe('TOURIST');
+    expect(res.body.data.user.role).toBe('TOURIST');
   });
 
   it('returns 409 and issues no token when the email is already registered (the account-takeover bug)', async () => {
@@ -59,7 +59,8 @@ describe('POST /api/v1/auth/register', () => {
       .send({ name: 'Someone Else', email, password: 'aDifferentPassword1' });
 
     expect(res.status).toBe(409);
-    expect(res.body.token).toBeUndefined();
+    expect(res.body.ok).toBe(false);
+    expect(res.body.data).toBeUndefined();
   });
 
   it('rejects passwords under the minimum length', async () => {
@@ -94,8 +95,8 @@ describe('POST /api/v1/auth/login', () => {
   it('accepts the correct password and returns a token pair', async () => {
     const res = await request(app).post('/api/v1/auth/login').send({ email, password });
     expect(res.status).toBe(200);
-    expect(res.body.token).toBeTruthy();
-    expect(res.body.refreshToken).toBeTruthy();
+    expect(res.body.data.token).toBeTruthy();
+    expect(res.body.data.refreshToken).toBeTruthy();
   });
 
   it('gives the same response shape for a nonexistent email as a wrong password (no account enumeration)', async () => {
@@ -139,18 +140,18 @@ describe('IDOR: SOS alert resolution (docs/REMEDIATION.md §2.5)', () => {
     const victim = await request(app)
       .post('/api/v1/auth/register')
       .send({ name: 'Victim', email: victimEmail, password: 'correcthorsebattery' });
-    victimToken = victim.body.token;
+    victimToken = victim.body.data.token;
 
     const attacker = await request(app)
       .post('/api/v1/auth/register')
       .send({ name: 'Attacker', email: attackerEmail, password: 'correcthorsebattery' });
-    attackerToken = attacker.body.token;
+    attackerToken = attacker.body.data.token;
 
     const sos = await request(app)
       .post('/api/v1/safety/sos')
       .set('Authorization', `Bearer ${victimToken}`)
       .send({ userName: 'Victim', latitude: 28.6, longitude: 77.2 });
-    alertId = sos.body.alertId;
+    alertId = sos.body.data.alertId;
   });
 
   it('refuses to let an unrelated user resolve someone else\'s active SOS alert', async () => {
@@ -176,7 +177,7 @@ describe('Guide verification (docs/REMEDIATION.md §2.6)', () => {
     const res = await request(app)
       .post('/api/v1/auth/register')
       .send({ name: 'Guide Applicant', email, password: 'correcthorsebattery' });
-    token = res.body.token;
+    token = res.body.data.token;
   });
 
   it('never auto-creates a VERIFIED guide profile on GET', async () => {
@@ -216,18 +217,18 @@ describe('Refresh token rotation and reuse detection (docs/REMEDIATION.md §2.8)
     const res = await request(app)
       .post('/api/v1/auth/register')
       .send({ name: 'Refresh Test', email, password: 'correcthorsebattery' });
-    refreshToken = res.body.refreshToken;
+    refreshToken = res.body.data.refreshToken;
   });
 
   it('rotates the refresh token on use', async () => {
     const res = await request(app).post('/api/v1/auth/refresh').send({ refreshToken });
     expect(res.status).toBe(200);
-    expect(res.body.refreshToken).not.toBe(refreshToken);
+    expect(res.body.data.refreshToken).not.toBe(refreshToken);
   });
 
   it('treats replaying the now-rotated token as reuse and revokes the session', async () => {
     const res = await request(app).post('/api/v1/auth/refresh').send({ refreshToken });
     expect(res.status).toBe(401);
-    expect(res.body.code).toBe('REFRESH_TOKEN_REUSED');
+    expect(res.body.error.code).toBe('REFRESH_TOKEN_REUSED');
   });
 });

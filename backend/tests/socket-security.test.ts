@@ -35,7 +35,7 @@ async function registerUser(label: string) {
   const res = await request(app)
     .post('/api/v1/auth/register')
     .send({ name: label, email, password: 'correcthorsebattery' });
-  return { id: res.body.user.id as string, token: res.body.token as string };
+  return { id: res.body.data.user.id as string, token: res.body.data.token as string };
 }
 
 function connectClient(token: string | undefined): Promise<ClientSocket> {

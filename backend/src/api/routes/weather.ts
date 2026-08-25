@@ -98,10 +98,10 @@ router.get('/', async (req, res) => {
     Promise.allSettled(refreshPromises).catch(() => {});
 
     // Return current data (may include slightly stale data on first load)
-    res.status(200).json({ status: 'success', data: locations });
+    res.status(200).json({ ok: true, data: locations });
   } catch (err) {
     logger.error('[Weather] DB error:', err);
-    res.status(500).json({ status: 'error', message: 'Failed to retrieve weather locations' });
+    res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve weather locations' } });
   }
 });
 
@@ -114,28 +114,25 @@ const liveWeatherQuerySchema = z.object({
 router.get('/live', async (req, res) => {
   const parsed = liveWeatherQuerySchema.safeParse(req.query);
   if (!parsed.success) {
-    return res.status(400).json({ status: 'error', code: 'VALIDATION_FAILED', message: 'Valid lat and lon query parameters are required.' });
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Valid lat and lon query parameters are required.' } });
   }
   const { lat, lon } = parsed.data;
 
   try {
     const live = await fetchLiveWeather(lat, lon);
     if (!live) {
-      return res.status(502).json({ status: 'error', message: 'Unable to fetch live weather data' });
+      return res.status(502).json({ ok: false, error: { code: 'INTERNAL', message: 'Unable to fetch live weather data' } });
     }
 
-    return res.status(200).json({
-      status: 'success',
-      data: {
+    return res.status(200).json({ ok: true, data: {
         latitude: lat,
         longitude: lon,
         ...live,
         fetchedAt: new Date().toISOString(),
-      },
-    });
+      } });
   } catch (err) {
     logger.error('[Weather] Live weather error:', err);
-    return res.status(500).json({ status: 'error', message: 'Failed to retrieve live weather' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve live weather' } });
   }
 });
 

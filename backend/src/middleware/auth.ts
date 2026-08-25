@@ -74,7 +74,7 @@ export const authenticateJWT = (
       next();
       return;
     }
-    res.status(401).json({ status: 'error', message: 'Unauthorized: Missing token' });
+    res.status(401).json({ ok: false, error: { code: 'UNAUTHORIZED', message: 'Unauthorized: Missing token' } });
     return;
   }
 
@@ -87,7 +87,7 @@ export const authenticateJWT = (
         next();
         return;
       }
-      res.status(403).json({ status: 'error', message: 'Forbidden: Invalid or expired token' });
+      res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'Forbidden: Invalid or expired token' } });
       return;
     }
     req.user = {
@@ -102,14 +102,11 @@ export const authenticateJWT = (
 export const requireRole = (allowedRoles: string[]) => {
   return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     if (!req.user) {
-      return res.status(401).json({ status: 'error', message: 'Unauthorized: User not authenticated' });
+      return res.status(401).json({ ok: false, error: { code: 'UNAUTHORIZED', message: 'Unauthorized: User not authenticated' } });
     }
 
     if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({
-        status: 'error',
-        message: `Forbidden: Restricted to roles [${allowedRoles.join(', ')}]`,
-      });
+      return res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: `Forbidden: Restricted to roles [${allowedRoles.join(', ')}]` } });
     }
 
     next();

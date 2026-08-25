@@ -6,6 +6,7 @@ declare global {
         role: string;
         email?: string;
       };
+      id: string;
     }
   }
 }

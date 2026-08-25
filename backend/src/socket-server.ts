@@ -1,31 +1,14 @@
 import type { Server as HttpServer } from 'http';
 import { Server } from 'socket.io';
+import { createAdapter } from '@socket.io/redis-adapter';
+import Redis from 'ioredis';
 import { z } from 'zod';
 import prisma from './services/db';
 import { logger } from './lib/logger';
 import { env } from './config/env';
 import { socketAuthMiddleware, getSocketUserId } from './lib/socket-auth';
 import { getSosAudienceUserIds } from './services/sos-audience';
-
-// Bounded, TTL-pruned presence cache. This is per-process — correct for a
-// single instance, and deliberately not the final answer: multi-instance
-// deployments need this in Redis with the Socket.io Redis adapter so rooms
-// and presence span processes (docs/REMEDIATION.md §3.8), which is Phase 11
-// work once there is an actual load-balanced deployment to build it against.
-// What this fixes now is the unbounded-growth memory leak: every entry has a
-// timestamp and stale ones are pruned on each write.
-const LOCATION_TTL_MS = 5 * 60 * 1000;
-const activeUserLocations = new Map<
-  string,
-  { latitude: number; longitude: number; updatedAt: number }
->();
-
-function pruneStaleLocations() {
-  const cutoff = Date.now() - LOCATION_TTL_MS;
-  for (const [userId, loc] of activeUserLocations) {
-    if (loc.updatedAt < cutoff) activeUserLocations.delete(userId);
-  }
-}
+import { setUserLocation } from './lib/presence-store';
 
 export function createSocketServer(httpServer: HttpServer): Server {
   const io = new Server(httpServer, {
@@ -34,6 +17,21 @@ export function createSocketServer(httpServer: HttpServer): Server {
       methods: ['GET', 'POST'],
     },
   });
+
+  // Without this, rooms and `io.to(userId).emit(...)` only reach sockets
+  // connected to *this* process — a second instance behind a load balancer
+  // would silently drop half of every broadcast. REDIS_URL is required for
+  // any horizontally scaled deployment (docs/REMEDIATION.md §3.8); a single
+  // dev instance runs fine without it.
+  if (env.REDIS_URL) {
+    const pubClient = new Redis(env.REDIS_URL);
+    const subClient = pubClient.duplicate();
+    pubClient.on('error', (err) => logger.error('[socket-adapter] Redis pub error:', err));
+    subClient.on('error', (err) => logger.error('[socket-adapter] Redis sub error:', err));
+    io.adapter(createAdapter(pubClient, subClient));
+  } else {
+    logger.warn('[socket-server] REDIS_URL not set — running single-instance (no cross-instance room fan-out).');
+  }
 
   async function emitToUsers(userIds: string[], event: string, payload: unknown) {
     userIds.forEach((userId) => io.to(userId).emit(event, payload));
@@ -149,8 +147,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
         if (!profile?.locationSharing) return; // Consent toggle off — emit nothing.
         if (!membership) return; // Not a member of this trip — nothing to broadcast to.
 
-        pruneStaleLocations();
-        activeUserLocations.set(userId, { latitude, longitude, updatedAt: Date.now() });
+        await setUserLocation(userId, { latitude, longitude });
 
         const members = await prisma.tripMember.findMany({ where: { tripId }, select: { userId: true } });
         const recipientIds = members.map((m) => m.userId).filter((id) => id !== userId);

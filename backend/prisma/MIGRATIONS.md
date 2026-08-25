@@ -18,3 +18,5 @@ Prisma has no automatic "undo" for an applied migration. To roll back:
 
 - `000000000000_baseline` — the schema as it stood before Phase 4, baselined with `prisma migrate diff --from-empty` and marked applied via `prisma migrate resolve` (the database already had this schema from earlier `db push` usage, so the migration was never executed — only recorded).
 - `000000000001_phase4_data_layer` — money columns to `Decimal(12,2)`, free-form strings to enums, missing indexes, referential integrity fixes, and the `availableSeats >= 0` check constraint. Hand-edited from the raw `prisma migrate diff` output to convert existing column data with `USING` casts instead of the default drop-and-recreate, which would have silently discarded the live Alert/MonsoonAdvisory content — see the migration file's header comment.
+- `000000000002_notification_read` — per-user read state for broadcast notifications (§5.8).
+- `000000000003_group_member_user_index_and_default_drift` — the missing `GroupMember.userId` index (§4.3) plus unrelated DB-level `updatedAt` default drift Prisma detected against an earlier `db push` state.

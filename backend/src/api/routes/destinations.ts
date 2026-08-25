@@ -13,10 +13,10 @@ router.get('/', async (req, res) => {
     const destinations = await prisma.destination.findMany({
       orderBy: { rank: 'asc' },
     });
-    res.status(200).json({ status: 'success', data: destinations });
+    res.status(200).json({ ok: true, data: destinations });
   } catch (err) {
     logger.error('[Destinations] DB error:', err);
-    res.status(500).json({ status: 'error', message: 'Failed to retrieve destinations' });
+    res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve destinations' } });
   }
 });
 
@@ -32,20 +32,15 @@ const createDestinationSchema = z.object({
 router.post('/', async (req, res) => {
   const parsed = createDestinationSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({
-      status: 'error',
-      code: 'VALIDATION_FAILED',
-      message: 'Please check the destination details.',
-      details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
-    });
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Please check the destination details.', details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })) } });
   }
 
   try {
     const destination = await prisma.destination.create({ data: parsed.data });
-    res.status(201).json({ status: 'success', data: destination });
+    res.status(201).json({ ok: true, data: destination });
   } catch (err) {
     logger.warn('[Destinations] Create error:', err);
-    res.status(500).json({ status: 'error', message: 'Failed to create destination' });
+    res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to create destination' } });
   }
 });
 

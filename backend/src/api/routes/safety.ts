@@ -8,12 +8,7 @@ import { getSosAudienceUserIds } from '../../services/sos-audience';
 const router = Router();
 
 function validationError(res: Response, issues: z.ZodIssue[]) {
-  return res.status(400).json({
-    status: 'error',
-    code: 'VALIDATION_FAILED',
-    message: 'Please check the submitted data.',
-    details: issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
-  });
+  return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Please check the submitted data.', details: issues.map((i) => ({ path: i.path.join('.'), message: i.message })) } });
 }
 
 // GET /safety/sos — List all active SOS alerts (Prisma-backed, persists across restarts)
@@ -40,10 +35,10 @@ router.get('/sos', async (req, res) => {
       status: a.status,
     }));
 
-    res.status(200).json({ status: 'success', data: mapped });
+    res.status(200).json({ ok: true, data: mapped });
   } catch (err) {
     logger.error('[Safety] Get SOS alerts error:', err);
-    res.status(500).json({ status: 'error', message: 'Failed to retrieve SOS alerts' });
+    res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve SOS alerts' } });
   }
 });
 
@@ -87,14 +82,16 @@ router.post('/sos', async (req, res) => {
     }
 
     res.status(201).json({
-      status: 'success',
-      alertId: newAlert.id,
-      data: alertPayload,
-      message: 'SOS trigger received. Nearby local assistance, police, and emergency support notified.',
+      ok: true,
+      data: {
+        ...alertPayload,
+        alertId: newAlert.id,
+        message: 'SOS trigger received. Nearby local assistance, police, and emergency support notified.',
+      },
     });
   } catch (err) {
     logger.error('[Safety] Create SOS alert error:', err);
-    res.status(500).json({ status: 'error', message: 'Failed to create SOS alert' });
+    res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to create SOS alert' } });
   }
 });
 
@@ -109,17 +106,13 @@ router.post('/sos/:id/resolve', async (req, res) => {
     });
 
     if (!alert) {
-      return res.status(404).json({ status: 'error', code: 'NOT_FOUND', message: 'SOS alert not found.' });
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'SOS alert not found.' } });
     }
 
     // Only the person in distress or an admin/responder may stand down an
     // alert. Anyone else silently resolving it could leave someone stranded.
     if (alert.userId !== userId && !isAdmin(req)) {
-      return res.status(403).json({
-        status: 'error',
-        code: 'FORBIDDEN',
-        message: 'You are not authorised to resolve this alert.',
-      });
+      return res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'You are not authorised to resolve this alert.' } });
     }
 
     await prisma.sOSAlert.update({
@@ -134,10 +127,10 @@ router.post('/sos/:id/resolve', async (req, res) => {
       audience.forEach((uid: string) => io.to(uid).emit('sosResolved', { id }));
     }
 
-    res.status(200).json({ status: 'success', message: `SOS Alert ${id} marked as resolved` });
+    res.status(200).json({ ok: true, data: { message: `SOS Alert ${id} marked as resolved` } });
   } catch (err) {
     logger.error('[Safety] Resolve SOS error:', err);
-    res.status(500).json({ status: 'error', message: 'Failed to resolve SOS alert' });
+    res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to resolve SOS alert' } });
   }
 });
 
@@ -150,10 +143,10 @@ router.get('/contacts', async (req, res) => {
       where: { userId },
       orderBy: { name: 'asc' },
     });
-    return res.status(200).json({ status: 'success', data: contacts });
+    return res.status(200).json({ ok: true, data: contacts });
   } catch (err) {
     logger.error('[Safety] Get contacts error:', err);
-    return res.status(500).json({ status: 'error', message: 'Failed to retrieve emergency contacts' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve emergency contacts' } });
   }
 });
 
@@ -180,10 +173,10 @@ router.post('/contacts', async (req, res) => {
         phoneNumber,
       },
     });
-    return res.status(201).json({ status: 'success', data: contact });
+    return res.status(201).json({ ok: true, data: contact });
   } catch (err) {
     logger.error('[Safety] Create contact error:', err);
-    return res.status(500).json({ status: 'error', message: 'Failed to create emergency contact' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to create emergency contact' } });
   }
 });
 
@@ -195,12 +188,12 @@ router.delete('/contacts/:id', async (req, res) => {
     // Scoped by userId so one user cannot delete another's contacts.
     const result = await prisma.emergencyContact.deleteMany({ where: { id, userId } });
     if (result.count === 0) {
-      return res.status(404).json({ status: 'error', code: 'NOT_FOUND', message: 'Contact not found.' });
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Contact not found.' } });
     }
-    return res.status(200).json({ status: 'success', message: 'Contact deleted' });
+    return res.status(200).json({ ok: true, data: { message: 'Contact deleted' } });
   } catch (err) {
     logger.error('[Safety] Delete contact error:', err);
-    return res.status(500).json({ status: 'error', message: 'Failed to delete contact' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to delete contact' } });
   }
 });
 
@@ -216,10 +209,10 @@ router.get('/monsoon-advisory', async (req, res) => {
     const advisories = await prisma.monsoonAdvisory.findMany({
       orderBy: { createdAt: 'desc' },
     });
-    res.status(200).json({ status: 'success', data: advisories });
+    res.status(200).json({ ok: true, data: advisories });
   } catch (err) {
     logger.error('[Safety] Get monsoon advisories error:', err);
-    res.status(500).json({ status: 'error', message: 'Failed to retrieve monsoon advisories' });
+    res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve monsoon advisories' } });
   }
 });
 

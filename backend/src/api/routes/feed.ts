@@ -14,7 +14,7 @@ const feedQuerySchema = z.object({
 router.get('/', async (req, res) => {
   const parsed = feedQuerySchema.safeParse(req.query);
   if (!parsed.success) {
-    return res.status(400).json({ status: 'error', code: 'VALIDATION_FAILED', message: 'Invalid feed query.' });
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid feed query.' } });
   }
 
   try {
@@ -94,14 +94,10 @@ router.get('/', async (req, res) => {
       ? lastItem.createdAt.toISOString()
       : null;
 
-    return res.status(200).json({
-      status: 'success',
-      data: merged,
-      nextCursor,
-    });
+    return res.status(200).json({ ok: true, data: merged, meta: { cursor: nextCursor ?? undefined } });
   } catch (err) {
     logger.error('[Feed] Get unified feed error:', err);
-    return res.status(500).json({ status: 'error', message: 'Failed to retrieve feed' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve feed' } });
   }
 });
 

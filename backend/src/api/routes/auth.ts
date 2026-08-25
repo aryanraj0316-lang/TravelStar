@@ -104,30 +104,21 @@ const registerSchema = z.object({
 router.post('/register', async (req, res) => {
   const parsed = registerSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({
-      status: 'error',
-      code: 'VALIDATION_FAILED',
-      message: 'Please check the details you entered.',
-      details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
-    });
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Please check the details you entered.', details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })) } });
   }
 
   const { name, email, password } = parsed.data;
 
   const weak = validatePasswordStrength(password);
   if (weak) {
-    return res.status(400).json({ status: 'error', code: 'WEAK_PASSWORD', message: weak });
+    return res.status(400).json({ ok: false, error: { code: 'WEAK_PASSWORD', message: weak } });
   }
 
   try {
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
       // Never issue a token from the registration path for an existing account.
-      return res.status(409).json({
-        status: 'error',
-        code: 'EMAIL_ALREADY_REGISTERED',
-        message: 'An account with this email already exists. Please sign in instead.',
-      });
+      return res.status(409).json({ ok: false, error: { code: 'EMAIL_ALREADY_REGISTERED', message: 'An account with this email already exists. Please sign in instead.' } });
     }
 
     const passwordHash = await hashPassword(password);
@@ -163,14 +154,12 @@ router.post('/register', async (req, res) => {
     const refreshToken = await issueRefreshToken(user.id, requestMeta(req));
 
     return res.status(201).json({
-      status: 'success',
-      token: accessToken,
-      refreshToken,
-      user: toClientProfile(user as unknown as UserWithRelations),
+      ok: true,
+      data: { token: accessToken, refreshToken, user: toClientProfile(user as unknown as UserWithRelations) },
     });
   } catch (err) {
     logger.error('[Auth] Registration failed:', err);
-    return res.status(500).json({ status: 'error', code: 'INTERNAL', message: 'Registration failed. Please try again.' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Registration failed. Please try again.' } });
   }
 });
 
@@ -184,21 +173,13 @@ const loginSchema = z.object({
 router.post('/login', async (req, res) => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({
-      status: 'error',
-      code: 'VALIDATION_FAILED',
-      message: 'Please enter a valid email and password.',
-    });
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Please enter a valid email and password.' } });
   }
 
   const { email, password } = parsed.data;
 
-  if (isLockedOut(email)) {
-    return res.status(429).json({
-      status: 'error',
-      code: 'ACCOUNT_LOCKED',
-      message: 'Too many failed attempts. Please try again in 15 minutes.',
-    });
+  if (await isLockedOut(email)) {
+    return res.status(429).json({ ok: false, error: { code: 'ACCOUNT_LOCKED', message: 'Too many failed attempts. Please try again in 15 minutes.' } });
   }
 
   try {
@@ -209,21 +190,17 @@ router.post('/login', async (req, res) => {
 
     // Same response for "no such user" and "wrong password" so the endpoint
     // cannot be used to enumerate which emails are registered.
-    const invalid = () => {
-      recordFailure(email);
-      return res.status(401).json({
-        status: 'error',
-        code: 'INVALID_CREDENTIALS',
-        message: 'Incorrect email or password.',
-      });
+    const invalid = async () => {
+      await recordFailure(email);
+      return res.status(401).json({ ok: false, error: { code: 'INVALID_CREDENTIALS', message: 'Incorrect email or password.' } });
     };
 
-    if (!user?.passwordHash) return invalid();
+    if (!user?.passwordHash) return await invalid();
 
     const ok = await verifyPassword(user.passwordHash, password);
-    if (!ok) return invalid();
+    if (!ok) return await invalid();
 
-    recordSuccess(email);
+    await recordSuccess(email);
 
     const accessToken = issueAccessToken({
       id: user.id,
@@ -234,14 +211,12 @@ router.post('/login', async (req, res) => {
     const refreshToken = await issueRefreshToken(user.id, requestMeta(req));
 
     return res.status(200).json({
-      status: 'success',
-      token: accessToken,
-      refreshToken,
-      user: toClientProfile(user as unknown as UserWithRelations),
+      ok: true,
+      data: { token: accessToken, refreshToken, user: toClientProfile(user as unknown as UserWithRelations) },
     });
   } catch (err) {
     logger.error('[Auth] Login failed:', err);
-    return res.status(500).json({ status: 'error', code: 'INTERNAL', message: 'Sign in failed. Please try again.' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Sign in failed. Please try again.' } });
   }
 });
 
@@ -252,17 +227,13 @@ const refreshSchema = z.object({ refreshToken: z.string().min(1) });
 router.post('/refresh', async (req, res) => {
   const parsed = refreshSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ status: 'error', code: 'VALIDATION_FAILED', message: 'Missing refresh token.' });
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Missing refresh token.' } });
   }
 
   try {
     const result = await rotateRefreshToken(parsed.data.refreshToken, requestMeta(req));
     if (!result.ok) {
-      return res.status(401).json({
-        status: 'error',
-        code: result.reason === 'REUSED' ? 'REFRESH_TOKEN_REUSED' : 'REFRESH_TOKEN_INVALID',
-        message: 'Your session has expired. Please sign in again.',
-      });
+      return res.status(401).json({ ok: false, error: { code: result.reason === 'REUSED' ? 'REFRESH_TOKEN_REUSED' : 'REFRESH_TOKEN_INVALID', message: 'Your session has expired. Please sign in again.' } });
     }
 
     const user = await prisma.user.findUnique({
@@ -270,7 +241,7 @@ router.post('/refresh', async (req, res) => {
       include: USER_INCLUDE,
     });
     if (!user) {
-      return res.status(401).json({ status: 'error', code: 'REFRESH_TOKEN_INVALID', message: 'Your session has expired. Please sign in again.' });
+      return res.status(401).json({ ok: false, error: { code: 'REFRESH_TOKEN_INVALID', message: 'Your session has expired. Please sign in again.' } });
     }
 
     const accessToken = issueAccessToken({
@@ -281,14 +252,12 @@ router.post('/refresh', async (req, res) => {
     });
 
     return res.status(200).json({
-      status: 'success',
-      token: accessToken,
-      refreshToken: result.refreshToken,
-      user: toClientProfile(user as unknown as UserWithRelations),
+      ok: true,
+      data: { token: accessToken, refreshToken: result.refreshToken, user: toClientProfile(user as unknown as UserWithRelations) },
     });
   } catch (err) {
     logger.error('[Auth] Refresh failed:', err);
-    return res.status(500).json({ status: 'error', code: 'INTERNAL', message: 'Could not refresh session.' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not refresh session.' } });
   }
 });
 
@@ -302,10 +271,10 @@ router.post('/logout', async (req, res) => {
     } else {
       await revokeAllUserSessions(requireUserId(req));
     }
-    return res.status(200).json({ status: 'success', message: 'Signed out.' });
+    return res.status(200).json({ ok: true, data: { message: 'Signed out.' } });
   } catch (err) {
     logger.error('[Auth] Logout failed:', err);
-    return res.status(500).json({ status: 'error', code: 'INTERNAL', message: 'Could not sign out.' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not sign out.' } });
   }
 });
 
@@ -318,10 +287,7 @@ router.post('/forgot-password', async (req, res) => {
   // Always report success — revealing whether an email is registered is an
   // account-enumeration leak.
   const genericOk = () =>
-    res.status(200).json({
-      status: 'success',
-      message: 'If that email is registered, a reset link has been sent.',
-    });
+    res.status(200).json({ ok: true, data: { message: 'If that email is registered, a reset link has been sent.' } });
 
   if (!parsed.success) return genericOk();
 
@@ -355,16 +321,12 @@ const resetSchema = z.object({
 router.post('/reset-password', async (req, res) => {
   const parsed = resetSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({
-      status: 'error',
-      code: 'VALIDATION_FAILED',
-      message: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`,
-    });
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.` } });
   }
 
   const weak = validatePasswordStrength(parsed.data.password);
   if (weak) {
-    return res.status(400).json({ status: 'error', code: 'WEAK_PASSWORD', message: weak });
+    return res.status(400).json({ ok: false, error: { code: 'WEAK_PASSWORD', message: weak } });
   }
 
   try {
@@ -373,11 +335,7 @@ router.post('/reset-password', async (req, res) => {
     });
 
     if (!record || record.usedAt || record.expiresAt.getTime() < Date.now()) {
-      return res.status(400).json({
-        status: 'error',
-        code: 'RESET_TOKEN_INVALID',
-        message: 'This reset link is invalid or has expired.',
-      });
+      return res.status(400).json({ ok: false, error: { code: 'RESET_TOKEN_INVALID', message: 'This reset link is invalid or has expired.' } });
     }
 
     const passwordHash = await hashPassword(parsed.data.password);
@@ -392,10 +350,10 @@ router.post('/reset-password', async (req, res) => {
       }),
     ]);
 
-    return res.status(200).json({ status: 'success', message: 'Password updated. Please sign in.' });
+    return res.status(200).json({ ok: true, data: { message: 'Password updated. Please sign in.' } });
   } catch (err) {
     logger.error('[Auth] Reset-password failed:', err);
-    return res.status(500).json({ status: 'error', code: 'INTERNAL', message: 'Could not reset password.' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not reset password.' } });
   }
 });
 
@@ -406,12 +364,12 @@ router.get('/profile', async (req, res) => {
     const userId = requireUserId(req);
     const user = await prisma.user.findUnique({ where: { id: userId }, include: USER_INCLUDE });
     if (!user) {
-      return res.status(404).json({ status: 'error', code: 'USER_NOT_FOUND', message: 'Account not found.' });
+      return res.status(404).json({ ok: false, error: { code: 'USER_NOT_FOUND', message: 'Account not found.' } });
     }
-    return res.status(200).json({ status: 'success', data: toClientProfile(user as unknown as UserWithRelations) });
+    return res.status(200).json({ ok: true, data: toClientProfile(user as unknown as UserWithRelations) });
   } catch (err) {
     logger.error('[Auth] Get profile failed:', err);
-    return res.status(500).json({ status: 'error', code: 'INTERNAL', message: 'Could not load your profile.' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not load your profile.' } });
   }
 });
 
@@ -438,12 +396,7 @@ function toStringArray(value: string | string[] | undefined): string[] | undefin
 router.put('/profile', async (req, res) => {
   const parsed = updateProfileSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({
-      status: 'error',
-      code: 'VALIDATION_FAILED',
-      message: 'Please check the details you entered.',
-      details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
-    });
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Please check the details you entered.', details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })) } });
   }
 
   // `role` is deliberately absent from the schema: a client cannot change its
@@ -503,12 +456,12 @@ router.put('/profile', async (req, res) => {
 
     const user = await prisma.user.findUnique({ where: { id: userId }, include: USER_INCLUDE });
     if (!user) {
-      return res.status(404).json({ status: 'error', code: 'USER_NOT_FOUND', message: 'Account not found.' });
+      return res.status(404).json({ ok: false, error: { code: 'USER_NOT_FOUND', message: 'Account not found.' } });
     }
-    return res.status(200).json({ status: 'success', data: toClientProfile(user as unknown as UserWithRelations) });
+    return res.status(200).json({ ok: true, data: toClientProfile(user as unknown as UserWithRelations) });
   } catch (err) {
     logger.error('[Auth] Update profile failed:', err);
-    return res.status(500).json({ status: 'error', code: 'INTERNAL', message: 'Could not save your profile.' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not save your profile.' } });
   }
 });
 

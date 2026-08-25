@@ -29,11 +29,7 @@ async function assertChatRoomMember(
     where: { chatRoomId_userId: { chatRoomId, userId } },
   });
   if (!membership) {
-    res.status(403).json({
-      status: 'error',
-      code: 'FORBIDDEN',
-      message: 'You are not a member of this chat room.',
-    });
+    res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'You are not a member of this chat room.' } });
     return false;
   }
   return true;
@@ -118,10 +114,10 @@ router.get('/', async (req, res) => {
 
     rooms.sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
 
-    return res.status(200).json({ status: 'success', data: rooms });
+    return res.status(200).json({ ok: true, data: rooms });
   } catch (err) {
     logger.warn('[Chats] Get chat rooms list error:', err);
-    return res.status(500).json({ status: 'error', message: 'Failed to retrieve chat rooms' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve chat rooms' } });
   }
 });
 
@@ -129,7 +125,7 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   const parsedParams = roomIdParamSchema.safeParse(req.params);
   if (!parsedParams.success) {
-    return res.status(400).json({ status: 'error', code: 'VALIDATION_FAILED', message: 'Invalid chat room id.' });
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid chat room id.' } });
   }
   const { id } = parsedParams.data;
   const tokenUserId = requireUserId(req);
@@ -152,7 +148,7 @@ router.get('/:id', async (req, res) => {
     });
 
     if (!room) {
-      return res.status(404).json({ status: 'error', message: 'Chat room not found' });
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Chat room not found' } });
     }
 
     const membersList = room.members.map((m) => ({
@@ -164,19 +160,16 @@ router.get('/:id', async (req, res) => {
       role: m.user.id === room.trip?.creatorId ? 'Organizer' : 'Member',
     }));
 
-    return res.status(200).json({
-      status: 'success',
-      data: {
+    return res.status(200).json({ ok: true, data: {
         id: room.id,
         tripId: room.trip?.id || null,
         name: room.name || room.trip?.name || 'Group Chat',
         avatar: room.trip?.coverImage || 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=150&q=80',
         members: membersList,
-      }
-    });
+      } });
   } catch (err) {
     logger.warn('[Chats] Get chat room details error:', err);
-    return res.status(500).json({ status: 'error', message: 'Failed to retrieve chat room details' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve chat room details' } });
   }
 });
 
@@ -187,7 +180,7 @@ router.get('/:id/messages', async (req, res) => {
   const parsedParams = roomIdParamSchema.safeParse(req.params);
   const parsedQuery = messagesQuerySchema.safeParse(req.query);
   if (!parsedParams.success || !parsedQuery.success) {
-    return res.status(400).json({ status: 'error', code: 'VALIDATION_FAILED', message: 'Invalid request.' });
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid request.' } });
   }
   const { id } = parsedParams.data;
   const { cursor, take } = parsedQuery.data;
@@ -239,14 +232,10 @@ router.get('/:id/messages', async (req, res) => {
       })
       .reverse(); // chronological order for display
 
-    return res.status(200).json({
-      status: 'success',
-      data: history,
-      meta: { nextCursor: hasMore ? page[0]?.id ?? null : null },
-    });
+    return res.status(200).json({ ok: true, data: history, meta: { cursor: hasMore ? page[0]?.id ?? undefined : undefined } });
   } catch (err) {
     logger.warn('[Chats] Get message history error:', err);
-    return res.status(500).json({ status: 'error', message: 'Failed to retrieve chat messages' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve chat messages' } });
   }
 });
 
@@ -254,7 +243,7 @@ router.get('/:id/messages', async (req, res) => {
 router.post('/:id/read', async (req, res) => {
   const parsedParams = roomIdParamSchema.safeParse(req.params);
   if (!parsedParams.success) {
-    return res.status(400).json({ status: 'error', code: 'VALIDATION_FAILED', message: 'Invalid chat room id.' });
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid chat room id.' } });
   }
   const { id } = parsedParams.data;
   const tokenUserId = requireUserId(req);
@@ -295,10 +284,10 @@ router.post('/:id/read', async (req, res) => {
       );
     }
 
-    return res.status(200).json({ status: 'success', message: 'Messages marked as read' });
+    return res.status(200).json({ ok: true, data: { message: 'Messages marked as read' } });
   } catch (err) {
     logger.warn('[Chats] Mark messages read error:', err);
-    return res.status(500).json({ status: 'error', message: 'Failed to mark messages as read' });
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to mark messages as read' } });
   }
 });
 
