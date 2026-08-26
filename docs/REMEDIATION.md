@@ -1232,7 +1232,17 @@ partial, exactly what's blocking full completion.
       and authoritative, with 7 new backend tests. See commit 67380bb —
       verified live via browser (city-picker filtering, price math) since
       the real Neon DB has no seed data to test the full round trip
-      against and I didn't want to write test data there unasked.)
+      against and I didn't want to write test data there unasked.
+      §8.9 done (partially — SOS/hotline pieces only, contacts CRUD and
+      resolve-authorization were already correct from Phase 2) — every
+      SOS trigger now uses real device GPS via new src/lib/device-
+      location.ts instead of a hardcoded/hashed coordinate; added the
+      missing expo-location config plugin to app.json (would have broken
+      the permission prompt on a real build regardless); the fake "24/7
+      SOS Hotline" that dialed nothing now calls tel:112 (India's real
+      national emergency number) with no confirmation step. Verified live
+      by mocking browser geolocation to Mumbai and capturing the actual
+      outgoing POST /safety/sos body. See commit 3e45890.)
 - [ ] Phase 9 — Design system, i18n, accessibility (not started)
 - [ ] Phase 10 — Performance (not started)
 - [ ] Phase 11 — Observability and operations (not started)
