@@ -1143,7 +1143,18 @@ partial, exactly what's blocking full completion.
 - [x] Phase 3 — Real-time layer (done, verified: build ✅ typecheck ✅ tests ✅ — includes §3.8 Redis adapter/presence store added this run)
 - [x] Phase 4 — Data layer (done, verified: build ✅ typecheck ✅ tests ✅ — migrations, indexes, enums, referential integrity re-verified this run)
 - [x] Phase 5 — Backend correctness (done, verified: build ✅ typecheck ✅ tests ✅ — standard API envelope, async error handling, queryWithRetry all closed out this run)
-- [ ] Phase 6 — API contract and client data layer (not started)
+- [ ] Phase 6 — API contract and client data layer (in progress: §6.1 real
+      EXPO_PUBLIC_API_URL + §6.2 typed ApiError/timeouts/retries/401
+      interceptor done; §0.2.6 toast/confirm added and wired through
+      AppContext mutations; §6.5 providerValue deps fixed. Not started:
+      §6.3 TanStack Query adoption, offline mutation queue, NetInfo banner;
+      §6.4 shared client/server types. See commit 49b1206. Also found:
+      `npm run lint` at HEAD (before this session) already had 381 errors —
+      Phase 1's "lint ✅" checkbox above is stale, most likely because
+      eslint-plugin-react-hooks' new React Compiler rules (refs/purity/
+      immutability/set-state-in-effect/preserve-manual-memoization) weren't
+      being enforced when Phase 1 was last verified. Needs a decision — see
+      chat.)
 - [ ] Phase 7 — Navigation and app architecture (not started)
 - [ ] Phase 8 — Feature completion (not started)
 - [ ] Phase 9 — Design system, i18n, accessibility (not started)
