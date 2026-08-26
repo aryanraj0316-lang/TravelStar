@@ -1145,10 +1145,21 @@ partial, exactly what's blocking full completion.
 - [x] Phase 5 — Backend correctness (done, verified: build ✅ typecheck ✅ tests ✅ — standard API envelope, async error handling, queryWithRetry all closed out this run)
 - [ ] Phase 6 — API contract and client data layer (in progress: §6.1 real
       EXPO_PUBLIC_API_URL + §6.2 typed ApiError/timeouts/retries/401
-      interceptor done; §0.2.6 toast/confirm added and wired through
-      AppContext mutations; §6.5 providerValue deps fixed. Not started:
-      §6.3 TanStack Query adoption, offline mutation queue, NetInfo banner;
-      §6.4 shared client/server types. See commit 49b1206. Also found:
+      interceptor done; §0.2.6 toast/confirm added, mounted at the root, and
+      wired through AppContext mutations; §6.5 providerValue deps fixed.
+      §6.3 foundation laid: QueryClient + queryKey factory
+      (src/lib/query-client.ts, query-keys.ts), AsyncStorage-backed
+      persistQueryClient wired in _layout.tsx, a NetInfo online/offline
+      banner (src/components/OfflineBanner.tsx), and an offline mutation
+      queue for join-request/SOS writes that flushes on reconnect
+      (src/lib/offline-mutation-queue.ts) — deliberately NOT covering chat
+      messages, see that file's header comment for why. Not started:
+      actually migrating screens' hand-rolled `useEffect` fetches onto
+      `useQuery`/`useMutation` (the queryClient/keys exist but nothing
+      calls them yet) — this is the bulk of §6.3's DoD and touches most
+      screens, deferred as too large for this pass; §6.4 shared
+      client/server types. See commits 49b1206, and the one after it.
+      Also found:
       `npm run lint` at HEAD (before this session) already had 381 errors —
       Phase 1's "lint ✅" checkbox above is stale, most likely because
       eslint-plugin-react-hooks' new React Compiler rules (refs/purity/

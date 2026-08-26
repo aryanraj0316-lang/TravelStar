@@ -1,10 +1,32 @@
 import { safeStorage } from '@/services/storage';
 import { logger } from '@/lib/logger';
 import { toast, errorToastMessage } from '@/lib/feedback';
+import { enqueueMutation, registerMutationHandler } from '@/lib/offline-mutation-queue';
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { apiService, clearTokens } from '../services/api';
+import { apiService, clearTokens, ApiError } from '../services/api';
 import { socketService } from '../services/socket';
 import { eventBus } from '../services/event-bus';
+
+// Registered once at module scope — apiService is a stable singleton, and
+// these are the two REST writes queued for offline retry (see
+// src/lib/offline-mutation-queue.ts for why chat messages aren't included).
+registerMutationHandler('join-request', async (payload) => {
+  const { tripId } = payload as { tripId: string };
+  await apiService.createJoinRequest(tripId);
+});
+registerMutationHandler('sos', async (payload) => {
+  const { userName, lat, lng } = payload as { userName: string; lat: number; lng: number };
+  await apiService.triggerSOS(userName, lat, lng);
+});
+
+/** A request that never reached the server (offline/timeout) is queued for
+ * retry rather than rolled back — the user's optimistic UI stays as-is and
+ * the write completes silently once connectivity returns. Anything else
+ * (validation, auth, a real server rejection) is not retryable and should
+ * roll back immediately, which callers handle themselves. */
+function isOfflineFailure(e: unknown): boolean {
+  return e instanceof ApiError && e.statusCode === null && e.code !== 'UNAUTHORIZED';
+}
 
 
 export type UserRole = 'TOURIST' | 'GUIDE' | 'ORGANIZER' | 'FAMILY_TRAVELER' | 'ADMIN';
@@ -705,6 +727,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     apiService.createJoinRequest(tripId).then(() => {
       toast('Join request sent', 'success');
     }).catch((e) => {
+      if (isOfflineFailure(e)) {
+        logger.warn('[Trips] Join request offline, queued for retry:', e);
+        enqueueMutation('join-request', { tripId }).catch((qe) => logger.warn('[Trips] Failed to queue join request:', qe));
+        toast('You\'re offline — your join request will send once you reconnect.', 'info');
+        return;
+      }
       logger.warn('[Trips] Join request failed, rolling back:', e);
       setRequestedTrips((prev) => {
         const next = new Set(prev);
@@ -733,6 +761,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // immediately, the REST call is the durable, retried-by-nothing-else
     // write to SOSAlert. A user in distress must see a failure, not silence.
     apiService.triggerSOS(profile.name, lat, lng).catch((e) => {
+      if (isOfflineFailure(e)) {
+        logger.error('[Safety] SOS trigger offline, queued for retry the moment connectivity returns:', e);
+        enqueueMutation('sos', { userName: profile.name, lat, lng }).catch((qe) => logger.error('[Safety] Failed to queue SOS trigger:', qe));
+        toast('No connection — your SOS will be sent the instant you reconnect. Call local emergency services directly if you can.', 'error');
+        return;
+      }
       logger.error('[Safety] SOS trigger failed to reach the server:', e);
       toast(errorToastMessage(e, 'Could not reach emergency services. Try again or call local emergency services directly.'), 'error');
     });
