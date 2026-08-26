@@ -161,7 +161,7 @@ function SearchScreen() {
   const C = isDark ? DARK : LIGHT;
   const lastScrollYRef = useRef(0);
   const navbarHiddenRef = useRef(false);
-  const { trips, joinTrip, setActiveRoomId, profile, isLoggedIn, requestedTrips, setRequestedTrips, reloadJoinRequests } = useApp();
+  const { trips, profile, isLoggedIn, requestedTrips, reloadJoinRequests } = useApp();
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [likedTrips, setLikedTrips] = useState<Set<string>>(new Set());
@@ -197,26 +197,17 @@ function SearchScreen() {
     return unsubscribe;
   }, [navigation, reloadJoinRequests, refetchUnreadNotifs]);
 
-  // Join modal state
+  // Join modal state — the actual join flow (including midway-join) lives
+  // entirely inside <TripDetailModal>, which only takes visible/trip/onClose;
+  // this screen just owns which trip is selected and whether it's shown.
   const [selectedTrip, setSelectedTrip] = useState<any>(null);
   const [showJoinModal, setShowJoinModal] = useState(false);
-  const [midwayJoin, setMidwayJoin] = useState(false);
-  const [startCity, setStartCity] = useState('');
-  const [endCity, setEndCity] = useState('');
-  const [joinedMsg, setJoinedMsg] = useState(false);
 
   // Animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
   }, []);
-
-  const handleJoinGroupChat = (tripId: string) => {
-    const trip = trips.find(t => t.id === tripId);
-    const roomId = trip?.chatRoomId || `room-${tripId}`;
-    setActiveRoomId(roomId);
-    eventBus.emit('switchTab', 'chat');
-  };
 
   const toggleLike = (id: string) => {
     let wasLiked = false;
@@ -236,62 +227,6 @@ function SearchScreen() {
       });
       toast(errorToastMessage(e, 'Could not update like.'), 'error');
     });
-  };
-
-  const handleMidwayJoinSelect = (trip: any) => {
-    setStartCity(trip.cities[1] || '');
-    setEndCity(trip.cities[trip.cities.length - 1] || '');
-    setMidwayJoin(true);
-  };
-
-  const calculateMidwayPrice = (trip: any) => {
-    if (!startCity || !endCity) return trip.budget;
-    const startIndex = trip.cities.indexOf(startCity);
-    const endIndex = trip.cities.indexOf(endCity);
-    if (startIndex === -1 || endIndex === -1 || startIndex >= endIndex) return trip.budget;
-    const segmentCount = trip.cities.length - 1;
-    const travelledSegments = endIndex - startIndex;
-    return Math.round((trip.budget / segmentCount) * travelledSegments);
-  };
-
-  const handleRequestJoin = () => {
-    if (selectedTrip) {
-      joinTrip(selectedTrip.id);
-      setRequestedTrips((prev) => {
-        const next = new Set(prev);
-        next.add(selectedTrip.id);
-        return next;
-      });
-      // Persist join request to DB
-      apiService.createJoinRequest(selectedTrip.id, {
-        midway: midwayJoin,
-        fromCity: midwayJoin ? startCity : undefined,
-        toCity: midwayJoin ? endCity : undefined,
-        adjustedPrice: midwayJoin ? calculateMidwayPrice(selectedTrip) : undefined,
-      }).catch((e) => logger.warn('[Search] Midway join request failed:', e));
-    }
-    setJoinedMsg(true);
-    setTimeout(() => {
-      setJoinedMsg(false);
-      setShowJoinModal(false);
-      setSelectedTrip(null);
-      setMidwayJoin(false);
-    }, 2500);
-  };
-
-  const handleCancelRequest = () => {
-    if (selectedTrip) {
-      setRequestedTrips((prev) => {
-        const next = new Set(prev);
-        next.delete(selectedTrip.id);
-        return next;
-      });
-      // Remove from DB
-      apiService.cancelJoinRequest(selectedTrip.id).catch((e) => logger.warn('[Search] Cancel join request failed:', e));
-    }
-    setShowJoinModal(false);
-    setSelectedTrip(null);
-    setMidwayJoin(false);
   };
 
   // Filter & Preference Modal State
@@ -597,7 +532,7 @@ function SearchScreen() {
                 style={[styles.quickCard, { backgroundColor: C.card, borderColor: C.cardBorder }]}
                 onPress={() => {
                   if (item.key === 'custom') {
-                    router.push('/create');
+                    router.navigate('/create');
                   } else if (item.key === 'nearby') {
                     router.push('/nearby-trips');
                   } else if (item.key === 'budget') {
@@ -837,7 +772,7 @@ function SearchScreen() {
             />
             <Pressable
               onPress={() => {
-                router.push('/create');
+                router.navigate('/create');
               }}
               style={({ pressed }) => [
                 styles.ctaHotspot,

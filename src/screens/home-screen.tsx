@@ -473,7 +473,7 @@ function FeaturedTripsCarousel({ isFocused }: { isFocused: boolean }) {
               key={`${trip.id}-${idx}`}
               activeOpacity={0.85}
               onPress={() => {
-                router.push('/search');
+                router.navigate('/search');
               }}
               style={[styles.tripCard, { width: SCREEN_WIDTH - 40 }]}
             >
@@ -543,7 +543,7 @@ function FeaturedTripsCarousel({ isFocused }: { isFocused: boolean }) {
                     <TouchableOpacity
                       style={styles.joinBtn}
                       onPress={() => {
-                        eventBus.emit('switchTab', 'search');
+                        router.navigate('/search');
                       }}
                     >
                       <Text style={styles.joinBtnText}>Join Now</Text>
@@ -552,7 +552,7 @@ function FeaturedTripsCarousel({ isFocused }: { isFocused: boolean }) {
                       style={[styles.joinBtn, { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#0066FF', paddingVertical: 4 }]}
                       onPress={() => {
                         setActiveRoomId(getRoomId(trip));
-                        eventBus.emit('switchTab', 'chat');
+                        router.navigate('/chat');
                       }}
                     >
                       <MessageSquare size={9} color="#0066FF" style={{ marginRight: 2 }} />
@@ -759,7 +759,7 @@ function HomeScreen() {
             <TouchableOpacity
               activeOpacity={0.85}
               style={styles.avatarWrap}
-              onPress={() => router.push('/profile')}
+              onPress={() => router.navigate('/profile')}
             >
               <LinearGradient
                 colors={['#0066FF', '#7C3AED']}

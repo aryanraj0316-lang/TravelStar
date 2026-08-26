@@ -2,7 +2,7 @@ import { useApp } from '@/store/AppContext';
 import { logger } from '@/lib/logger';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
-import { useLocalSearchParams, useNavigation } from 'expo-router';
+import { useIsFocused, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { eventBus } from '@/services/event-bus';
 import {
   AlertCircle,
@@ -813,6 +813,15 @@ function MapScreen() {
   const { triggerSOS, trips, joinTrip, profile, isLoggedIn, requestedTrips, reloadJoinRequests } = useApp();
   const { tripId } = useLocalSearchParams<{ tripId: string }>();
   const navigation = useNavigation();
+  const router = useRouter();
+  // React Navigation's tab navigator keeps a visited tab mounted-but-hidden
+  // rather than unmounting it, so without this the embedded Leaflet WebView
+  // (GPS marker, live tile rendering) would keep running in the background
+  // forever after the user's first visit to this tab — exactly the
+  // permanent-resource-hold REMEDIATION.md §7.3 flags. Unmounting the
+  // WebView itself (not the whole screen) when unfocused releases it while
+  // keeping the rest of the screen's state (filters, selected route) intact.
+  const isFocused = useIsFocused();
 
   // Reload requested trips on focus
   useEffect(() => {
@@ -1004,34 +1013,38 @@ function MapScreen() {
     <View style={styles.screenRoot}>
       <StatusBar hidden={true} />
       <View style={styles.mapContainer}>
-        {/* LEAFLET WEBVIEW */}
-        <WebView
-          ref={webViewRef}
-          key={tileLayer}
-          originWhitelist={['*']}
-          source={webViewSource}
-          style={StyleSheet.absoluteFill}
-          javaScriptEnabled={true}
-          domStorageEnabled={true}
-          geolocationEnabled={true}
-          onMessage={(event) => {
-            try {
-              const data = JSON.parse(event.nativeEvent.data);
-              if (data.type === 'CHECKPOINT_CLICKED') {
-                setSelectedLegIndex(data.index);
-              } else if (data.type === 'GEOLOCATION_ERROR') {
-                Alert.alert('Location Error', data.message);
+        {/* LEAFLET WEBVIEW — unmounted while this tab isn't focused, see isFocused above */}
+        {isFocused && (
+          <WebView
+            ref={webViewRef}
+            key={tileLayer}
+            originWhitelist={['*']}
+            source={webViewSource}
+            style={StyleSheet.absoluteFill}
+            javaScriptEnabled={true}
+            domStorageEnabled={true}
+            geolocationEnabled={true}
+            onMessage={(event) => {
+              try {
+                const data = JSON.parse(event.nativeEvent.data);
+                if (data.type === 'CHECKPOINT_CLICKED') {
+                  setSelectedLegIndex(data.index);
+                } else if (data.type === 'GEOLOCATION_ERROR') {
+                  Alert.alert('Location Error', data.message);
+                }
+              } catch (e) {
+                logger.warn('[Map] Failed to parse WebView message:', e);
               }
-            } catch { }
-          }}
-        />
+            }}
+          />
+        )}
 
         {/* TOP FILTER BAR */}
         <SafeAreaView edges={['top']} style={styles.topSafeArea}>
           <View style={styles.filterBarHeader}>
             <TouchableOpacity
               style={styles.backButton}
-              onPress={() => eventBus.emit('switchTab', 'index')}
+              onPress={() => router.navigate('/')}
               activeOpacity={0.8}
             >
               <ArrowLeft size={22} color="#000" strokeWidth={3} />

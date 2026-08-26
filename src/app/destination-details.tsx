@@ -328,7 +328,7 @@ export default function DestinationDetailsScreen() {
           style={styles.ctaButton}
           activeOpacity={0.85}
           onPress={() => {
-            router.push('/create');
+            router.navigate('/create');
           }}
         >
           <LinearGradient

@@ -1,5 +1,5 @@
 import { logger } from '@/lib/logger';
-import AuthScreen from './auth';
+import AuthScreen from '@/app/auth';
 import { useApp } from '@/store/AppContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useNavigation } from 'expo-router';

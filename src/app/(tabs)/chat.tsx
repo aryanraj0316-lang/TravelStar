@@ -54,9 +54,9 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { apiService } from '../services/api';
-import { eventBus } from '../services/event-bus';
-import { useApp } from '../store/AppContext';
+import { apiService } from '@/services/api';
+import { eventBus } from '@/services/event-bus';
+import { useApp } from '@/store/AppContext';
 
 let ImagePicker: any = null;
 try {
@@ -1869,7 +1869,7 @@ function ChatScreen() {
         <View style={styles.headerRightActions}>
           <TouchableOpacity
             style={styles.actionRoundBtn}
-            onPress={() => router.push('/map')}
+            onPress={() => router.navigate('/map')}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             activeOpacity={0.7}
           >
@@ -1952,7 +1952,7 @@ function ChatScreen() {
           <View style={styles.sosBannerRight}>
             <TouchableOpacity
               style={styles.sosBannerActionBtn}
-              onPress={() => router.push('/map')}
+              onPress={() => router.navigate('/map')}
             >
               <Text style={styles.sosBannerBtnText}>Locate</Text>
             </TouchableOpacity>
@@ -2118,7 +2118,7 @@ function ChatScreen() {
                           </View>
                           <TouchableOpacity
                             style={styles.locationActionTouch}
-                            onPress={() => router.push('/map')}
+                            onPress={() => router.navigate('/map')}
                           >
                             <Text style={styles.locationActionText}>Open Live Navigation</Text>
                           </TouchableOpacity>
@@ -2161,7 +2161,7 @@ function ChatScreen() {
                           <View style={styles.sosAlertBtnRow}>
                             <TouchableOpacity
                               style={[styles.sosAlertBtn, { backgroundColor: 'rgba(255,255,255,0.15)' }]}
-                              onPress={() => router.push('/map')}
+                              onPress={() => router.navigate('/map')}
                             >
                               <Text style={styles.sosAlertBtnText}>Show on Map</Text>
                             </TouchableOpacity>

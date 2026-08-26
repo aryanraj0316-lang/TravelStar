@@ -268,7 +268,7 @@ export default function BookingsScreen() {
                   style={styles.actionBtn}
                   onPress={() => {
                     if (booking.status === 'ONGOING') {
-                      router.push('/map');
+                      router.navigate('/map');
                     } else if (booking.status === 'UPCOMING') {
                       Alert.alert('E-Ticket Verified', `Verification Code: ${booking.bookingId}\nPresent this code to the tour guide at the meeting point.`);
                     } else {

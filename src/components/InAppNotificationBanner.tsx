@@ -1,5 +1,6 @@
 import { eventBus } from '@/services/event-bus';
 import { useApp } from '@/store/AppContext';
+import { useRouter } from 'expo-router';
 import { CheckCheck, ChevronRight, X } from 'lucide-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -25,6 +26,7 @@ export const InAppNotificationBanner: React.FC = () => {
   const opacity = useRef(new Animated.Value(0)).current;
   const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { setActiveRoomId } = useApp();
+  const router = useRouter();
 
   const dismiss = () => {
     if (dismissTimer.current) clearTimeout(dismissTimer.current);
@@ -61,7 +63,7 @@ export const InAppNotificationBanner: React.FC = () => {
   const handleTap = () => {
     if (notif?.chatRoomId) {
       setActiveRoomId(notif.chatRoomId);
-      eventBus.emit('switchTab', 'chat');
+      router.navigate('/chat');
     }
     dismiss();
   };

@@ -407,7 +407,7 @@ export default function BudgetTripsScreen() {
                   activeOpacity={0.85}
                   style={styles.dealCard}
                   onPress={() => {
-                    eventBus.emit('switchTab', 'map');
+                    router.navigate('/map');
                     setTimeout(() => {
                       eventBus.emit('focusTripOnMap', deal.id);
                     }, 100);

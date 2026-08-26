@@ -4,7 +4,7 @@ import GlassCard from '@/components/ui/GlassCard';
 import { useApp } from '@/store/AppContext';
 import { eventBus } from '@/services/event-bus';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   AlertCircle,
   ArrowLeft,
@@ -243,6 +243,7 @@ function WebMapScreen() {
     return unsub;
   }, []);
   const isDark = useColorScheme() === 'dark';
+  const router = useRouter();
   const { triggerSOS, trips } = useApp();
   const { tripId } = useLocalSearchParams<{ tripId: string }>();
   const [mapFilter, setMapFilter] = useState<'ALL' | 'GUIDES' | 'GROUPS' | 'TOURISTS' | 'ATTRACTIONS' | 'NONE'>('ALL');
@@ -839,7 +840,7 @@ function WebMapScreen() {
         <View style={styles.topFilterOverlay}>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => eventBus.emit('switchTab', 'index')}
+            onPress={() => router.navigate('/')}
             activeOpacity={0.8}
           >
             <ArrowLeft size={22} color="#000" strokeWidth={3} />

@@ -49,7 +49,7 @@ export default function RootLayout() {
             <AnimatedSplashOverlay />
             <OfflineBanner />
             <Stack screenOptions={{ headerShown: false }}>
-              <Stack.Screen name="index" />
+              <Stack.Screen name="(tabs)" />
               <Stack.Screen name="auth" options={{ presentation: 'modal' }} />
               <Stack.Screen name="stories" options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
             </Stack>

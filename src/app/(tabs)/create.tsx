@@ -1728,7 +1728,7 @@ function CreateTripScreen() {
                     onPress={() => {
                       setSelectedCreation(null);
                       setShowCreationsModal(false);
-                      eventBus.emit('switchTab', 'map');
+                      router.navigate('/map');
                       setTimeout(() => {
                         eventBus.emit('focusTripOnMap', selectedCreation.id);
                       }, 100);
@@ -1750,7 +1750,7 @@ function CreateTripScreen() {
                         setActiveRoomId(selectedCreation.chatRoomId);
                         setSelectedCreation(null);
                         setShowCreationsModal(false);
-                        eventBus.emit('switchTab', 'chat');
+                        router.navigate('/chat');
                       }
                     }}
                   >

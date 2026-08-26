@@ -353,7 +353,7 @@ export default function TopReviewedScreen() {
                     <Text style={styles.routePriceText}>₹{routeItem.price.toLocaleString('en-IN')} / head</Text>
                     <TouchableOpacity
                       style={styles.exploreRouteBtn}
-                      onPress={() => router.push('/search')}
+                      onPress={() => router.navigate('/search')}
                     >
                       <Text style={styles.exploreRouteText}>View Details</Text>
                     </TouchableOpacity>

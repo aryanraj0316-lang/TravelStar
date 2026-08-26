@@ -19,7 +19,6 @@ import {
   Sun,
   Waves,
 } from 'lucide-react-native';
-import { eventBus } from '../services/event-bus';
 import React, { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiService } from '../services/api';
@@ -478,8 +477,11 @@ export default function NotificationsScreen() {
                   checkUnreadNotifications();
                   if (notif.chatRoomId) {
                     setActiveRoomId(notif.chatRoomId);
-                    router.back();
-                    eventBus.emit('switchTab', 'chat');
+                    // Navigating to a tab route that's already an ancestor
+                    // in the stack (the (tabs) group always is) pops back to
+                    // it rather than pushing a duplicate — this both closes
+                    // the notifications screen and focuses the chat tab.
+                    router.navigate('/chat');
                   }
                 }}
               >
@@ -699,7 +701,7 @@ export default function NotificationsScreen() {
                   <TouchableOpacity
                     style={styles.exploreDestBtn}
                     activeOpacity={0.85}
-                    onPress={() => router.push('/search')}
+                    onPress={() => router.navigate('/search')}
                   >
                     <Compass size={14} color={C.blue} />
                     <Text style={styles.exploreDestBtnText}>Explore Itinerary & Booking</Text>

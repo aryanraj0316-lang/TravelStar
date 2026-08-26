@@ -26,6 +26,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '@/store/AppContext';
 import { eventBus } from '@/services/event-bus';
+import { useRouter } from 'expo-router';
 
 export interface TripDetailModalProps {
   visible: boolean;
@@ -53,6 +54,7 @@ export default function TripDetailModal({
   onClose,
 }: TripDetailModalProps) {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { joinTrip, profile, isLoggedIn, requestedTrips, setRequestedTrips } = useApp();
 
   const [midwayJoin, setMidwayJoin] = useState(false);
@@ -151,7 +153,7 @@ export default function TripDetailModal({
                       activeOpacity={0.8}
                       onPress={() => {
                         onClose();
-                        eventBus.emit('switchTab', 'map');
+                        router.navigate('/map');
                         setTimeout(() => {
                           eventBus.emit('focusTripOnMap', trip.id);
                         }, 100);
