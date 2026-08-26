@@ -8,7 +8,6 @@ import {
   ChevronRight,
   Clock,
   CloudRain,
-  CloudSnow,
   Compass,
   MapPin,
   Mountain,
@@ -139,68 +138,52 @@ const SEASONAL_RECOMMENDATIONS = [
   },
 ];
 
-const HAZARD_DISASTER_ALERTS = [
-  {
-    id: 'h1',
-    type: 'HAZARD',
-    severity: 'CRITICAL',
-    title: 'Landslide Warning — NH-44 Zoji La Pass',
-    category: 'LANDSLIDE',
-    location: 'Ladakh - Srinagar Highway',
-    time: '14 mins ago',
-    icon: Mountain,
-    iconColor: C.red,
-    bgColor: 'rgba(239, 68, 68, 0.12)',
-    borderColor: 'rgba(239, 68, 68, 0.4)',
-    desc: 'Heavy rockfall near Zoji La Pass has blocked NH-44. Traffic temporarily suspended. Alternative route via Kargil-Zanskar advised.',
-    affectedRoute: 'Srinagar ➔ Leh Route',
-  },
-  {
-    id: 'h2',
-    type: 'HAZARD',
-    severity: 'CRITICAL',
-    title: 'Heavy Rainfall & Flood Flash Warning',
-    category: 'FLOOD & RAIN',
-    location: 'Wayanad & Idukki Districts, Kerala',
-    time: '42 mins ago',
-    icon: Waves,
-    iconColor: C.red,
-    bgColor: 'rgba(239, 68, 68, 0.12)',
-    borderColor: 'rgba(239, 68, 68, 0.4)',
-    desc: 'Red Alert issued. River water levels rising near Periyar. Tourist boat rides suspended for 48 hours.',
-    affectedRoute: 'Kochi ➔ Munnar Road',
-  },
-  {
-    id: 'h3',
-    type: 'HAZARD',
-    severity: 'WARNING',
-    title: 'Early Snowfall Road Closure',
-    category: 'SNOWFALL',
-    location: 'Rohtang Pass, Himachal Pradesh',
-    time: '2 hours ago',
-    icon: CloudSnow,
-    iconColor: C.orange,
-    bgColor: 'rgba(245, 158, 11, 0.12)',
-    borderColor: 'rgba(245, 158, 11, 0.4)',
-    desc: 'Unseasonal snow has made road slippery. Only 4x4 vehicles with tire chains permitted above Gulaba checkpoint.',
-    affectedRoute: 'Manali ➔ Keylong Route',
-  },
-  {
-    id: 'h4',
-    type: 'HAZARD',
-    severity: 'WARNING',
-    title: 'Severe Traffic Jam (3h Delay)',
-    category: 'TRAFFIC RUSH',
-    location: 'Shimla - Solan Highway (NH-5)',
-    time: '3 hours ago',
-    icon: Car,
-    iconColor: C.orange,
-    bgColor: 'rgba(245, 158, 11, 0.12)',
-    borderColor: 'rgba(245, 158, 11, 0.4)',
-    desc: 'Massive weekend tourist influx causing 12km traffic queue near Koti tunnel. Drive with patience.',
-    affectedRoute: 'Chandigarh ➔ Shimla Route',
-  },
-];
+// Real Alert data → display styling (REMEDIATION.md §8.10). Keyed by the
+// Prisma enum member names the API actually returns (e.g. `FLOOD_RAIN`),
+// not the `@map`-ped DB strings — matches monsoon-advisory.tsx's mapping,
+// which reads from the same /alerts endpoint.
+const SEVERITY_STYLE: Record<string, { color: string; bg: string; border: string }> = {
+  CRITICAL: { color: C.red, bg: 'rgba(239, 68, 68, 0.12)', border: 'rgba(239, 68, 68, 0.4)' },
+  WARNING: { color: C.orange, bg: 'rgba(245, 158, 11, 0.12)', border: 'rgba(245, 158, 11, 0.4)' },
+  ADVISORY: { color: C.blue, bg: 'rgba(59, 130, 246, 0.12)', border: 'rgba(59, 130, 246, 0.4)' },
+};
+
+const CATEGORY_ICON: Record<string, typeof Mountain> = {
+  LANDSLIDE: Mountain,
+  FLOOD_RAIN: Waves,
+  CLOUDBURST: CloudRain,
+  TRAFFIC_RUSH: Car,
+};
+
+// Each trip card owns its own countdown, ticking down from that specific
+// trip's initialSeconds (REMEDIATION.md §8.10 — the old code had one
+// `secondsLeft` state shared across every card in the list, so all trips
+// displayed the exact same countdown regardless of when each actually
+// departs).
+function TripCountdownBadge({ initialSeconds }: { initialSeconds: number }) {
+  const [secondsLeft, setSecondsLeft] = useState(initialSeconds);
+
+  useEffect(() => {
+    if (initialSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setSecondsLeft((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [initialSeconds]);
+
+  if (secondsLeft <= 0) return null;
+
+  const hours = String(Math.floor(secondsLeft / 3600)).padStart(2, '0');
+  const minutes = String(Math.floor((secondsLeft % 3600) / 60)).padStart(2, '0');
+  const seconds = String(secondsLeft % 60).padStart(2, '0');
+
+  return (
+    <View style={styles.timerBadge}>
+      <Clock size={11} color={C.orange} />
+      <Text style={styles.timerBadgeText}>{`${hours}h ${minutes}m ${seconds}s`}</Text>
+    </View>
+  );
+}
 
 // ─── Main Component ─────────────────────────────────────────────────
 export default function NotificationsScreen() {
@@ -208,23 +191,27 @@ export default function NotificationsScreen() {
   const queryClient = useQueryClient();
   const { setActiveRoomId, checkUnreadNotifications } = useApp();
   const [activeTab, setActiveTab] = useState<TabType>('ALL');
-  const [secondsLeft, setSecondsLeft] = useState(8140);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setSecondsLeft((prev) => (prev > 0 ? prev - 1 : 8140));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
 
   // REMEDIATION.md §6.3: fetching now goes through TanStack Query for
-  // caching/retry/offline-cache benefits. The mock-template merge below
-  // (mappedHazards/mappedTrips/mappedSeasonal) is deliberately left as-is —
-  // untangling "real data vs. demo content" here is a Phase 8 product
-  // decision, not a Phase 6 data-layer change.
+  // caching/retry/offline-cache benefits.
   const { data: notifications = [], refetch: refetchNotifications } = useQuery({
     queryKey: queryKeys.notifications(),
     queryFn: async () => (await apiService.getNotifications()) ?? [],
+  });
+
+  // Hazard alerts come from the real Alert API, not the generic
+  // notification feed (REMEDIATION.md §8.10). The old code sourced
+  // HAZARD-type rows from the Notification model — which has no
+  // location/category/affectedRoute fields at all — and grafted those
+  // fields on from a hardcoded mock array BY ARRAY INDEX, so a real
+  // landslide alert could render with Kerala's location, Manali's
+  // affected route, and a snowfall icon. On a screen whose only purpose
+  // is telling travellers which road is unsafe, that's dangerous. The
+  // Alert model already has every field this UI needs — no grafting
+  // required — and mappedHazards below renders only real data, or none.
+  const { data: realAlerts = [] } = useQuery({
+    queryKey: queryKeys.alerts(),
+    queryFn: async () => (await apiService.getAlerts()) ?? [],
   });
 
   // Matches the previous behaviour exactly: a placeholder count of 5 until
@@ -244,71 +231,24 @@ export default function NotificationsScreen() {
     }
   };
 
-  const hours = String(Math.floor(secondsLeft / 3600)).padStart(2, '0');
-  const minutes = String(Math.floor((secondsLeft % 3600) / 60)).padStart(2, '0');
-  const seconds = String(secondsLeft % 60).padStart(2, '0');
-
-  // Filter & Map from database or fallback to static mocks if empty
-  const dbHazards = notifications.filter(n => n.type === 'HAZARD');
-  const mappedHazards = dbHazards.length > 0 ? dbHazards.map((h, i) => {
-    const defaultMocks = [
-      {
-        severity: 'CRITICAL',
-        category: 'LANDSLIDE',
-        location: 'Ladakh - Srinagar Highway',
-        icon: Mountain,
-        iconColor: C.red,
-        bgColor: 'rgba(239, 68, 68, 0.12)',
-        borderColor: 'rgba(239, 68, 68, 0.4)',
-        affectedRoute: 'Srinagar ➔ Leh Route',
-      },
-      {
-        severity: 'CRITICAL',
-        category: 'FLOOD & RAIN',
-        location: 'Wayanad & Idukki Districts, Kerala',
-        icon: Waves,
-        iconColor: C.red,
-        bgColor: 'rgba(239, 68, 68, 0.12)',
-        borderColor: 'rgba(239, 68, 68, 0.4)',
-        affectedRoute: 'Kochi ➔ Munnar Road',
-      },
-      {
-        severity: 'WARNING',
-        category: 'SNOWFALL',
-        location: 'Rohtang Pass, Himachal Pradesh',
-        icon: CloudSnow,
-        iconColor: C.orange,
-        bgColor: 'rgba(245, 158, 11, 0.12)',
-        borderColor: 'rgba(245, 158, 11, 0.4)',
-        affectedRoute: 'Manali ➔ Keylong Route',
-      },
-      {
-        severity: 'WARNING',
-        category: 'TRAFFIC RUSH',
-        location: 'Shimla - Solan Highway (NH-5)',
-        icon: Car,
-        iconColor: C.orange,
-        bgColor: 'rgba(245, 158, 11, 0.12)',
-        borderColor: 'rgba(245, 158, 11, 0.4)',
-        affectedRoute: 'Chandigarh ➔ Shimla Route',
-      }
-    ];
-    const mock = defaultMocks[i % defaultMocks.length];
+  const mappedHazards = realAlerts.map((a) => {
+    const sev = SEVERITY_STYLE[a.severity] || SEVERITY_STYLE.ADVISORY;
+    const Icon = CATEGORY_ICON[a.category] || ShieldAlert;
     return {
-      id: h.id,
-      severity: mock.severity,
-      category: mock.category,
-      location: mock.location,
-      title: h.title,
-      icon: mock.icon,
-      iconColor: mock.iconColor,
-      bgColor: h.unread ? mock.bgColor : C.card,
-      borderColor: h.unread ? mock.borderColor : C.border,
-      affectedRoute: mock.affectedRoute,
-      desc: h.content,
-      time: h.time,
+      id: a.id,
+      severity: a.severity,
+      category: a.category,
+      location: a.location,
+      title: a.title,
+      icon: Icon,
+      iconColor: sev.color,
+      bgColor: sev.bg,
+      borderColor: sev.border,
+      affectedRoute: a.affectedRoute,
+      desc: a.desc,
+      time: a.time,
     };
-  }) : HAZARD_DISASTER_ALERTS;
+  });
 
   const dbTrips = notifications.filter(n => n.type === 'TRIP');
   const mappedTrips = dbTrips.length > 0 ? dbTrips.map((t, i) => {
@@ -527,7 +467,11 @@ export default function NotificationsScreen() {
               </View>
             </View>
 
-            {mappedHazards.map((alert: any) => {
+            {mappedHazards.length === 0 && (
+              <Text style={{ fontSize: 12, color: C.textMuted }}>No active hazard alerts right now.</Text>
+            )}
+
+            {mappedHazards.map((alert) => {
               const IconComponent = alert.icon;
               return (
                 <View
@@ -608,14 +552,7 @@ export default function NotificationsScreen() {
                   >
                     <Text style={styles.statusBadgeText}>{trip.status}</Text>
                   </View>
-                  {trip.initialSeconds > 0 && (
-                    <View style={styles.timerBadge}>
-                      <Clock size={11} color={C.orange} />
-                      <Text style={styles.timerBadgeText}>
-                        {`${hours}h ${minutes}m ${seconds}s`}
-                      </Text>
-                    </View>
-                  )}
+                  <TripCountdownBadge initialSeconds={trip.initialSeconds} />
                 </View>
 
                 {/* Main Card Content */}
