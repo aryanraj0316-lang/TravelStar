@@ -1242,7 +1242,17 @@ partial, exactly what's blocking full completion.
       SOS Hotline" that dialed nothing now calls tel:112 (India's real
       national emergency number) with no confirmation step. Verified live
       by mocking browser geolocation to Mumbai and capturing the actual
-      outgoing POST /safety/sos body. See commit 3e45890.)
+      outgoing POST /safety/sos body. See commit 3e45890.
+      §8.10 done — hazard alerts in notifications.tsx now come straight
+      from GET /alerts (real Alert model, which already had every field
+      needed) instead of grafting mock location/category/route data onto
+      real HAZARD notifications by array index; empty state instead of a
+      mock fallback. Fixed the shared-secondsLeft countdown bug in the
+      same section (extracted TripCountdownBadge, one per card).
+      monsoon-advisory.tsx was already correct — the doc's complaint about
+      it predates this session. Verified live by mocking GET /alerts with
+      distinctive fake-but-structurally-real data and confirming zero
+      grafting. See commit bd13c0f.)
 - [ ] Phase 9 — Design system, i18n, accessibility (not started)
 - [ ] Phase 10 — Performance (not started)
 - [ ] Phase 11 — Observability and operations (not started)
