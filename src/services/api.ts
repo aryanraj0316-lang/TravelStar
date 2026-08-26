@@ -455,7 +455,9 @@ export const apiService = {
     return request<string[]>(`/interactions/likes${qs}`);
   },
 
-  async createJoinRequest(tripId: string, opts?: { midway?: boolean; fromCity?: string; toCity?: string; adjustedPrice?: number }): Promise<any> {
+  // adjustedPrice is never a param here — the server computes it
+  // authoritatively from the trip's route (docs/REMEDIATION.md §8.6).
+  async createJoinRequest(tripId: string, opts?: { midway?: boolean; fromCity?: string; toCity?: string }): Promise<any> {
     return request('/interactions/join-request', {
       method: 'POST',
       body: JSON.stringify({ tripId, ...opts }),

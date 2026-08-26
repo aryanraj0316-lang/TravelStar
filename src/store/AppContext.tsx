@@ -11,8 +11,8 @@ import { eventBus } from '../services/event-bus';
 // these are the two REST writes queued for offline retry (see
 // src/lib/offline-mutation-queue.ts for why chat messages aren't included).
 registerMutationHandler('join-request', async (payload) => {
-  const { tripId } = payload as { tripId: string };
-  await apiService.createJoinRequest(tripId);
+  const { tripId, ...opts } = payload as { tripId: string; midway?: boolean; fromCity?: string; toCity?: string };
+  await apiService.createJoinRequest(tripId, opts);
 });
 registerMutationHandler('sos', async (payload) => {
   const { userName, lat, lng } = payload as { userName: string; lat: number; lng: number };
@@ -136,7 +136,8 @@ interface AppContextType {
   logout: () => void;
   trips: Trip[];
   addTrip: (trip: Trip) => void;
-  joinTrip: (tripId: string) => void;
+  joinTrip: (tripId: string, opts?: { midway?: boolean; fromCity?: string; toCity?: string }) => void;
+  cancelJoinRequest: (tripId: string) => void;
   guides: Guide[];
   messages: Message[];
   sendMessage: (content: string, mediaType?: 'NONE' | 'IMAGE' | 'VOICE') => void;
@@ -723,7 +724,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   }, [profile?.id, refreshTrips]);
 
-  const joinTrip = useCallback((tripId: string) => {
+  const joinTrip = useCallback((tripId: string, opts?: { midway?: boolean; fromCity?: string; toCity?: string }) => {
     // Optimistic UI: mark as "requested", but do NOT touch availableSeats/membersCount here.
     // Seats are only decremented on the backend once the organizer approves the JoinRequest
     // (see /interactions/join-request/:id/status). Decrementing locally here caused seats
@@ -733,12 +734,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       next.add(tripId);
       return next;
     });
-    apiService.createJoinRequest(tripId).then(() => {
+    // adjustedPrice is never sent — the server computes and owns it
+    // (docs/REMEDIATION.md §8.6); the client only proposes a segment.
+    apiService.createJoinRequest(tripId, opts).then(() => {
       toast('Join request sent', 'success');
     }).catch((e) => {
       if (isOfflineFailure(e)) {
         logger.warn('[Trips] Join request offline, queued for retry:', e);
-        enqueueMutation('join-request', { tripId }).catch((qe) => logger.warn('[Trips] Failed to queue join request:', qe));
+        enqueueMutation('join-request', { tripId, ...opts }).catch((qe) => logger.warn('[Trips] Failed to queue join request:', qe));
         toast('You\'re offline — your join request will send once you reconnect.', 'info');
         return;
       }
@@ -749,6 +752,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return next;
       });
       toast(errorToastMessage(e, 'Could not send the join request.'), 'error');
+    });
+  }, []);
+
+  const cancelJoinRequest = useCallback((tripId: string) => {
+    setRequestedTrips((prev) => {
+      const next = new Set(prev);
+      next.delete(tripId);
+      return next;
+    });
+    apiService.cancelJoinRequest(tripId).then(() => {
+      toast('Request withdrawn', 'success');
+    }).catch((e) => {
+      logger.warn('[Trips] Cancel join request failed, rolling back:', e);
+      setRequestedTrips((prev) => {
+        const next = new Set(prev);
+        next.add(tripId);
+        return next;
+      });
+      toast(errorToastMessage(e, 'Could not withdraw the request.'), 'error');
     });
   }, []);
 
@@ -835,6 +857,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     trips,
     addTrip,
     joinTrip,
+    cancelJoinRequest,
     guides,
     messages,
     sendMessage,
@@ -869,6 +892,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     trips,
     addTrip,
     joinTrip,
+    cancelJoinRequest,
     guides,
     messages,
     sendMessage,

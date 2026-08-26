@@ -4,6 +4,7 @@ import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 import { requireUserId } from '../../lib/auth-context';
 import { claimSeatAndJoin, releaseSeatAndLeave } from '../../services/trip-membership';
+import { calculateMidwayPrice } from '../../services/midway-pricing';
 
 const router = Router();
 
@@ -78,14 +79,15 @@ const joinRequestSchema = z.object({
   midway: z.boolean().default(false),
   fromCity: z.string().trim().min(1).max(200).optional(),
   toCity: z.string().trim().min(1).max(200).optional(),
-  adjustedPrice: z.number().positive().optional(),
+  // No adjustedPrice field: a client-computed price is never trusted
+  // (docs/REMEDIATION.md §8.6) — see calculateMidwayPrice below.
 });
 
 // Create a join request
 router.post('/join-request', async (req, res) => {
   const parsed = joinRequestSchema.safeParse(req.body);
   if (!parsed.success) return validationError(res, parsed.error.issues);
-  const { tripId, midway, fromCity, toCity, adjustedPrice } = parsed.data;
+  const { tripId, midway, fromCity, toCity } = parsed.data;
   // Identity always comes from the token — a caller cannot file a request as
   // someone else by putting a userId in the body.
   const userId = requireUserId(req);
@@ -109,14 +111,28 @@ router.post('/join-request', async (req, res) => {
       return res.status(200).json({ ok: true, data: { ...existing, message: 'Join request already exists' } });
     }
 
+    // Server-authoritative price for a midway join — the client only ever
+    // suggests fromCity/toCity, never a price. See §8.6.
+    let adjustedPrice: number | null = null;
+    if (midway) {
+      if (!fromCity || !toCity) {
+        return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Midway join requires both a starting and an ending city.' } });
+      }
+      const priced = calculateMidwayPrice(trip.cities, Number(trip.budget), fromCity, toCity);
+      if (!priced.ok) {
+        return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'The ending city must come after the starting city on this trip\'s route.' } });
+      }
+      adjustedPrice = priced.adjustedPrice;
+    }
+
     const joinReq = await prisma.joinRequest.create({
       data: {
         tripId,
         userId,
         status: 'PENDING',
-        fromCity: midway ? (fromCity ?? null) : null,
-        toCity: midway ? (toCity ?? null) : null,
-        adjustedPrice: adjustedPrice ?? null,
+        fromCity: midway ? fromCity! : null,
+        toCity: midway ? toCity! : null,
+        adjustedPrice,
       },
     });
 

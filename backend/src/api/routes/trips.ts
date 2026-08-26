@@ -5,6 +5,7 @@ import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 import { requireUserId } from '../../lib/auth-context';
 import { claimSeatAndJoin } from '../../services/trip-membership';
+import { calculateMidwayPrice } from '../../services/midway-pricing';
 
 const router = Router();
 
@@ -451,10 +452,9 @@ router.post('/recommendations', async (req, res) => {
 
 // Midway Join (Family Connect segment price preview) — now reads the real
 // trip instead of the permanently-empty in-memory array
-// (docs/REMEDIATION.md §5.3). The exact pricing rule this uses is the
-// pre-existing proportional-by-segment formula; refining what "correct"
-// midway pricing means is a product decision for Phase 8, not something
-// this fix redesigns.
+// (docs/REMEDIATION.md §5.3), and shares its pricing math with
+// POST /interactions/join-request via calculateMidwayPrice (§8.6) instead
+// of each computing its own slightly different formula.
 router.post('/:id/midway-join', async (req, res) => {
   const { id } = req.params;
   const { fromCity, toCity } = req.body;
@@ -465,25 +465,19 @@ router.post('/:id/midway-join', async (req, res) => {
       return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found' } });
     }
 
-    const fromIndex = trip.cities.indexOf(fromCity);
-    const toIndex = trip.cities.indexOf(toCity);
-
-    if (fromIndex === -1 || toIndex === -1 || fromIndex >= toIndex) {
+    const fullPrice = Number(trip.budget);
+    const result = calculateMidwayPrice(trip.cities, fullPrice, fromCity, toCity);
+    if (!result.ok) {
       return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid midway segments selected for this trip route' } });
     }
-
-    const totalSegments = trip.cities.length - 1;
-    const requestedSegments = toIndex - fromIndex;
-    const fullPrice = Number(trip.budget);
-    const adjustedPrice = totalSegments > 0 ? Math.round((fullPrice / totalSegments) * requestedSegments) : fullPrice;
 
     res.status(200).json({ ok: true, data: {
         tripId: id,
         fromCity,
         toCity,
         fullPrice: fullPrice.toString(),
-        adjustedPrice: adjustedPrice.toString(),
-        segmentsTraversed: trip.cities.slice(fromIndex, toIndex + 1),
+        adjustedPrice: result.adjustedPrice.toString(),
+        segmentsTraversed: result.segmentsTraversed,
       } });
   } catch (err) {
     logger.error('[Trips] Midway-join error:', err);

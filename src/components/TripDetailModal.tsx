@@ -7,7 +7,6 @@ import {
   ScrollView,
   StyleSheet,
   Dimensions,
-  Alert,
 } from 'react-native';
 import {
   X,
@@ -27,6 +26,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '@/store/AppContext';
 import { eventBus } from '@/services/event-bus';
 import { useRouter } from 'expo-router';
+import { toast } from '@/lib/feedback';
 
 export interface TripDetailModalProps {
   visible: boolean;
@@ -55,7 +55,7 @@ export default function TripDetailModal({
 }: TripDetailModalProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { joinTrip, profile, isLoggedIn, requestedTrips, setRequestedTrips } = useApp();
+  const { joinTrip, cancelJoinRequest, profile, isLoggedIn, requestedTrips } = useApp();
 
   const [midwayJoin, setMidwayJoin] = useState(false);
   const [startCity, setStartCity] = useState('');
@@ -75,7 +75,7 @@ export default function TripDetailModal({
       setEndCity(t.cities[t.cities.length - 1]);
       setMidwayJoin(true);
     } else {
-      Alert.alert('Route Info', 'Midway joining is only available for trips covering 3 or more cities.');
+      toast('Midway joining is only available for trips covering 3 or more cities.', 'info');
     }
   };
 
@@ -93,12 +93,11 @@ export default function TripDetailModal({
   };
 
   const handleRequestJoin = () => {
-    joinTrip(trip.id);
-    setRequestedTrips((prev) => {
-      const next = new Set(prev);
-      next.add(trip.id);
-      return next;
-    });
+    // adjustedPrice is deliberately not sent — the server computes and owns
+    // it from the trip's route (docs/REMEDIATION.md §8.6). The preview
+    // shown on the success screen below uses the identical formula
+    // (calculateMidwayPrice above), so it always matches what gets stored.
+    joinTrip(trip.id, midwayJoin ? { midway: true, fromCity: startCity, toCity: endCity } : undefined);
 
     setJoinedMsg(true);
     setTimeout(() => {
@@ -109,12 +108,7 @@ export default function TripDetailModal({
   };
 
   const handleCancelRequest = () => {
-    setRequestedTrips((prev) => {
-      const next = new Set(prev);
-      next.delete(trip.id);
-      return next;
-    });
-    Alert.alert('Request Withdrawn', 'Your request to join this trip has been cancelled.');
+    cancelJoinRequest(trip.id);
   };
 
   return (
@@ -315,6 +309,34 @@ export default function TripDetailModal({
                             </TouchableOpacity>
                           );
                         })}
+                      </ScrollView>
+                    </View>
+                    <View style={{ marginBottom: 12 }}>
+                      {/* REMEDIATION.md §8.6 point 1: this selector never
+                          existed before — endCity could only ever hold
+                          whatever the Start picker's onPress silently
+                          defaulted it to (the very next city), so the user
+                          could never actually choose where they get off. */}
+                      <Text style={[styles.fieldLabel, { color: C.textSecondary, marginBottom: 6 }]}>Travelling Until</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.citySelectScroll}>
+                        {trip.cities
+                          .filter((city: string) => trip.cities.indexOf(city) > trip.cities.indexOf(startCity))
+                          .map((city: string) => {
+                            const isSelected = endCity === city;
+                            return (
+                              <TouchableOpacity
+                                key={city}
+                                style={[
+                                  styles.citySelectChip,
+                                  isSelected && styles.citySelectChipActive,
+                                  { borderColor: isSelected ? C.accent : C.cardBorder }
+                                ]}
+                                onPress={() => setEndCity(city)}
+                              >
+                                <Text style={[styles.citySelectChipText, { color: isSelected ? '#FFF' : C.text }, isSelected && { fontWeight: '700' }]}>{city}</Text>
+                              </TouchableOpacity>
+                            );
+                          })}
                       </ScrollView>
                     </View>
                     <View style={styles.priceCalcRow}>
