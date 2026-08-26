@@ -1,5 +1,7 @@
 import { apiService } from '@/services/api';
 import { logger } from '@/lib/logger';
+import { useQuery } from '@tanstack/react-query';
+import { queryKeys } from '@/lib/query-keys';
 import { useApp, UserRole } from '@/store/AppContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useNavigation } from 'expo-router';
@@ -600,36 +602,52 @@ function HomeScreen() {
   const lastScrollYRef = useRef(0);
   const navbarHiddenRef = useRef(false);
 
-  // ── Dynamic DB state ──────────────────────────────────────────────
-  const [stories, setStories] = useState<any[]>(DEFAULT_STORIES);
-  const [destinations, setDestinations] = useState<any[]>(DEFAULT_DESTINATIONS);
-  const [weatherLocations, setWeatherLocations] = useState<any[]>(DEFAULT_WEATHER);
-  const [alerts, setAlerts] = useState<any[]>(DEFAULT_ALERTS);
+  // ── Dynamic DB state (REMEDIATION.md §6.3: via TanStack Query) ─────
+  // Each falls back to its DEFAULT_* constant exactly as before when the
+  // backend has nothing yet — that mock-vs-real question is Phase 8 scope,
+  // not touched here; only the fetch mechanism changed.
+  const { data: stories = DEFAULT_STORIES } = useQuery({
+    queryKey: queryKeys.feed(),
+    queryFn: async () => {
+      // Unified feed (stories + guide reels merged) from backend, falling
+      // back to stories-only if the feed endpoint itself is unavailable.
+      try {
+        const res = await apiService.getFeed(20);
+        if (res && Array.isArray(res) && res.length > 0) return res;
+        if (res && res.data && Array.isArray(res.data) && res.data.length > 0) return res.data;
+      } catch (e) {
+        logger.warn('[Home] Feed fetch failed, falling back to stories only:', e);
+      }
+      const data = await apiService.getStories();
+      return data && data.length > 0 ? data : DEFAULT_STORIES;
+    },
+  });
+
+  const { data: destinations = DEFAULT_DESTINATIONS } = useQuery({
+    queryKey: queryKeys.destinations(),
+    queryFn: async () => {
+      const data = await apiService.getDestinations();
+      return data && data.length > 0 ? data : DEFAULT_DESTINATIONS;
+    },
+  });
+
+  const { data: weatherLocations = DEFAULT_WEATHER } = useQuery({
+    queryKey: queryKeys.weatherLocations(),
+    queryFn: async () => {
+      const data = await apiService.getWeatherLocations();
+      return data && data.length > 0 ? data : DEFAULT_WEATHER;
+    },
+  });
+
+  const { data: alerts = DEFAULT_ALERTS } = useQuery({
+    queryKey: queryKeys.alerts(),
+    queryFn: async () => {
+      const data = await apiService.getAlerts();
+      return data && data.length > 0 ? data : DEFAULT_ALERTS;
+    },
+  });
 
   useEffect(() => {
-    // Fetch unified feed (stories + guide reels merged) from backend
-    apiService.getFeed(20).then((res) => {
-      if (res && Array.isArray(res) && res.length > 0) {
-        setStories(res);
-      } else if (res && res.data && Array.isArray(res.data) && res.data.length > 0) {
-        setStories(res.data);
-      }
-    }).catch((e) => {
-      logger.warn('[Home] Feed fetch failed, falling back to stories only:', e);
-      // Fallback to stories-only if feed endpoint unavailable
-      apiService.getStories().then((data) => {
-        if (data && data.length > 0) setStories(data);
-      }).catch((e2) => logger.warn('[Home] Stories fallback also failed:', e2));
-    });
-    apiService.getDestinations().then((data) => {
-      if (data && data.length > 0) setDestinations(data);
-    }).catch((e) => logger.warn('[Home] Destinations fetch failed, keeping defaults:', e));
-    apiService.getWeatherLocations().then((data) => {
-      if (data && data.length > 0) setWeatherLocations(data);
-    }).catch((e) => logger.warn('[Home] Weather fetch failed, keeping defaults:', e));
-    apiService.getAlerts().then((data) => {
-      if (data && data.length > 0) setAlerts(data);
-    }).catch((e) => logger.warn('[Home] Alerts fetch failed, keeping defaults:', e));
     apiService.getNotifications().then((data) => {
       if (data) checkUnreadNotifications();
     }).catch((e) => logger.warn('[Home] Notification badge check failed:', e));
