@@ -21,10 +21,12 @@ import {
 } from 'lucide-react-native';
 import { eventBus } from '../services/event-bus';
 import React, { useEffect, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiService } from '../services/api';
 import { useApp } from '../store/AppContext';
 import { logger } from '@/lib/logger';
 import { toast, errorToastMessage } from '@/lib/feedback';
+import { queryKeys } from '@/lib/query-keys';
 import {
   Image,
   ScrollView,
@@ -204,11 +206,10 @@ const HAZARD_DISASTER_ALERTS = [
 // ─── Main Component ─────────────────────────────────────────────────
 export default function NotificationsScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { setActiveRoomId, checkUnreadNotifications } = useApp();
   const [activeTab, setActiveTab] = useState<TabType>('ALL');
-  const [unreadCount, setUnreadCount] = useState(5);
   const [secondsLeft, setSecondsLeft] = useState(8140);
-  const [notifications, setNotifications] = useState<any[]>([]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -217,29 +218,27 @@ export default function NotificationsScreen() {
     return () => clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    loadNotifications();
-  }, []);
+  // REMEDIATION.md §6.3: fetching now goes through TanStack Query for
+  // caching/retry/offline-cache benefits. The mock-template merge below
+  // (mappedHazards/mappedTrips/mappedSeasonal) is deliberately left as-is —
+  // untangling "real data vs. demo content" here is a Phase 8 product
+  // decision, not a Phase 6 data-layer change.
+  const { data: notifications = [], refetch: refetchNotifications } = useQuery({
+    queryKey: queryKeys.notifications(),
+    queryFn: async () => (await apiService.getNotifications()) ?? [],
+  });
 
-  const loadNotifications = async () => {
-    try {
-      const data = await apiService.getNotifications();
-      if (data && data.length > 0) {
-        setNotifications(data);
-        const unreads = data.filter((n: any) => n.unread).length;
-        setUnreadCount(unreads);
-      }
-    } catch (e) {
-      logger.warn('[Notifications] Load failed:', e);
-      toast(errorToastMessage(e, 'Could not load notifications.'), 'error');
-    }
-  };
+  // Matches the previous behaviour exactly: a placeholder count of 5 until
+  // real notifications have actually loaded, then the real unread count.
+  const unreadCount = notifications.length > 0 ? notifications.filter((n: any) => n.unread).length : 5;
 
   const handleMarkAllRead = async () => {
     try {
       await apiService.markNotificationsRead();
-      setUnreadCount(0);
-      loadNotifications();
+      queryClient.setQueryData(queryKeys.notifications(), (prev: any[] = []) =>
+        prev.map((n) => ({ ...n, unread: false }))
+      );
+      await refetchNotifications();
     } catch (e) {
       logger.warn('[Notifications] Mark-all-read failed:', e);
       toast(errorToastMessage(e, 'Could not mark notifications as read.'), 'error');
@@ -475,7 +474,7 @@ export default function NotificationsScreen() {
                   } catch (e) {
                     logger.warn('[Notifications] Mark-read failed:', e);
                   }
-                  loadNotifications();
+                  await refetchNotifications();
                   checkUnreadNotifications();
                   if (notif.chatRoomId) {
                     setActiveRoomId(notif.chatRoomId);
