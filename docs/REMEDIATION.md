@@ -1153,12 +1153,31 @@ partial, exactly what's blocking full completion.
       banner (src/components/OfflineBanner.tsx), and an offline mutation
       queue for join-request/SOS writes that flushes on reconnect
       (src/lib/offline-mutation-queue.ts) — deliberately NOT covering chat
-      messages, see that file's header comment for why. Not started:
-      actually migrating screens' hand-rolled `useEffect` fetches onto
-      `useQuery`/`useMutation` (the queryClient/keys exist but nothing
-      calls them yet) — this is the bulk of §6.3's DoD and touches most
-      screens, deferred as too large for this pass; §6.4 shared
-      client/server types. See commits 49b1206, and the one after it.
+      messages, see that file's header comment for why. Also fixed:
+      startMutationQueueAutoFlush() was firing during Expo Router's web SSR
+      pass (no `window` there) — caught, non-fatal, but wrong; now runs in
+      a client-only useEffect. Found this by actually launching the app
+      (Playwright against `expo start --web`, since no chromium-cli or
+      claude-in-chrome was available) — see the Playwright/live-testing
+      approach if this needs repeating.
+      notifications.tsx and home-screen.tsx (feed/destinations/weather/
+      alerts) migrated to useQuery — decided with the user to keep each
+      screen's existing mock-data-merge/fallback behavior exactly as-is
+      (untangling real-vs-mock is Phase 8 scope) and only swap the fetch
+      mechanism. search.tsx's likedTrips was evaluated and deliberately
+      NOT migrated: it's entangled with an already-correct optimistic
+      update+rollback (setLikedTrips), and moving it onto
+      queryClient.setQueryData was judged more risk than benefit for this
+      pass. Remaining unmigrated: search.tsx (likedTrips/unread count),
+      chat.tsx, stories.tsx, AppContext's own fetches (trips/guides/
+      sosAlerts/storiesList — left alone because they're tied into
+      sockets, requestedTrips, and hand-rolled optimistic mutations that
+      already work correctly; a full AppContext rewrite onto useQuery is
+      higher-risk and wasn't attempted), guide/map/profile screens.
+      §6.4 (shared client/server types) explicitly deferred per user
+      decision — no monorepo tooling exists yet and most backend routes
+      aren't zod-validated, so pick an approach once Phase 5's validation
+      coverage is more complete. See commits 49b1206 through df852b4.
       Also found:
       `npm run lint` at HEAD (before this session) already had 381 errors —
       Phase 1's "lint ✅" checkbox above is stale, most likely because
