@@ -2,6 +2,7 @@ import { DarkTheme, ThemeProvider, Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { enableScreens } from 'react-native-screens';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
+import { useEffect } from 'react';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { OfflineBanner } from '@/components/OfflineBanner';
@@ -14,11 +15,6 @@ import { startMutationQueueAutoFlush } from '@/lib/offline-mutation-queue';
 enableScreens();
 
 void SplashScreen.preventAutoHideAsync();
-
-// Registered once at module scope (mirrors preventAutoHideAsync above):
-// hydrates any queued offline writes from the last session and starts
-// listening for reconnect events. See src/lib/offline-mutation-queue.ts.
-startMutationQueueAutoFlush();
 
 // The app is dark-mode only for now — see docs/REMEDIATION.md §1.3. A real
 // light theme is Phase 9 design-system work; until then we don't pretend to
@@ -33,6 +29,15 @@ const AppTheme = {
 };
 
 export default function RootLayout() {
+  // Client-only: on web this layout also renders during Expo Router's SSR
+  // pass, where `window`/AsyncStorage don't exist. A useEffect never runs
+  // during SSR (only after hydration in the browser), unlike the previous
+  // module-scope call which fired on every server render too and threw
+  // inside safeStorage (caught, but noisy and pointless server-side).
+  useEffect(() => {
+    startMutationQueueAutoFlush();
+  }, []);
+
   return (
     <PersistQueryClientProvider
       client={queryClient}
