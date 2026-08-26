@@ -6,7 +6,11 @@ const tsParser = require('@typescript-eslint/parser');
 module.exports = defineConfig([
   expoConfig,
   {
-    ignores: ['dist/*', 'backend/**', 'eslint.config.js'],
+    // scripts/** holds plain Node CommonJS tooling (e.g.
+    // generate-licenses.js) — same reason eslint.config.js itself is
+    // exempted: __dirname/require aren't configured as globals for the
+    // app-source TS/TSX rules below, and these aren't app source.
+    ignores: ['dist/*', 'backend/**', 'eslint.config.js', 'scripts/**'],
   },
   {
     files: ['**/*.ts', '**/*.tsx'],

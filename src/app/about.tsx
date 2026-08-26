@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   Text,
   StatusBar,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -32,13 +31,6 @@ const C = {
 export default function AboutScreen() {
   const router = useRouter();
 
-  const handleLegalLink = (title: string) => {
-    Alert.alert(
-      title,
-      `This is a mock implementation of the ${title}. In a production release, this would open the official document.`,
-      [{ text: 'OK' }]
-    );
-  };
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
@@ -80,7 +72,7 @@ export default function AboutScreen() {
           <TouchableOpacity
             activeOpacity={0.7}
             style={styles.legalRow}
-            onPress={() => handleLegalLink('Terms of Service')}
+            onPress={() => router.push('/legal/terms')}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <FileText size={16} color={C.textSec} style={{ marginRight: 10 }} />
@@ -93,7 +85,7 @@ export default function AboutScreen() {
           <TouchableOpacity
             activeOpacity={0.7}
             style={styles.legalRow}
-            onPress={() => handleLegalLink('Privacy Policy')}
+            onPress={() => router.push('/legal/privacy')}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <Shield size={16} color={C.textSec} style={{ marginRight: 10 }} />
@@ -106,7 +98,7 @@ export default function AboutScreen() {
           <TouchableOpacity
             activeOpacity={0.7}
             style={styles.legalRow}
-            onPress={() => handleLegalLink('Licenses')}
+            onPress={() => router.push('/licenses')}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <Info size={16} color={C.textSec} style={{ marginRight: 10 }} />

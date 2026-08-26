@@ -58,7 +58,8 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings=0",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "licenses:generate": "node scripts/generate-licenses.js"
   },
   "private": true
 }
