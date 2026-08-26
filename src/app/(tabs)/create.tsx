@@ -3,7 +3,8 @@ import { logger } from '@/lib/logger';
 import { apiService } from '@/services/api';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useRouter, type ErrorBoundaryProps } from 'expo-router';
+import { RouteErrorFallback } from '@/components/route-error-fallback';
 import {
   Calendar as CalendarIcon,
   Car,
@@ -3375,3 +3376,7 @@ const styles = StyleSheet.create({
 });
 
 export default memo(CreateTripScreen);
+
+export function ErrorBoundary(props: ErrorBoundaryProps) {
+  return <RouteErrorFallback {...props} label="Create" />;
+}

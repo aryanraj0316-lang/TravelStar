@@ -2,7 +2,8 @@ import { logger } from '@/lib/logger';
 import AuthScreen from '@/app/auth';
 import { useApp } from '@/store/AppContext';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter, useNavigation } from 'expo-router';
+import { useRouter, useNavigation, type ErrorBoundaryProps } from 'expo-router';
+import { RouteErrorFallback } from '@/components/route-error-fallback';
 import {
   Bell,
   Bookmark,
@@ -1985,3 +1986,7 @@ const styles = StyleSheet.create({
 });
 
 export default React.memo(ProfileScreen);
+
+export function ErrorBoundary(props: ErrorBoundaryProps) {
+  return <RouteErrorFallback {...props} label="Profile" />;
+}

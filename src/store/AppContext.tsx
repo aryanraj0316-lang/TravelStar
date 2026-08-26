@@ -131,6 +131,7 @@ interface AppContextType {
   profile: UserProfile;
   updateProfile: (profile: Partial<UserProfile>) => void;
   isLoggedIn: boolean;
+  sessionRestored: boolean;
   login: () => void;
   logout: () => void;
   trips: Trip[];
@@ -203,6 +204,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  // True once the local session read (isLoggedIn/savedProfile from
+  // storage) has settled — see the hydrate effect below and §7.5.
+  const [sessionRestored, setSessionRestored] = useState(false);
 
   const login = useCallback(() => {
     setIsLoggedIn(true);
@@ -467,26 +471,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // ── One-time mount: hydrate auth, profile, socket, guides, wallet, SOS, stories ──
   useEffect(() => {
-    // Hydrate local auth status and saved profile safely
-    try {
+    // Hydrate local auth status and saved profile. sessionRestored flips
+    // once both local reads have settled (success or failure) — the root
+    // layout's splash screen waits on it (REMEDIATION.md §7.5) so it never
+    // hides before we actually know whether the user is logged in. This is
+    // deliberately NOT gated on the remote getProfile() call below, which
+    // keeps running in the background and can be slow or fail offline —
+    // local storage is fast and authoritative enough for "logged in or
+    // not"; waiting on the network here would just make the splash hang.
+    Promise.allSettled([
       safeStorage.getItem('isLoggedIn').then((val) => {
         if (val === 'true') {
           setIsLoggedIn(true);
         }
-      }).catch((e) => logger.warn('[Hydrate] Reading isLoggedIn failed:', e));
-
+      }),
       safeStorage.getItem('savedProfile').then((val) => {
         if (val) {
-          try {
-            setProfile(JSON.parse(val));
-          } catch (e) {
-            logger.warn('[Hydrate] Saved profile was not valid JSON:', e);
-          }
+          setProfile(JSON.parse(val));
         }
-      }).catch((e) => logger.warn('[Hydrate] Reading savedProfile failed:', e));
-    } catch (e) {
-      logger.warn('[Storage Warning] Native module fallback:', e);
-    }
+      }),
+    ]).then((results) => {
+      results.forEach((r) => {
+        if (r.status === 'rejected') logger.warn('[Hydrate] Reading local session failed:', r.reason);
+      });
+      setSessionRestored(true);
+    });
 
     // Auto-sign-in from backend profile (only on initial load). A 401 here
     // just means there's no valid session yet (the common case pre-login) —
@@ -820,6 +829,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     profile,
     updateProfile,
     isLoggedIn,
+    sessionRestored,
     login,
     logout,
     trips,
@@ -853,6 +863,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     profile,
     updateProfile,
     isLoggedIn,
+    sessionRestored,
     login,
     logout,
     trips,

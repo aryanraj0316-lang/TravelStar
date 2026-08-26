@@ -2,7 +2,8 @@ import { useApp } from '@/store/AppContext';
 import { logger } from '@/lib/logger';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
-import { useIsFocused, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
+import { useIsFocused, useLocalSearchParams, useNavigation, useRouter, type ErrorBoundaryProps } from 'expo-router';
+import { RouteErrorFallback } from '@/components/route-error-fallback';
 import { eventBus } from '@/services/event-bus';
 import {
   AlertCircle,
@@ -2427,3 +2428,7 @@ const styles = StyleSheet.create({
 });
 
 export default memo(MapScreen);
+
+export function ErrorBoundary(props: ErrorBoundaryProps) {
+  return <RouteErrorFallback {...props} label="Map" />;
+}

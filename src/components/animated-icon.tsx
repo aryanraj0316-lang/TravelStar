@@ -1,16 +1,33 @@
 import { Image } from 'expo-image';
 import * as SplashScreen from 'expo-splash-screen';
-import { useState } from 'react';
+import { logger } from '@/lib/logger';
+import { useEffect, useState } from 'react';
 import { Dimensions, StyleSheet, View } from 'react-native';
 import Animated, { Easing, Keyframe } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 
+import { useApp } from '@/store/AppContext';
+
 const INITIAL_SCALE_FACTOR = Dimensions.get('screen').height / 90;
 const DURATION = 600;
 
+// `ready` gates the hide — without it, onLayout below fires on the very
+// first render (well before AppContext's session-restore hydrate effect
+// resolves) and hides the splash unconditionally, producing a visible
+// flash of logged-out UI before the real session state is known
+// (REMEDIATION.md §7.5). Waits on AppContext's `sessionRestored` instead.
 export function AnimatedSplashOverlay() {
+  const { sessionRestored } = useApp();
   const [animate, setAnimate] = useState(false);
   const [visible, setVisible] = useState(true);
+  const [laidOut, setLaidOut] = useState(false);
+
+  useEffect(() => {
+    if (!sessionRestored || !laidOut || animate) return;
+    SplashScreen.hideAsync()
+      .catch((e) => logger.warn('[Splash] hideAsync failed:', e))
+      .finally(() => setAnimate(true));
+  }, [sessionRestored, laidOut, animate]);
 
   if (!visible) return null;
 
@@ -47,13 +64,7 @@ export function AnimatedSplashOverlay() {
       {image}
     </Animated.View>
   ) : (
-    <View
-      onLayout={() => {
-        SplashScreen.hideAsync().finally(() => {
-          setAnimate(true);
-        });
-      }}
-      style={styles.splashOverlay}>
+    <View onLayout={() => setLaidOut(true)} style={styles.splashOverlay}>
       {image}
     </View>
   );

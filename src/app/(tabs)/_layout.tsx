@@ -1,7 +1,17 @@
-import { Tabs } from 'expo-router';
+import { Tabs, type ErrorBoundaryProps } from 'expo-router';
 
 import { AppTabBar } from '@/components/AppTabBar';
 import { InAppNotificationBanner } from '@/components/InAppNotificationBanner';
+import { RouteErrorFallback } from '@/components/route-error-fallback';
+
+// Secondary safety net for a crash in shared tab-group chrome (AppTabBar,
+// InAppNotificationBanner) rather than in one screen's own content — each
+// of the six screens also exports its own ErrorBoundary below, which
+// catches first and keeps the tab bar itself alive. This one only fires if
+// this layout's own render throws.
+export function ErrorBoundary(props: ErrorBoundaryProps) {
+  return <RouteErrorFallback {...props} label="Navigation" />;
+}
 
 // Real expo-router tab navigator (REMEDIATION.md §7.1/§7.3), replacing the
 // old horizontal-ScrollView "pager" that faked tabs while every screen was

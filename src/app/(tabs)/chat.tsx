@@ -1,6 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { logger } from '@/lib/logger';
-import { useRouter } from 'expo-router';
+import { useRouter, type ErrorBoundaryProps } from 'expo-router';
+import { RouteErrorFallback } from '@/components/route-error-fallback';
 import {
   AlertCircle,
   AlertTriangle,
@@ -5469,3 +5470,7 @@ const styles = StyleSheet.create({
 });
 
 export default memo(ChatScreen);
+
+export function ErrorBoundary(props: ErrorBoundaryProps) {
+  return <RouteErrorFallback {...props} label="Chat" />;
+}

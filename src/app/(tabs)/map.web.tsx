@@ -4,7 +4,8 @@ import GlassCard from '@/components/ui/GlassCard';
 import { useApp } from '@/store/AppContext';
 import { eventBus } from '@/services/event-bus';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, type ErrorBoundaryProps } from 'expo-router';
+import { RouteErrorFallback } from '@/components/route-error-fallback';
 import {
   AlertCircle,
   ArrowLeft,
@@ -2060,3 +2061,7 @@ const styles = StyleSheet.create({
 });
 
 export default memo(WebMapScreen);
+
+export function ErrorBoundary(props: ErrorBoundaryProps) {
+  return <RouteErrorFallback {...props} label="Map" />;
+}

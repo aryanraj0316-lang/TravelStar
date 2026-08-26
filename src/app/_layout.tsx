@@ -1,4 +1,4 @@
-import { DarkTheme, ThemeProvider, Stack } from 'expo-router';
+import { DarkTheme, ThemeProvider, Stack, type ErrorBoundaryProps } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { enableScreens } from 'react-native-screens';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
@@ -6,11 +6,20 @@ import { useEffect } from 'react';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { OfflineBanner } from '@/components/OfflineBanner';
+import { RouteErrorFallback } from '@/components/route-error-fallback';
 import { AppProvider } from '@/store/AppContext';
 import { FeedbackProvider } from '@/lib/feedback';
 import { queryClient } from '@/lib/query-client';
 import { queryPersister, QUERY_CACHE_MAX_AGE_MS } from '@/lib/query-persister';
 import { startMutationQueueAutoFlush } from '@/lib/offline-mutation-queue';
+
+// Root error boundary (REMEDIATION.md §7.5) — expo-router auto-wraps the
+// whole app in this when a named `ErrorBoundary` export exists on the root
+// layout, catching anything not already caught by a more specific screen's
+// own boundary (including a crash inside the providers below).
+export function ErrorBoundary(props: ErrorBoundaryProps) {
+  return <RouteErrorFallback {...props} />;
+}
 
 enableScreens();
 
