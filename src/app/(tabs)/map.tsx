@@ -1,5 +1,7 @@
 import { useApp } from '@/store/AppContext';
 import { logger } from '@/lib/logger';
+import { toast } from '@/lib/feedback';
+import { getCurrentDeviceLocation } from '@/lib/device-location';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import { useIsFocused, useLocalSearchParams, useNavigation, useRouter, type ErrorBoundaryProps } from 'expo-router';
@@ -960,9 +962,19 @@ function MapScreen() {
     ).start();
   }, []);
 
-  const handleSOS = () => {
-    const startCoord = activeRouteCoords[0] || { latitude: 28.6139, longitude: 77.2090 };
-    triggerSOS(startCoord.latitude, startCoord.longitude);
+  // Real device GPS (REMEDIATION.md §8.9) — previously this sent the
+  // route's start coordinate (or a hardcoded New Delhi fallback), not
+  // where the user actually was.
+  const handleSOS = async () => {
+    const location = await getCurrentDeviceLocation();
+    if (!location.ok) {
+      const message = location.reason === 'PERMISSION_DENIED'
+        ? 'Location permission is required to send an accurate SOS. Please enable it and try again, or call 112 directly.'
+        : 'Could not get your current location. Please try again, or call 112 directly.';
+      toast(message, 'error');
+      return;
+    }
+    triggerSOS(location.latitude, location.longitude);
     setSosTriggered(true);
   };
 

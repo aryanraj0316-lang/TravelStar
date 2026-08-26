@@ -1,5 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { logger } from '@/lib/logger';
+import { toast } from '@/lib/feedback';
+import { getCurrentDeviceLocation } from '@/lib/device-location';
 import { useRouter, type ErrorBoundaryProps } from 'expo-router';
 import { RouteErrorFallback } from '@/components/route-error-fallback';
 import {
@@ -1396,7 +1398,7 @@ function ChatScreen() {
         if (prev === null) return null;
         if (prev <= 1) {
           clearInterval(countdownInterval.current!);
-          triggerSOSEvent();
+          void triggerSOSEvent();
           return null;
         }
         return prev - 1;
@@ -1411,15 +1413,20 @@ function ChatScreen() {
     setSosCountdown(null);
   };
 
-  // Trigger SOS context logic
-  const triggerSOSEvent = () => {
-    let lat = 27.5650;
-    let lng = 77.6593;
-    if (selectedTripId === 'trip-2') {
-      lat = 34.1526; lng = 77.5770;
-    } else if (selectedTripId === 'trip-3') {
-      lat = 9.9312; lng = 76.2673;
+  // Trigger SOS context logic. Uses the real device GPS position
+  // (REMEDIATION.md §8.9) — never a guessed/hardcoded coordinate. If the
+  // device can't produce a real fix, the alert is not sent with a wrong
+  // location; the user is told to try again or call 112 directly instead.
+  const triggerSOSEvent = async () => {
+    const location = await getCurrentDeviceLocation();
+    if (!location.ok) {
+      const message = location.reason === 'PERMISSION_DENIED'
+        ? 'Location permission is required to send an accurate SOS. Please enable it and try again, or call 112 directly.'
+        : 'Could not get your current location. Please try again, or call 112 directly.';
+      toast(message, 'error');
+      return;
     }
+    const { latitude: lat, longitude: lng } = location;
 
     triggerSOS(lat, lng);
 

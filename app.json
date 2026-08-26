@@ -42,6 +42,12 @@
           "cameraPermission": "Allow TravelStar to access your camera to take a profile picture."
         }
       ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "TravelStar uses your location to send your real position when you trigger an SOS alert, and to show it on the trip map."
+        }
+      ],
       "expo-image",
       "expo-web-browser",
       "expo-secure-store"

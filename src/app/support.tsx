@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   Text,
   StatusBar,
-  Alert,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -17,6 +17,8 @@ import {
   PhoneCall,
   LifeBuoy,
 } from 'lucide-react-native';
+import { logger } from '@/lib/logger';
+import { toast } from '@/lib/feedback';
 
 const C = {
   bg: '#070913',
@@ -32,15 +34,18 @@ const C = {
 export default function SupportScreen() {
   const router = useRouter();
 
+  // Dials India's real national emergency number (docs/REMEDIATION.md
+  // §8.9 — the previous version popped an Alert claiming to dial a
+  // "TravelStar SOS Hotline" that didn't exist, then popped a second Alert
+  // pretending it had placed a call. A non-functional emergency button is
+  // a safety hazard and a store-rejection risk. No confirmation step: an
+  // SOS control should minimize friction, not add a tap before a real call
+  // in an actual emergency.
   const handleSOSCall = () => {
-    Alert.alert(
-      '🚨 Direct SOS Hotline',
-      'Are you sure you want to dial the emergency response hotline? (Mock call: +91 1800-SOS-HELP)',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Call Emergency', onPress: () => Alert.alert('Dialing emergency hotline...') },
-      ]
-    );
+    Linking.openURL('tel:112').catch((e) => {
+      logger.warn('[Support] Failed to open the phone dialer:', e);
+      toast('Could not open the dialer automatically. Please dial 112 directly.', 'error');
+    });
   };
 
   return (
@@ -73,10 +78,13 @@ export default function SupportScreen() {
 
         {/* Minimal Support Channels */}
         <View style={styles.contactContainer}>
-          {/* Chat Support */}
+          {/* Chat Support — no live-chat vendor is integrated yet (a real
+              build here needs picking one, e.g. Intercom/Zendesk); honest
+              about that instead of the previous Alert.alert that silently
+              no-ops on web and claimed a chat had started. */}
           <TouchableOpacity
             activeOpacity={0.8}
-            onPress={() => Alert.alert('💬 Support Live Chat', 'Initiating live support assistant chat...')}
+            onPress={() => toast('Live chat isn\'t available yet — email us at support@travelstar.app in the meantime.', 'info')}
             style={styles.contactCard}
           >
             <View style={styles.contactIconBg}>
@@ -91,7 +99,10 @@ export default function SupportScreen() {
           {/* Email Support */}
           <TouchableOpacity
             activeOpacity={0.8}
-            onPress={() => Alert.alert('✉️ Email Support', 'Opening email draft to support@travelstar.app...')}
+            onPress={() => Linking.openURL('mailto:support@travelstar.app').catch((e) => {
+              logger.warn('[Support] Failed to open mail client:', e);
+              toast('Could not open your email app. Please email support@travelstar.app directly.', 'error');
+            })}
             style={styles.contactCard}
           >
             <View style={styles.contactIconBg}>
@@ -113,8 +124,8 @@ export default function SupportScreen() {
               <PhoneCall size={18} color={C.rose} />
             </View>
             <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={[styles.contactTitle, { color: C.rose }]}>24/7 Safety SOS Hotline</Text>
-              <Text style={styles.contactSubtitle}>For urgent safety and travel emergencies</Text>
+              <Text style={[styles.contactTitle, { color: C.rose }]}>Call 112 — National Emergency Number</Text>
+              <Text style={styles.contactSubtitle}>India&apos;s emergency helpline — police, ambulance, fire</Text>
             </View>
           </TouchableOpacity>
         </View>

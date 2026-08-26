@@ -1,5 +1,7 @@
 import { ThemedText } from '@/components/themed-text';
 import { logger } from '@/lib/logger';
+import { toast } from '@/lib/feedback';
+import { getCurrentDeviceLocation } from '@/lib/device-location';
 import GlassCard from '@/components/ui/GlassCard';
 import { useApp } from '@/store/AppContext';
 import { eventBus } from '@/services/event-bus';
@@ -302,8 +304,19 @@ function WebMapScreen() {
     postMapMessage({ type: 'RECENTER' });
   };
 
-  const handleSOS = () => {
-    triggerSOS(28.6139, 77.2090);
+  // Real device GPS via the browser's Geolocation API (REMEDIATION.md
+  // §8.9) — previously hardcoded to New Delhi's coordinates regardless of
+  // where the user actually was.
+  const handleSOS = async () => {
+    const location = await getCurrentDeviceLocation();
+    if (!location.ok) {
+      const message = location.reason === 'PERMISSION_DENIED'
+        ? 'Location permission is required to send an accurate SOS. Please enable it and try again, or call 112 directly.'
+        : 'Could not get your current location. Please try again, or call 112 directly.';
+      toast(message, 'error');
+      return;
+    }
+    triggerSOS(location.latitude, location.longitude);
     setSosTriggered(true);
   };
 
