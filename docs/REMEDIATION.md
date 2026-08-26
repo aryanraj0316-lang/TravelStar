@@ -1213,7 +1213,26 @@ partial, exactly what's blocking full completion.
       (expo-logo.png/logo-glow.png) — §1.2 called for real branded
       assets and Phase 1's tracker claims this is done; it isn't. Needs
       actual brand assets from the user, not a guessed placeholder.)
-- [ ] Phase 8 — Feature completion (not started)
+- [ ] Phase 8 — Feature completion (in progress — this phase has 21
+      sub-sections (§8.1-§8.21), several of which are genuinely large
+      standalone builds (real push notifications, PostGIS geospatial
+      search, a bookings/e-ticket system, media upload pipelines) rather
+      than bug fixes; working through them roughly in severity order
+      (safety/legal risk first) rather than sequentially §8.1→§8.21, and
+      taking the doc's own "remove it" option where it's offered instead
+      of building fake infrastructure. Progress:
+      §8.5 done — AppContext.cancelJoinRequest wired up (was fake:
+      local-state-only + Alert.alert, never called the API).
+      §8.6 done — all three documented Family Connect breaks fixed
+      (missing To-City picker, joinTrip not passing midway options,
+      confirmed §5.3's midway-join fix still correct) plus the
+      client-trusted-price hole the doc's pricing-rule note implied:
+      backend/src/services/midway-pricing.ts is now the one
+      implementation (previously 3 disagreeing copies), server-computed
+      and authoritative, with 7 new backend tests. See commit 67380bb —
+      verified live via browser (city-picker filtering, price math) since
+      the real Neon DB has no seed data to test the full round trip
+      against and I didn't want to write test data there unasked.)
 - [ ] Phase 9 — Design system, i18n, accessibility (not started)
 - [ ] Phase 10 — Performance (not started)
 - [ ] Phase 11 — Observability and operations (not started)
