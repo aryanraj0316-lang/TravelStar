@@ -2,6 +2,8 @@ import { useApp } from '@/store/AppContext';
 import { logger } from '@/lib/logger';
 import { toast, errorToastMessage } from '@/lib/feedback';
 import { apiService } from '@/services/api';
+import { useQuery } from '@tanstack/react-query';
+import { queryKeys } from '@/lib/query-keys';
 import TripDetailModal from '@/components/TripDetailModal';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useNavigation } from 'expo-router';
@@ -163,9 +165,19 @@ function SearchScreen() {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [likedTrips, setLikedTrips] = useState<Set<string>>(new Set());
-  const [hasUnreadNotifs, setHasUnreadNotifs] = useState(false);
 
-  // Load liked trips, join requests, and notification dot on focus / mount
+  // REMEDIATION.md §6.3: via useQuery for caching/retry — refetched on
+  // screen focus to match the previous behaviour exactly.
+  const { data: unreadNotifCount = 0, refetch: refetchUnreadNotifs } = useQuery({
+    queryKey: queryKeys.unreadNotificationCount(),
+    queryFn: async () => (await apiService.getUnreadNotificationCount())?.count ?? 0,
+  });
+  const hasUnreadNotifs = unreadNotifCount > 0;
+
+  // Load liked trips and join requests on focus / mount. (Liked trips stay
+  // hand-rolled state, not useQuery — toggleLike below already implements a
+  // correct optimistic-update+rollback against it; see docs/REMEDIATION.md
+  // progress notes for why that wasn't converted this pass.)
   useEffect(() => {
     const fetchStates = () => {
       apiService.getLikedTrips().then((ids) => {
@@ -174,23 +186,16 @@ function SearchScreen() {
         } else {
           setLikedTrips(new Set());
         }
-      });
+      }).catch((e) => logger.warn('[Search] Liked trips fetch failed:', e));
 
       reloadJoinRequests();
-
-      apiService.getUnreadNotificationCount().then((res) => {
-        if (res && res.count > 0) {
-          setHasUnreadNotifs(true);
-        } else {
-          setHasUnreadNotifs(false);
-        }
-      });
+      void refetchUnreadNotifs();
     };
 
     fetchStates();
     const unsubscribe = navigation.addListener('focus', fetchStates);
     return unsubscribe;
-  }, [navigation]);
+  }, [navigation, reloadJoinRequests, refetchUnreadNotifs]);
 
   // Join modal state
   const [selectedTrip, setSelectedTrip] = useState<any>(null);
