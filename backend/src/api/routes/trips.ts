@@ -239,6 +239,53 @@ router.get('/nearby', (req, res) => {
   res.status(200).json({ ok: true, data: nearbyPlaces });
 });
 
+// Get the authenticated user's confirmed trips — the real, payment-free v1
+// stand-in for a "booking" (docs/REMEDIATION.md §8.11). Payments/wallet
+// were removed for v1 (§5.5/§5.6), so there is no Payment/Booking row to
+// read here. "Confirmed" means either: the user organizes the trip
+// (Trip.creatorId), or the user has a TripMember row (joined and got a
+// seat) — creating a trip does NOT also insert a TripMember row for its
+// creator (see services/trip-membership.ts), so both sources are required
+// or an organizer's own trips would be invisible on this screen. Status is
+// derived from the trip's own dates rather than stored, so it can never
+// drift out of sync.
+router.get('/mine', async (req, res) => {
+  const userId = requireUserId(req);
+  try {
+    const trips = await prisma.trip.findMany({
+      where: {
+        status: { not: 'CANCELLED' },
+        OR: [{ creatorId: userId }, { members: { some: { userId } } }],
+      },
+      include: { ...TRIP_INCLUDE, members: { where: { userId } } },
+      orderBy: { startDate: 'desc' },
+    });
+
+    const now = Date.now();
+    const data = trips.map((t) => {
+      const mapped = mapTrip(t, userId);
+      const startMs = t.startDate.getTime();
+      // A trip "ends" at the close of its end date, not midnight at the
+      // start of it — otherwise the last day of a trip reads as COMPLETED.
+      const endMs = t.endDate.getTime() + 24 * 60 * 60 * 1000 - 1;
+      const status: 'ONGOING' | 'UPCOMING' | 'COMPLETED' =
+        now < startMs ? 'UPCOMING' : now > endMs ? 'COMPLETED' : 'ONGOING';
+      const isOrganizer = t.creatorId === userId;
+      return {
+        ...mapped,
+        status,
+        joinedAt: (isOrganizer ? t.createdAt : t.members[0]!.joinedAt).toISOString(),
+        memberRole: isOrganizer ? 'ORGANIZER' as const : t.members[0]!.role,
+      };
+    });
+
+    return res.status(200).json({ ok: true, data });
+  } catch (err) {
+    logger.error('[Trips] Get my trips error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve your trips.' } });
+  }
+});
+
 // Get Trip by ID
 router.get('/:id', async (req, res) => {
   const { id } = req.params;

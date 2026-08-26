@@ -79,6 +79,15 @@ export interface Trip {
   chatRoomId?: string;
 }
 
+// A trip the current user is a confirmed TripMember on, returned by
+// GET /trips/mine (docs/REMEDIATION.md §8.11). `status` is derived
+// server-side from the trip's dates, never stored — see that route.
+export interface MyTripBooking extends Trip {
+  status: 'ONGOING' | 'UPCOMING' | 'COMPLETED';
+  joinedAt: string;
+  memberRole: 'MEMBER' | 'ORGANIZER' | 'CO_LEAD';
+}
+
 export interface Guide {
   id: string;
   name: string;

@@ -3,7 +3,7 @@ import { eventBus } from './event-bus';
 import { logger } from '@/lib/logger';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
-import { Guide, SOSAlert, Trip, UserProfile } from '../store/AppContext';
+import { Guide, MyTripBooking, SOSAlert, Trip, UserProfile } from '../store/AppContext';
 import { ApiErrorCode } from '@/types/api-error-codes';
 
 // Request-ID / idempotency-key generation only needs uniqueness, not
@@ -317,6 +317,13 @@ export const apiService = {
   // Trips
   async getTrips(): Promise<Trip[] | null> {
     return request<Trip[]>('/trips');
+  },
+
+  // Trips the current user is a confirmed member of — real data backing
+  // the "My Bookings" screen now that payments/wallet are removed for v1
+  // (docs/REMEDIATION.md §8.11).
+  async getMyTrips(): Promise<MyTripBooking[] | null> {
+    return request<MyTripBooking[]>('/trips/mine');
   },
 
   async createTrip(tripData: Partial<Trip>): Promise<Trip | null> {

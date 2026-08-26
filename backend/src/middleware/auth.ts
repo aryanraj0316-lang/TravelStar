@@ -48,7 +48,12 @@ const PUBLIC_GET_EXACT = new Set([
 ]);
 
 const PUBLIC_GET_PATTERNS = [
-  /^\/trips\/[^/]+$/, // /trips/:id — but not /trips/:id/members or deeper
+  // /trips/:id — but not /trips/:id/members or deeper, and not /trips/mine,
+  // which returns the caller's own private trip list and must stay behind
+  // a required token (this pattern would otherwise treat "mine" as a trip
+  // ID and let it through as an anonymous, public GET — docs/REMEDIATION.md
+  // §8.11's integration test caught exactly this).
+  /^\/trips\/(?!mine$)[^/]+$/,
   /^\/guides\/[^/]+\/packages$/, // /guides/:id/packages
   /^\/guides\/[^/]+\/reels$/, // /guides/:id/reels
 ];

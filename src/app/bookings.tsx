@@ -1,29 +1,33 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import { useQuery } from '@tanstack/react-query';
 import {
+  AlertCircle,
   ArrowLeft,
   Calendar,
   ChevronRight,
   Compass,
-  DollarSign,
-  Info,
   MapPin,
+  MessageCircle,
   Users,
 } from 'lucide-react-native';
 import { useState } from 'react';
 import {
+  ActivityIndicator,
   Image,
+  RefreshControl,
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-
+import { apiService } from '@/services/api';
+import { queryKeys } from '@/lib/query-keys';
+import { useApp } from '@/store/AppContext';
 
 const C = {
   bg: '#070913',
@@ -40,74 +44,37 @@ const C = {
   rose: '#EC4899',
 };
 
-interface Booking {
-  id: string;
-  tripName: string;
-  startDate: string;
-  endDate: string;
-  pricePaid: number;
-  status: 'ONGOING' | 'UPCOMING' | 'COMPLETED';
-  cities: string[];
-  meetingPoint: string;
-  bookingId: string;
-  image: string;
-  seatsBooked: number;
-}
-
-const MOCK_BOOKINGS: Booking[] = [
-  {
-    id: 'b-1',
-    tripName: 'Ranchi to Vrindavan Spiritual Journey',
-    startDate: '2026-07-20',
-    endDate: '2026-07-25',
-    pricePaid: 8500,
-    status: 'ONGOING',
-    cities: ['Ranchi', 'Delhi', 'Mathura', 'Vrindavan'],
-    meetingPoint: 'Ranchi Junction Platform 1',
-    bookingId: 'TS-BK-99120',
-    image: 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=500&q=80',
-    seatsBooked: 2,
-  },
-  {
-    id: 'b-2',
-    tripName: 'Leh Ladakh Bike Expedition',
-    startDate: '2026-09-05',
-    endDate: '2026-09-14',
-    pricePaid: 28000,
-    status: 'UPCOMING',
-    cities: ['Manali', 'Sarchu', 'Leh', 'Nubra Valley', 'Pangong Tso'],
-    meetingPoint: 'Manali Mall Road',
-    bookingId: 'TS-BK-99125',
-    image: 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=500&q=80',
-    seatsBooked: 1,
-  },
-  {
-    id: 'b-3',
-    tripName: 'Golden Triangle Explorer',
-    startDate: '2026-06-10',
-    endDate: '2026-06-15',
-    pricePaid: 12500,
-    status: 'COMPLETED',
-    cities: ['Delhi', 'Agra', 'Jaipur'],
-    meetingPoint: 'New Delhi Railway Station Gate 1',
-    bookingId: 'TS-BK-99081',
-    image: 'https://images.unsplash.com/photo-1587474260584-136574528ed5?w=500&q=80',
-    seatsBooked: 3,
-  },
-];
-
 type BookingFilter = 'ALL' | 'ONGOING' | 'UPCOMING' | 'COMPLETED';
 
+// This screen used to render MOCK_BOOKINGS: fake trips with a fabricated
+// "Amount Paid" and a bookingId, plus Alert.alert popups pretending to
+// verify an e-ticket / accept a review (docs/REMEDIATION.md §8.11).
+// Payments/wallet were removed for v1 (§5.5/§5.6), so there is nothing to
+// pay, no ticket, and nothing to verify — a real, unfaked "booking" here is
+// simply a trip the user has a confirmed seat on, sourced from
+// GET /trips/mine (a TripMember row). No amount, no ticket ID, no rating
+// flow are shown because none of those exist yet.
 export default function BookingsScreen() {
   const router = useRouter();
+  const { isLoggedIn, setActiveRoomId } = useApp();
   const [filter, setFilter] = useState<BookingFilter>('ALL');
 
-  const filteredBookings = MOCK_BOOKINGS.filter((b) => {
-    if (filter === 'ALL') return true;
-    return b.status === filter;
+  const {
+    data: myTrips = [],
+    isLoading,
+    isError,
+    error,
+    refetch,
+    isRefetching,
+  } = useQuery({
+    queryKey: queryKeys.myTrips(),
+    queryFn: async () => (await apiService.getMyTrips()) ?? [],
+    enabled: isLoggedIn,
   });
 
-  const getStatusBadge = (status: Booking['status']) => {
+  const filteredBookings = myTrips.filter((b) => filter === 'ALL' || b.status === filter);
+
+  const renderStatusBadge = (status: 'ONGOING' | 'UPCOMING' | 'COMPLETED') => {
     switch (status) {
       case 'ONGOING':
         return (
@@ -131,6 +98,14 @@ export default function BookingsScreen() {
           </View>
         );
     }
+  };
+
+  const openTripChat = (chatRoomId?: string) => {
+    if (!chatRoomId) return;
+    setActiveRoomId(chatRoomId);
+    // Navigating to a tab route that's already an ancestor in the stack
+    // pops back to it rather than pushing a duplicate.
+    router.navigate('/chat');
   };
 
   return (
@@ -185,109 +160,142 @@ export default function BookingsScreen() {
       </View>
 
       {/* Bookings List */}
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.listContent}
-      >
-        {filteredBookings.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Compass size={64} color={C.textMuted} strokeWidth={1.2} />
-            <Text style={styles.emptyText}>No bookings found in this category.</Text>
-          </View>
-        ) : (
-          filteredBookings.map((booking) => (
-            <View key={booking.id} style={styles.bookingCard}>
-              {/* Card Image Header */}
-              <View style={styles.cardImageContainer}>
-                <Image source={{ uri: booking.image }} style={styles.cardImage} />
-                <LinearGradient
-                  colors={['rgba(7,9,19,0.15)', 'rgba(7,9,19,0.92)']}
-                  style={StyleSheet.absoluteFill}
-                />
-                <View style={styles.cardHeaderOverlay}>
-                  {getStatusBadge(booking.status)}
-                  <Text style={styles.bookingIdText}>ID: {booking.bookingId}</Text>
-                </View>
-              </View>
-
-              {/* Card Details */}
-              <View style={styles.cardDetails}>
-                <Text style={styles.tripName} numberOfLines={1}>{booking.tripName}</Text>
-
-                {/* Dates */}
-                <View style={styles.detailRow}>
-                  <Calendar size={13} color={C.textSec} style={{ marginRight: 6 }} />
-                  <Text style={styles.detailText}>
-                    {booking.startDate} to {booking.endDate}
-                  </Text>
-                </View>
-
-                {/* Route */}
-                <View style={styles.detailRow}>
-                  <MapPin size={13} color={C.textSec} style={{ marginRight: 6 }} />
-                  <Text style={styles.detailText} numberOfLines={1}>
-                    {booking.cities.join(' → ')}
-                  </Text>
-                </View>
-
-                {/* Meeting Point */}
-                <View style={[styles.detailRow, { alignItems: 'flex-start' }]}>
-                  <Info size={13} color={C.textSec} style={{ marginRight: 6, marginTop: 2 }} />
-                  <Text style={[styles.detailText, { flex: 1 }]} numberOfLines={2}>
-                    Meeting: {booking.meetingPoint}
-                  </Text>
-                </View>
-
-                {/* Seats and Cost Divider */}
-                <View style={styles.divider} />
-
-                {/* Seats and cost */}
-                <View style={styles.cardFooter}>
-                  <View style={styles.footerCol}>
-                    <View style={styles.footerIconLabel}>
-                      <Users size={12} color={C.textMuted} style={{ marginRight: 4 }} />
-                      <Text style={styles.footerLabel}>Seats Booked</Text>
-                    </View>
-                    <Text style={styles.footerValue}>{booking.seatsBooked} {booking.seatsBooked === 1 ? 'Seat' : 'Seats'}</Text>
+      {!isLoggedIn ? (
+        <View style={styles.emptyContainer}>
+          <Compass size={64} color={C.textMuted} strokeWidth={1.2} />
+          <Text style={styles.emptyText}>Sign in to see your bookings.</Text>
+          <TouchableOpacity activeOpacity={0.8} style={styles.retryBtn} onPress={() => router.navigate('/auth')}>
+            <Text style={styles.retryBtnText}>Sign In</Text>
+          </TouchableOpacity>
+        </View>
+      ) : isLoading ? (
+        <View style={styles.emptyContainer}>
+          <ActivityIndicator color={C.blue} size="large" />
+          <Text style={styles.emptyText}>Loading your bookings…</Text>
+        </View>
+      ) : isError ? (
+        <View style={styles.emptyContainer}>
+          <AlertCircle size={56} color={C.rose} strokeWidth={1.4} />
+          <Text style={styles.emptyText}>
+            {error instanceof Error ? error.message : 'Could not load your bookings.'}
+          </Text>
+          <TouchableOpacity activeOpacity={0.8} style={styles.retryBtn} onPress={() => refetch()}>
+            <Text style={styles.retryBtnText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.listContent}
+          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={C.blue} />}
+        >
+          {filteredBookings.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Compass size={64} color={C.textMuted} strokeWidth={1.2} />
+              <Text style={styles.emptyText}>
+                {myTrips.length === 0
+                  ? "You haven't joined any trips yet."
+                  : 'No bookings found in this category.'}
+              </Text>
+            </View>
+          ) : (
+            filteredBookings.map((booking) => (
+              <View key={booking.id} style={styles.bookingCard}>
+                {/* Card Image Header */}
+                <View style={styles.cardImageContainer}>
+                  <Image source={{ uri: booking.coverImage }} style={styles.cardImage} />
+                  <LinearGradient
+                    colors={['rgba(7,9,19,0.15)', 'rgba(7,9,19,0.92)']}
+                    style={StyleSheet.absoluteFill}
+                  />
+                  <View style={styles.cardHeaderOverlay}>
+                    {renderStatusBadge(booking.status)}
+                    {booking.memberRole !== 'MEMBER' && (
+                      <Text style={styles.bookingIdText}>
+                        {booking.memberRole === 'ORGANIZER' ? 'Organizer' : 'Co-Lead'}
+                      </Text>
+                    )}
                   </View>
+                </View>
 
-                  <View style={[styles.footerCol, { alignItems: 'flex-end' }]}>
-                    <View style={styles.footerIconLabel}>
-                      <DollarSign size={12} color={C.textMuted} style={{ marginRight: 2 }} />
-                      <Text style={styles.footerLabel}>Amount Paid</Text>
-                    </View>
-                    <Text style={[styles.footerValue, { color: C.green }]}>
-                      ₹{booking.pricePaid.toLocaleString('en-IN')}
+                {/* Card Details */}
+                <View style={styles.cardDetails}>
+                  <Text style={styles.tripName} numberOfLines={1}>{booking.name}</Text>
+
+                  {/* Dates */}
+                  <View style={styles.detailRow}>
+                    <Calendar size={13} color={C.textSec} style={{ marginRight: 6 }} />
+                    <Text style={styles.detailText}>
+                      {booking.startDate} to {booking.endDate}
                     </Text>
                   </View>
-                </View>
 
-                {/* Contextual Action Button */}
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  style={styles.actionBtn}
-                  onPress={() => {
-                    if (booking.status === 'ONGOING') {
-                      router.navigate('/map');
-                    } else if (booking.status === 'UPCOMING') {
-                      Alert.alert('E-Ticket Verified', `Verification Code: ${booking.bookingId}\nPresent this code to the tour guide at the meeting point.`);
-                    } else {
-                      Alert.alert('Trip Review', 'Trip feedback and rating features will be available shortly.');
-                    }
-                  }}
-                >
-                  <Text style={styles.actionBtnText}>
-                    {booking.status === 'ONGOING' && 'Track Live Trip'}
-                    {booking.status === 'UPCOMING' && 'View E-Ticket'}
-                    {booking.status === 'COMPLETED' && 'Review & Rate Trip'}
-                  </Text>
-                  <ChevronRight size={14} color={C.white} />
-                </TouchableOpacity>
+                  {/* Route */}
+                  <View style={styles.detailRow}>
+                    <MapPin size={13} color={C.textSec} style={{ marginRight: 6 }} />
+                    <Text style={styles.detailText} numberOfLines={1}>
+                      {booking.cities.join(' → ')}
+                    </Text>
+                  </View>
+
+                  {/* Meeting Point */}
+                  <View style={[styles.detailRow, { alignItems: 'flex-start' }]}>
+                    <MapPin size={13} color={C.textSec} style={{ marginRight: 6, marginTop: 2 }} />
+                    <Text style={[styles.detailText, { flex: 1 }]} numberOfLines={2}>
+                      Meeting: {booking.meetingPoint}
+                    </Text>
+                  </View>
+
+                  {/* Travelers and Budget Divider */}
+                  <View style={styles.divider} />
+
+                  <View style={styles.cardFooter}>
+                    <View style={styles.footerCol}>
+                      <View style={styles.footerIconLabel}>
+                        <Users size={12} color={C.textMuted} style={{ marginRight: 4 }} />
+                        <Text style={styles.footerLabel}>Travelers</Text>
+                      </View>
+                      <Text style={styles.footerValue}>
+                        {booking.membersCount}/{booking.totalSeats}
+                      </Text>
+                    </View>
+
+                    <View style={[styles.footerCol, { alignItems: 'flex-end' }]}>
+                      <View style={styles.footerIconLabel}>
+                        <Text style={styles.footerLabel}>Est. Budget</Text>
+                      </View>
+                      <Text style={[styles.footerValue, { color: C.green }]}>
+                        ₹{Number(booking.budget).toLocaleString('en-IN')}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Contextual Action Button */}
+                  {booking.status === 'ONGOING' ? (
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      style={styles.actionBtn}
+                      onPress={() => router.navigate('/map')}
+                    >
+                      <Text style={styles.actionBtnText}>Track Live Trip</Text>
+                      <ChevronRight size={14} color={C.white} />
+                    </TouchableOpacity>
+                  ) : booking.status === 'UPCOMING' && booking.chatRoomId ? (
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      style={styles.actionBtn}
+                      onPress={() => openTripChat(booking.chatRoomId)}
+                    >
+                      <MessageCircle size={14} color={C.white} style={{ marginRight: 2 }} />
+                      <Text style={styles.actionBtnText}>Open Trip Chat</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
               </View>
-            </View>
-          ))
-        )}
-      </ScrollView>
+            ))
+          )}
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
@@ -361,15 +369,28 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   emptyContainer: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 80,
     gap: 16,
+    paddingHorizontal: 32,
   },
   emptyText: {
     color: C.textMuted,
     fontSize: 14,
     textAlign: 'center',
+  },
+  retryBtn: {
+    backgroundColor: C.blue,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  retryBtnText: {
+    color: C.white,
+    fontSize: 13,
+    fontWeight: '700',
   },
   bookingCard: {
     backgroundColor: C.card,
