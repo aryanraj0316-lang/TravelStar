@@ -1185,7 +1185,34 @@ partial, exactly what's blocking full completion.
       immutability/set-state-in-effect/preserve-manual-memoization) weren't
       being enforced when Phase 1 was last verified. Needs a decision — see
       chat.)
-- [ ] Phase 7 — Navigation and app architecture (not started)
+- [x] Phase 7 — Navigation and app architecture (done: §7.1 real
+      expo-router (tabs) group replacing the fake ScrollView pager +
+      dual-navigation bug (screens were both pager panels AND independent
+      routes, so `router.push('/map')` pushed a duplicate stacked screen
+      instead of switching tabs) — every switchTab/tab-route call site now
+      uses router.navigate(); §7.2 Map-tab dead end fixed (tab bar no
+      longer unconditionally hidden on /map); §7.3 Tabs default to lazy
+      mounting instead of all six screens eager at launch, and map.tsx's
+      WebView unmounts via useIsFocused() when not focused (map.web.tsx's
+      iframe left alone — imperative doc.write effect, didn't want to
+      refactor blind, and web isn't GPS/battery constrained); §7.4 dead
+      code removed (dockWidth/tabCenterXRef, six now-impossible route-name
+      conditions, the always-false showDot&&!isFocused branch, and a full
+      duplicate join-request flow in search.tsx that TripDetailModal
+      already owns); §7.5 per-route ErrorBoundary exports on every tab +
+      the root layout (verified live via a temporary fault injection —
+      confirmed the tab bar survives a crashed screen, then reverted) and
+      the splash screen now waits on AppContext's new `sessionRestored`
+      flag instead of hiding unconditionally on first layout. See commits
+      d87120b, aa16d9e. Verified via tsc + lint (348 errors, down from
+      359, no regressions) and repeated live Playwright click-throughs.
+      Not done: deep-link cold-start testing and Android back-button
+      behavior — no device/emulator available in this environment.
+      Found but NOT fixed (flagging, not a code fix): the splash screen
+      and app icon still use Expo's own template assets
+      (expo-logo.png/logo-glow.png) — §1.2 called for real branded
+      assets and Phase 1's tracker claims this is done; it isn't. Needs
+      actual brand assets from the user, not a guessed placeholder.)
 - [ ] Phase 8 — Feature completion (not started)
 - [ ] Phase 9 — Design system, i18n, accessibility (not started)
 - [ ] Phase 10 — Performance (not started)
