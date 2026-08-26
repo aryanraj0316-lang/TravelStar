@@ -614,24 +614,25 @@ function HomeScreen() {
       } else if (res && res.data && Array.isArray(res.data) && res.data.length > 0) {
         setStories(res.data);
       }
-    }).catch(() => {
+    }).catch((e) => {
+      logger.warn('[Home] Feed fetch failed, falling back to stories only:', e);
       // Fallback to stories-only if feed endpoint unavailable
       apiService.getStories().then((data) => {
         if (data && data.length > 0) setStories(data);
-      });
+      }).catch((e2) => logger.warn('[Home] Stories fallback also failed:', e2));
     });
     apiService.getDestinations().then((data) => {
       if (data && data.length > 0) setDestinations(data);
-    });
+    }).catch((e) => logger.warn('[Home] Destinations fetch failed, keeping defaults:', e));
     apiService.getWeatherLocations().then((data) => {
       if (data && data.length > 0) setWeatherLocations(data);
-    });
+    }).catch((e) => logger.warn('[Home] Weather fetch failed, keeping defaults:', e));
     apiService.getAlerts().then((data) => {
       if (data && data.length > 0) setAlerts(data);
-    });
+    }).catch((e) => logger.warn('[Home] Alerts fetch failed, keeping defaults:', e));
     apiService.getNotifications().then((data) => {
       if (data) checkUnreadNotifications();
-    }).catch(() => {});
+    }).catch((e) => logger.warn('[Home] Notification badge check failed:', e));
 
     // Listen for real-time notifications to refresh the badge
     const unsubNotif = eventBus.on('inAppNotification', () => {

@@ -23,6 +23,8 @@ import { eventBus } from '../services/event-bus';
 import React, { useEffect, useState } from 'react';
 import { apiService } from '../services/api';
 import { useApp } from '../store/AppContext';
+import { logger } from '@/lib/logger';
+import { toast, errorToastMessage } from '@/lib/feedback';
 import {
   Image,
   ScrollView,
@@ -220,18 +222,28 @@ export default function NotificationsScreen() {
   }, []);
 
   const loadNotifications = async () => {
-    const data = await apiService.getNotifications();
-    if (data && data.length > 0) {
-      setNotifications(data);
-      const unreads = data.filter((n: any) => n.unread).length;
-      setUnreadCount(unreads);
+    try {
+      const data = await apiService.getNotifications();
+      if (data && data.length > 0) {
+        setNotifications(data);
+        const unreads = data.filter((n: any) => n.unread).length;
+        setUnreadCount(unreads);
+      }
+    } catch (e) {
+      logger.warn('[Notifications] Load failed:', e);
+      toast(errorToastMessage(e, 'Could not load notifications.'), 'error');
     }
   };
 
   const handleMarkAllRead = async () => {
-    await apiService.markNotificationsRead();
-    setUnreadCount(0);
-    loadNotifications();
+    try {
+      await apiService.markNotificationsRead();
+      setUnreadCount(0);
+      loadNotifications();
+    } catch (e) {
+      logger.warn('[Notifications] Mark-all-read failed:', e);
+      toast(errorToastMessage(e, 'Could not mark notifications as read.'), 'error');
+    }
   };
 
   const hours = String(Math.floor(secondsLeft / 3600)).padStart(2, '0');
@@ -460,7 +472,9 @@ export default function NotificationsScreen() {
                 onPress={async () => {
                   try {
                     await apiService.markNotificationRead(notif.id);
-                  } catch {}
+                  } catch (e) {
+                    logger.warn('[Notifications] Mark-read failed:', e);
+                  }
                   loadNotifications();
                   checkUnreadNotifications();
                   if (notif.chatRoomId) {

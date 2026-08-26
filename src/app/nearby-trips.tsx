@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { apiService } from '@/services/api';
+import { logger } from '@/lib/logger';
 import TripDetailModal from '@/components/TripDetailModal';
 import {
   ScrollView,
@@ -180,7 +181,7 @@ export default function NearbyTripsScreen() {
       if (places && places.length > 0) {
         setNearbyPlaces(places);
       }
-    }).catch(() => {});
+    }).catch((e) => logger.warn('[NearbyTrips] Load failed:', e));
   }, []);
 
   const showToast = (msg: string) => {

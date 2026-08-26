@@ -1,5 +1,6 @@
 import { useApp } from '@/store/AppContext';
 import { logger } from '@/lib/logger';
+import { toast, errorToastMessage } from '@/lib/feedback';
 import { apiService } from '@/services/api';
 import TripDetailModal from '@/components/TripDetailModal';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -213,13 +214,23 @@ function SearchScreen() {
   };
 
   const toggleLike = (id: string) => {
+    let wasLiked = false;
     setLikedTrips((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      wasLiked = next.has(id);
+      wasLiked ? next.delete(id) : next.add(id);
       return next;
     });
     // Persist to backend
-    apiService.toggleLikeTrip(id);
+    apiService.toggleLikeTrip(id).catch((e) => {
+      logger.warn('[Search] Like toggle failed, rolling back:', e);
+      setLikedTrips((prev) => {
+        const next = new Set(prev);
+        wasLiked ? next.add(id) : next.delete(id);
+        return next;
+      });
+      toast(errorToastMessage(e, 'Could not update like.'), 'error');
+    });
   };
 
   const handleMidwayJoinSelect = (trip: any) => {
@@ -252,7 +263,7 @@ function SearchScreen() {
         fromCity: midwayJoin ? startCity : undefined,
         toCity: midwayJoin ? endCity : undefined,
         adjustedPrice: midwayJoin ? calculateMidwayPrice(selectedTrip) : undefined,
-      });
+      }).catch((e) => logger.warn('[Search] Midway join request failed:', e));
     }
     setJoinedMsg(true);
     setTimeout(() => {
@@ -271,7 +282,7 @@ function SearchScreen() {
         return next;
       });
       // Remove from DB
-      apiService.cancelJoinRequest(selectedTrip.id);
+      apiService.cancelJoinRequest(selectedTrip.id).catch((e) => logger.warn('[Search] Cancel join request failed:', e));
     }
     setShowJoinModal(false);
     setSelectedTrip(null);

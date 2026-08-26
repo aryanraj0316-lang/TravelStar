@@ -4,18 +4,75 @@ import { logger } from '@/lib/logger';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { Guide, SOSAlert, Trip, UserProfile } from '../store/AppContext';
+import { ApiErrorCode } from '@/types/api-error-codes';
 
-// Dynamically resolve server IP so it connects on Web, Android Emulator (10.0.2.2), and Physical Android/iOS devices over local Wi-Fi
-export const getHostUrl = () => {
-  if (Platform.OS === 'web') return 'http://localhost:5000';
-  const host = Constants.expoConfig?.hostUri?.split(':')[0];
-  if (host && host !== 'localhost' && host !== '127.0.0.1') {
-    return `http://${host}:5000`;
+// Request-ID / idempotency-key generation only needs uniqueness, not
+// cryptographic randomness, so this avoids pulling in expo-crypto for one
+// call site. `crypto.randomUUID` is available in Hermes (RN 0.74+) and every
+// modern browser; the fallback covers any environment where it isn't.
+function generateRequestId(): string {
+  const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+  if (c?.randomUUID) return c.randomUUID();
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+// EXPO_PUBLIC_API_URL is baked in at build time per EAS build profile (see
+// eas.json — development/preview/production each point at a different
+// backend). This is required for any standalone/TestFlight/Play build:
+// `Constants.expoConfig?.hostUri` only exists under the Expo dev server, so a
+// release build that relied on it (as this app previously did) sent every
+// request to the Android emulator loopback address for every real user
+// (docs/REMEDIATION.md §6.1). The dev-server host-sniffing fallback below is
+// kept ONLY behind __DEV__, as a convenience for local development.
+function resolveApiBaseUrl(): string {
+  const configured = process.env.EXPO_PUBLIC_API_URL;
+  if (configured) return configured;
+
+  if (__DEV__) {
+    if (Platform.OS === 'web') return 'http://localhost:5000';
+    const host = Constants.expoConfig?.hostUri?.split(':')[0];
+    if (host && host !== 'localhost' && host !== '127.0.0.1') {
+      return `http://${host}:5000`;
+    }
+    return Platform.OS === 'android' ? 'http://10.0.2.2:5000' : 'http://localhost:5000';
   }
-  return Platform.OS === 'android' ? 'http://10.0.2.2:5000' : 'http://localhost:5000';
-};
 
-const getApiBaseUrl = () => `${getHostUrl()}/api/v1`;
+  // No EXPO_PUBLIC_API_URL baked into a non-dev build is a packaging bug, not
+  // a runtime condition to silently paper over — every request would
+  // otherwise go to whatever the dev fallback resolves to.
+  throw new Error(
+    'EXPO_PUBLIC_API_URL is not set. This build was not configured with an API endpoint — see eas.json build profiles.'
+  );
+}
+
+export const getHostUrl = resolveApiBaseUrl;
+const getApiBaseUrl = () => `${resolveApiBaseUrl()}/api/v1`;
+
+/**
+ * Thrown by every failed request(). Never returns null to signal failure —
+ * see docs/REMEDIATION.md §0.2.1 / §6.2. Carries the server's error code
+ * when the server responded (even with a non-2xx status); falls back to a
+ * client-side code (NETWORK_ERROR, TIMEOUT) when the request never
+ * completed at all.
+ */
+export class ApiError extends Error {
+  readonly code: ApiErrorCode;
+  readonly statusCode: number | null;
+  readonly details?: unknown;
+  readonly requestId?: string;
+
+  constructor(code: ApiErrorCode, message: string, statusCode: number | null, details?: unknown, requestId?: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.code = code;
+    this.statusCode = statusCode;
+    this.details = details;
+    this.requestId = requestId;
+  }
+}
+
+const DEFAULT_TIMEOUT_MS = 10000;
+const RETRYABLE_METHODS = new Set(['GET', 'HEAD']);
 
 const ACCESS_TOKEN_KEY = 'accessToken';
 const REFRESH_TOKEN_KEY = 'refreshToken';
@@ -57,10 +114,12 @@ async function refreshAccessToken(): Promise<string | null> {
       if (!res.ok) return null;
 
       const json = await res.json();
-      if (!json?.token || !json?.refreshToken) return null;
+      const token = json?.data?.token;
+      const nextRefreshToken = json?.data?.refreshToken;
+      if (!token || !nextRefreshToken) return null;
 
-      await setTokens(json.token, json.refreshToken);
-      return json.token as string;
+      await setTokens(token, nextRefreshToken);
+      return token as string;
     } catch (e) {
       logger.warn('[API] Token refresh failed:', e);
       return null;
@@ -74,28 +133,80 @@ async function refreshAccessToken(): Promise<string | null> {
   }
 }
 
-async function request<T>(endpoint: string, options?: RequestInit, isRetry = false): Promise<T | null> {
+interface RequestOptions extends RequestInit {
+  /** Override the default 10s timeout for a slow endpoint (e.g. an upload). */
+  timeoutMs?: number;
+  /** Skip the automatic retry-on-5xx/network-error for non-idempotent calls
+   * that already have their own retry semantics, or where a duplicate side
+   * effect would be worse than a visible failure. */
+  noRetry?: boolean;
+}
+
+const MAX_RETRIES = 2;
+const RETRY_BASE_DELAY_MS = 400;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableNetworkError(err: unknown): boolean {
+  // AbortError (our own timeout) and TypeError (fetch's generic "Network
+  // request failed") are the two shapes a dropped connection takes here —
+  // anything else (a thrown ApiError from a non-2xx response we've already
+  // decided isn't retryable, a programming error) should not be retried.
+  if (err instanceof DOMException && err.name === 'AbortError') return true;
+  if (err instanceof TypeError) return true;
+  return false;
+}
+
+/**
+ * The single HTTP entry point for the whole app. Always throws a typed
+ * ApiError on failure — never returns null to signal one (docs/REMEDIATION.md
+ * §0.2.1, §6.2). A network-level failure (timeout, offline, DNS) gets a
+ * client-side code; a server response with `ok: false` gets the server's own
+ * code, message, and details verbatim so the UI can react to specific cases
+ * (e.g. ACCOUNT_LOCKED) without string-matching a message.
+ */
+async function request<T>(endpoint: string, options?: RequestOptions, isAuthRetry = false, attempt = 0): Promise<T> {
   const url = `${getApiBaseUrl()}${endpoint}`;
+  const method = (options?.method ?? 'GET').toUpperCase();
+  const requestId = generateRequestId();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), options?.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+
   try {
     const token = await secureStorage.getItem(ACCESS_TOKEN_KEY).catch(() => null);
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      'X-Request-Id': requestId,
     };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+        headers: { ...headers, ...(options?.headers as Record<string, string>) },
+      });
+    } catch (err) {
+      if (isRetryableNetworkError(err) && !options?.noRetry && attempt < MAX_RETRIES) {
+        await sleep(RETRY_BASE_DELAY_MS * 2 ** attempt);
+        return request<T>(endpoint, options, isAuthRetry, attempt + 1);
+      }
+      const timedOut = err instanceof DOMException && err.name === 'AbortError';
+      logger.warn(`[API] ${timedOut ? 'Timed out' : 'Network error'} for ${method} ${endpoint} (request ${requestId}):`, err);
+      throw new ApiError(
+        timedOut ? 'TIMEOUT' : 'NETWORK_ERROR',
+        timedOut ? 'The request took too long. Please check your connection and try again.' : 'Could not reach the server. Please check your connection.',
+        null,
+        undefined,
+        requestId
+      );
     }
 
-    const res = await fetch(url, {
-      ...options,
-      headers: {
-        ...headers,
-        ...(options?.headers as Record<string, string>),
-      },
-    });
-
-    if (res.status === 401 && !isRetry) {
+    if (res.status === 401 && !isAuthRetry) {
       const refreshToken = await secureStorage.getItem(REFRESH_TOKEN_KEY).catch(() => null);
 
       // A 401 with no access token and no refresh token means there was
@@ -107,37 +218,43 @@ async function request<T>(endpoint: string, options?: RequestInit, isRetry = fal
       // logged out would itself 401, emit sessionExpired, re-trigger
       // logout(), and loop forever.
       if (!token && !refreshToken) {
-        return null;
+        throw new ApiError('UNAUTHORIZED', 'Not signed in.', 401, undefined, requestId);
       }
 
       const newToken = await refreshAccessToken();
       if (newToken) {
-        return request<T>(endpoint, options, true);
+        return request<T>(endpoint, options, true, attempt);
       }
       // A real session existed and refresh failed — the session is gone. Let
       // AppContext react (clear state, show a "session expired" toast, route
       // to /auth) rather than every screen silently rendering empty forever.
       await clearTokens();
       eventBus.emit('sessionExpired', {});
-      return null;
+      throw new ApiError('UNAUTHORIZED', 'Your session has expired. Please sign in again.', 401, undefined, requestId);
+    }
+
+    if (res.status >= 500 && !options?.noRetry && RETRYABLE_METHODS.has(method) && attempt < MAX_RETRIES) {
+      await sleep(RETRY_BASE_DELAY_MS * 2 ** attempt);
+      return request<T>(endpoint, options, isAuthRetry, attempt + 1);
     }
 
     let json: any = null;
     try {
       json = await res.json();
     } catch {
-      // not JSON
+      // Not JSON (e.g. a proxy error page) — fall through to the generic error below.
     }
 
-    if (!res.ok) {
-      logger.warn(`[API] HTTP Error ${res.status} for ${endpoint}`);
-      return null;
+    if (!res.ok || json?.ok === false) {
+      const code: ApiErrorCode = json?.error?.code ?? 'UNKNOWN';
+      const message: string = json?.error?.message ?? `Request failed (${res.status}).`;
+      logger.warn(`[API] ${method} ${endpoint} -> ${res.status} ${code} (request ${requestId})`);
+      throw new ApiError(code, message, res.status, json?.error?.details, requestId);
     }
 
-    return json.data !== undefined ? json.data : json;
-  } catch (err) {
-    logger.warn(`[API] Request failed for ${endpoint} (${url}):`, err);
-    throw err;
+    return (json?.data !== undefined ? json.data : json) as T;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 

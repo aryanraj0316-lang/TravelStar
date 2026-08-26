@@ -500,7 +500,7 @@ function ChatScreen() {
             room.id === selectedRoomId ? { ...room, unreadCount: 0 } : room
           )
         );
-      }).catch(() => { });
+      }).catch((e) => logger.warn('[Chat] Mark-read failed:', e));
 
       apiService.getChatMessages(selectedRoomId).then((history: any[] | null) => {
         if (history && history.length > 0) {

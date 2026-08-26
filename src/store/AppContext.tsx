@@ -1,5 +1,6 @@
 import { safeStorage } from '@/services/storage';
 import { logger } from '@/lib/logger';
+import { toast, errorToastMessage } from '@/lib/feedback';
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { apiService, clearTokens } from '../services/api';
 import { socketService } from '../services/socket';
@@ -181,10 +182,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-  const login = () => {
+  const login = useCallback(() => {
     setIsLoggedIn(true);
     safeStorage.setItem('isLoggedIn', 'true').catch((e) => logger.warn('[Auth] Failed to persist login state:', e));
-  };
+  }, []);
 
   // Logout clears every trace of the previous session: revokes it server-side,
   // wipes all local storage keys (tokens + cached profile), resets in-memory
@@ -192,7 +193,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // previous user), and disconnects the socket. See docs/REMEDIATION.md §2.12
   // — the old version kept id/avatar/bio/walletBalance/emergencyContact on
   // disk after "logging out".
-  const logout = () => {
+  const logout = useCallback(() => {
     setIsLoggedIn(false);
     setRequestedTrips(new Set());
     setPendingRequestsCount(0);
@@ -203,14 +204,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setProfile(GUEST_PROFILE);
     socketService.disconnect();
 
-    apiService.logout().catch((e) => logger.warn('[Auth] Server-side logout failed:', e));
+    apiService.logout().catch((e) => logger.warn('[Auth] Server-side logout failed (clearing local session anyway):', e));
 
     Promise.all([
       clearTokens(),
       safeStorage.removeItem('isLoggedIn'),
       safeStorage.removeItem('savedProfile'),
     ]).catch((e) => logger.warn('[Auth] Failed to fully clear local session:', e));
-  };
+  }, []);
 
   useEffect(() => {
     const unsub = eventBus.on('sessionExpired', () => {
@@ -450,20 +451,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (val === 'true') {
           setIsLoggedIn(true);
         }
-      }).catch(() => { });
+      }).catch((e) => logger.warn('[Hydrate] Reading isLoggedIn failed:', e));
 
       safeStorage.getItem('savedProfile').then((val) => {
         if (val) {
           try {
             setProfile(JSON.parse(val));
-          } catch { }
+          } catch (e) {
+            logger.warn('[Hydrate] Saved profile was not valid JSON:', e);
+          }
         }
-      }).catch(() => { });
+      }).catch((e) => logger.warn('[Hydrate] Reading savedProfile failed:', e));
     } catch (e) {
       logger.warn('[Storage Warning] Native module fallback:', e);
     }
 
-    // Auto-sign-in from backend profile (only on initial load)
+    // Auto-sign-in from backend profile (only on initial load). A 401 here
+    // just means there's no valid session yet (the common case pre-login) —
+    // that's expected and quiet, not an error to surface.
     apiService.getProfile().then((remoteProfile) => {
       if (remoteProfile) {
         setProfile((prev) => {
@@ -471,31 +476,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (merged.email && merged.email !== 'aarav@example.com' && merged.name !== 'Guest Traveler') {
             setIsLoggedIn(true);
           }
-          try {
-            safeStorage.setItem('savedProfile', JSON.stringify(merged)).catch(() => { });
-          } catch { }
+          safeStorage.setItem('savedProfile', JSON.stringify(merged)).catch((e) =>
+            logger.warn('[Hydrate] Failed to persist merged profile locally:', e)
+          );
           return merged;
         });
       }
-    });
+    }).catch((e) => logger.warn('[Hydrate] Profile fetch failed (no session yet, or offline):', e));
 
     apiService.getGuides().then((remoteGuides) => {
       if (remoteGuides && remoteGuides.length > 0) {
         setGuides(remoteGuides);
       }
-    });
+    }).catch((e) => logger.warn('[Hydrate] Guides fetch failed:', e));
 
     apiService.getSOSAlerts().then((alerts) => {
       if (alerts && alerts.length > 0) {
         setSosAlerts(alerts);
       }
-    });
+    }).catch((e) => logger.warn('[Hydrate] SOS alerts fetch failed:', e));
 
     apiService.getStories().then((remoteStories) => {
       if (remoteStories && remoteStories.length > 0) {
         setStoriesList(remoteStories);
       }
-    });
+    }).catch((e) => logger.warn('[Hydrate] Stories fetch failed:', e));
   }, []);
 
   // ── Reactive: refresh trips, join requests, and socket when login/room changes ──
@@ -581,7 +586,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else {
         setRequestedTrips(new Set());
       }
-    }).catch(() => { });
+    }).catch((e) => logger.warn('[Trips] Reload join requests failed:', e));
   }, [isLoggedIn]);
 
   const refreshTrips = useCallback(() => {
@@ -589,7 +594,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (remoteTrips && remoteTrips.length > 0) {
         setTrips(remoteTrips);
       }
-    }).catch(() => { });
+    }).catch((e) => logger.warn('[Trips] Refresh failed:', e));
   }, []);
 
   const reloadIncomingRequestsCount = useCallback(() => {
@@ -610,7 +615,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setHasUnreadChat(false);
   }, []);
 
-  const checkUnreadNotifications = () => {
+  const checkUnreadNotifications = useCallback(() => {
     if (!isLoggedIn) return;
     apiService.getNotifications().then((notifs) => {
       if (notifs && notifs.length > 0) {
@@ -625,10 +630,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else {
         setHasUnreadNotification(false);
       }
-    }).catch(() => { });
-  };
+    }).catch((e) => logger.warn('[Notifications] Unread check failed:', e));
+  }, [isLoggedIn]);
 
-  const checkUnreadChats = () => {
+  const checkUnreadChats = useCallback(() => {
     if (!isLoggedIn) return;
     apiService.getChats().then((rooms) => {
       if (rooms && rooms.length > 0) {
@@ -637,8 +642,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else {
         setHasUnreadChat(false);
       }
-    }).catch(() => { });
-  };
+    }).catch((e) => logger.warn('[Chats] Unread check failed:', e));
+  }, [isLoggedIn]);
 
   useEffect(() => {
     if (!isLoggedIn) {
@@ -650,18 +655,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     reloadIncomingRequestsCount();
     checkUnreadNotifications();
     checkUnreadChats();
-  }, [isLoggedIn, profile?.id]);
+  }, [isLoggedIn, profile?.id, reloadJoinRequests, reloadIncomingRequestsCount, checkUnreadNotifications, checkUnreadChats]);
 
-  const updateProfile = (updated: Partial<UserProfile>) => {
+  const updateProfile = useCallback((updated: Partial<UserProfile>) => {
+    let previous: UserProfile | null = null;
     setProfile((prev) => {
+      previous = prev;
       const next = { ...prev, ...updated };
-      safeStorage.setItem('savedProfile', JSON.stringify(next)).catch(() => { });
+      safeStorage.setItem('savedProfile', JSON.stringify(next)).catch((e) =>
+        logger.warn('[Profile] Failed to persist profile locally:', e)
+      );
       return next;
     });
-    apiService.updateProfile(updated);
-  };
+    apiService.updateProfile(updated).catch((e) => {
+      logger.warn('[Profile] Server update failed, rolling back:', e);
+      if (previous) setProfile(previous);
+      toast(errorToastMessage(e, 'Could not save your profile changes.'), 'error');
+    });
+  }, []);
 
-  const addTrip = (trip: Trip) => {
+  const addTrip = useCallback((trip: Trip) => {
     const tripWithMeta = {
       ...trip,
       creatorId: profile?.id,
@@ -669,12 +682,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setTrips((prev) => [tripWithMeta, ...prev]);
     apiService.createTrip(tripWithMeta).then(() => {
+      toast('Trip created', 'success');
       // Re-fetch all trips from backend so isMyTrip is correctly calculated server-side
       refreshTrips();
-    }).catch(() => { });
-  };
+    }).catch((e) => {
+      logger.warn('[Trips] Create trip failed, rolling back:', e);
+      setTrips((prev) => prev.filter((t) => t !== tripWithMeta));
+      toast(errorToastMessage(e, 'Could not create the trip.'), 'error');
+    });
+  }, [profile?.id, refreshTrips]);
 
-  const joinTrip = (tripId: string) => {
+  const joinTrip = useCallback((tripId: string) => {
     // Optimistic UI: mark as "requested", but do NOT touch availableSeats/membersCount here.
     // Seats are only decremented on the backend once the organizer approves the JoinRequest
     // (see /interactions/join-request/:id/status). Decrementing locally here caused seats
@@ -684,14 +702,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       next.add(tripId);
       return next;
     });
-    apiService.createJoinRequest(tripId).catch(() => { });
-  };
+    apiService.createJoinRequest(tripId).then(() => {
+      toast('Join request sent', 'success');
+    }).catch((e) => {
+      logger.warn('[Trips] Join request failed, rolling back:', e);
+      setRequestedTrips((prev) => {
+        const next = new Set(prev);
+        next.delete(tripId);
+        return next;
+      });
+      toast(errorToastMessage(e, 'Could not send the join request.'), 'error');
+    });
+  }, []);
 
-  const sendMessage = (content: string, mediaType: 'NONE' | 'IMAGE' | 'VOICE' = 'NONE') => {
+  const sendMessage = useCallback((content: string, mediaType: 'NONE' | 'IMAGE' | 'VOICE' = 'NONE') => {
     socketService.sendMessage(activeRoomId || 'trip-1', content, mediaType);
-  };
+  }, [activeRoomId]);
 
-  const triggerSOS = (lat: number, lng: number) => {
+  const triggerSOS = useCallback((lat: number, lng: number) => {
     const newAlert: SOSAlert = {
       id: `sos-${Date.now()}`,
       userName: profile.name,
@@ -701,28 +729,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status: 'ACTIVE',
     };
     setSosAlerts((prev) => [newAlert, ...prev]);
-    apiService.triggerSOS(profile.name, lat, lng);
+    // Fire over both transports: the socket delta reaches connected devices
+    // immediately, the REST call is the durable, retried-by-nothing-else
+    // write to SOSAlert. A user in distress must see a failure, not silence.
+    apiService.triggerSOS(profile.name, lat, lng).catch((e) => {
+      logger.error('[Safety] SOS trigger failed to reach the server:', e);
+      toast(errorToastMessage(e, 'Could not reach emergency services. Try again or call local emergency services directly.'), 'error');
+    });
     socketService.triggerSOS(profile.name, lat, lng);
-  };
+  }, [profile.name]);
 
-  const resolveSOS = (id: string) => {
+  const resolveSOS = useCallback((id: string) => {
     setSosAlerts((prev) =>
       prev.map((alert) => (alert.id === id ? { ...alert, status: 'RESOLVED' } : alert))
     );
-    apiService.resolveSOS(id);
+    apiService.resolveSOS(id).catch((e) => {
+      logger.warn('[Safety] SOS resolve failed:', e);
+      setSosAlerts((prev) => prev.map((alert) => (alert.id === id ? { ...alert, status: 'ACTIVE' } : alert)));
+      toast(errorToastMessage(e, 'Could not resolve the alert.'), 'error');
+    });
     socketService.resolveSOS(id);
-  };
+  }, []);
 
   // Guide earnings cash-out only — payments/wallet were removed for v1
   // (REMEDIATION.md §5.5/5.6). This just decrements the locally-tracked
   // balance; it is not backed by a ledger or any server persistence.
-  const withdrawWalletFunds = (amount: number) => {
-    if (profile.walletBalance >= amount) {
-      setProfile((prev) => ({ ...prev, walletBalance: prev.walletBalance - amount }));
-    }
-  };
+  const withdrawWalletFunds = useCallback((amount: number) => {
+    setProfile((prev) => (prev.walletBalance >= amount ? { ...prev, walletBalance: prev.walletBalance - amount } : prev));
+  }, []);
 
-  const addStory = (storyData: any) => {
+  const addStory = useCallback((storyData: any) => {
     const newStory = {
       id: `story-${Date.now()}`,
       authorName: profile.name,
@@ -735,8 +771,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createdAt: new Date().toISOString(),
     };
     setStoriesList((prev) => [newStory, ...prev]);
-    apiService.createStory(newStory);
-  };
+    apiService.createStory(newStory).then(() => {
+      toast('Story shared', 'success');
+    }).catch((e) => {
+      logger.warn('[Stories] Create story failed, rolling back:', e);
+      setStoriesList((prev) => prev.filter((s) => s !== newStory));
+      toast(errorToastMessage(e, 'Could not share your story.'), 'error');
+    });
+  }, [profile.name, profile.avatar]);
 
   const providerValue = useMemo(() => ({
     currentRole,
@@ -775,17 +817,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }), [
     currentRole,
     profile,
+    updateProfile,
     isLoggedIn,
+    login,
+    logout,
     trips,
+    addTrip,
+    joinTrip,
     guides,
     messages,
+    sendMessage,
     sosAlerts,
+    triggerSOS,
+    resolveSOS,
+    withdrawWalletFunds,
     activeRoomId,
     navbarHidden,
     storiesList,
+    addStory,
     requestedTrips,
+    reloadJoinRequests,
+    refreshTrips,
     pendingRequestsCount,
+    reloadIncomingRequestsCount,
     hasUnreadChat,
+    clearChatUnread,
+    checkUnreadNotifications,
     hasUnreadNotification,
   ]);
 

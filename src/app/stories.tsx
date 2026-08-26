@@ -1,5 +1,6 @@
 import { useApp } from '@/store/AppContext';
 import { apiService } from '@/services/api';
+import { logger } from '@/lib/logger';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
@@ -264,7 +265,10 @@ export default function StoriesScreen() {
     }));
     try {
       await apiService.likeStory(activeStory.id);
-    } catch {}
+    } catch (e) {
+      logger.warn('[Stories] Like failed:', e);
+      setIsLiked((prev) => ({ ...prev, [activeStory.id]: !prev[activeStory.id] }));
+    }
   };
 
   return (
