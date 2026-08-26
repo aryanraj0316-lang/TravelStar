@@ -1252,7 +1252,38 @@ partial, exactly what's blocking full completion.
       monsoon-advisory.tsx was already correct — the doc's complaint about
       it predates this session. Verified live by mocking GET /alerts with
       distinctive fake-but-structurally-real data and confirming zero
-      grafting. See commit bd13c0f.)
+      grafting. See commit bd13c0f.
+      §8.20 done — about.tsx's Terms/Privacy/Licenses links previously
+      popped Alert.alert("This is a mock implementation"). Replaced with
+      real routable screens: src/app/legal/terms.tsx and privacy.tsx
+      (honest "not yet finalized" placeholders — drafting actual legal
+      copy is Phase 12 scope, not this one) and src/app/licenses.tsx,
+      which renders a real, searchable third-party license list
+      (600 packages) generated from the actual dependency tree via
+      scripts/generate-licenses.js (npm run licenses:generate, using
+      license-checker-rseidelsohn — the original license-checker is
+      unmaintained and fails on current Node). See commit 5780b74.
+      §8.11 done — bookings.tsx rendered a hardcoded MOCK_BOOKINGS array
+      (fake "Amount Paid", fake bookingId, two Alert.alert mocks for
+      "verifying" an e-ticket and accepting a trip review) and there was
+      no bookings GET endpoint in the backend at all. Since payments/
+      wallet were already removed for v1 (§5.5/§5.6), rebuilt "booking"
+      as the real thing this app's data model actually has: a trip the
+      user organizes or has a confirmed TripMember row on. New
+      GET /trips/mine (backend/src/api/routes/trips.ts) returns exactly
+      that, with status derived from the trip's own dates (never stored,
+      can't drift). Its own integration test caught a real bug while
+      writing it: the /^\/trips\/[^/]+$/ public-GET regex (meant for
+      /trips/:id) also matched /trips/mine, so an unauthenticated caller
+      could reach a route meant to require a token — fixed in
+      backend/src/middleware/auth.ts. bookings.tsx now runs on useQuery
+      against the real endpoint with loading/error/empty states, and the
+      two Alert.alert mocks are gone — ONGOING trips link to the live
+      map, UPCOMING trips link to the trip's real chat room, COMPLETED
+      trips get no fake "rate this trip" button since no review system
+      exists yet (§8.14, not built). 3 new backend tests (401, organizer/
+      joiner/stranger visibility, cancelled-trip exclusion), all passing
+      against the real DB — full suite is 49/49. See commit 95725ec.)
 - [ ] Phase 9 — Design system, i18n, accessibility (not started)
 - [ ] Phase 10 — Performance (not started)
 - [ ] Phase 11 — Observability and operations (not started)
