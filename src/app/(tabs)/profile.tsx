@@ -42,6 +42,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { eventBus } from '@/services/event-bus';
+import { apiService } from '@/services/api';
+import { toast, errorToastMessage } from '@/lib/feedback';
 
 // Safe dynamic import to prevent native app crash if module is unlinked in old APK
 let ImagePicker: any = null;
@@ -283,6 +285,45 @@ function ProfileScreen() {
         },
       },
     ]);
+  };
+
+  // ── Privacy & data (docs/REMEDIATION.md §12.4) ────────────────────
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  const handleExportData = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const data = await apiService.exportMyData();
+      // No file-download primitive on RN/Expo web here — surface the export
+      // as JSON the user can copy. A share-sheet / file save is a follow-up.
+      logger.log('[Profile] Data export', JSON.stringify(data));
+      toast('Your data export is ready in the app logs. A file download is coming soon.', 'success');
+    } catch (e) {
+      toast(errorToastMessage(e, 'Could not build your data export.'), 'error');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (deleting || deletePassword.length === 0) return;
+    setDeleting(true);
+    try {
+      await apiService.deleteAccount(deletePassword);
+      setShowDeleteModal(false);
+      setDeletePassword('');
+      toast('Your account has been deleted.', 'success');
+      logout();
+      setShowAuthModal(true);
+    } catch (e) {
+      toast(errorToastMessage(e, 'Could not delete your account.'), 'error');
+    } finally {
+      setDeleting(false);
+    }
   };
 
   return (
@@ -580,9 +621,46 @@ function ProfileScreen() {
 
             <View style={styles.menuDivider} />
 
+            {/* Download my data (§12.4) */}
+            {isLoggedIn && (
+              <TouchableOpacity
+                style={styles.menuItem}
+                activeOpacity={0.7}
+                onPress={handleExportData}
+                disabled={exporting}
+                accessibilityRole="button"
+                accessibilityLabel="Download my data"
+              >
+                <View style={styles.menuItemLeft}>
+                  <Download size={17} color="#8B949E" />
+                  <Text style={styles.menuItemText}>{exporting ? 'Preparing…' : 'Download my data'}</Text>
+                </View>
+                <ChevronRight size={14} color="#8B949E" />
+              </TouchableOpacity>
+            )}
+
+            {/* Delete account (§12.4) */}
+            {isLoggedIn && (
+              <TouchableOpacity
+                style={styles.menuItem}
+                activeOpacity={0.7}
+                onPress={() => setShowDeleteModal(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Delete my account"
+              >
+                <View style={styles.menuItemLeft}>
+                  <Trash2 size={17} color="#FF453A" style={{ opacity: 0.9 }} />
+                  <Text style={[styles.menuItemText, { color: '#FF453A' }]}>Delete my account</Text>
+                </View>
+                <ChevronRight size={14} color="#8B949E" />
+              </TouchableOpacity>
+            )}
+
+            <View style={styles.menuDivider} />
+
             {/* Sign Out of Account */}
-            <TouchableOpacity 
-              style={styles.menuItem} 
+            <TouchableOpacity
+              style={styles.menuItem}
               activeOpacity={0.7}
               onPress={handleLogout}
             >
@@ -594,6 +672,51 @@ function ProfileScreen() {
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* Delete account confirmation */}
+        <Modal
+          visible={showDeleteModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowDeleteModal(false)}
+        >
+          <View style={styles.deleteOverlay}>
+            <View style={styles.deleteCard}>
+              <Text style={styles.deleteTitle}>Delete your account?</Text>
+              <Text style={styles.deleteBodyText}>
+                This permanently removes your profile, trips you organize, join requests, messages, and
+                expenses. It cannot be undone. Enter your password to confirm.
+              </Text>
+              <TextInput
+                style={styles.deleteInput}
+                placeholder="Current password"
+                placeholderTextColor="#6A7182"
+                secureTextEntry
+                value={deletePassword}
+                onChangeText={setDeletePassword}
+                accessibilityLabel="Current password"
+              />
+              <View style={styles.deleteBtnRow}>
+                <TouchableOpacity
+                  style={styles.deleteCancelBtn}
+                  onPress={() => {
+                    setShowDeleteModal(false);
+                    setDeletePassword('');
+                  }}
+                >
+                  <Text style={styles.deleteCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.deleteConfirmBtn, (deleting || deletePassword.length === 0) && { opacity: 0.5 }]}
+                  disabled={deleting || deletePassword.length === 0}
+                  onPress={handleDeleteAccount}
+                >
+                  <Text style={styles.deleteConfirmText}>{deleting ? 'Deleting…' : 'Delete forever'}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
 
         <View style={{ height: 60 }} />
       </ScrollView>
@@ -1982,6 +2105,69 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: 'rgba(255, 255, 255, 0.04)',
     marginHorizontal: 16,
+  },
+  deleteOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  deleteCard: {
+    backgroundColor: '#121524',
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#1D2138',
+    gap: 12,
+  },
+  deleteTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  deleteBodyText: {
+    fontSize: 12.5,
+    color: '#8A92A6',
+    lineHeight: 18,
+  },
+  deleteInput: {
+    backgroundColor: '#1A1D30',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 46,
+    color: '#FFFFFF',
+    fontSize: 13.5,
+  },
+  deleteBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+  },
+  deleteCancelBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  deleteCancelText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  deleteConfirmBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FF453A',
+  },
+  deleteConfirmText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
   },
 });
 

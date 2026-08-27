@@ -38,7 +38,6 @@ export interface UserProfile {
   gender?: string;
   role: UserRole;
   isVerified: boolean;
-  aadhaarStatus: 'NONE' | 'PENDING' | 'VERIFIED';
   guideLicenseStatus: 'NONE' | 'PENDING' | 'VERIFIED';
   walletBalance: number;
   rewardPoints: number;
@@ -196,7 +195,6 @@ const GUEST_PROFILE: UserProfile = {
   avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
   role: 'TOURIST',
   isVerified: false,
-  aadhaarStatus: 'NONE',
   guideLicenseStatus: 'NONE',
   walletBalance: 0,
   rewardPoints: 0,
@@ -221,7 +219,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
     role: 'TOURIST',
     isVerified: true,
-    aadhaarStatus: 'VERIFIED',
     guideLicenseStatus: 'NONE',
     walletBalance: 2450.0,
     rewardPoints: 120,

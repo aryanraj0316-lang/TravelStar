@@ -136,7 +136,10 @@ router.get('/profile', async (req, res) => {
 // move a profile to VERIFIED (see POST /:id/verify).
 const createGuideProfileSchema = z.object({
   licenseNumber: z.string().trim().min(4).max(64),
-  licensePhotoUrl: z.string().url().max(2000),
+  // Optional: v1 does not store identity/credential documents
+  // (docs/REMEDIATION.md §12.1). An admin verifies the licence number
+  // out-of-band before moving the profile to VERIFIED.
+  licensePhotoUrl: z.string().url().max(2000).optional(),
   experienceYears: z.number().int().min(0).max(80),
   expertisePlaces: z.array(z.string().trim().min(1)).min(1).max(50),
   languagesSpoken: z.array(z.string().trim().min(1)).min(1).max(20),
@@ -158,10 +161,12 @@ router.post('/profile', async (req, res) => {
       return res.status(409).json({ ok: false, error: { code: 'GUIDE_PROFILE_EXISTS', message: 'You have already applied to become a guide.' } });
     }
 
+    const { licensePhotoUrl, ...rest } = parsed.data;
     const guide = await prisma.guideProfile.create({
       data: {
         userId,
-        ...parsed.data,
+        ...rest,
+        licensePhotoUrl: licensePhotoUrl ?? null,
         availability: {},
         verifiedStatus: 'PENDING',
       },

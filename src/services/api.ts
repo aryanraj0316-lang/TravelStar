@@ -307,6 +307,21 @@ export const apiService = {
     return request<UserProfile>('/auth/profile');
   },
 
+  // Right to access — everything the service holds about the caller
+  // (docs/REMEDIATION.md §12.4).
+  async exportMyData(): Promise<unknown> {
+    return request<unknown>('/auth/export');
+  },
+
+  // Right to erasure — requires the current password (docs/REMEDIATION.md
+  // §12.4). Revokes all sessions and hard-deletes the account server-side.
+  async deleteAccount(password: string): Promise<{ deleted: boolean } | null> {
+    return request<{ deleted: boolean }>('/auth/delete-account', {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    });
+  },
+
   async updateProfile(updates: Partial<UserProfile>): Promise<UserProfile | null> {
     return request<UserProfile>('/auth/profile', {
       method: 'PUT',

@@ -264,13 +264,12 @@ model Profile {
   verifiedBadge    Boolean  @default(false)
   rating           Float    @default(5.0)
 
-  // Documents for verification
-  aadhaarNumber       String?
-  aadhaarPhotoUrl     String?
-  govIdType           String? // 'Passport', 'PAN', 'VoterID'
-  govIdPhotoUrl       String?
-  faceVerificationImg String?
-  selfieVerification  String?
+  // No KYC/Aadhaar document storage (docs/REMEDIATION.md §12.1). Storing
+  // raw Aadhaar numbers or ID/face images is not permitted for a private
+  // entity without a licensed KYC provider and field-level encryption;
+  // v1 does not do identity verification at all. If it is added later it
+  // must go through a KYC provider that returns only a pass/fail + a
+  // reference — never the document or the number.
 
   pushNotifications Boolean  @default(true)
   locationSharing   Boolean  @default(true)
@@ -283,7 +282,7 @@ model GuideProfile {
   userId          String             @unique
   user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   licenseNumber   String             @unique
-  licensePhotoUrl String
+  licensePhotoUrl String?            // optional — v1 stores no credential documents (§12.1)
   experienceYears Int
   expertisePlaces String[] // List of places/destinations
   languagesSpoken String[]

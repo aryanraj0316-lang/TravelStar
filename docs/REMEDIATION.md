@@ -1400,5 +1400,32 @@ partial, exactly what's blocking full completion.
       @sentry/node`, source-map upload per release, metrics/dashboards/
       alerts, backups + tested restore + RPO/RTO, runbooks, branch
       protection, CD pipeline. `pino` swap left as a follow-up.
-- [ ] Phase 12 — Legal, privacy, and compliance (not started)
+- [ ] Phase 12 — Legal, privacy, and compliance (in progress — the
+      code-side items done, the legal/policy work deferred to the user):
+      • §12.1 KYC ripped out per the 2026-08-27 decision. Migration
+        000000000006 drops Profile.aadhaarNumber / aadhaarPhotoUrl /
+        govIdType / govIdPhotoUrl / faceVerificationImg /
+        selfieVerification and makes GuideProfile.licensePhotoUrl
+        nullable. The derived `aadhaarStatus` field is removed from the
+        profile response and the client UserProfile type (was hardcoded
+        'VERIFIED' in one client mock). Guide application no longer
+        requires a licence-photo upload — an admin verifies the licence
+        number out-of-band (VERIFIED was already admin-only from §2.6).
+      • §12.4 account deletion + data export: POST /auth/delete-account
+        (requires current password, revokes all sessions, hard-deletes the
+        user AND trips they organise — everything else cascades) and
+        GET /auth/export (all of the caller's data as JSON, no
+        passwordHash). Client: "Delete my account" (password-confirm
+        modal) and "Download my data" in profile.tsx settings, using the
+        §0.2.6 toast primitive. 3 new tests (account-lifecycle.test.ts).
+      • §12.8 (remove fake GST invoice + fake SOS hotline): GST/payments
+        already removed in §5.5; the SOS hotline already dials tel:112 in
+        §8.9. §12.9 (licence attribution) done in §8.20.
+      Not done (needs the user / legal counsel): real hosted+versioned
+      ToS & Privacy Policy (terms.tsx/privacy.tsx are honest placeholders
+      from §8.20), granular timestamped consent capture, data-retention
+      purge jobs (esp. LiveLocation), field-level encryption for any
+      remaining PII, store privacy labels / Data Safety form, DPA/DSAR
+      process. A data-export *file download* (share sheet) is a follow-up —
+      the client currently logs the JSON and toasts.
 - [ ] Phase 13 — Testing and release readiness (not started)

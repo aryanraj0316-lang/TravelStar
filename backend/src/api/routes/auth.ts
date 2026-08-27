@@ -61,9 +61,8 @@ function toClientProfile(user: UserWithRelations) {
     avatar: user.profile?.avatarUrl ?? DEFAULT_AVATAR,
     role: user.role,
     isVerified: user.profile?.verifiedBadge ?? false,
-    // No KYC/Aadhaar verification flow exists yet (docs/REMEDIATION.md Phase 12) —
-    // NONE is the honest current status, not a placeholder for a fake "VERIFIED".
-    aadhaarStatus: 'NONE' as const,
+    // v1 does no identity/KYC verification (docs/REMEDIATION.md §12.1) — the
+    // previous `aadhaarStatus` field is gone, not set to a fake value.
     guideLicenseStatus: user.guideProfile?.verifiedStatus ?? 'NONE',
     walletBalance: user.wallet?.balance ?? 0,
     rewardPoints: user.wallet?.rewardPoints ?? 0,
@@ -462,6 +461,94 @@ router.put('/profile', async (req, res) => {
   } catch (err) {
     logger.error('[Auth] Update profile failed:', err);
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not save your profile.' } });
+  }
+});
+
+// ─── Data export (right to access) — docs/REMEDIATION.md §12.4 ──────────
+// Returns everything the service holds about the caller, as JSON. No
+// passwordHash, no other users' data.
+router.get('/export', async (req, res) => {
+  try {
+    const userId = requireUserId(req);
+    const [user, organizedTrips, memberships, joinRequests, messagesSent, expensesPaid, sosAlerts, emergencyContacts, notifications] =
+      await Promise.all([
+        prisma.user.findUnique({ where: { id: userId }, include: { profile: true, wallet: true, guideProfile: true } }),
+        prisma.trip.findMany({ where: { creatorId: userId } }),
+        prisma.tripMember.findMany({ where: { userId }, include: { trip: { select: { id: true, name: true } } } }),
+        prisma.joinRequest.findMany({ where: { userId } }),
+        prisma.message.findMany({ where: { senderId: userId }, select: { id: true, content: true, chatRoomId: true, createdAt: true } }),
+        prisma.tripExpense.findMany({ where: { paidById: userId } }),
+        prisma.sOSAlert.findMany({ where: { userId } }),
+        prisma.emergencyContact.findMany({ where: { userId } }),
+        prisma.notification.findMany({ where: { userId } }),
+      ]);
+
+    if (!user) {
+      return res.status(404).json({ ok: false, error: { code: 'USER_NOT_FOUND', message: 'Account not found.' } });
+    }
+
+    const safeUser: Record<string, unknown> = { ...user };
+    delete safeUser.passwordHash;
+    res.setHeader('Content-Disposition', 'attachment; filename="travelstar-data-export.json"');
+    return res.status(200).json({
+      ok: true,
+      data: {
+        exportedAt: new Date().toISOString(),
+        account: safeUser,
+        organizedTrips,
+        memberships,
+        joinRequests,
+        messagesSent,
+        expensesPaid,
+        sosAlerts,
+        emergencyContacts,
+        notifications,
+      },
+    });
+  } catch (err) {
+    logger.error('[Auth] Data export failed:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not build your data export.' } });
+  }
+});
+
+// ─── Account deletion (right to erasure) — docs/REMEDIATION.md §12.4 ────
+// Mandatory for both app stores. Requires the current password (a
+// deliberate, authenticated action), revokes every session, and hard-
+// deletes the user. Trips they organise are deleted too (Trip.creatorId
+// is RESTRICT, and cascading TripMember/ChatRoom/JoinRequest/... off the
+// trip is the correct erasure behaviour). Everything else cascades off
+// User via onDelete: Cascade.
+const deleteAccountSchema = z.object({
+  password: z.string().min(1).max(200),
+});
+
+router.post('/delete-account', async (req, res) => {
+  const parsed = deleteAccountSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Enter your password to confirm deletion.' } });
+  }
+  try {
+    const userId = requireUserId(req);
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user?.passwordHash) {
+      return res.status(404).json({ ok: false, error: { code: 'USER_NOT_FOUND', message: 'Account not found.' } });
+    }
+    const ok = await verifyPassword(user.passwordHash, parsed.data.password);
+    if (!ok) {
+      return res.status(401).json({ ok: false, error: { code: 'INVALID_CREDENTIALS', message: 'Incorrect password.' } });
+    }
+
+    await revokeAllUserSessions(userId);
+    await prisma.$transaction([
+      prisma.trip.deleteMany({ where: { creatorId: userId } }),
+      prisma.user.delete({ where: { id: userId } }),
+    ]);
+
+    logger.info('[Auth] Account deleted', { userId });
+    return res.status(200).json({ ok: true, data: { deleted: true } });
+  } catch (err) {
+    logger.error('[Auth] Account deletion failed:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not delete your account. Please contact support.' } });
   }
 });
 
