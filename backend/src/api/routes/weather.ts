@@ -35,8 +35,22 @@ function mapWeatherCode(code: number): string {
   return 'Unknown';
 }
 
-// Fetch live weather from Open-Meteo (free, no API key)
-async function fetchLiveWeather(lat: number, lon: number): Promise<{ temp: string; condition: string; humidity: string; windSpeed: string } | null> {
+type LiveWeather = { temp: string; condition: string; humidity: string; windSpeed: string };
+
+// Short-lived in-process cache so /weather's background refresh and repeated
+// /weather/live calls for the same place don't each hit Open-Meteo
+// (docs/REMEDIATION.md §10). Keyed by coordinates rounded to ~1km. This is
+// per-instance and that's fine — it's a rate-limit courtesy, not a source
+// of truth. A shared Redis cache is the scale-out version.
+const weatherCache = new Map<string, { at: number; value: LiveWeather }>();
+const WEATHER_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+// Fetch live weather from Open-Meteo (free, no API key), cached.
+async function fetchLiveWeather(lat: number, lon: number): Promise<LiveWeather | null> {
+  const key = `${lat.toFixed(2)},${lon.toFixed(2)}`;
+  const cached = weatherCache.get(key);
+  if (cached && Date.now() - cached.at < WEATHER_CACHE_TTL_MS) return cached.value;
+
   try {
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&timezone=auto`;
     const controller = new AbortController();
@@ -53,12 +67,14 @@ async function fetchLiveWeather(lat: number, lon: number): Promise<{ temp: strin
     const current = data.current;
     if (!current) return null;
 
-    return {
+    const value: LiveWeather = {
       temp: `${Math.round(current.temperature_2m)}°C`,
       condition: mapWeatherCode(current.weather_code),
       humidity: `${current.relative_humidity_2m}%`,
       windSpeed: `${Math.round(current.wind_speed_10m)} km/h`,
     };
+    weatherCache.set(key, { at: Date.now(), value });
+    return value;
   } catch (err) {
     logger.warn('[Weather] Open-Meteo fetch failed:', err);
     return null;
@@ -94,10 +110,14 @@ router.get('/', async (req, res) => {
         return null;
       });
 
-    // Fire refreshes in background (don't block response on first load)
-    Promise.allSettled(refreshPromises).catch(() => {});
+    // Fire refreshes in the background — never block the response on a
+    // third-party call. Each promise already handles its own errors
+    // (fetchLiveWeather catches; the update is best-effort), so allSettled
+    // here cannot reject — no `.catch(() => {})` (banned, docs §0.3).
+    void Promise.allSettled(refreshPromises);
 
-    // Return current data (may include slightly stale data on first load)
+    // Reference-ish data — let clients/CDN cache briefly (docs §10).
+    res.setHeader('Cache-Control', 'public, max-age=300');
     res.status(200).json({ ok: true, data: locations });
   } catch (err) {
     logger.error('[Weather] DB error:', err);

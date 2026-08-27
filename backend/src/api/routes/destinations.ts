@@ -13,6 +13,7 @@ router.get('/', async (req, res) => {
     const destinations = await prisma.destination.findMany({
       orderBy: { rank: 'asc' },
     });
+    res.setHeader('Cache-Control', 'public, max-age=600'); // reference data (docs §10)
     res.status(200).json({ ok: true, data: destinations });
   } catch (err) {
     logger.error('[Destinations] DB error:', err);
