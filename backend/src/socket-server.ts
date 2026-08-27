@@ -127,6 +127,43 @@ export function createSocketServer(httpServer: HttpServer): Server {
       }
     });
 
+    // docs/REMEDIATION.md §8.7 — chat.tsx's typing indicator was a
+    // "Typing indicator simulation" (the code's own comment): a
+    // setTimeout that showed a hardcoded name ('Aditya'/'Suman', not even
+    // a real member of the room) "typing" on a fixed schedule, completely
+    // disconnected from whether anyone was actually typing. Same
+    // membership check and identity-from-socket pattern as sendMessage —
+    // never trust a client-supplied name, and never broadcast to a room
+    // the caller isn't in.
+    const typingSchema = z.object({
+      chatRoomId: z.string().min(1),
+      isTyping: z.boolean(),
+    });
+
+    socket.on('typing', async (raw: unknown) => {
+      const parsed = typingSchema.safeParse(raw);
+      if (!parsed.success) return;
+      const { chatRoomId, isTyping } = parsed.data;
+
+      try {
+        const membership = await prisma.chatRoomMember.findUnique({
+          where: { chatRoomId_userId: { chatRoomId, userId } },
+        });
+        if (!membership) return; // Not a member — nothing to broadcast to.
+
+        const sender = await prisma.user.findUnique({ where: { id: userId }, include: { profile: true } });
+        const senderName = sender?.profile
+          ? `${sender.profile.firstName} ${sender.profile.lastName}`.trim()
+          : (sender?.email?.split('@')[0] ?? 'Member');
+
+        // `socket.to()`, not `io.to()` — excludes the sender's own socket,
+        // so a client never has to filter out its own typing echo.
+        socket.to(chatRoomId).emit('userTyping', { roomId: chatRoomId, userId, userName: senderName, isTyping });
+      } catch (e) {
+        logger.error('[Socket] typing failed:', e);
+      }
+    });
+
     const updateLocationSchema = z.object({
       tripId: z.string().min(1),
       latitude: z.number(),

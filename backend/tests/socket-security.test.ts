@@ -140,9 +140,7 @@ describe('Room join authorization (docs/REMEDIATION.md §3.2)', () => {
   // which chat history is read. A non-member being blocked on the socket
   // path but not here would mean the fix above is security theater.
   it('refuses to let a non-member read the room over REST', async () => {
-    const res = await request(app)
-      .get(`/api/v1/chats/${chatRoomId}`)
-      .set('Authorization', `Bearer ${outsider.token}`);
+    const res = await request(app).get(`/api/v1/chats/${chatRoomId}`).set('Authorization', `Bearer ${outsider.token}`);
     expect(res.status).toBe(403);
   });
 
@@ -184,7 +182,7 @@ describe('Room join authorization (docs/REMEDIATION.md §3.2)', () => {
 
     const receivedPromise = waitForEvent<{ message: { senderId: string; senderName: string } }>(
       socket,
-      'messageReceived'
+      'messageReceived',
     );
     // Payload tries to spoof a different sender — must be ignored.
     socket.emit('sendMessage', {
@@ -198,6 +196,67 @@ describe('Room join authorization (docs/REMEDIATION.md §3.2)', () => {
     expect(message.senderId).toBe(member.id);
     expect(message.senderName).toBe('room-member');
     socket.disconnect();
+  });
+});
+
+describe('Typing indicator (docs/REMEDIATION.md §8.7)', () => {
+  let memberA: { id: string; token: string };
+  let memberB: { id: string; token: string };
+  let outsider: { id: string; token: string };
+  let chatRoomId: string;
+
+  beforeAll(async () => {
+    memberA = await registerUser('typing-member-a');
+    memberB = await registerUser('typing-member-b');
+    outsider = await registerUser('typing-outsider');
+
+    const room = await prisma.chatRoom.create({ data: { isGroup: true, name: 'Typing Test Room' } });
+    chatRoomId = room.id;
+    createdChatRoomIds.push(chatRoomId);
+    await prisma.chatRoomMember.create({ data: { chatRoomId, userId: memberA.id } });
+    await prisma.chatRoomMember.create({ data: { chatRoomId, userId: memberB.id } });
+  });
+
+  it('broadcasts to the rest of the room with the real, server-derived name — not a client-supplied one', async () => {
+    const socketA = await connectClient(memberA.token);
+    const socketB = await connectClient(memberB.token);
+    // socket.to(roomId) only reaches sockets that joined that Socket.IO
+    // room — the same joinRoom call chat.tsx makes when a room is opened
+    // (see the sendMessage test above, which joins for the same reason).
+    await new Promise<boolean>((resolve) => socketB.emit('joinRoom', chatRoomId, resolve));
+
+    const receivedPromise = waitForEvent<{ roomId: string; userId: string; userName: string; isTyping: boolean }>(
+      socketB,
+      'userTyping',
+    );
+    // Payload tries to spoof a different name — must be ignored, same as
+    // sendMessage's senderName/senderId spoof attempt above.
+    socketA.emit('typing', { chatRoomId, isTyping: true, userName: 'Someone Else' });
+
+    const event = await receivedPromise;
+    expect(event.roomId).toBe(chatRoomId);
+    expect(event.userId).toBe(memberA.id);
+    expect(event.userName).toBe('typing-member-a');
+    expect(event.isTyping).toBe(true);
+
+    socketA.disconnect();
+    socketB.disconnect();
+  });
+
+  it("is not echoed back to the sender's own socket", async () => {
+    const socketA = await connectClient(memberA.token);
+    socketA.emit('typing', { chatRoomId, isTyping: true });
+    await assertEventNeverFires(socketA, 'userTyping');
+    socketA.disconnect();
+  });
+
+  it("a non-member's typing event reaches no one", async () => {
+    const socketB = await connectClient(memberB.token);
+    const socketOutsider = await connectClient(outsider.token);
+    socketOutsider.emit('typing', { chatRoomId, isTyping: true });
+    await assertEventNeverFires(socketB, 'userTyping');
+    socketB.disconnect();
+    socketOutsider.disconnect();
   });
 });
 

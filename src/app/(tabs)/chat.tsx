@@ -1,6 +1,6 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { logger } from '@/lib/logger';
-import { toast } from '@/lib/feedback';
+import { errorToastMessage, toast } from '@/lib/feedback';
 import { getCurrentDeviceLocation } from '@/lib/device-location';
 import { useRouter, type ErrorBoundaryProps } from 'expo-router';
 import { RouteErrorFallback } from '@/components/route-error-fallback';
@@ -745,6 +745,8 @@ function ChatScreen() {
     setActiveRoomId,
     messages,
     sendMessage,
+    setTyping,
+    typingUser,
     clearChatUnread,
     refreshTrips,
   } = useApp();
@@ -1281,6 +1283,25 @@ function ChatScreen() {
 
   // Input states
   const [inputText, setInputText] = useState('');
+  // docs/REMEDIATION.md §8.7 — emits real 'typing' events instead of doing
+  // nothing (the indicator the *other* side sees was a fake timer; this is
+  // the half that actually tells them). Sends isTyping:true once per burst
+  // of typing, then isTyping:false 2s after the user stops — not on every
+  // keystroke, which would flood the socket.
+  const typingStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isTypingActiveRef = useRef(false);
+  const handleInputChange = (text: string) => {
+    setInputText(text);
+    if (!isTypingActiveRef.current) {
+      isTypingActiveRef.current = true;
+      setTyping(true);
+    }
+    if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
+    typingStopTimerRef.current = setTimeout(() => {
+      isTypingActiveRef.current = false;
+      setTyping(false);
+    }, 2000);
+  };
   const [replyingToMessage, setReplyingToMessage] = useState<CustomMessage | null>(null);
   const [selectedMessageForOptions, setSelectedMessageForOptions] = useState<CustomMessage | null>(null);
   const [selectedRoomForOptions, setSelectedRoomForOptions] = useState<ChatRoom | null>(null);
@@ -1450,15 +1471,18 @@ function ChatScreen() {
     };
   }, []);
 
-  // Typing indicator simulation
+  // docs/REMEDIATION.md §8.7: this was a "Typing indicator simulation" (the
+  // original code's own comment) — a fixed setTimeout that showed a
+  // hardcoded name ('Aditya'/'Suman', not even a real member of the room)
+  // "typing" on a schedule with no connection to whether anyone actually
+  // was. Real typing events arrive via AppContext's socket subscription
+  // (typingUser) and are filtered down here to whichever room is currently
+  // open — see the TextInput's onChangeText below for the emitting side.
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setTyperName(selectedTripId === 'trip-2' ? 'Aditya' : 'Suman');
-      setIsTyping(true);
-      setTimeout(() => setIsTyping(false), 5000);
-    }, 5000);
-    return () => clearTimeout(timer);
-  }, [selectedTripId, selectedRoomId]);
+    if (!typingUser || typingUser.roomId !== (selectedRoomId || selectedTripId)) return;
+    setTyperName(typingUser.userName);
+    setIsTyping(typingUser.isTyping);
+  }, [typingUser, selectedTripId, selectedRoomId]);
 
   // Auto scroll
   const scrollTimerRef = useRef<any>(null);
@@ -1533,8 +1557,31 @@ function ChatScreen() {
   };
 
   // Submit keyboard text message
+  // docs/REMEDIATION.md §8.7 — "Leave Group"/"Exit Group" used to only call
+  // setInboxRooms((prev) => prev.filter(...)): a client-side-only list
+  // hide, with the caller still a real ChatRoomMember row server-side, so
+  // the "left" group reappeared the next time the inbox refetched. This
+  // calls the real DELETE /chats/:id/members/me and only updates local
+  // state once the server confirms it.
+  const handleLeaveRoom = async (roomId: string) => {
+    try {
+      await apiService.leaveChatRoom(roomId);
+      setInboxRooms((prev) => prev.filter((r) => r.id !== roomId));
+    } catch (e) {
+      logger.warn('[Chat] Leave room failed:', e);
+      toast(errorToastMessage(e, 'Could not leave the group. Please try again.'), 'error');
+    }
+  };
+
   const handleSendText = () => {
     if (inputText.trim() === '') return;
+    // Sending clears the composer, so there is nothing left to be "typing"
+    // — stop immediately rather than waiting out the 2s debounce.
+    if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
+    if (isTypingActiveRef.current) {
+      isTypingActiveRef.current = false;
+      setTyping(false);
+    }
     const msgData: Partial<CustomMessage> = {
       content: inputText,
       type: 'text',
@@ -2251,7 +2298,7 @@ function ChatScreen() {
                         text: isGroup ? 'Leave' : 'Delete',
                         style: 'destructive',
                         onPress: () => {
-                          setInboxRooms((prev) => prev.filter((r) => r.id !== roomId));
+                          void handleLeaveRoom(roomId);
                         },
                       },
                     ],
@@ -2558,7 +2605,7 @@ function ChatScreen() {
                   placeholderTextColor={C.textMuted}
                   style={styles.textInput}
                   value={inputText}
-                  onChangeText={setInputText}
+                  onChangeText={handleInputChange}
                   onSubmitEditing={handleSendText}
                 />
                 <TouchableOpacity style={styles.smileIcon}>
@@ -3342,7 +3389,7 @@ function ChatScreen() {
                           onPress: () => {
                             setIsSettingsOpen(false);
                             setSelectedRoomId(null);
-                            setInboxRooms((prev) => prev.filter((r) => r.id !== activeRoom?.id));
+                            if (activeRoom?.id) void handleLeaveRoom(activeRoom.id);
                           },
                         },
                       ],

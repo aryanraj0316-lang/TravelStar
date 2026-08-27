@@ -7,8 +7,8 @@ type MessageListener = (data: { roomId: string; message: any }) => void;
 type SOSListener = (data: any) => void;
 type LocationListener = (data: any) => void;
 type AddedToChatListener = (data: { tripId: string; chatRoomId: string; tripName: string }) => void;
-type WalletListener = (data: any) => void;
 type NotificationListener = (data: any) => void;
+type TypingListener = (data: { roomId: string; userId: string; userName: string; isTyping: boolean }) => void;
 
 class SocketService {
   private socket: Socket | null = null;
@@ -20,8 +20,8 @@ class SocketService {
   private sosResolvedListeners: SOSListener[] = [];
   private locationListeners: LocationListener[] = [];
   private addedToChatListeners: AddedToChatListener[] = [];
-  private walletListeners: WalletListener[] = [];
   private notificationListeners: NotificationListener[] = [];
+  private typingListeners: TypingListener[] = [];
 
   async connect() {
     if (this.socket && this.socket.connected) return;
@@ -45,8 +45,7 @@ class SocketService {
         auth: { token },
       });
 
-      this.socket.on('connect', () => {
-      });
+      this.socket.on('connect', () => {});
 
       this.socket.on('messageReceived', (data: any) => {
         this.messageListeners.forEach((l) => l(data));
@@ -58,6 +57,10 @@ class SocketService {
 
       this.socket.on('notificationReceived', (data: any) => {
         this.notificationListeners.forEach((l) => l(data));
+      });
+
+      this.socket.on('userTyping', (data: { roomId: string; userId: string; userName: string; isTyping: boolean }) => {
+        this.typingListeners.forEach((l) => l(data));
       });
 
       this.socket.on('sosReceived', (data: any) => {
@@ -72,12 +75,7 @@ class SocketService {
         this.locationListeners.forEach((l) => l(data));
       });
 
-      this.socket.on('walletUpdated', (data: any) => {
-        this.walletListeners.forEach((l) => l(data));
-      });
-
-      this.socket.on('disconnect', (reason: string) => {
-      });
+      this.socket.on('disconnect', (reason: string) => {});
 
       this.socket.on('connect_error', (err: any) => {
         logger.warn(`[SocketService] Connection notice:`, err?.message || err);
@@ -97,8 +95,8 @@ class SocketService {
     this.sosResolvedListeners = [];
     this.locationListeners = [];
     this.addedToChatListeners = [];
-    this.walletListeners = [];
     this.notificationListeners = [];
+    this.typingListeners = [];
   }
 
   joinRoom(roomId: string, onJoined?: (ok: boolean) => void) {
@@ -152,6 +150,15 @@ class SocketService {
     }
   }
 
+  // docs/REMEDIATION.md §8.7 — replaces chat.tsx's fake, timer-driven
+  // "typing indicator simulation". The server derives the sender's real
+  // name and re-checks room membership; this just forwards intent.
+  setTyping(chatRoomId: string, isTyping: boolean) {
+    if (this.socket) {
+      this.socket.emit('typing', { chatRoomId, isTyping });
+    }
+  }
+
   onMessage(listener: MessageListener) {
     this.messageListeners.push(listener);
     return () => {
@@ -187,20 +194,19 @@ class SocketService {
     };
   }
 
-  onWalletUpdated(listener: WalletListener) {
-    this.walletListeners.push(listener);
-    return () => {
-      this.walletListeners = this.walletListeners.filter((l) => l !== listener);
-    };
-  }
-
   onNotification(listener: NotificationListener) {
     this.notificationListeners.push(listener);
     return () => {
       this.notificationListeners = this.notificationListeners.filter((l) => l !== listener);
     };
   }
+
+  onUserTyping(listener: TypingListener) {
+    this.typingListeners.push(listener);
+    return () => {
+      this.typingListeners = this.typingListeners.filter((l) => l !== listener);
+    };
+  }
 }
 
 export const socketService = new SocketService();
-

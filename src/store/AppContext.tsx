@@ -162,6 +162,8 @@ interface AppContextType {
   guides: Guide[];
   messages: Message[];
   sendMessage: (content: string, mediaType?: 'NONE' | 'IMAGE' | 'VOICE') => void;
+  setTyping: (isTyping: boolean) => void;
+  typingUser: { roomId: string; userId: string; userName: string; isTyping: boolean } | null;
   sosAlerts: SOSAlert[];
   triggerSOS: (lat: number, lng: number) => void;
   resolveSOS: (id: string) => void;
@@ -203,6 +205,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [requestedTrips, setRequestedTrips] = useState<Set<string>>(new Set());
   const [pendingRequestsCount, setPendingRequestsCount] = useState<number>(0);
   const [hasUnreadChat, setHasUnreadChat] = useState<boolean>(false);
+  // docs/REMEDIATION.md §8.7 — the last 'userTyping' event received, for
+  // whichever room it was in. chat.tsx filters this down to the room it
+  // currently has open; null once that room's typing indicator has cleared.
+  const [typingUser, setTypingUser] = useState<{
+    roomId: string;
+    userId: string;
+    userName: string;
+    isTyping: boolean;
+  } | null>(null);
   const [hasUnreadNotification, setHasUnreadNotification] = useState<boolean>(false);
   const activeTabNameRef = useRef<string>('index');
 
@@ -619,6 +630,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     });
 
+    const unsubTyping = socketService.onUserTyping((data) => {
+      setTypingUser(data);
+    });
+
     const unsubAddedToChat = socketService.onAddedToChat((data) => {
       setHasUnreadChat(true);
       refreshTrips();
@@ -642,6 +657,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => {
       unsubMsg();
       unsubSOS();
+      unsubTyping();
       unsubAddedToChat();
       unsubNotification();
     };
@@ -857,6 +873,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [activeRoomId],
   );
 
+  // docs/REMEDIATION.md §8.7 — real typing events, replacing chat.tsx's
+  // fake timer-driven simulation.
+  const setTyping = useCallback(
+    (isTyping: boolean) => {
+      socketService.setTyping(activeRoomId || 'trip-1', isTyping);
+    },
+    [activeRoomId],
+  );
+
   const triggerSOS = useCallback(
     (lat: number, lng: number) => {
       const newAlert: SOSAlert = {
@@ -952,6 +977,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       guides,
       messages,
       sendMessage,
+      setTyping,
+      typingUser,
       sosAlerts,
       triggerSOS,
       resolveSOS,
@@ -987,6 +1014,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       guides,
       messages,
       sendMessage,
+      setTyping,
+      typingUser,
       sosAlerts,
       triggerSOS,
       resolveSOS,

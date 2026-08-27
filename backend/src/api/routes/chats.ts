@@ -23,13 +23,15 @@ const messagesQuerySchema = z.object({
 async function assertChatRoomMember(
   res: { status: (c: number) => { json: (b: unknown) => unknown } },
   chatRoomId: string,
-  userId: string
+  userId: string,
 ): Promise<boolean> {
   const membership = await prisma.chatRoomMember.findUnique({
     where: { chatRoomId_userId: { chatRoomId, userId } },
   });
   if (!membership) {
-    res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'You are not a member of this chat room.' } });
+    res
+      .status(403)
+      .json({ ok: false, error: { code: 'FORBIDDEN', message: 'You are not a member of this chat room.' } });
     return false;
   }
   return true;
@@ -52,13 +54,13 @@ router.get('/', async (req, res) => {
               take: 1,
               include: {
                 sender: {
-                  include: { profile: true }
-                }
-              }
-            }
-          }
-        }
-      }
+                  include: { profile: true },
+                },
+              },
+            },
+          },
+        },
+      },
     });
 
     // Single query for unread counts across every room instead of one
@@ -140,11 +142,11 @@ router.get('/:id', async (req, res) => {
         members: {
           include: {
             user: {
-              include: { profile: true }
-            }
-          }
-        }
-      }
+              include: { profile: true },
+            },
+          },
+        },
+      },
     });
 
     if (!room) {
@@ -155,21 +157,28 @@ router.get('/:id', async (req, res) => {
       id: m.user.id,
       name: m.user.profile
         ? `${m.user.profile.firstName} ${m.user.profile.lastName}`.trim()
-        : (m.user.email ? m.user.email.split('@')[0] : 'Member'),
+        : m.user.email
+          ? m.user.email.split('@')[0]
+          : 'Member',
       avatar: m.user.profile?.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
       role: m.user.id === room.trip?.creatorId ? 'Organizer' : 'Member',
     }));
 
-    return res.status(200).json({ ok: true, data: {
+    return res.status(200).json({
+      ok: true,
+      data: {
         id: room.id,
         tripId: room.trip?.id || null,
         name: room.name || room.trip?.name || 'Group Chat',
         avatar: room.trip?.coverImage || 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=150&q=80',
         members: membersList,
-      } });
+      },
+    });
   } catch (err) {
     logger.warn('[Chats] Get chat room details error:', err);
-    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve chat room details' } });
+    return res
+      .status(500)
+      .json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve chat room details' } });
   }
 });
 
@@ -193,11 +202,11 @@ router.get('/:id/messages', async (req, res) => {
       where: { chatRoomId: id },
       include: {
         sender: {
-          include: { profile: true }
+          include: { profile: true },
         },
         chatRoom: {
-          include: { trip: true }
-        }
+          include: { trip: true },
+        },
       },
       orderBy: { createdAt: 'desc' },
       take: take + 1,
@@ -215,7 +224,9 @@ router.get('/:id/messages', async (req, res) => {
         if (!m.isSystem) {
           name = m.sender?.profile
             ? `${m.sender.profile.firstName} ${m.sender.profile.lastName}`.trim()
-            : (m.sender?.email ? (m.sender.email.split('@')[0] ?? 'Member') : 'Member');
+            : m.sender?.email
+              ? (m.sender.email.split('@')[0] ?? 'Member')
+              : 'Member';
           role = m.senderId === m.chatRoom?.trip?.creatorId ? 'Organizer' : 'Tourist';
         }
 
@@ -232,10 +243,14 @@ router.get('/:id/messages', async (req, res) => {
       })
       .reverse(); // chronological order for display
 
-    return res.status(200).json({ ok: true, data: history, meta: { cursor: hasMore ? page[0]?.id ?? undefined : undefined } });
+    return res
+      .status(200)
+      .json({ ok: true, data: history, meta: { cursor: hasMore ? (page[0]?.id ?? undefined) : undefined } });
   } catch (err) {
     logger.warn('[Chats] Get message history error:', err);
-    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve chat messages' } });
+    return res
+      .status(500)
+      .json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve chat messages' } });
   }
 });
 
@@ -279,8 +294,8 @@ router.post('/:id/read', async (req, res) => {
               userId: tokenUserId,
             },
             update: {},
-          })
-        )
+          }),
+        ),
       );
     }
 
@@ -288,6 +303,37 @@ router.post('/:id/read', async (req, res) => {
   } catch (err) {
     logger.warn('[Chats] Mark messages read error:', err);
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to mark messages as read' } });
+  }
+});
+
+// docs/REMEDIATION.md §8.7 — chat.tsx's "Leave Group" button only ever
+// called `setInboxRooms((prev) => prev.filter(...))`: a pure client-side
+// list-hide with no backend call. The user was still a real
+// ChatRoomMember row, so the "left" group would simply reappear the next
+// time the inbox refetched from the server. Removing the caller's own
+// membership row is a real leave; leaving is not restricted to
+// non-organizers — a trip's organizer can leave its group chat like
+// anyone else (they keep organizing the trip itself; TripMember is a
+// separate model from ChatRoomMember).
+router.delete('/:id/members/me', async (req, res) => {
+  const parsedParams = roomIdParamSchema.safeParse(req.params);
+  if (!parsedParams.success) {
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid chat room id.' } });
+  }
+  const { id } = parsedParams.data;
+  const tokenUserId = requireUserId(req);
+
+  try {
+    if (!(await assertChatRoomMember(res, id, tokenUserId))) return;
+
+    await prisma.chatRoomMember.delete({
+      where: { chatRoomId_userId: { chatRoomId: id, userId: tokenUserId } },
+    });
+
+    return res.status(200).json({ ok: true, data: { message: 'Left the chat room.' } });
+  } catch (err) {
+    logger.error('[Chats] Leave room error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not leave the chat room.' } });
   }
 });
 

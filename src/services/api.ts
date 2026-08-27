@@ -714,6 +714,14 @@ export const apiService = {
     });
   },
 
+  // docs/REMEDIATION.md §8.7 — real leave-group, replacing chat.tsx's
+  // client-side-only list filter.
+  async leaveChatRoom(id: string): Promise<{ message: string }> {
+    return request<{ message: string }>(`/chats/${id}/members/me`, {
+      method: 'DELETE',
+    });
+  },
+
   // ── Unified Feed (Stories + Guide Reels merged) ──────
   async getFeed(limit: number = 20, cursor?: string): Promise<any> {
     const params = new URLSearchParams({ limit: String(limit) });

@@ -1391,6 +1391,55 @@ partial, exactly what's blocking full completion.
       upload and wasn't attempted this pass. profile/packages
       CRUD/earnings/live-status were already real (pre-existing, not
       re-verified in depth this pass beyond what §5.7 already covered).
+      §8.7 done (partial — typing indicator and leave-room; the rest of
+      §8.7 was already real) — chat.tsx's typing indicator was a "Typing
+      indicator simulation" (the code's own comment): a fixed setTimeout
+      that showed a hardcoded name ('Aditya'/'Suman', not even a real
+      member of the open room) "typing" on a schedule, completely
+      disconnected from whether anyone was actually typing, and the
+      composer never emitted anything when the real user typed. New
+      backend `typing` socket event (same membership-check-then-derive-
+      identity-from-the-socket pattern as `sendMessage`/`updateLocation` —
+      never trust a client-supplied name or room), broadcast via
+      `socket.to()` so the sender's own client never receives its own
+      echo. Client: socket.ts gained setTyping/onUserTyping; AppContext
+      now subscribes once (alongside its existing onMessage/onSOS/
+      onAddedToChat/onNotification subscriptions) and exposes a single
+      `typingUser` value, which chat.tsx filters down to whichever room is
+      open. The composer emits isTyping:true on the first keystroke of a
+      burst and isTyping:false 2s after the user stops (or immediately on
+      send) — not on every keystroke.
+      Also found and fixed while verifying the "leave room" claim before
+      writing this note (it wasn't real): "Leave Group"/"Exit Group" only
+      ever called `setInboxRooms((prev) => prev.filter(...))` — a pure
+      client-side list-hide, with the caller still a real ChatRoomMember
+      row server-side, so the "left" group reappeared the next time the
+      inbox refetched. New DELETE /chats/:id/members/me (reusing the
+      existing assertChatRoomMember helper) actually removes the row;
+      leaving is not restricted to organizers (they keep organizing the
+      trip itself — TripMember is a separate model). Both call sites
+      (options-sheet "Leave/Delete" and the settings-panel "Exit Group")
+      now call it and only update local state once the server confirms.
+      8 new tests total: 3 in socket-security.test.ts (real server-derived
+      typing name — a spoofed name in the payload is ignored, same class
+      of test as sendMessage's spoofed-sender case — no self-echo, and
+      non-members reach no one) and 5 in chat-leave-room.test.ts (401,
+      403 for a non-member, the row is really gone from the DB not just
+      hidden client-side, and an organizer can leave their own trip's
+      chat). Full suite 85/85.
+      Also removed in passing: `onWalletUpdated`/`walletUpdated` in
+      socket.ts was fully dead — the server never emitted it and no
+      screen ever called `onWalletUpdated` — leftover from whatever
+      wallet feature predates the §5.6 "removed for v1" decision.
+      Room list, message history + pagination, optimistic send+retry,
+      system messages, and member list were already real/correct going
+      into this pass and weren't re-verified in depth beyond what earlier
+      phases already covered. Not done, flagged not fixed: there is still
+      no connection-state indicator anywhere in chat.tsx or socket.ts (no
+      "reconnecting…"/offline affordance for the chat screen specifically
+      — a general OfflineBanner exists app-wide per §6.3, but that's a
+      different thing) — found while checking this same claim, not
+      attempted this pass.
       §8.5 done — AppContext.cancelJoinRequest wired up (was fake:
       local-state-only + Alert.alert, never called the API).
       §8.6 done — all three documented Family Connect breaks fixed
