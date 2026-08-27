@@ -10,7 +10,12 @@ const envSchema = z.object({
   CORS_ALLOWED_ORIGINS: z
     .string()
     .default('http://localhost:8081,http://localhost:19006')
-    .transform((v) => v.split(',').map((o) => o.trim()).filter(Boolean)),
+    .transform((v) =>
+      v
+        .split(',')
+        .map((o) => o.trim())
+        .filter(Boolean),
+    ),
   // Optional: without it, sockets run single-instance (in-memory presence,
   // no cross-instance room fan-out) — fine for local dev, not for a
   // horizontally-scaled deployment. See docs/REMEDIATION.md §3.8.
@@ -33,6 +38,23 @@ const envSchema = z.object({
   // default is 10s; failing fast is better than piling up requests behind a
   // saturated pool.
   DATABASE_POOL_TIMEOUT: z.coerce.number().int().nonnegative().max(120).default(10),
+  // Object storage for user-uploaded media (docs/REMEDIATION.md §8.2 —
+  // avatar upload). Per the 2026-08-27 decision on credential-dependent
+  // features: code the real path, read from env, and throw a clear error
+  // at the point of use when unset — never fall back to faking an upload.
+  // All five must be set together for uploads to work; any subset left
+  // unset just means uploads stay disabled (checked in object-storage.ts,
+  // not enforced here, so the server can still boot without them in dev).
+  // OBJECT_STORAGE_ENDPOINT is only for an S3-compatible provider that
+  // isn't AWS itself (R2, MinIO, B2) — omit it for real AWS S3.
+  OBJECT_STORAGE_BUCKET: z.string().min(1).optional(),
+  OBJECT_STORAGE_REGION: z.string().min(1).optional(),
+  OBJECT_STORAGE_ACCESS_KEY_ID: z.string().min(1).optional(),
+  OBJECT_STORAGE_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+  OBJECT_STORAGE_ENDPOINT: z.string().url().optional(),
+  // The base URL a client reads uploaded files back from (the bucket's own
+  // public URL, or a CDN in front of it). Required alongside the above.
+  OBJECT_STORAGE_PUBLIC_URL_BASE: z.string().url().optional(),
 });
 
 function loadEnv() {

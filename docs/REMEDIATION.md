@@ -1282,6 +1282,41 @@ partial, exactly what's blocking full completion.
       full-text/substring index (`cities`'s `has` filter is still an
       exact-element match, not a substring one — pre-existing, not
       introduced here).
+      §8.2 done (partial — avatar upload only; location-sharing/push
+      toggles and account deletion were already real) — profile.tsx's
+      photo picker (gallery + camera, both already wired to
+      expo-image-picker) set the picked asset's local `uri` directly as
+      the avatar. That URI is a device-local file://(/blob:/data: on web)
+      path: unreachable by anyone else, unreachable by the same user on a
+      different device, and gone the moment the app cache clears — so the
+      "uploaded" avatar silently only ever rendered on the device that
+      took it. Per the 2026-08-27 decision on credential-
+      dependent features (code the real path, read creds from env, throw
+      a clear error if unset — no fake fallback): new
+      backend/src/lib/object-storage.ts talks to any S3-compatible
+      provider (AWS S3, Cloudflare R2, MinIO, Backblaze B2) via the AWS
+      SDK, gated behind 5 new OBJECT_STORAGE_* env vars (all optional —
+      the server still boots without them, uploads just report
+      STORAGE_UNAVAILABLE instead of pretending to succeed). New
+      POST /auth/avatar-upload-url hands back a short-lived presigned PUT
+      URL + the resulting public URL; the client uploads the bytes
+      straight to the bucket (never through this server) via new
+      src/lib/upload.ts (native: expo-file-system's File.upload; web:
+      fetch+Blob — expo-file-system has no web upload-task binding), then
+      calls the existing PUT /profile with the real public URL exactly
+      like it already did with a preset avatar. profile.tsx shows an
+      upload spinner and disables the picker while in flight, and reports
+      a real error (not a silent local-URI fallback) if upload fails or
+      storage isn't configured. This environment has no bucket
+      provisioned, so the STORAGE_UNAVAILABLE path is also this project's
+      actual current behavior end-to-end, not just a defensive branch. 3
+      new tests (avatar-upload.test.ts: 401, bad content-type 400,
+      unconfigured-storage 503), full suite 70/70. Location-sharing
+      already gated real GPS emission at the socket layer (§3.4) and
+      account deletion already existed (§12.4) — verified, not re-fixed.
+      Not done: language-switcher (no i18n library in the app at all —
+      Phase 9 scope, not a §8.2 bug fix), and there is still no real
+      bucket provisioned for anyone to test the configured path against.
       §8.5 done — AppContext.cancelJoinRequest wired up (was fake:
       local-state-only + Alert.alert, never called the API).
       §8.6 done — all three documented Family Connect breaks fixed

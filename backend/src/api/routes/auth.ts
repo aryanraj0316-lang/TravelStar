@@ -3,12 +3,7 @@ import { z } from 'zod';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 import { requireUserId } from '../../lib/auth-context';
-import {
-  hashPassword,
-  verifyPassword,
-  validatePasswordStrength,
-  MIN_PASSWORD_LENGTH,
-} from '../../services/password';
+import { hashPassword, verifyPassword, validatePasswordStrength, MIN_PASSWORD_LENGTH } from '../../services/password';
 import {
   issueAccessToken,
   issueRefreshToken,
@@ -20,11 +15,11 @@ import {
   type SessionMeta,
 } from '../../services/session';
 import { isLockedOut, recordFailure, recordSuccess } from '../../services/login-attempts';
+import { createAvatarUploadUrl, ObjectStorageNotConfiguredError } from '../../lib/object-storage';
 
 const router = Router();
 
-const DEFAULT_AVATAR =
-  'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80';
+const DEFAULT_AVATAR = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80';
 
 interface UserWithRelations {
   id: string;
@@ -103,7 +98,16 @@ const registerSchema = z.object({
 router.post('/register', async (req, res) => {
   const parsed = registerSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Please check the details you entered.', details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })) } });
+    return res
+      .status(400)
+      .json({
+        ok: false,
+        error: {
+          code: 'VALIDATION_FAILED',
+          message: 'Please check the details you entered.',
+          details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+        },
+      });
   }
 
   const { name, email, password } = parsed.data;
@@ -117,7 +121,15 @@ router.post('/register', async (req, res) => {
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
       // Never issue a token from the registration path for an existing account.
-      return res.status(409).json({ ok: false, error: { code: 'EMAIL_ALREADY_REGISTERED', message: 'An account with this email already exists. Please sign in instead.' } });
+      return res
+        .status(409)
+        .json({
+          ok: false,
+          error: {
+            code: 'EMAIL_ALREADY_REGISTERED',
+            message: 'An account with this email already exists. Please sign in instead.',
+          },
+        });
     }
 
     const passwordHash = await hashPassword(password);
@@ -158,7 +170,9 @@ router.post('/register', async (req, res) => {
     });
   } catch (err) {
     logger.error('[Auth] Registration failed:', err);
-    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Registration failed. Please try again.' } });
+    return res
+      .status(500)
+      .json({ ok: false, error: { code: 'INTERNAL', message: 'Registration failed. Please try again.' } });
   }
 });
 
@@ -172,13 +186,20 @@ const loginSchema = z.object({
 router.post('/login', async (req, res) => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Please enter a valid email and password.' } });
+    return res
+      .status(400)
+      .json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Please enter a valid email and password.' } });
   }
 
   const { email, password } = parsed.data;
 
   if (await isLockedOut(email)) {
-    return res.status(429).json({ ok: false, error: { code: 'ACCOUNT_LOCKED', message: 'Too many failed attempts. Please try again in 15 minutes.' } });
+    return res
+      .status(429)
+      .json({
+        ok: false,
+        error: { code: 'ACCOUNT_LOCKED', message: 'Too many failed attempts. Please try again in 15 minutes.' },
+      });
   }
 
   try {
@@ -191,7 +212,9 @@ router.post('/login', async (req, res) => {
     // cannot be used to enumerate which emails are registered.
     const invalid = async () => {
       await recordFailure(email);
-      return res.status(401).json({ ok: false, error: { code: 'INVALID_CREDENTIALS', message: 'Incorrect email or password.' } });
+      return res
+        .status(401)
+        .json({ ok: false, error: { code: 'INVALID_CREDENTIALS', message: 'Incorrect email or password.' } });
     };
 
     if (!user?.passwordHash) return await invalid();
@@ -215,7 +238,9 @@ router.post('/login', async (req, res) => {
     });
   } catch (err) {
     logger.error('[Auth] Login failed:', err);
-    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Sign in failed. Please try again.' } });
+    return res
+      .status(500)
+      .json({ ok: false, error: { code: 'INTERNAL', message: 'Sign in failed. Please try again.' } });
   }
 });
 
@@ -232,7 +257,15 @@ router.post('/refresh', async (req, res) => {
   try {
     const result = await rotateRefreshToken(parsed.data.refreshToken, requestMeta(req));
     if (!result.ok) {
-      return res.status(401).json({ ok: false, error: { code: result.reason === 'REUSED' ? 'REFRESH_TOKEN_REUSED' : 'REFRESH_TOKEN_INVALID', message: 'Your session has expired. Please sign in again.' } });
+      return res
+        .status(401)
+        .json({
+          ok: false,
+          error: {
+            code: result.reason === 'REUSED' ? 'REFRESH_TOKEN_REUSED' : 'REFRESH_TOKEN_INVALID',
+            message: 'Your session has expired. Please sign in again.',
+          },
+        });
     }
 
     const user = await prisma.user.findUnique({
@@ -240,7 +273,12 @@ router.post('/refresh', async (req, res) => {
       include: USER_INCLUDE,
     });
     if (!user) {
-      return res.status(401).json({ ok: false, error: { code: 'REFRESH_TOKEN_INVALID', message: 'Your session has expired. Please sign in again.' } });
+      return res
+        .status(401)
+        .json({
+          ok: false,
+          error: { code: 'REFRESH_TOKEN_INVALID', message: 'Your session has expired. Please sign in again.' },
+        });
     }
 
     const accessToken = issueAccessToken({
@@ -252,7 +290,11 @@ router.post('/refresh', async (req, res) => {
 
     return res.status(200).json({
       ok: true,
-      data: { token: accessToken, refreshToken: result.refreshToken, user: toClientProfile(user as unknown as UserWithRelations) },
+      data: {
+        token: accessToken,
+        refreshToken: result.refreshToken,
+        user: toClientProfile(user as unknown as UserWithRelations),
+      },
     });
   } catch (err) {
     logger.error('[Auth] Refresh failed:', err);
@@ -320,7 +362,12 @@ const resetSchema = z.object({
 router.post('/reset-password', async (req, res) => {
   const parsed = resetSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.` } });
+    return res
+      .status(400)
+      .json({
+        ok: false,
+        error: { code: 'VALIDATION_FAILED', message: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.` },
+      });
   }
 
   const weak = validatePasswordStrength(parsed.data.password);
@@ -334,7 +381,12 @@ router.post('/reset-password', async (req, res) => {
     });
 
     if (!record || record.usedAt || record.expiresAt.getTime() < Date.now()) {
-      return res.status(400).json({ ok: false, error: { code: 'RESET_TOKEN_INVALID', message: 'This reset link is invalid or has expired.' } });
+      return res
+        .status(400)
+        .json({
+          ok: false,
+          error: { code: 'RESET_TOKEN_INVALID', message: 'This reset link is invalid or has expired.' },
+        });
     }
 
     const passwordHash = await hashPassword(parsed.data.password);
@@ -389,13 +441,25 @@ const updateProfileSchema = z.object({
 function toStringArray(value: string | string[] | undefined): string[] | undefined {
   if (value === undefined) return undefined;
   if (Array.isArray(value)) return value;
-  return value.split(',').map((s) => s.trim()).filter(Boolean);
+  return value
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 router.put('/profile', async (req, res) => {
   const parsed = updateProfileSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Please check the details you entered.', details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })) } });
+    return res
+      .status(400)
+      .json({
+        ok: false,
+        error: {
+          code: 'VALIDATION_FAILED',
+          message: 'Please check the details you entered.',
+          details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+        },
+      });
   }
 
   // `role` is deliberately absent from the schema: a client cannot change its
@@ -464,24 +528,83 @@ router.put('/profile', async (req, res) => {
   }
 });
 
+// ─── Avatar upload — docs/REMEDIATION.md §8.2 ────────────────────────────
+// The picker result's local file:// (or blob:/data: on web) URI never
+// leaves the device that took it — it isn't reachable by anyone else, or by
+// this same user on a different device, and it doesn't survive a cache
+// clear. This hands the client a short-lived presigned URL to PUT the bytes
+// directly to the bucket (never through this server — a photo doesn't
+// belong in our request/response cycle), plus the public URL it will be
+// readable at afterwards. The client then calls PUT /profile with that
+// public URL exactly like it does today with a preset avatar or an
+// Unsplash URL.
+const avatarUploadUrlSchema = z.object({
+  contentType: z.enum(['image/jpeg', 'image/png', 'image/webp']),
+});
+
+router.post('/avatar-upload-url', async (req, res) => {
+  const parsed = avatarUploadUrlSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res
+      .status(400)
+      .json({
+        ok: false,
+        error: { code: 'VALIDATION_FAILED', message: 'contentType must be image/jpeg, image/png, or image/webp.' },
+      });
+  }
+
+  try {
+    const userId = requireUserId(req);
+    const { uploadUrl, publicUrl } = await createAvatarUploadUrl(userId, parsed.data.contentType);
+    return res.status(200).json({ ok: true, data: { uploadUrl, publicUrl } });
+  } catch (err) {
+    if (err instanceof ObjectStorageNotConfiguredError) {
+      // Per the 2026-08-27 decision: no fake fallback. Report this
+      // honestly rather than accepting the request and quietly discarding
+      // the photo — the client shows this as "photo upload isn't set up
+      // yet" rather than silently keeping a local-only avatar.
+      return res
+        .status(503)
+        .json({
+          ok: false,
+          error: { code: 'STORAGE_UNAVAILABLE', message: 'Photo upload is not available right now.' },
+        });
+    }
+    logger.error('[Auth] Avatar upload URL failed:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not start the upload.' } });
+  }
+});
+
 // ─── Data export (right to access) — docs/REMEDIATION.md §12.4 ──────────
 // Returns everything the service holds about the caller, as JSON. No
 // passwordHash, no other users' data.
 router.get('/export', async (req, res) => {
   try {
     const userId = requireUserId(req);
-    const [user, organizedTrips, memberships, joinRequests, messagesSent, expensesPaid, sosAlerts, emergencyContacts, notifications] =
-      await Promise.all([
-        prisma.user.findUnique({ where: { id: userId }, include: { profile: true, wallet: true, guideProfile: true } }),
-        prisma.trip.findMany({ where: { creatorId: userId } }),
-        prisma.tripMember.findMany({ where: { userId }, include: { trip: { select: { id: true, name: true } } } }),
-        prisma.joinRequest.findMany({ where: { userId } }),
-        prisma.message.findMany({ where: { senderId: userId }, select: { id: true, content: true, chatRoomId: true, createdAt: true } }),
-        prisma.tripExpense.findMany({ where: { paidById: userId } }),
-        prisma.sOSAlert.findMany({ where: { userId } }),
-        prisma.emergencyContact.findMany({ where: { userId } }),
-        prisma.notification.findMany({ where: { userId } }),
-      ]);
+    const [
+      user,
+      organizedTrips,
+      memberships,
+      joinRequests,
+      messagesSent,
+      expensesPaid,
+      sosAlerts,
+      emergencyContacts,
+      notifications,
+    ] = await Promise.all([
+      prisma.user.findUnique({ where: { id: userId }, include: { profile: true, wallet: true, guideProfile: true } }),
+      prisma.trip.findMany({ where: { creatorId: userId } }),
+      prisma.tripMember.findMany({ where: { userId }, include: { trip: { select: { id: true, name: true } } } }),
+      prisma.joinRequest.findMany({ where: { userId } }),
+      prisma.message.findMany({
+        where: { senderId: userId },
+        select: { id: true, content: true, chatRoomId: true, createdAt: true },
+      }),
+      prisma.tripExpense.findMany({ where: { paidById: userId } }),
+      prisma.sOSAlert.findMany({ where: { userId } }),
+      prisma.emergencyContact.findMany({ where: { userId } }),
+      prisma.notification.findMany({ where: { userId } }),
+    ]);
 
     if (!user) {
       return res.status(404).json({ ok: false, error: { code: 'USER_NOT_FOUND', message: 'Account not found.' } });
@@ -507,7 +630,9 @@ router.get('/export', async (req, res) => {
     });
   } catch (err) {
     logger.error('[Auth] Data export failed:', err);
-    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not build your data export.' } });
+    return res
+      .status(500)
+      .json({ ok: false, error: { code: 'INTERNAL', message: 'Could not build your data export.' } });
   }
 });
 
@@ -525,7 +650,9 @@ const deleteAccountSchema = z.object({
 router.post('/delete-account', async (req, res) => {
   const parsed = deleteAccountSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Enter your password to confirm deletion.' } });
+    return res
+      .status(400)
+      .json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Enter your password to confirm deletion.' } });
   }
   try {
     const userId = requireUserId(req);
@@ -535,7 +662,9 @@ router.post('/delete-account', async (req, res) => {
     }
     const ok = await verifyPassword(user.passwordHash, parsed.data.password);
     if (!ok) {
-      return res.status(401).json({ ok: false, error: { code: 'INVALID_CREDENTIALS', message: 'Incorrect password.' } });
+      return res
+        .status(401)
+        .json({ ok: false, error: { code: 'INVALID_CREDENTIALS', message: 'Incorrect password.' } });
     }
 
     await revokeAllUserSessions(userId);
@@ -548,7 +677,12 @@ router.post('/delete-account', async (req, res) => {
     return res.status(200).json({ ok: true, data: { deleted: true } });
   } catch (err) {
     logger.error('[Auth] Account deletion failed:', err);
-    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not delete your account. Please contact support.' } });
+    return res
+      .status(500)
+      .json({
+        ok: false,
+        error: { code: 'INTERNAL', message: 'Could not delete your account. Please contact support.' },
+      });
   }
 });
 

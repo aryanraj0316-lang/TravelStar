@@ -25,10 +25,11 @@ import {
   QrCode,
   Share2,
   Trash2,
-  X
+  X,
 } from 'lucide-react-native';
 import React, { useState, useEffect, useRef } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Image,
   Modal,
@@ -44,6 +45,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { eventBus } from '@/services/event-bus';
 import { apiService } from '@/services/api';
 import { toast, errorToastMessage } from '@/lib/feedback';
+import { uploadFileToUrl } from '@/lib/upload';
 
 // Safe dynamic import to prevent native app crash if module is unlinked in old APK
 let ImagePicker: any = null;
@@ -82,7 +84,6 @@ function ProfileScreen() {
   const lastScrollYRef = useRef(0);
   const navbarHiddenRef = useRef(false);
 
-
   // Input states
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showSavedPlacesModal, setShowSavedPlacesModal] = useState(false);
@@ -97,6 +98,10 @@ function ProfileScreen() {
   // Edit Profile Modal states
   const [showEditModal, setShowEditModal] = useState(false);
   const [editAvatar, setEditAvatar] = useState(profile.avatar || AVATAR_PRESETS[0]);
+  // docs/REMEDIATION.md §8.2 — true while a picked photo is being uploaded
+  // to object storage; the avatar picker UI disables itself and shows a
+  // spinner during this window (see pickImageFromDevice/takePhotoWithCamera).
+  const [avatarUploading, setAvatarUploading] = useState(false);
   const [editName, setEditName] = useState(profile.name || 'Aarav Sharma');
   const [editGender, setEditGender] = useState(profile.gender || 'Male');
   const [editBio, setEditBio] = useState('Backpacker & Mountain Enthusiast 🏔️ | Exploring Incredible India 🇮🇳');
@@ -111,8 +116,6 @@ function ProfileScreen() {
     }
   }, [isLoggedIn]);
 
-
-
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
       setShowAuthModal(false);
@@ -120,8 +123,6 @@ function ProfileScreen() {
     });
     return unsubscribe;
   }, [navigation]);
-
-
 
   useEffect(() => {
     return () => {
@@ -141,7 +142,6 @@ function ProfileScreen() {
       setEditStyles(profile.travelStyles || '');
     }
   }, [showEditModal, profile]);
-
 
   useEffect(() => {
     if (profile.savedPlaces && Array.isArray(profile.savedPlaces)) {
@@ -176,7 +176,6 @@ function ProfileScreen() {
     }
   }, [profile.savedPlaces]);
 
-
   useEffect(() => {
     if (profile) {
       if (profile.selectedLanguage) {
@@ -192,6 +191,34 @@ function ProfileScreen() {
   }, [profile]);
 
   // Device image pickers
+  // docs/REMEDIATION.md §8.2: the picker result's `uri` is a local
+  // file://(/blob:/data: on web) path — it never leaves the device that
+  // took it, isn't reachable by anyone else (or this same user on another
+  // device), and doesn't survive a cache clear. Setting it straight as the
+  // avatar (the old behaviour) silently produced an avatar that only ever
+  // rendered locally. This uploads the bytes to object storage first and
+  // only ever sets a real, publicly-readable URL as the avatar.
+  //
+  // Per the 2026-08-27 decision on credential-dependent features: no fake
+  // fallback. If the backend has no bucket configured
+  // (ApiError code STORAGE_UNAVAILABLE), that's reported honestly — the
+  // picked photo is discarded, not silently kept as a local-only URI.
+  const uploadPickedAvatar = async (asset: { uri: string; mimeType?: string }) => {
+    const contentType =
+      asset.mimeType === 'image/png' || asset.mimeType === 'image/webp' ? asset.mimeType : 'image/jpeg';
+    setAvatarUploading(true);
+    try {
+      const { uploadUrl, publicUrl } = await apiService.getAvatarUploadUrl(contentType);
+      await uploadFileToUrl(asset.uri, uploadUrl, contentType);
+      setEditAvatar(publicUrl);
+    } catch (err) {
+      logger.warn('[Profile] Avatar upload failed:', err);
+      toast(errorToastMessage(err, 'Could not upload that photo. Please try again.'), 'error');
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
   const pickImageFromDevice = async () => {
     try {
       if (!ImagePicker || typeof ImagePicker.requestMediaLibraryPermissionsAsync !== 'function') {
@@ -200,7 +227,10 @@ function ProfileScreen() {
       }
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permissionResult?.granted) {
-        Alert.alert('Permission Required', 'Permission to access photo gallery is required to select photos from your device.');
+        Alert.alert(
+          'Permission Required',
+          'Permission to access photo gallery is required to select photos from your device.',
+        );
         return;
       }
 
@@ -212,7 +242,7 @@ function ProfileScreen() {
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        setEditAvatar(result.assets[0].uri);
+        await uploadPickedAvatar(result.assets[0]);
       }
     } catch (err: any) {
       Alert.alert('Notice', 'Photo gallery selection error: ' + (err?.message || 'Please try again.'));
@@ -238,7 +268,7 @@ function ProfileScreen() {
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        setEditAvatar(result.assets[0].uri);
+        await uploadPickedAvatar(result.assets[0]);
       }
     } catch (err: any) {
       Alert.alert('Notice', 'Camera selection error: ' + (err?.message || 'Please try again.'));
@@ -335,7 +365,7 @@ function ProfileScreen() {
         onScroll={(e) => {
           const y = e.nativeEvent.contentOffset.y;
           const diff = y - lastScrollYRef.current;
-          
+
           if (y <= 15) {
             if (navbarHiddenRef.current) {
               navbarHiddenRef.current = false;
@@ -356,7 +386,6 @@ function ProfileScreen() {
           lastScrollYRef.current = y;
         }}
       >
-
         {/* ════════════════════════════════════════════════
             HERO COVER PHOTO BANNER & PROFILE CARD
             ════════════════════════════════════════════════ */}
@@ -365,26 +394,16 @@ function ProfileScreen() {
             source={{ uri: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1000&q=80' }}
             style={styles.coverImage}
           />
-          <LinearGradient
-            colors={['rgba(7,9,19,0.3)', 'rgba(7,9,19,0.98)']}
-            style={StyleSheet.absoluteFill}
-          />
+          <LinearGradient colors={['rgba(7,9,19,0.3)', 'rgba(7,9,19,0.98)']} style={StyleSheet.absoluteFill} />
 
           {/* Top-Left Maximize/Scan Icon */}
-          <TouchableOpacity
-            style={styles.topLeftScanBtn}
-            activeOpacity={0.7}
-          >
+          <TouchableOpacity style={styles.topLeftScanBtn} activeOpacity={0.7}>
             <Maximize2 size={20} color="#FFF" />
           </TouchableOpacity>
 
           {/* Top-Right Action Column: Edit (Pencil), Notifications (Bell), Share */}
           <View style={styles.topRightActionCol}>
-            <TouchableOpacity
-              style={styles.topActionBtn}
-              activeOpacity={0.7}
-              onPress={() => setShowEditModal(true)}
-            >
+            <TouchableOpacity style={styles.topActionBtn} activeOpacity={0.7} onPress={() => setShowEditModal(true)}>
               <Pencil size={16} color="#FFF" />
             </TouchableOpacity>
 
@@ -397,11 +416,7 @@ function ProfileScreen() {
               {hasUnreadNotification && <View style={styles.topNotifDot} />}
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.topActionBtn}
-              activeOpacity={0.7}
-              onPress={handleShareProfile}
-            >
+            <TouchableOpacity style={styles.topActionBtn} activeOpacity={0.7} onPress={handleShareProfile}>
               <Share2 size={16} color="#FFF" />
             </TouchableOpacity>
           </View>
@@ -427,9 +442,7 @@ function ProfileScreen() {
                 <CheckCircle size={15} color="#00D1FF" fill="#00D1FF" style={{ marginLeft: 6 }} />
               </View>
 
-              <Text style={styles.userBio}>
-                {profile.bio || "Love exploring new places..."}
-              </Text>
+              <Text style={styles.userBio}>{profile.bio || 'Love exploring new places...'}</Text>
             </View>
           </View>
         </View>
@@ -458,7 +471,9 @@ function ProfileScreen() {
             <View style={styles.profileDetailDivider} />
             <View style={styles.profileDetailRow}>
               <Text style={styles.profileDetailLabel}>Adventure Styles</Text>
-              <Text style={styles.profileDetailValue}>{profile.travelStyles || 'Mountains, Backpacking, Photography'}</Text>
+              <Text style={styles.profileDetailValue}>
+                {profile.travelStyles || 'Mountains, Backpacking, Photography'}
+              </Text>
             </View>
           </View>
 
@@ -466,11 +481,7 @@ function ProfileScreen() {
           <Text style={styles.sectionHeader}>TRAVEL HUB</Text>
           <View style={styles.menuCard}>
             {/* Bookings & Trips */}
-            <TouchableOpacity 
-              style={styles.menuItem} 
-              activeOpacity={0.7}
-              onPress={() => router.push('/bookings')}
-            >
+            <TouchableOpacity style={styles.menuItem} activeOpacity={0.7} onPress={() => router.push('/bookings')}>
               <View style={styles.menuItemLeft}>
                 <Briefcase size={17} color="#FFF" style={{ opacity: 0.8 }} />
                 <Text style={styles.menuItemText}>Bookings & Trips</Text>
@@ -481,8 +492,8 @@ function ProfileScreen() {
             <View style={styles.menuDivider} />
 
             {/* Saved Destinations */}
-            <TouchableOpacity 
-              style={styles.menuItem} 
+            <TouchableOpacity
+              style={styles.menuItem}
               activeOpacity={0.7}
               onPress={() => {
                 setShowSavedPlacesModal(true);
@@ -499,8 +510,8 @@ function ProfileScreen() {
             <View style={styles.menuDivider} />
 
             {/* Expense Tracker */}
-            <TouchableOpacity 
-              style={styles.menuItem} 
+            <TouchableOpacity
+              style={styles.menuItem}
               activeOpacity={0.7}
               onPress={() => router.push('/budget-tracker')}
             >
@@ -516,8 +527,8 @@ function ProfileScreen() {
           <Text style={styles.sectionHeader}>PREFERENCES & SUPPORT</Text>
           <View style={styles.menuCard}>
             {/* Language & Region */}
-            <TouchableOpacity 
-              style={styles.menuItem} 
+            <TouchableOpacity
+              style={styles.menuItem}
               activeOpacity={0.7}
               onPress={() => {
                 setShowLanguageModal(true);
@@ -546,17 +557,9 @@ function ProfileScreen() {
                   setPushNotifications(newValue);
                   updateProfile({ pushNotifications: newValue });
                 }}
-                style={[
-                  styles.switchTrack,
-                  { backgroundColor: pushNotifications ? '#0066FF' : '#2C2F48' }
-                ]}
+                style={[styles.switchTrack, { backgroundColor: pushNotifications ? '#0066FF' : '#2C2F48' }]}
               >
-                <View
-                  style={[
-                    styles.switchThumb,
-                    pushNotifications ? styles.switchThumbOn : styles.switchThumbOff
-                  ]}
-                />
+                <View style={[styles.switchThumb, pushNotifications ? styles.switchThumbOn : styles.switchThumbOff]} />
               </TouchableOpacity>
             </View>
 
@@ -575,28 +578,16 @@ function ProfileScreen() {
                   setLocationSharing(newValue);
                   updateProfile({ locationSharing: newValue });
                 }}
-                style={[
-                  styles.switchTrack,
-                  { backgroundColor: locationSharing ? '#0066FF' : '#2C2F48' }
-                ]}
+                style={[styles.switchTrack, { backgroundColor: locationSharing ? '#0066FF' : '#2C2F48' }]}
               >
-                <View
-                  style={[
-                    styles.switchThumb,
-                    locationSharing ? styles.switchThumbOn : styles.switchThumbOff
-                  ]}
-                />
+                <View style={[styles.switchThumb, locationSharing ? styles.switchThumbOn : styles.switchThumbOff]} />
               </TouchableOpacity>
             </View>
 
             <View style={styles.menuDivider} />
 
             {/* Customer Support */}
-            <TouchableOpacity 
-              style={styles.menuItem} 
-              activeOpacity={0.7}
-              onPress={() => router.push('/support')}
-            >
+            <TouchableOpacity style={styles.menuItem} activeOpacity={0.7} onPress={() => router.push('/support')}>
               <View style={styles.menuItemLeft}>
                 <LifeBuoy size={17} color="#FFF" style={{ opacity: 0.8 }} />
                 <Text style={styles.menuItemText}>Customer Support</Text>
@@ -607,11 +598,7 @@ function ProfileScreen() {
             <View style={styles.menuDivider} />
 
             {/* About TravelStar */}
-            <TouchableOpacity 
-              style={styles.menuItem} 
-              activeOpacity={0.7}
-              onPress={() => router.push('/about')}
-            >
+            <TouchableOpacity style={styles.menuItem} activeOpacity={0.7} onPress={() => router.push('/about')}>
               <View style={styles.menuItemLeft}>
                 <HelpCircle size={17} color="#FFF" style={{ opacity: 0.8 }} />
                 <Text style={styles.menuItemText}>About TravelStar</Text>
@@ -659,11 +646,7 @@ function ProfileScreen() {
             <View style={styles.menuDivider} />
 
             {/* Sign Out of Account */}
-            <TouchableOpacity
-              style={styles.menuItem}
-              activeOpacity={0.7}
-              onPress={handleLogout}
-            >
+            <TouchableOpacity style={styles.menuItem} activeOpacity={0.7} onPress={handleLogout}>
               <View style={styles.menuItemLeft}>
                 <LogOut size={17} color="#FF453A" style={{ opacity: 0.9 }} />
                 <Text style={[styles.menuItemText, { color: '#FF453A' }]}>Sign Out of Account</Text>
@@ -684,8 +667,8 @@ function ProfileScreen() {
             <View style={styles.deleteCard}>
               <Text style={styles.deleteTitle}>Delete your account?</Text>
               <Text style={styles.deleteBodyText}>
-                This permanently removes your profile, trips you organize, join requests, messages, and
-                expenses. It cannot be undone. Enter your password to confirm.
+                This permanently removes your profile, trips you organize, join requests, messages, and expenses. It
+                cannot be undone. Enter your password to confirm.
               </Text>
               <TextInput
                 style={styles.deleteInput}
@@ -721,8 +704,6 @@ function ProfileScreen() {
         <View style={{ height: 60 }} />
       </ScrollView>
 
-
-
       {/* ════════════════════════════════════════════════
           EDIT PROFILE MODAL
           ════════════════════════════════════════════════ */}
@@ -752,11 +733,18 @@ function ProfileScreen() {
                   activeOpacity={0.8}
                   style={styles.avatarPreviewWrap}
                   onPress={pickImageFromDevice}
+                  disabled={avatarUploading}
                 >
                   <Image source={{ uri: editAvatar }} style={styles.avatarPreviewImage} />
-                  <View style={styles.cameraIconBadge}>
-                    <Camera size={12} color="#FFF" />
-                  </View>
+                  {avatarUploading ? (
+                    <View style={styles.avatarUploadingOverlay}>
+                      <ActivityIndicator color="#FFF" />
+                    </View>
+                  ) : (
+                    <View style={styles.cameraIconBadge}>
+                      <Camera size={12} color="#FFF" />
+                    </View>
+                  )}
                 </TouchableOpacity>
 
                 {/* Device Pick & Camera Buttons */}
@@ -765,6 +753,7 @@ function ProfileScreen() {
                     style={styles.devicePickBtn}
                     activeOpacity={0.8}
                     onPress={pickImageFromDevice}
+                    disabled={avatarUploading}
                   >
                     <ImageIcon size={15} color="#0066FF" />
                     <Text style={styles.devicePickBtnText}>From Gallery</Text>
@@ -774,6 +763,7 @@ function ProfileScreen() {
                     style={styles.devicePickBtn}
                     activeOpacity={0.8}
                     onPress={takePhotoWithCamera}
+                    disabled={avatarUploading}
                   >
                     <Camera size={15} color="#0066FF" />
                     <Text style={styles.devicePickBtnText}>Take Photo</Text>
@@ -781,10 +771,16 @@ function ProfileScreen() {
                 </View>
 
                 {/* Preset Avatars Row */}
-                <Text style={{ fontSize: 11, color: '#64748B', marginTop: 12, marginBottom: 8, alignSelf: 'flex-start' }}>
+                <Text
+                  style={{ fontSize: 11, color: '#64748B', marginTop: 12, marginBottom: 8, alignSelf: 'flex-start' }}
+                >
                   Or Choose from Preset Avatars:
                 </Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingVertical: 4 }}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ gap: 10, paddingVertical: 4 }}
+                >
                   {AVATAR_PRESETS.map((presetUrl, idx) => {
                     const isSelected = editAvatar === presetUrl;
                     return (
@@ -792,10 +788,7 @@ function ProfileScreen() {
                         key={idx}
                         activeOpacity={0.8}
                         onPress={() => setEditAvatar(presetUrl)}
-                        style={[
-                          styles.presetAvatarTile,
-                          isSelected && styles.presetAvatarTileSelected,
-                        ]}
+                        style={[styles.presetAvatarTile, isSelected && styles.presetAvatarTileSelected]}
                       >
                         <Image source={{ uri: presetUrl }} style={styles.presetAvatarImage} />
                         {isSelected && (
@@ -811,7 +804,10 @@ function ProfileScreen() {
 
               <Text style={styles.inputLabel}>Full Name</Text>
               <TextInput
-                style={[styles.modalInput, { color: isDark ? '#FFF' : '#000', borderColor: isDark ? '#262940' : '#CBD5E1' }]}
+                style={[
+                  styles.modalInput,
+                  { color: isDark ? '#FFF' : '#000', borderColor: isDark ? '#262940' : '#CBD5E1' },
+                ]}
                 value={editName}
                 onChangeText={setEditName}
                 placeholder="Enter full name"
@@ -856,7 +852,10 @@ function ProfileScreen() {
 
               <Text style={styles.inputLabel}>Bio / Traveler Tagline</Text>
               <TextInput
-                style={[styles.modalInput, { color: isDark ? '#FFF' : '#000', borderColor: isDark ? '#262940' : '#CBD5E1', height: 70 }]}
+                style={[
+                  styles.modalInput,
+                  { color: isDark ? '#FFF' : '#000', borderColor: isDark ? '#262940' : '#CBD5E1', height: 70 },
+                ]}
                 value={editBio}
                 onChangeText={setEditBio}
                 multiline
@@ -866,7 +865,10 @@ function ProfileScreen() {
 
               <Text style={styles.inputLabel}>Mobile Phone</Text>
               <TextInput
-                style={[styles.modalInput, { color: isDark ? '#FFF' : '#000', borderColor: isDark ? '#262940' : '#CBD5E1' }]}
+                style={[
+                  styles.modalInput,
+                  { color: isDark ? '#FFF' : '#000', borderColor: isDark ? '#262940' : '#CBD5E1' },
+                ]}
                 value={editPhone}
                 onChangeText={setEditPhone}
                 keyboardType="phone-pad"
@@ -874,7 +876,10 @@ function ProfileScreen() {
 
               <Text style={styles.inputLabel}>Emergency SOS Contact</Text>
               <TextInput
-                style={[styles.modalInput, { color: isDark ? '#FFF' : '#000', borderColor: isDark ? '#262940' : '#CBD5E1' }]}
+                style={[
+                  styles.modalInput,
+                  { color: isDark ? '#FFF' : '#000', borderColor: isDark ? '#262940' : '#CBD5E1' },
+                ]}
                 value={editEmergencyPhone}
                 onChangeText={setEditEmergencyPhone}
                 keyboardType="phone-pad"
@@ -882,14 +887,20 @@ function ProfileScreen() {
 
               <Text style={styles.inputLabel}>Languages Spoken</Text>
               <TextInput
-                style={[styles.modalInput, { color: isDark ? '#FFF' : '#000', borderColor: isDark ? '#262940' : '#CBD5E1' }]}
+                style={[
+                  styles.modalInput,
+                  { color: isDark ? '#FFF' : '#000', borderColor: isDark ? '#262940' : '#CBD5E1' },
+                ]}
                 value={editLanguages}
                 onChangeText={setEditLanguages}
               />
 
               <Text style={styles.inputLabel}>Travel & Adventure Styles</Text>
               <TextInput
-                style={[styles.modalInput, { color: isDark ? '#FFF' : '#000', borderColor: isDark ? '#262940' : '#CBD5E1' }]}
+                style={[
+                  styles.modalInput,
+                  { color: isDark ? '#FFF' : '#000', borderColor: isDark ? '#262940' : '#CBD5E1' },
+                ]}
                 value={editStyles}
                 onChangeText={setEditStyles}
               />
@@ -952,15 +963,21 @@ function ProfileScreen() {
                 </View>
                 <View style={styles.ticketMetaCell}>
                   <Text style={styles.metaLabel}>Seats</Text>
-                  <Text style={[styles.metaVal, { color: isDark ? '#FFF' : '#0F172A' }]}>{selectedTicket.seats} Confirmed</Text>
+                  <Text style={[styles.metaVal, { color: isDark ? '#FFF' : '#0F172A' }]}>
+                    {selectedTicket.seats} Confirmed
+                  </Text>
                 </View>
                 <View style={styles.ticketMetaCell}>
                   <Text style={styles.metaLabel}>Meeting Point</Text>
-                  <Text style={[styles.metaVal, { color: isDark ? '#FFF' : '#0F172A' }]}>{selectedTicket.meetingPoint}</Text>
+                  <Text style={[styles.metaVal, { color: isDark ? '#FFF' : '#0F172A' }]}>
+                    {selectedTicket.meetingPoint}
+                  </Text>
                 </View>
                 <View style={styles.ticketMetaCell}>
                   <Text style={styles.metaLabel}>Organizer</Text>
-                  <Text style={[styles.metaVal, { color: isDark ? '#FFF' : '#0F172A' }]}>{selectedTicket.organizer}</Text>
+                  <Text style={[styles.metaVal, { color: isDark ? '#FFF' : '#0F172A' }]}>
+                    {selectedTicket.organizer}
+                  </Text>
                 </View>
               </View>
 
@@ -1004,8 +1021,8 @@ function ProfileScreen() {
           ════════════════════════════════════════════════ */}
       {showSavedPlacesModal && (
         <View style={styles.bottomSheetOverlay}>
-          <TouchableOpacity 
-            style={StyleSheet.absoluteFill} 
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
             activeOpacity={1}
             onPress={() => {
               setShowSavedPlacesModal(false);
@@ -1021,7 +1038,13 @@ function ProfileScreen() {
                 <Text style={{ fontSize: 16 }}>❤️</Text>
                 <Text style={styles.bottomSheetTitle}>Saved Places</Text>
               </View>
-              <TouchableOpacity onPress={() => { setShowSavedPlacesModal(false); setNavbarHidden(false); }} style={styles.bottomSheetCloseBtn}>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowSavedPlacesModal(false);
+                  setNavbarHidden(false);
+                }}
+                style={styles.bottomSheetCloseBtn}
+              >
                 <X size={20} color="#FFF" />
               </TouchableOpacity>
             </View>
@@ -1049,7 +1072,9 @@ function ProfileScreen() {
               ))}
               {savedPlaces.length === 0 && (
                 <View style={{ paddingVertical: 40, alignItems: 'center' }}>
-                  <Text style={{ color: '#8A92A6', fontStyle: 'italic', fontSize: 13 }}>Your saved places list is empty.</Text>
+                  <Text style={{ color: '#8A92A6', fontStyle: 'italic', fontSize: 13 }}>
+                    Your saved places list is empty.
+                  </Text>
                 </View>
               )}
             </ScrollView>
@@ -1062,8 +1087,8 @@ function ProfileScreen() {
           ════════════════════════════════════════════════ */}
       {showLanguageModal && (
         <View style={styles.bottomSheetOverlay}>
-          <TouchableOpacity 
-            style={StyleSheet.absoluteFill} 
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
             activeOpacity={1}
             onPress={() => {
               setShowLanguageModal(false);
@@ -1079,7 +1104,13 @@ function ProfileScreen() {
                 <Text style={{ fontSize: 16 }}>🌐</Text>
                 <Text style={styles.bottomSheetTitle}>Select Language / भाषा</Text>
               </View>
-              <TouchableOpacity onPress={() => { setShowLanguageModal(false); setNavbarHidden(false); }} style={styles.bottomSheetCloseBtn}>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowLanguageModal(false);
+                  setNavbarHidden(false);
+                }}
+                style={styles.bottomSheetCloseBtn}
+              >
                 <X size={20} color="#FFF" />
               </TouchableOpacity>
             </View>
@@ -1098,10 +1129,7 @@ function ProfileScreen() {
                   <View key={lang.label}>
                     <TouchableOpacity
                       activeOpacity={0.7}
-                      style={[
-                        styles.langRow,
-                        isSelected && { backgroundColor: 'rgba(0, 102, 255, 0.12)' }
-                      ]}
+                      style={[styles.langRow, isSelected && { backgroundColor: 'rgba(0, 102, 255, 0.12)' }]}
                       onPress={() => {
                         setSelectedLanguage(lang.label);
                         updateProfile({ selectedLanguage: lang.label });
@@ -1935,6 +1963,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1.5,
     borderColor: '#FFF',
+  },
+  avatarUploadingOverlay: {
+    ...StyleSheet.absoluteFill,
+    borderRadius: 40,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   devicePickRow: {
     flexDirection: 'row',

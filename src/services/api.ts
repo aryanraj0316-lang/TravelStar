@@ -367,6 +367,18 @@ export const apiService = {
     });
   },
 
+  // docs/REMEDIATION.md §8.2 — a presigned URL to PUT an avatar image
+  // directly to object storage (never through this server). Throws
+  // ApiError('STORAGE_UNAVAILABLE') when the backend has no bucket
+  // configured — see src/lib/upload.ts, which is what actually calls this
+  // and uploads the file.
+  async getAvatarUploadUrl(contentType: 'image/jpeg' | 'image/png' | 'image/webp') {
+    return request<{ uploadUrl: string; publicUrl: string }>('/auth/avatar-upload-url', {
+      method: 'POST',
+      body: JSON.stringify({ contentType }),
+    });
+  },
+
   // Trips
   // `query` is an optional pre-built query string, e.g.
   // "?maxBudget=15000&limit=50" or "?category=Nature&search=kerala".
