@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { logger } from '@/lib/logger';
 import {
+  ActivityIndicator,
   ScrollView,
   StyleSheet,
   View,
@@ -14,6 +15,8 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { errorToastMessage, toast } from '@/lib/feedback';
+import { uploadFileToUrl } from '@/lib/upload';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useApp } from '@/store/AppContext';
@@ -122,7 +125,7 @@ interface WeatherData {
 
 export default function TravelGuideScreen() {
   const router = useRouter();
-  const { profile, withdrawWalletFunds } = useApp();
+  const { profile } = useApp();
 
   const [activeTab, setActiveTab] = useState<'leads' | 'upload' | 'planning' | 'weather' | 'safety'>('leads');
   const [guideProfile, setGuideProfile] = useState<any>(null);
@@ -159,8 +162,6 @@ export default function TravelGuideScreen() {
   // ────────────────────────────────────────────────────────
   // TABS 1: LEADS & EARNINGS STATE
   // ────────────────────────────────────────────────────────
-  const [cashoutModalVisible, setCashoutModalVisible] = useState(false);
-  const [cashoutAmount, setCashoutAmount] = useState('');
   const [searchLeadQuery, setSearchLeadQuery] = useState('');
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [quoteInputs, setQuoteInputs] = useState<Record<string, string>>({});
@@ -308,7 +309,10 @@ export default function TravelGuideScreen() {
       description: pkgDesc,
       price: parseFloat(pkgPrice),
       durationDays: parseInt(pkgDuration),
-      citiesIncluded: pkgCities.split(',').map(c => c.trim()).filter(Boolean),
+      citiesIncluded: pkgCities
+        .split(',')
+        .map((c) => c.trim())
+        .filter(Boolean),
     };
 
     try {
@@ -328,27 +332,27 @@ export default function TravelGuideScreen() {
 
   const handleDeletePackage = async (pkgId: string) => {
     if (!guideProfile) return;
-    Alert.alert(
-      'Delete Package',
-      'Are you sure you want to delete this package permanently?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-               await apiService.deleteGuidePackage(guideProfile.id, pkgId);
-               fetchPackages(guideProfile.id);
-            } catch {
-               Alert.alert('Error', 'Failed to delete package.');
-            }
+    Alert.alert('Delete Package', 'Are you sure you want to delete this package permanently?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await apiService.deleteGuidePackage(guideProfile.id, pkgId);
+            fetchPackages(guideProfile.id);
+          } catch {
+            Alert.alert('Error', 'Failed to delete package.');
           }
-        }
-      ]
-    );
+        },
+      },
+    ]);
   };
 
+  // docs/REMEDIATION.md §8.17: this used to set the picked video's local
+  // file://(/blob:/data: on web) uri directly as videoUrl — reachable only
+  // on this guide's own device. Same fix as §8.2/§8.4: upload first, only
+  // ever keep the real, publicly-readable URL.
   const handlePickVideo = async () => {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -361,10 +365,20 @@ export default function TravelGuideScreen() {
         allowsEditing: true,
         quality: 1,
       });
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        setSelectedVideoUri(result.assets[0].uri);
-        setSelectedMockImage(result.assets[0].uri || 'https://images.unsplash.com/photo-1548013146-72479768bada?w=300');
-        Alert.alert('Video selected!', 'Click Publish Broadcast to upload your travel reel.');
+      if (result.canceled || !result.assets || result.assets.length === 0) return;
+
+      const asset = result.assets[0];
+      const contentType = asset.mimeType === 'video/quicktime' ? 'video/quicktime' : 'video/mp4';
+      setMediaUploading(true);
+      try {
+        const { uploadUrl, publicUrl } = await apiService.getGuideMediaUploadUrl(contentType);
+        await uploadFileToUrl(asset.uri, uploadUrl, contentType);
+        setSelectedVideoUri(publicUrl);
+      } catch (uploadErr) {
+        logger.warn('[TravelGuide] Video upload failed:', uploadErr);
+        toast(errorToastMessage(uploadErr, 'Could not upload that video. Please try again.'), 'error');
+      } finally {
+        setMediaUploading(false);
       }
     } catch (e) {
       logger.warn('Video pick error:', e);
@@ -387,7 +401,6 @@ export default function TravelGuideScreen() {
     };
   }, [isBroadcasting, guideProfile]);
 
-
   const [leads, setLeads] = useState<CustomerLead[]>([]);
 
   const handleSendQuote = (leadId: string) => {
@@ -397,38 +410,20 @@ export default function TravelGuideScreen() {
       return;
     }
 
-    setLeads((prev) =>
-      prev.map((l) => (l.id === leadId ? { ...l, status: 'QUOTE_SENT' } : l))
-    );
+    setLeads((prev) => prev.map((l) => (l.id === leadId ? { ...l, status: 'QUOTE_SENT' } : l)));
     Alert.alert(
       'Quote Sent Successfully!',
-      `Your bid of ₹${quoteVal} has been sent to the traveler. They will be notified immediately.`
+      `Your bid of ₹${quoteVal} has been sent to the traveler. They will be notified immediately.`,
     );
     setQuoteInputs((prev) => ({ ...prev, [leadId]: '' }));
     setSelectedLeadId(null);
-  };
-
-  const handleCashout = () => {
-    const amt = parseFloat(cashoutAmount);
-    if (isNaN(amt) || amt <= 0) {
-      Alert.alert('Error', 'Please enter a valid positive number.');
-      return;
-    }
-    if (amt > profile.walletBalance) {
-      Alert.alert('Insufficient Balance', 'You do not have enough funds in your wallet to withdraw.');
-      return;
-    }
-    withdrawWalletFunds(amt);
-    setCashoutAmount('');
-    setCashoutModalVisible(false);
-    Alert.alert('Cashout Requested', `₹${amt} successfully queued for payout to your registered bank account.`);
   };
 
   // Filtered Leads
   const filteredLeads = leads.filter(
     (l) =>
       l.destination.toLowerCase().includes(searchLeadQuery.toLowerCase()) ||
-      l.name.toLowerCase().includes(searchLeadQuery.toLowerCase())
+      l.name.toLowerCase().includes(searchLeadQuery.toLowerCase()),
   );
 
   // ────────────────────────────────────────────────────────
@@ -439,32 +434,95 @@ export default function TravelGuideScreen() {
   const [mediaTitle, setMediaTitle] = useState('');
   const [mediaLocation, setMediaLocation] = useState('');
   const [mediaPrice, setMediaPrice] = useState('');
-  const [selectedMockImage, setSelectedMockImage] = useState('https://images.unsplash.com/photo-1548013146-72479768bada?w=300&q=80');
+  // docs/REMEDIATION.md §8.17: these used to default to a hardcoded
+  // Unsplash URL and offer a "Simulated media selection gallery" (the
+  // original code's own comment) of 5 more hardcoded stock photos in place
+  // of a real picker — publishing without ever picking anything just
+  // published that stock photo as if it were the guide's own content.
+  // Null until a real photo is picked and uploaded; the publish button is
+  // disabled until then (see the JSX below).
+  const [selectedCoverImage, setSelectedCoverImage] = useState<string | null>(null);
+  const [selectedThumbnailUri, setSelectedThumbnailUri] = useState<string | null>(null);
+  // True while a cover photo, thumbnail, or video is uploading to object
+  // storage — the picker row disables itself and shows a spinner.
+  const [mediaUploading, setMediaUploading] = useState(false);
 
   const [activeMedia, setActiveMedia] = useState<UploadedMedia[]>([]);
 
-  const mockGallery = [
-    'https://images.unsplash.com/photo-1548013146-72479768bada?w=300&q=80', // Sikkim
-    'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=300&q=80', // Ladakh
-    'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=300&q=80', // Beach
-    'https://images.unsplash.com/photo-1605649487212-47bdab064df7?w=300&q=80', // Snow Shimla
-    'https://images.unsplash.com/photo-1571536802807-30451e3955d8?w=300&q=80', // Varanasi
-  ];
+  const pickAndUploadImage = async (onUploaded: (publicUrl: string) => void) => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission Required', 'Please allow photo library access to pick a photo.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [3, 4],
+        quality: 0.85,
+      });
+      if (result.canceled || !result.assets || result.assets.length === 0) return;
+
+      const asset = result.assets[0];
+      const contentType =
+        asset.mimeType === 'image/png' || asset.mimeType === 'image/webp' ? asset.mimeType : 'image/jpeg';
+      setMediaUploading(true);
+      try {
+        const { uploadUrl, publicUrl } = await apiService.getGuideMediaUploadUrl(contentType);
+        await uploadFileToUrl(asset.uri, uploadUrl, contentType);
+        onUploaded(publicUrl);
+      } catch (uploadErr) {
+        logger.warn('[TravelGuide] Photo upload failed:', uploadErr);
+        toast(errorToastMessage(uploadErr, 'Could not upload that photo. Please try again.'), 'error');
+      } finally {
+        setMediaUploading(false);
+      }
+    } catch (e) {
+      logger.warn('Image pick error:', e);
+    }
+  };
+
+  const pickCoverImage = () => pickAndUploadImage(setSelectedCoverImage);
+  const pickThumbnail = () => pickAndUploadImage(setSelectedThumbnailUri);
 
   const handlePublishMedia = async () => {
     if (!mediaTitle.trim() || !mediaLocation.trim()) {
       Alert.alert('Empty Fields', 'Please fill in the title and location tags.');
       return;
     }
+    if (uploadCategory === 'REEL' && !selectedVideoUri) {
+      Alert.alert('No Video Selected', 'Pick a video to publish a reel.');
+      return;
+    }
+    if (uploadCategory === 'STORY' && !selectedCoverImage) {
+      Alert.alert('No Photo Selected', 'Pick a cover photo to publish a story.');
+      return;
+    }
     if (!guideProfile) return;
 
+    const caption = `${mediaTitle.trim()} | ${mediaLocation.trim()}${uploadTheme === 'PRICING' && mediaPrice.trim() ? ` | ₹${mediaPrice.trim()}/Day` : ''}`;
+
     try {
-      // Upload to backend via API (creates GuideReel in DB)
-      await apiService.uploadGuideReel(guideProfile.id, {
-        videoUrl: selectedVideoUri || selectedMockImage,
-        thumbnailUrl: selectedMockImage,
-        caption: `${mediaTitle.trim()} | ${mediaLocation.trim()}${uploadTheme === 'PRICING' && mediaPrice.trim() ? ` | ₹${mediaPrice.trim()}/Day` : ''}`,
-      });
+      // docs/REMEDIATION.md §8.17: this always called uploadGuideReel
+      // regardless of uploadCategory, so a "Quick Story" post silently
+      // created a GuideReel row instead of a TravelStory. STORY and REEL
+      // are different content types with different backend homes.
+      if (uploadCategory === 'STORY') {
+        await apiService.createStory({
+          title: mediaTitle.trim(),
+          content: caption,
+          coverImg: selectedCoverImage,
+          location: mediaLocation.trim(),
+          hasReel: false,
+        });
+      } else {
+        await apiService.uploadGuideReel(guideProfile.id, {
+          videoUrl: selectedVideoUri,
+          thumbnailUrl: selectedThumbnailUri || undefined,
+          caption,
+        });
+      }
 
       // Also add to local state for immediate UI feedback
       const newItem: UploadedMedia = {
@@ -472,7 +530,7 @@ export default function TravelGuideScreen() {
         type: uploadCategory,
         title: mediaTitle.trim(),
         category: uploadTheme,
-        image: selectedMockImage,
+        image: (uploadCategory === 'STORY' ? selectedCoverImage : selectedThumbnailUri) ?? '',
         location: mediaLocation.trim(),
         price: uploadTheme === 'PRICING' ? (mediaPrice.trim() ? `₹${mediaPrice.trim()}/Day` : undefined) : undefined,
         likes: 0,
@@ -486,10 +544,16 @@ export default function TravelGuideScreen() {
       setMediaTitle('');
       setMediaLocation('');
       setMediaPrice('');
-      Alert.alert('Published!', `Your ${uploadCategory.toLowerCase()} has been uploaded and is now visible to all tourists in their feed.`);
+      setSelectedCoverImage(null);
+      setSelectedThumbnailUri(null);
+      setSelectedVideoUri(null);
+      Alert.alert(
+        'Published!',
+        `Your ${uploadCategory.toLowerCase()} has been uploaded and is now visible to all tourists in their feed.`,
+      );
     } catch (e) {
       logger.warn('[TravelGuide] Publish media failed:', e);
-      Alert.alert('Upload Failed', 'Could not publish your content. Please try again.');
+      toast(errorToastMessage(e, 'Could not publish your content. Please try again.'), 'error');
     }
   };
 
@@ -500,8 +564,20 @@ export default function TravelGuideScreen() {
 
   // Itinerary
   const [itineraryDays, setItineraryDays] = useState([
-    { id: 'd-1', day: '01', title: 'Arrival & Local Market Walk', activities: 'Pick up from hotel at 09:00 AM. Visit local handicraft shops, walk around City lake, and witness the evening light show.' },
-    { id: 'd-2', day: '02', title: 'Fort exploration & Sunset Viewpoint', activities: 'Depart early (07:30 AM) to avoid crowd. Detailed guided exploration of main fortress complex. Sunset photography session at hill ledge.' },
+    {
+      id: 'd-1',
+      day: '01',
+      title: 'Arrival & Local Market Walk',
+      activities:
+        'Pick up from hotel at 09:00 AM. Visit local handicraft shops, walk around City lake, and witness the evening light show.',
+    },
+    {
+      id: 'd-2',
+      day: '02',
+      title: 'Fort exploration & Sunset Viewpoint',
+      activities:
+        'Depart early (07:30 AM) to avoid crowd. Detailed guided exploration of main fortress complex. Sunset photography session at hill ledge.',
+    },
   ]);
   const [newDayTitle, setNewDayTitle] = useState('');
   const [newDayDesc, setNewDayDesc] = useState('');
@@ -558,7 +634,7 @@ export default function TravelGuideScreen() {
 
     const timeString = `${hours > 0 ? `${hours}h ` : ''}${minutes}m`;
     setEstimationResult(
-      `Estimated transit duration from ${estFrom.trim()} to ${estTo.trim()} (${distanceVal} km) via ${estMode} is ${timeString} (includes standard buffer logs).`
+      `Estimated transit duration from ${estFrom.trim()} to ${estTo.trim()} (${distanceVal} km) via ${estMode} is ${timeString} (includes standard buffer logs).`,
     );
   };
 
@@ -568,7 +644,9 @@ export default function TravelGuideScreen() {
   const [costLodge, setCostLodge] = useState('2200');
   const [costGuide, setCostGuide] = useState('1500');
   const [costMisc, setCostMisc] = useState('500');
-  const [budgetBreakdown, setBudgetBreakdown] = useState<{ total: number; percentages: Record<string, number> } | null>(null);
+  const [budgetBreakdown, setBudgetBreakdown] = useState<{ total: number; percentages: Record<string, number> } | null>(
+    null,
+  );
 
   const calculateBudgetBreakdown = () => {
     const tr = parseFloat(costTransport) || 0;
@@ -599,27 +677,75 @@ export default function TravelGuideScreen() {
   const [accomTab, setAccomTab] = useState<'HOTELS' | 'HOSTELS' | 'HOMESTAYS' | 'CAMPING'>('HOTELS');
   const accommodationsData = {
     HOTELS: [
-      { name: 'Raddison Palace', location: 'Jaipur', rate: '₹4,500/night', rating: 4.8, image: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=200&q=80' },
-      { name: 'Hotel Snow Retreat', location: 'Manali', rate: '₹3,200/night', rating: 4.5, image: 'https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=200&q=80' },
+      {
+        name: 'Raddison Palace',
+        location: 'Jaipur',
+        rate: '₹4,500/night',
+        rating: 4.8,
+        image: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=200&q=80',
+      },
+      {
+        name: 'Hotel Snow Retreat',
+        location: 'Manali',
+        rate: '₹3,200/night',
+        rating: 4.5,
+        image: 'https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=200&q=80',
+      },
     ],
     HOSTELS: [
-      { name: 'Zostel Heritage', location: 'Jaipur Outskirts', rate: '₹800/night', rating: 4.6, image: 'https://images.unsplash.com/photo-1555854877-bab0e564b8d5?w=200&q=80' },
-      { name: 'The Backpackers Nest', location: 'Goa', rate: '₹650/night', rating: 4.3, image: 'https://images.unsplash.com/photo-1623625434462-e5e42318ae4f?w=200&q=80' },
+      {
+        name: 'Zostel Heritage',
+        location: 'Jaipur Outskirts',
+        rate: '₹800/night',
+        rating: 4.6,
+        image: 'https://images.unsplash.com/photo-1555854877-bab0e564b8d5?w=200&q=80',
+      },
+      {
+        name: 'The Backpackers Nest',
+        location: 'Goa',
+        rate: '₹650/night',
+        rating: 4.3,
+        image: 'https://images.unsplash.com/photo-1623625434462-e5e42318ae4f?w=200&q=80',
+      },
     ],
     HOMESTAYS: [
-      { name: 'Verdant Meadows Homestay', location: 'Munnar Hills', rate: '₹1,800/night', rating: 4.9, image: 'https://images.unsplash.com/photo-1618773928121-c32242e63f39?w=200&q=80' },
-      { name: 'Sikkimese Traditional Stay', location: 'Gangtok', rate: '₹2,000/night', rating: 4.7, image: 'https://images.unsplash.com/photo-1582719508461-905c673771fd?w=200&q=80' },
+      {
+        name: 'Verdant Meadows Homestay',
+        location: 'Munnar Hills',
+        rate: '₹1,800/night',
+        rating: 4.9,
+        image: 'https://images.unsplash.com/photo-1618773928121-c32242e63f39?w=200&q=80',
+      },
+      {
+        name: 'Sikkimese Traditional Stay',
+        location: 'Gangtok',
+        rate: '₹2,000/night',
+        rating: 4.7,
+        image: 'https://images.unsplash.com/photo-1582719508461-905c673771fd?w=200&q=80',
+      },
     ],
     CAMPING: [
-      { name: 'Pangong Lake Echo Camps', location: 'Ladakh', rate: '₹3,500/night', rating: 4.8, image: 'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?w=200&q=80' },
-      { name: 'Riverside Woods Camping', location: 'Rishikesh', rate: '₹1,500/night', rating: 4.4, image: 'https://images.unsplash.com/photo-1537905569824-f89f14cceb68?w=200&q=80' },
+      {
+        name: 'Pangong Lake Echo Camps',
+        location: 'Ladakh',
+        rate: '₹3,500/night',
+        rating: 4.8,
+        image: 'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?w=200&q=80',
+      },
+      {
+        name: 'Riverside Woods Camping',
+        location: 'Rishikesh',
+        rate: '₹1,500/night',
+        rating: 4.4,
+        image: 'https://images.unsplash.com/photo-1537905569824-f89f14cceb68?w=200&q=80',
+      },
     ],
   };
 
   const handleBookingRedirect = (accomName: string) => {
     Alert.alert(
       'Partner Redirection',
-      `Redirecting you to our external booking partner dashboard to confirm reservation for "${accomName}"...`
+      `Redirecting you to our external booking partner dashboard to confirm reservation for "${accomName}"...`,
     );
   };
 
@@ -629,23 +755,37 @@ export default function TravelGuideScreen() {
   const [selectedWeatherIdx, setSelectedWeatherIdx] = useState(0);
 
   // Build weather display from live API data or defaults
-  const weatherLocations: WeatherData[] = liveWeatherData ? [
-    {
-      city: 'Guide Location',
-      temp: liveWeatherData.temp || '—',
-      condition: liveWeatherData.condition || 'Loading...',
-      wind: liveWeatherData.windSpeed || '— km/h',
-      sunrise: '05:30 AM',
-      sunset: '07:00 PM',
-      aqi: 30,
-      aqiStatus: 'GOOD' as const,
-      aqiColor: C.cyan,
-      crowdLevel: 'MODERATE' as const,
-      crowdColor: C.cyan,
-    },
-  ] : [
-    { city: 'Loading...', temp: '—', condition: 'Fetching weather data...', wind: '—', sunrise: '—', sunset: '—', aqi: 0, aqiStatus: 'GOOD' as const, aqiColor: C.cyan, crowdLevel: 'LOW' as const, crowdColor: C.green },
-  ];
+  const weatherLocations: WeatherData[] = liveWeatherData
+    ? [
+        {
+          city: 'Guide Location',
+          temp: liveWeatherData.temp || '—',
+          condition: liveWeatherData.condition || 'Loading...',
+          wind: liveWeatherData.windSpeed || '— km/h',
+          sunrise: '05:30 AM',
+          sunset: '07:00 PM',
+          aqi: 30,
+          aqiStatus: 'GOOD' as const,
+          aqiColor: C.cyan,
+          crowdLevel: 'MODERATE' as const,
+          crowdColor: C.cyan,
+        },
+      ]
+    : [
+        {
+          city: 'Loading...',
+          temp: '—',
+          condition: 'Fetching weather data...',
+          wind: '—',
+          sunrise: '—',
+          sunset: '—',
+          aqi: 0,
+          aqiStatus: 'GOOD' as const,
+          aqiColor: C.cyan,
+          crowdLevel: 'LOW' as const,
+          crowdColor: C.green,
+        },
+      ];
 
   const currentW = weatherLocations[selectedWeatherIdx] || weatherLocations[0];
 
@@ -658,21 +798,46 @@ export default function TravelGuideScreen() {
 
   // Static helpline contacts (always shown)
   const emergencyContacts = [
-    { title: 'National Tourist Helpline', phone: '1800-11-1363', description: 'Toll-free 24/7 assistance in 12 languages', color: C.blue, Icon: PhoneCall },
-    { title: 'Police Emergency Response', phone: '112', description: 'Immediate assistance from local police', color: C.rose, Icon: Shield },
-    { title: 'National Medical Helpline', phone: '102', description: 'Ambulance service and hospital updates', color: C.green, Icon: HeartPulse },
-    { title: 'State Disaster Alert Desk', phone: '1070', description: 'Landslide, rainfall, and weather alerts', color: C.amber, Icon: AlertTriangle },
+    {
+      title: 'National Tourist Helpline',
+      phone: '1800-11-1363',
+      description: 'Toll-free 24/7 assistance in 12 languages',
+      color: C.blue,
+      Icon: PhoneCall,
+    },
+    {
+      title: 'Police Emergency Response',
+      phone: '112',
+      description: 'Immediate assistance from local police',
+      color: C.rose,
+      Icon: Shield,
+    },
+    {
+      title: 'National Medical Helpline',
+      phone: '102',
+      description: 'Ambulance service and hospital updates',
+      color: C.green,
+      Icon: HeartPulse,
+    },
+    {
+      title: 'State Disaster Alert Desk',
+      phone: '1070',
+      description: 'Landslide, rainfall, and weather alerts',
+      color: C.amber,
+      Icon: AlertTriangle,
+    },
   ];
 
   // Safety alerts now come from DB (sosAlerts state) — map for display
-  const safetyAlerts = sosAlerts.length > 0 ? sosAlerts.map((a: any) => ({
-    id: a.id,
-    type: a.status === 'ACTIVE' ? 'DANGER' : 'INFO',
-    location: `Lat: ${a.latitude?.toFixed(4)}, Lon: ${a.longitude?.toFixed(4)}`,
-    message: `SOS Alert from ${a.userName || 'User'} at ${a.timestamp || 'Unknown time'}. Emergency assistance dispatched.`,
-  })) : [
-    { id: 'empty', type: 'INFO', location: 'All Clear', message: 'No active SOS alerts. Your area is safe.' },
-  ];
+  const safetyAlerts =
+    sosAlerts.length > 0
+      ? sosAlerts.map((a: any) => ({
+          id: a.id,
+          type: a.status === 'ACTIVE' ? 'DANGER' : 'INFO',
+          location: `Lat: ${a.latitude?.toFixed(4)}, Lon: ${a.longitude?.toFixed(4)}`,
+          message: `SOS Alert from ${a.userName || 'User'} at ${a.timestamp || 'Unknown time'}. Emergency assistance dispatched.`,
+        }))
+      : [{ id: 'empty', type: 'INFO', location: 'All Clear', message: 'No active SOS alerts. Your area is safe.' }];
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
@@ -716,11 +881,7 @@ export default function TravelGuideScreen() {
 
         {/* Floating Capsule Navigation Bar */}
         <View style={styles.tabBarContainer}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.tabBarScroll}
-          >
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabBarScroll}>
             {[
               { key: 'leads', label: 'Hub & Earnings', Icon: TrendingUp },
               { key: 'upload', label: 'Upload Reels', Icon: UploadCloud },
@@ -737,9 +898,7 @@ export default function TravelGuideScreen() {
                   activeOpacity={0.85}
                 >
                   <tab.Icon size={14} color={isActive ? C.white : C.textSec} strokeWidth={isActive ? 2.5 : 1.8} />
-                  <Text style={[styles.tabLabel, { color: isActive ? C.white : C.textSec }]}>
-                    {tab.label}
-                  </Text>
+                  <Text style={[styles.tabLabel, { color: isActive ? C.white : C.textSec }]}>{tab.label}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -767,24 +926,12 @@ export default function TravelGuideScreen() {
                   <View style={styles.amountRow}>
                     <Text style={styles.rupeeSign}>₹</Text>
                     <Text style={styles.walletBalance}>
-                      {earnings ? earnings.walletBalance.toLocaleString('en-IN') : profile.walletBalance.toLocaleString('en-IN')}
+                      {earnings
+                        ? earnings.walletBalance.toLocaleString('en-IN')
+                        : profile.walletBalance.toLocaleString('en-IN')}
                     </Text>
                   </View>
                 </View>
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  onPress={() => setCashoutModalVisible(true)}
-                  style={styles.cashoutBtn}
-                >
-                  <LinearGradient
-                    colors={[C.blueGlow, C.blue]}
-                    style={styles.cashoutBtnGradient}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                  >
-                    <Text style={styles.cashoutBtnText}>Cashout</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
               </View>
 
               <View style={styles.walletDivider} />
@@ -792,7 +939,9 @@ export default function TravelGuideScreen() {
               <View style={styles.statsRow}>
                 <View style={styles.statBox}>
                   <Text style={styles.statLabel}>Active Leads</Text>
-                  <Text style={[styles.statValue, { color: C.cyan }]}>{earnings ? earnings.activeLeadsCount : leads.length}</Text>
+                  <Text style={[styles.statValue, { color: C.cyan }]}>
+                    {earnings ? earnings.activeLeadsCount : leads.length}
+                  </Text>
                 </View>
                 <View style={styles.statBoxVerticalDivider} />
                 <View style={styles.statBox}>
@@ -804,22 +953,26 @@ export default function TravelGuideScreen() {
                 <View style={styles.statBoxVerticalDivider} />
                 <View style={styles.statBox}>
                   <Text style={styles.statLabel}>Completed Trips</Text>
-                  <Text style={[styles.statValue, { color: C.greenGlow }]}>{earnings ? earnings.completedTripsCount : 28}</Text>
+                  <Text style={[styles.statValue, { color: C.greenGlow }]}>
+                    {earnings ? earnings.completedTripsCount : 28}
+                  </Text>
                 </View>
               </View>
 
               {/* Earnings Mini Chart Graphic */}
               <Text style={styles.sectionLabelInline}>Weekly Earnings Progress</Text>
               <View style={styles.chartContainer}>
-                {(earnings?.chartData || [
-                  { day: 'Mon', amtText: '₹1.5k', height: 40 },
-                  { day: 'Tue', amtText: '₹2.2k', height: 65 },
-                  { day: 'Wed', amtText: '₹0', height: 5 },
-                  { day: 'Thu', amtText: '₹3.5k', height: 95 },
-                  { day: 'Fri', amtText: '₹1.8k', height: 50 },
-                  { day: 'Sat', amtText: '₹4.2k', height: 110 },
-                  { day: 'Sun', amtText: '₹2.8k', height: 80 },
-                ]).map((item: any, idx: number) => {
+                {(
+                  earnings?.chartData || [
+                    { day: 'Mon', amtText: '₹1.5k', height: 40 },
+                    { day: 'Tue', amtText: '₹2.2k', height: 65 },
+                    { day: 'Wed', amtText: '₹0', height: 5 },
+                    { day: 'Thu', amtText: '₹3.5k', height: 95 },
+                    { day: 'Fri', amtText: '₹1.8k', height: 50 },
+                    { day: 'Sat', amtText: '₹4.2k', height: 110 },
+                    { day: 'Sun', amtText: '₹2.8k', height: 80 },
+                  ]
+                ).map((item: any, idx: number) => {
                   const isWeekend = idx === 5 || idx === 6;
                   return (
                     <View key={idx} style={styles.chartCol}>
@@ -864,8 +1017,10 @@ export default function TravelGuideScreen() {
               </View>
             ) : filteredLeads.length === 0 ? (
               <View style={{ paddingVertical: 40, alignItems: 'center' }}>
-                <Users size={32} color='#64748B' style={{ marginBottom: 12 }} />
-                <Text style={{ color: C.white, fontSize: 15, fontWeight: '800', marginBottom: 6 }}>No Matching Leads</Text>
+                <Users size={32} color="#64748B" style={{ marginBottom: 12 }} />
+                <Text style={{ color: C.white, fontSize: 15, fontWeight: '800', marginBottom: 6 }}>
+                  No Matching Leads
+                </Text>
                 <Text style={{ color: C.textSec, fontSize: 12, textAlign: 'center', paddingHorizontal: 20 }}>
                   {leads.length === 0
                     ? 'No tourist requests match your expertise cities yet. New leads will appear here automatically.'
@@ -889,12 +1044,16 @@ export default function TravelGuideScreen() {
                       <Text style={styles.leadName}>{lead.name}</Text>
                       <View style={styles.leadDestinationRow}>
                         <MapPin size={11} color={C.green} />
-                        <Text style={styles.leadDestination} numberOfLines={1}>{lead.destination}</Text>
+                        <Text style={styles.leadDestination} numberOfLines={1}>
+                          {lead.destination}
+                        </Text>
                       </View>
                     </View>
                     <View style={styles.leadRight}>
                       <Text style={styles.leadBudget}>₹{lead.budget.toLocaleString('en-IN')}</Text>
-                      <Text style={styles.leadDays}>{lead.durationDays} Days • {lead.groupSize} Pax</Text>
+                      <Text style={styles.leadDays}>
+                        {lead.durationDays} Days • {lead.groupSize} Pax
+                      </Text>
                     </View>
                   </View>
 
@@ -909,7 +1068,10 @@ export default function TravelGuideScreen() {
                         <Text style={styles.quoteInputLabel}>Proposed Schedule</Text>
                         <Text style={styles.quoteDurationBadge}>{lead.durationDays} Days Tour</Text>
                       </View>
-                      <Text style={styles.quoteSchedulePreview}>Dynamic {lead.durationDays}-Day itinerary covering all major sightseeing, local food joints, and shopping hotspots with private SUV transport.</Text>
+                      <Text style={styles.quoteSchedulePreview}>
+                        Dynamic {lead.durationDays}-Day itinerary covering all major sightseeing, local food joints, and
+                        shopping hotspots with private SUV transport.
+                      </Text>
 
                       <View style={styles.bidRow}>
                         <View style={styles.currencyPrefix}>
@@ -976,7 +1138,9 @@ export default function TravelGuideScreen() {
                   activeOpacity={0.85}
                 >
                   <ImageIcon size={15} color={uploadCategory === 'STORY' ? C.white : C.textSec} />
-                  <Text style={[styles.selectorLabelText, { color: uploadCategory === 'STORY' ? C.white : C.textSec }]}>Quick Story</Text>
+                  <Text style={[styles.selectorLabelText, { color: uploadCategory === 'STORY' ? C.white : C.textSec }]}>
+                    Quick Story
+                  </Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -985,7 +1149,9 @@ export default function TravelGuideScreen() {
                   activeOpacity={0.85}
                 >
                   <Video size={15} color={uploadCategory === 'REEL' ? C.white : C.textSec} />
-                  <Text style={[styles.selectorLabelText, { color: uploadCategory === 'REEL' ? C.white : C.textSec }]}>Travel Reel</Text>
+                  <Text style={[styles.selectorLabelText, { color: uploadCategory === 'REEL' ? C.white : C.textSec }]}>
+                    Travel Reel
+                  </Text>
                 </TouchableOpacity>
               </View>
 
@@ -997,7 +1163,9 @@ export default function TravelGuideScreen() {
                   activeOpacity={0.85}
                 >
                   <Compass size={13} color={uploadTheme === 'LOCATION' ? C.white : C.textSec} />
-                  <Text style={[styles.selectorLabelText, { color: uploadTheme === 'LOCATION' ? C.white : C.textSec }]}>Tourist Spot</Text>
+                  <Text style={[styles.selectorLabelText, { color: uploadTheme === 'LOCATION' ? C.white : C.textSec }]}>
+                    Tourist Spot
+                  </Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -1006,7 +1174,9 @@ export default function TravelGuideScreen() {
                   activeOpacity={0.85}
                 >
                   <FileText size={13} color={uploadTheme === 'PRICING' ? C.white : C.textSec} />
-                  <Text style={[styles.selectorLabelText, { color: uploadTheme === 'PRICING' ? C.white : C.textSec }]}>Price Packages</Text>
+                  <Text style={[styles.selectorLabelText, { color: uploadTheme === 'PRICING' ? C.white : C.textSec }]}>
+                    Price Packages
+                  </Text>
                 </TouchableOpacity>
               </View>
 
@@ -1043,61 +1213,97 @@ export default function TravelGuideScreen() {
                 </View>
               )}
 
-              {/* Simulated media selection gallery */}
-              <Text style={styles.formInputLabel}>Select Gallery Media</Text>
+              {/* docs/REMEDIATION.md §8.17: real pickers, uploaded to object
+                  storage before selection can complete — no more stock-photo
+                  "gallery". STORY needs a cover photo; REEL needs a video
+                  and, optionally, a thumbnail. */}
+              <Text style={styles.formInputLabel}>
+                {uploadCategory === 'STORY' ? 'Cover Photo' : 'Video & Thumbnail'}
+              </Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.galleryPreviewScroll}>
+                {uploadCategory === 'REEL' && (
+                  <TouchableOpacity
+                    style={[
+                      styles.galleryItemBtn,
+                      { justifyContent: 'center', alignItems: 'center', backgroundColor: C.cardAlt },
+                      !!selectedVideoUri && styles.galleryItemBtnSelected,
+                    ]}
+                    onPress={handlePickVideo}
+                    activeOpacity={0.8}
+                    disabled={mediaUploading}
+                  >
+                    <Video size={24} color={selectedVideoUri ? C.green : C.blueGlow} style={{ alignSelf: 'center' }} />
+                    <Text style={{ fontSize: 9, color: C.textSec, marginTop: 4, textAlign: 'center' }}>
+                      {selectedVideoUri ? 'Video Selected' : 'Pick Video'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
                 <TouchableOpacity
-                  style={[styles.galleryItemBtn, { justifyContent: 'center', alignItems: 'center', backgroundColor: C.cardAlt }]}
-                  onPress={handlePickVideo}
+                  style={[
+                    styles.galleryItemBtn,
+                    { justifyContent: 'center', alignItems: 'center', backgroundColor: C.cardAlt },
+                    !!(uploadCategory === 'STORY' ? selectedCoverImage : selectedThumbnailUri) &&
+                      styles.galleryItemBtnSelected,
+                  ]}
+                  onPress={uploadCategory === 'STORY' ? pickCoverImage : pickThumbnail}
                   activeOpacity={0.8}
+                  disabled={mediaUploading}
                 >
-                  <Video size={24} color={C.blueGlow} style={{ alignSelf: 'center' }} />
-                  <Text style={{ fontSize: 9, color: C.textSec, marginTop: 4, textAlign: 'center' }}>Pick Video</Text>
+                  {(uploadCategory === 'STORY' ? selectedCoverImage : selectedThumbnailUri) ? (
+                    <Image
+                      source={{ uri: (uploadCategory === 'STORY' ? selectedCoverImage : selectedThumbnailUri)! }}
+                      style={styles.galleryItemImage}
+                    />
+                  ) : (
+                    <>
+                      <ImageIcon size={24} color={C.blueGlow} style={{ alignSelf: 'center' }} />
+                      <Text style={{ fontSize: 9, color: C.textSec, marginTop: 4, textAlign: 'center' }}>
+                        {uploadCategory === 'STORY' ? 'Pick Cover Photo' : 'Pick Thumbnail'}
+                      </Text>
+                    </>
+                  )}
+                  {!!(uploadCategory === 'STORY' ? selectedCoverImage : selectedThumbnailUri) && (
+                    <View style={styles.gallerySelectedCheck}>
+                      <Plus size={10} color={C.white} />
+                    </View>
+                  )}
                 </TouchableOpacity>
 
-                {mockGallery.map((imgUrl, idx) => {
-                  const isSel = selectedMockImage === imgUrl;
-                  return (
-                    <TouchableOpacity
-                      key={idx}
-                      style={[styles.galleryItemBtn, isSel && styles.galleryItemBtnSelected]}
-                      onPress={() => setSelectedMockImage(imgUrl)}
-                      activeOpacity={0.8}
-                    >
-                      <Image source={{ uri: imgUrl }} style={styles.galleryItemImage} />
-                      {isSel && (
-                        <View style={styles.gallerySelectedCheck}>
-                          <Plus size={10} color={C.white} />
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
+                {mediaUploading && (
+                  <View style={[styles.galleryItemBtn, { justifyContent: 'center', alignItems: 'center' }]}>
+                    <ActivityIndicator color={C.blueGlow} />
+                  </View>
+                )}
               </ScrollView>
 
               <TouchableOpacity
-                style={styles.publishBtn}
+                style={[styles.publishBtn, mediaUploading && { opacity: 0.6 }]}
                 activeOpacity={0.8}
                 onPress={handlePublishMedia}
+                disabled={mediaUploading}
               >
                 <Camera size={16} color={C.white} />
-                <Text style={styles.publishBtnText}>Publish Broadcast</Text>
+                <Text style={styles.publishBtnText}>{mediaUploading ? 'Uploading…' : 'Publish Broadcast'}</Text>
               </TouchableOpacity>
             </View>
 
             {/* Active Feed Uploads */}
             <Text style={styles.subTitle}>Live Stories Feed</Text>
             <View style={styles.uploadsGrid}>
-              {(reels.length > 0 ? reels.map(r => ({
-                id: r.id,
-                type: 'REEL',
-                title: r.caption || 'Travel Reel Vlog',
-                image: r.thumbnailUrl || 'https://images.unsplash.com/photo-1548013146-72479768bada?w=300',
-                location: 'Guided Tour Route',
-                likes: r.likesCount,
-                date: 'Just Now',
-                price: undefined,
-              })) : activeMedia).map((media) => (
+              {(reels.length > 0
+                ? reels.map((r) => ({
+                    id: r.id,
+                    type: 'REEL',
+                    title: r.caption || 'Travel Reel Vlog',
+                    image: r.thumbnailUrl || 'https://images.unsplash.com/photo-1548013146-72479768bada?w=300',
+                    location: 'Guided Tour Route',
+                    likes: r.likesCount,
+                    date: 'Just Now',
+                    price: undefined,
+                  }))
+                : activeMedia
+              ).map((media) => (
                 <View key={media.id} style={styles.uploadCardItem}>
                   <Image source={{ uri: media.image }} style={styles.uploadCardImg} />
                   <View style={styles.uploadCardOverlay}>
@@ -1111,14 +1317,20 @@ export default function TravelGuideScreen() {
                     )}
                   </View>
                   <View style={styles.uploadCardInfoBox}>
-                    <Text style={styles.uploadCardTitle} numberOfLines={1}>{media.title}</Text>
+                    <Text style={styles.uploadCardTitle} numberOfLines={1}>
+                      {media.title}
+                    </Text>
                     <View style={styles.uploadCardLocRow}>
                       <MapPin size={9} color={C.textSec} />
-                      <Text style={styles.uploadCardLocText} numberOfLines={1}>{media.location}</Text>
+                      <Text style={styles.uploadCardLocText} numberOfLines={1}>
+                        {media.location}
+                      </Text>
                     </View>
                     <View style={styles.uploadCardLikesRow}>
                       <TrendingUp size={9} color={C.green} />
-                      <Text style={styles.uploadCardLikes}>{media.likes} Views • {media.date}</Text>
+                      <Text style={styles.uploadCardLikes}>
+                        {media.likes} Views • {media.date}
+                      </Text>
                     </View>
                   </View>
                 </View>
@@ -1159,7 +1371,14 @@ export default function TravelGuideScreen() {
             {/* 3A: Packages CRUD */}
             {plannerTab === 'itinerary' && (
               <View style={styles.innerPlannerSection}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: 15,
+                  }}
+                >
                   <View style={{ flex: 1 }}>
                     <Text style={styles.subTitle}>My Guided Tour Packages</Text>
                     <Text style={styles.descSec}>Manage packages offered to travellers looking for local guiding</Text>
@@ -1183,14 +1402,28 @@ export default function TravelGuideScreen() {
 
                 {packages.length === 0 ? (
                   <View style={[styles.emptyCreations, { paddingVertical: 40 }]}>
-                    <Compass size={32} color='#64748B' style={{ marginBottom: 12, alignSelf: 'center' }} />
+                    <Compass size={32} color="#64748B" style={{ marginBottom: 12, alignSelf: 'center' }} />
                     <Text style={[styles.emptyCreationsTitle, { textAlign: 'center' }]}>No Packages Listed</Text>
-                    <Text style={[styles.emptyCreationsSub, { textAlign: 'center' }]}>Create a package to display your services and pricing guides.</Text>
+                    <Text style={[styles.emptyCreationsSub, { textAlign: 'center' }]}>
+                      Create a package to display your services and pricing guides.
+                    </Text>
                   </View>
                 ) : (
                   <View style={{ gap: 12 }}>
                     {packages.map((pkg) => (
-                      <View key={pkg.id} style={[styles.leadCard, { padding: 16, backgroundColor: C.card, borderColor: C.border, borderWidth: 1, borderRadius: 16 }]}>
+                      <View
+                        key={pkg.id}
+                        style={[
+                          styles.leadCard,
+                          {
+                            padding: 16,
+                            backgroundColor: C.card,
+                            borderColor: C.border,
+                            borderWidth: 1,
+                            borderRadius: 16,
+                          },
+                        ]}
+                      >
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                           <Text style={[styles.leadName, { fontSize: 15, fontWeight: '800' }]}>{pkg.title}</Text>
                           <Text style={[styles.leadBudget, { color: C.greenGlow }]}>₹{pkg.price}</Text>
@@ -1198,10 +1431,15 @@ export default function TravelGuideScreen() {
                         <Text style={[styles.descSec, { marginTop: 4, color: C.textSec }]}>
                           {pkg.durationDays} Days • {pkg.citiesIncluded?.join(', ') || 'Various Locations'}
                         </Text>
-                        <Text style={[styles.leadDesc, { marginTop: 8, color: 'rgba(255,255,255,0.8)' }]}>{pkg.description}</Text>
+                        <Text style={[styles.leadDesc, { marginTop: 8, color: 'rgba(255,255,255,0.8)' }]}>
+                          {pkg.description}
+                        </Text>
                         <View style={{ flexDirection: 'row', gap: 10, marginTop: 12, justifyContent: 'flex-end' }}>
                           <TouchableOpacity
-                            style={[styles.applyLeadBtn, { backgroundColor: C.border, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 }]}
+                            style={[
+                              styles.applyLeadBtn,
+                              { backgroundColor: C.border, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+                            ]}
                             onPress={() => {
                               setEditingPackage(pkg);
                               setPkgTitle(pkg.title);
@@ -1215,7 +1453,15 @@ export default function TravelGuideScreen() {
                             <Text style={[styles.applyLeadBtnText, { color: C.white }]}>Edit</Text>
                           </TouchableOpacity>
                           <TouchableOpacity
-                            style={[styles.applyLeadBtn, { backgroundColor: 'rgba(239, 68, 68, 0.12)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 }]}
+                            style={[
+                              styles.applyLeadBtn,
+                              {
+                                backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                                paddingHorizontal: 12,
+                                paddingVertical: 6,
+                                borderRadius: 8,
+                              },
+                            ]}
                             onPress={() => handleDeletePackage(pkg.id)}
                           >
                             <Text style={[styles.applyLeadBtnText, { color: C.rose }]}>Delete</Text>
@@ -1234,7 +1480,12 @@ export default function TravelGuideScreen() {
                   onRequestClose={() => setPkgModalVisible(false)}
                 >
                   <View style={styles.creationDetailOverlay}>
-                    <View style={[styles.creationDetailCard, { backgroundColor: '#0B0D19', borderColor: '#1E243B', padding: 20 }]}>
+                    <View
+                      style={[
+                        styles.creationDetailCard,
+                        { backgroundColor: '#0B0D19', borderColor: '#1E243B', padding: 20 },
+                      ]}
+                    >
                       <Text style={[styles.detailHeaderTitle, { fontSize: 18, marginBottom: 16 }]}>
                         {editingPackage ? 'Edit Package' : 'Create Package'}
                       </Text>
@@ -1245,7 +1496,7 @@ export default function TravelGuideScreen() {
                         placeholder="e.g. Sikkim Highlights Tour Guide"
                         placeholderTextColor={C.textMuted}
                         value={pkgTitle}
-                        onChangeText={pkgTitle => setPkgTitle(pkgTitle)}
+                        onChangeText={(pkgTitle) => setPkgTitle(pkgTitle)}
                       />
 
                       <Text style={styles.formInputLabel}>Price (₹) *</Text>
@@ -1255,7 +1506,7 @@ export default function TravelGuideScreen() {
                         placeholderTextColor={C.textMuted}
                         keyboardType="numeric"
                         value={pkgPrice}
-                        onChangeText={pkgPrice => setPkgPrice(pkgPrice)}
+                        onChangeText={(pkgPrice) => setPkgPrice(pkgPrice)}
                       />
 
                       <Text style={styles.formInputLabel}>Duration (Days) *</Text>
@@ -1265,7 +1516,7 @@ export default function TravelGuideScreen() {
                         placeholderTextColor={C.textMuted}
                         keyboardType="numeric"
                         value={pkgDuration}
-                        onChangeText={pkgDuration => setPkgDuration(pkgDuration)}
+                        onChangeText={(pkgDuration) => setPkgDuration(pkgDuration)}
                       />
 
                       <Text style={styles.formInputLabel}>Cities Included (Comma separated)</Text>
@@ -1274,7 +1525,7 @@ export default function TravelGuideScreen() {
                         placeholder="e.g. Gangtok, Lachen, Lachung"
                         placeholderTextColor={C.textMuted}
                         value={pkgCities}
-                        onChangeText={pkgCities => setPkgCities(pkgCities)}
+                        onChangeText={(pkgCities) => setPkgCities(pkgCities)}
                       />
 
                       <Text style={styles.formInputLabel}>Description</Text>
@@ -1285,7 +1536,7 @@ export default function TravelGuideScreen() {
                         multiline
                         numberOfLines={3}
                         value={pkgDesc}
-                        onChangeText={pkgDesc => setPkgDesc(pkgDesc)}
+                        onChangeText={(pkgDesc) => setPkgDesc(pkgDesc)}
                       />
 
                       <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
@@ -1373,11 +1624,7 @@ export default function TravelGuideScreen() {
                     })}
                   </View>
 
-                  <TouchableOpacity
-                    style={styles.estimateBtn}
-                    onPress={calculateEstimation}
-                    activeOpacity={0.8}
-                  >
+                  <TouchableOpacity style={styles.estimateBtn} onPress={calculateEstimation} activeOpacity={0.8}>
                     <Clock size={15} color={C.white} />
                     <Text style={styles.estimateBtnText}>Calculate Transit Time</Text>
                   </TouchableOpacity>
@@ -1480,12 +1727,12 @@ export default function TravelGuideScreen() {
                                     name === 'Transport'
                                       ? C.blue
                                       : name === 'Food'
-                                      ? C.amber
-                                      : name === 'Lodging'
-                                      ? C.purple
-                                      : name === 'Guide Fee'
-                                      ? C.green
-                                      : C.cyan,
+                                        ? C.amber
+                                        : name === 'Lodging'
+                                          ? C.purple
+                                          : name === 'Guide Fee'
+                                            ? C.green
+                                            : C.cyan,
                                 },
                               ]}
                             />
@@ -1568,20 +1815,52 @@ export default function TravelGuideScreen() {
               <Text style={styles.descSec}>Broadcast coordinates to active tourist groups and rescue dispatchers</Text>
 
               <LinearGradient
-                colors={isBroadcasting ? ['rgba(16, 185, 129, 0.08)', 'rgba(12, 15, 29, 0.95)'] : ['rgba(34, 41, 76, 0.2)', 'rgba(12, 15, 29, 0.95)']}
-                style={[styles.walletCard, { padding: 18, marginTop: 10, borderWidth: 1, borderColor: isBroadcasting ? C.green : C.border, borderRadius: 16 }]}
+                colors={
+                  isBroadcasting
+                    ? ['rgba(16, 185, 129, 0.08)', 'rgba(12, 15, 29, 0.95)']
+                    : ['rgba(34, 41, 76, 0.2)', 'rgba(12, 15, 29, 0.95)']
+                }
+                style={[
+                  styles.walletCard,
+                  {
+                    padding: 18,
+                    marginTop: 10,
+                    borderWidth: 1,
+                    borderColor: isBroadcasting ? C.green : C.border,
+                    borderRadius: 16,
+                  },
+                ]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
               >
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.walletLabel, { fontSize: 10 }]}>BROADCAST STATUS</Text>
-                    <Text style={[styles.leadName, { color: isBroadcasting ? C.greenGlow : C.textSec, fontSize: 14, fontWeight: '800', marginTop: 4 }]}>
+                    <Text
+                      style={[
+                        styles.leadName,
+                        {
+                          color: isBroadcasting ? C.greenGlow : C.textSec,
+                          fontSize: 14,
+                          fontWeight: '800',
+                          marginTop: 4,
+                        },
+                      ]}
+                    >
                       {isBroadcasting ? '● ACTIVE • Live on Map' : '○ INACTIVE • Offline'}
                     </Text>
                   </View>
                   <TouchableOpacity
-                    style={[styles.cashoutBtn, { height: 32, paddingHorizontal: 16, backgroundColor: isBroadcasting ? C.rose : C.blue, borderRadius: 8, justifyContent: 'center' }]}
+                    style={[
+                      styles.cashoutBtn,
+                      {
+                        height: 32,
+                        paddingHorizontal: 16,
+                        backgroundColor: isBroadcasting ? C.rose : C.blue,
+                        borderRadius: 8,
+                        justifyContent: 'center',
+                      },
+                    ]}
                     onPress={() => {
                       if (isBroadcasting) {
                         setIsBroadcasting(false);
@@ -1599,7 +1878,15 @@ export default function TravelGuideScreen() {
                 </View>
 
                 {liveStatus?.location && (
-                  <View style={{ marginTop: 14, borderTopWidth: 1, borderColor: 'rgba(255,255,255,0.06)', paddingTop: 12, gap: 4 }}>
+                  <View
+                    style={{
+                      marginTop: 14,
+                      borderTopWidth: 1,
+                      borderColor: 'rgba(255,255,255,0.06)',
+                      paddingTop: 12,
+                      gap: 4,
+                    }}
+                  >
                     <Text style={[styles.descSec, { fontSize: 11 }]}>Current GPS Coordinates:</Text>
                     <Text style={{ color: C.white, fontSize: 13, fontWeight: '700' }}>
                       Lat: {liveStatus.location.latitude.toFixed(6)} • Lon: {liveStatus.location.longitude.toFixed(6)}
@@ -1611,9 +1898,20 @@ export default function TravelGuideScreen() {
                 )}
 
                 {liveStatus?.activeGuiding && (
-                  <View style={{ marginTop: 12, backgroundColor: 'rgba(59, 130, 246, 0.08)', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(59, 130, 246, 0.2)' }}>
+                  <View
+                    style={{
+                      marginTop: 12,
+                      backgroundColor: 'rgba(59, 130, 246, 0.08)',
+                      padding: 10,
+                      borderRadius: 10,
+                      borderWidth: 1,
+                      borderColor: 'rgba(59, 130, 246, 0.2)',
+                    }}
+                  >
                     <Text style={{ color: C.blueGlow, fontSize: 12, fontWeight: '700' }}>Guiding Booking Ongoing</Text>
-                    <Text style={[styles.descSec, { fontSize: 11, marginTop: 2 }]}>Booking ID: {liveStatus.activeGuiding.bookingId}</Text>
+                    <Text style={[styles.descSec, { fontSize: 11, marginTop: 2 }]}>
+                      Booking ID: {liveStatus.activeGuiding.bookingId}
+                    </Text>
                     <Text style={[styles.descSec, { fontSize: 11 }]}>Revenue: ₹{liveStatus.activeGuiding.amount}</Text>
                   </View>
                 )}
@@ -1642,10 +1940,7 @@ export default function TravelGuideScreen() {
             </ScrollView>
 
             {/* Primary Weather & Live Parameters Info */}
-            <LinearGradient
-              colors={['#0e1227', '#080a15']}
-              style={styles.weatherLiveCard}
-            >
+            <LinearGradient colors={['#0e1227', '#080a15']} style={styles.weatherLiveCard}>
               <View style={styles.weatherLiveCardGlow} />
               <View style={styles.weatherMainRow}>
                 <View>
@@ -1704,10 +1999,14 @@ export default function TravelGuideScreen() {
                 <View style={styles.aqiMeterRow}>
                   <Text style={styles.aqiValue}>{currentW.aqi}</Text>
                   <Text style={styles.aqiDescText}>
-                    {currentW.aqiStatus === 'EXCELLENT' && 'Excellent air quality. Perfectly safe for long mountain trekking and camping stays.'}
-                    {currentW.aqiStatus === 'GOOD' && 'Good air quality. Minimal risk for general outdoor tour exploration.'}
-                    {currentW.aqiStatus === 'POOR' && 'Poor air quality. Sensitive tourists should limit long strenuous walks around dense traffic.'}
-                    {currentW.aqiStatus === 'HAZARDOUS' && 'Hazardous conditions. Outdoor face mask is highly recommended for city excursions.'}
+                    {currentW.aqiStatus === 'EXCELLENT' &&
+                      'Excellent air quality. Perfectly safe for long mountain trekking and camping stays.'}
+                    {currentW.aqiStatus === 'GOOD' &&
+                      'Good air quality. Minimal risk for general outdoor tour exploration.'}
+                    {currentW.aqiStatus === 'POOR' &&
+                      'Poor air quality. Sensitive tourists should limit long strenuous walks around dense traffic.'}
+                    {currentW.aqiStatus === 'HAZARDOUS' &&
+                      'Hazardous conditions. Outdoor face mask is highly recommended for city excursions.'}
                   </Text>
                 </View>
               </View>
@@ -1743,7 +2042,9 @@ export default function TravelGuideScreen() {
           <View>
             <View style={styles.cardHeader}>
               <Text style={styles.subTitle}>Safety & Emergency Helpdesk</Text>
-              <Text style={styles.descSec}>Quick dial government helplines, nearby clinics, police authorities, and warning alerts</Text>
+              <Text style={styles.descSec}>
+                Quick dial government helplines, nearby clinics, police authorities, and warning alerts
+              </Text>
             </View>
 
             {/* Safety Warning Alerts List */}
@@ -1751,15 +2052,29 @@ export default function TravelGuideScreen() {
             {safetyAlerts.map((alert) => (
               <View key={alert.id} style={styles.safetyAlertItem}>
                 <View style={styles.safetyAlertHeader}>
-                  <View style={[
-                    styles.safetyAlertBadge,
-                    { backgroundColor: alert.type === 'DANGER' ? 'rgba(239,68,68,0.2)' : alert.type === 'WARNING' ? 'rgba(245,158,11,0.2)' : 'rgba(59,130,246,0.2)' }
-                  ]}>
-                    <AlertTriangle size={11} color={alert.type === 'DANGER' ? C.rose : alert.type === 'WARNING' ? C.amber : C.blue} />
-                    <Text style={[
-                      styles.safetyAlertBadgeText,
-                      { color: alert.type === 'DANGER' ? C.rose : alert.type === 'WARNING' ? C.amber : C.blue }
-                    ]}>
+                  <View
+                    style={[
+                      styles.safetyAlertBadge,
+                      {
+                        backgroundColor:
+                          alert.type === 'DANGER'
+                            ? 'rgba(239,68,68,0.2)'
+                            : alert.type === 'WARNING'
+                              ? 'rgba(245,158,11,0.2)'
+                              : 'rgba(59,130,246,0.2)',
+                      },
+                    ]}
+                  >
+                    <AlertTriangle
+                      size={11}
+                      color={alert.type === 'DANGER' ? C.rose : alert.type === 'WARNING' ? C.amber : C.blue}
+                    />
+                    <Text
+                      style={[
+                        styles.safetyAlertBadgeText,
+                        { color: alert.type === 'DANGER' ? C.rose : alert.type === 'WARNING' ? C.amber : C.blue },
+                      ]}
+                    >
                       {alert.type}
                     </Text>
                   </View>
@@ -1836,56 +2151,6 @@ export default function TravelGuideScreen() {
         {/* Bottom Spacer */}
         <View style={{ height: 100 }} />
       </ScrollView>
-
-      {/* CASHOUT MODAL */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={cashoutModalVisible}
-        onRequestClose={() => setCashoutModalVisible(false)}
-      >
-        <View style={styles.modalBg}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Withdraw Payout Funds</Text>
-            <Text style={styles.modalDesc}>
-              Move earnings directly to your verified bank account. Daily limit: ₹50,000.
-            </Text>
-
-            <View style={styles.modalBalanceRow}>
-              <Text style={styles.modalBalanceLabel}>Available Wallet Balance:</Text>
-              <Text style={styles.modalBalanceVal}>₹{profile.walletBalance.toLocaleString('en-IN')}</Text>
-            </View>
-
-            <Text style={styles.modalInputLabel}>Withdrawal Amount (₹)</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="e.g. 1000"
-              placeholderTextColor={C.textMuted}
-              keyboardType="numeric"
-              value={cashoutAmount}
-              onChangeText={setCashoutAmount}
-            />
-
-            <View style={styles.modalActionRow}>
-              <TouchableOpacity
-                style={[styles.modalBtn, styles.modalBtnCancel]}
-                onPress={() => setCashoutModalVisible(false)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.modalBtnCancelText}>Cancel</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.modalBtn, styles.modalBtnConfirm]}
-                onPress={handleCashout}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.modalBtnConfirmText}>Confirm Cashout</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }

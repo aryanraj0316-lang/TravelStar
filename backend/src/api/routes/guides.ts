@@ -4,6 +4,7 @@ import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 import { requireUserId, isAdmin } from '../../lib/auth-context';
 import { requireRole } from '../../middleware/auth';
+import { createGuideMediaUploadUrl, ObjectStorageNotConfiguredError } from '../../lib/object-storage';
 
 const router = Router();
 
@@ -24,7 +25,9 @@ function startOfPeriodIST(range: 'week' | 'month' | 'year'): Date {
   if (range === 'week') {
     const day = nowShifted.getUTCDay(); // 0 Sun .. 6 Sat
     const daysSinceMonday = (day + 6) % 7;
-    startShifted = new Date(Date.UTC(nowShifted.getUTCFullYear(), nowShifted.getUTCMonth(), nowShifted.getUTCDate() - daysSinceMonday));
+    startShifted = new Date(
+      Date.UTC(nowShifted.getUTCFullYear(), nowShifted.getUTCMonth(), nowShifted.getUTCDate() - daysSinceMonday),
+    );
   } else if (range === 'month') {
     startShifted = new Date(Date.UTC(nowShifted.getUTCFullYear(), nowShifted.getUTCMonth(), 1));
   } else {
@@ -48,7 +51,7 @@ export function dayOfWeekBucket(date: Date): number {
 async function assertOwnsGuideProfile(
   req: Parameters<typeof requireUserId>[0],
   res: { status: (c: number) => { json: (b: unknown) => unknown } },
-  guideProfileId: string
+  guideProfileId: string,
 ): Promise<boolean> {
   const guide = await prisma.guideProfile.findUnique({
     where: { id: guideProfileId },
@@ -56,12 +59,16 @@ async function assertOwnsGuideProfile(
   });
 
   if (!guide) {
-    res.status(404).json({ ok: false, error: { code: 'GUIDE_PROFILE_NOT_FOUND', message: 'Guide profile not found.' } });
+    res
+      .status(404)
+      .json({ ok: false, error: { code: 'GUIDE_PROFILE_NOT_FOUND', message: 'Guide profile not found.' } });
     return false;
   }
 
   if (guide.userId !== requireUserId(req) && !isAdmin(req)) {
-    res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'You do not have access to this guide profile.' } });
+    res
+      .status(403)
+      .json({ ok: false, error: { code: 'FORBIDDEN', message: 'You do not have access to this guide profile.' } });
     return false;
   }
 
@@ -74,17 +81,19 @@ router.get('/', async (req, res) => {
     const dbGuides = await prisma.guideProfile.findMany({
       include: {
         user: {
-          include: { profile: true }
-        }
-      }
+          include: { profile: true },
+        },
+      },
     });
 
     // Money crosses the wire as a string (docs/CONVENTIONS.md §3) so the
     // client never has to guess whether it got a Decimal-as-string or a
     // plain number.
-    const mapped = dbGuides.map(g => ({
+    const mapped = dbGuides.map((g) => ({
       id: g.id,
-      name: g.user?.profile?.firstName ? `${g.user.profile.firstName} ${g.user.profile.lastName || ''}`.trim() : 'Verified Guide',
+      name: g.user?.profile?.firstName
+        ? `${g.user.profile.firstName} ${g.user.profile.lastName || ''}`.trim()
+        : 'Verified Guide',
       rating: g.rating || 5.0,
       languages: g.languagesSpoken || ['Hindi', 'English'],
       dailyRate: g.dailyRate.toString(),
@@ -122,7 +131,12 @@ router.get('/profile', async (req, res) => {
     });
 
     if (!guide) {
-      return res.status(404).json({ ok: false, error: { code: 'GUIDE_PROFILE_NOT_FOUND', message: 'No guide profile yet. Apply to become a guide first.' } });
+      return res
+        .status(404)
+        .json({
+          ok: false,
+          error: { code: 'GUIDE_PROFILE_NOT_FOUND', message: 'No guide profile yet. Apply to become a guide first.' },
+        });
     }
 
     return res.status(200).json({ ok: true, data: guide });
@@ -150,7 +164,16 @@ const createGuideProfileSchema = z.object({
 router.post('/profile', async (req, res) => {
   const parsed = createGuideProfileSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Please provide your licence details to apply.', details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })) } });
+    return res
+      .status(400)
+      .json({
+        ok: false,
+        error: {
+          code: 'VALIDATION_FAILED',
+          message: 'Please provide your licence details to apply.',
+          details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+        },
+      });
   }
 
   const userId = requireUserId(req);
@@ -158,7 +181,12 @@ router.post('/profile', async (req, res) => {
   try {
     const existing = await prisma.guideProfile.findUnique({ where: { userId } });
     if (existing) {
-      return res.status(409).json({ ok: false, error: { code: 'GUIDE_PROFILE_EXISTS', message: 'You have already applied to become a guide.' } });
+      return res
+        .status(409)
+        .json({
+          ok: false,
+          error: { code: 'GUIDE_PROFILE_EXISTS', message: 'You have already applied to become a guide.' },
+        });
     }
 
     const { licensePhotoUrl, ...rest } = parsed.data;
@@ -176,7 +204,48 @@ router.post('/profile', async (req, res) => {
     return res.status(201).json({ ok: true, data: guide });
   } catch (err) {
     logger.error('[Guides] Create profile error:', err);
-    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not submit your application.' } });
+    return res
+      .status(500)
+      .json({ ok: false, error: { code: 'INTERNAL', message: 'Could not submit your application.' } });
+  }
+});
+
+// docs/REMEDIATION.md §8.17 — a presigned upload URL for a story cover
+// photo, a reel video, or a reel thumbnail (the client says which via
+// contentType; image/* vs video/mp4|quicktime is what object-storage.ts
+// actually enforces). Registered before the /:id routes below so it isn't
+// swallowed as `id: 'media-upload-url'`.
+const guideMediaUploadUrlSchema = z.object({
+  contentType: z.enum(['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/quicktime']),
+});
+
+router.post('/media-upload-url', async (req, res) => {
+  const parsed = guideMediaUploadUrlSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      ok: false,
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'contentType must be an image/jpeg|png|webp or video/mp4|quicktime.',
+      },
+    });
+  }
+
+  try {
+    const userId = requireUserId(req);
+    const { uploadUrl, publicUrl } = await createGuideMediaUploadUrl(userId, parsed.data.contentType);
+    return res.status(200).json({ ok: true, data: { uploadUrl, publicUrl } });
+  } catch (err) {
+    if (err instanceof ObjectStorageNotConfiguredError) {
+      return res
+        .status(503)
+        .json({
+          ok: false,
+          error: { code: 'STORAGE_UNAVAILABLE', message: 'Media upload is not available right now.' },
+        });
+    }
+    logger.error('[Guides] Media upload URL failed:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not start the upload.' } });
   }
 });
 
@@ -191,7 +260,9 @@ router.get('/pending', requireRole(['ADMIN']), async (req, res) => {
     return res.status(200).json({ ok: true, data: pending });
   } catch (err) {
     logger.error('[Guides] List pending error:', err);
-    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not load the review queue.' } });
+    return res
+      .status(500)
+      .json({ ok: false, error: { code: 'INTERNAL', message: 'Could not load the review queue.' } });
   }
 });
 
@@ -200,7 +271,9 @@ const verifySchema = z.object({ decision: z.enum(['VERIFIED', 'REJECTED']) });
 router.post('/:id/verify', requireRole(['ADMIN']), async (req, res) => {
   const parsed = verifySchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'decision must be VERIFIED or REJECTED.' } });
+    return res
+      .status(400)
+      .json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'decision must be VERIFIED or REJECTED.' } });
   }
 
   const id = req.params.id!;
@@ -209,7 +282,9 @@ router.post('/:id/verify', requireRole(['ADMIN']), async (req, res) => {
   try {
     const guide = await prisma.guideProfile.findUnique({ where: { id } });
     if (!guide) {
-      return res.status(404).json({ ok: false, error: { code: 'GUIDE_PROFILE_NOT_FOUND', message: 'Guide profile not found.' } });
+      return res
+        .status(404)
+        .json({ ok: false, error: { code: 'GUIDE_PROFILE_NOT_FOUND', message: 'Guide profile not found.' } });
     }
 
     const [updated] = await prisma.$transaction([
@@ -242,7 +317,9 @@ router.get('/:id/earnings', async (req, res) => {
   const { id } = req.params;
   const parsedQuery = earningsQuerySchema.safeParse(req.query);
   if (!parsedQuery.success) {
-    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid range parameter.' } });
+    return res
+      .status(400)
+      .json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid range parameter.' } });
   }
   const { range } = parsedQuery.data;
 
@@ -253,9 +330,9 @@ router.get('/:id/earnings', async (req, res) => {
       where: { id },
       include: {
         user: {
-          include: { wallet: true }
-        }
-      }
+          include: { wallet: true },
+        },
+      },
     });
 
     if (!guideProfile) {
@@ -276,7 +353,7 @@ router.get('/:id/earnings', async (req, res) => {
       },
       include: {
         payments: true,
-      }
+      },
     });
 
     // Chart/display aggregation only — precision loss here doesn't affect
@@ -288,7 +365,7 @@ router.get('/:id/earnings', async (req, res) => {
         guideProfileId: id,
         status: 'COMPLETED',
         bookingDate: { gte: periodStart },
-      }
+      },
     });
 
     // Scoped to this guide's own leads (pending requests on trips matching
@@ -326,7 +403,9 @@ router.get('/:id/earnings', async (req, res) => {
       c.amtText = c.amt > 0 ? `₹${Math.round(c.amt / 100) / 10}k` : '₹0';
     });
 
-    return res.status(200).json({ ok: true, data: {
+    return res.status(200).json({
+      ok: true,
+      data: {
         range,
         walletBalance,
         totalEarnings,
@@ -334,10 +413,13 @@ router.get('/:id/earnings', async (req, res) => {
         activeLeadsCount,
         chartData,
         hasActivity: bookings.length > 0 || completedTripsCount > 0,
-      } });
+      },
+    });
   } catch (err) {
     logger.error('[Guides] Get earnings error:', err);
-    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve earnings stats' } });
+    return res
+      .status(500)
+      .json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve earnings stats' } });
   }
 });
 
@@ -374,7 +456,7 @@ const packageUpdateSchema = packageSchema.partial();
 async function assertPackageBelongsToGuide(
   res: { status: (c: number) => { json: (b: unknown) => unknown } },
   packageId: string,
-  guideProfileId: string
+  guideProfileId: string,
 ): Promise<boolean> {
   const pkg = await prisma.guidePackage.findUnique({ where: { id: packageId }, select: { guideProfileId: true } });
   if (!pkg || pkg.guideProfileId !== guideProfileId) {
@@ -388,7 +470,9 @@ router.post('/:id/packages', async (req, res) => {
   const { id } = req.params;
   const parsed = packageSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Please check the package details.' } });
+    return res
+      .status(400)
+      .json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Please check the package details.' } });
   }
   try {
     if (!(await assertOwnsGuideProfile(req, res, id!))) return;
@@ -410,7 +494,9 @@ router.put('/:id/packages/:packageId', async (req, res) => {
   const { id, packageId } = req.params;
   const parsed = packageUpdateSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Please check the package details.' } });
+    return res
+      .status(400)
+      .json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Please check the package details.' } });
   }
   try {
     if (!(await assertOwnsGuideProfile(req, res, id!))) return;
@@ -419,9 +505,7 @@ router.put('/:id/packages/:packageId', async (req, res) => {
     // Strip undefined keys — zod's .partial() types them as `T | undefined`,
     // which exactOptionalPropertyTypes treats as distinct from "absent" and
     // Prisma's *UpdateInput types reject outright.
-    const data = Object.fromEntries(
-      Object.entries(parsed.data).filter(([, v]) => v !== undefined)
-    );
+    const data = Object.fromEntries(Object.entries(parsed.data).filter(([, v]) => v !== undefined));
 
     const updated = await prisma.guidePackage.update({
       where: { id: packageId },
@@ -465,19 +549,40 @@ router.get('/:id/reels', async (req, res) => {
   }
 });
 
+// docs/REMEDIATION.md §5.1: this route had zero input validation
+// (destructured straight off req.body, unbounded strings, no URL check) —
+// found in passing while wiring the real upload flow that produces these
+// URLs (§8.17).
+const createReelSchema = z.object({
+  videoUrl: z.string().url().max(2000),
+  thumbnailUrl: z.string().url().max(2000).optional(),
+  caption: z.string().trim().max(500).optional(),
+});
+
 router.post('/:id/reels', async (req, res) => {
   const { id } = req.params;
-  const { videoUrl, thumbnailUrl, caption } = req.body;
+  const parsed = createReelSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      ok: false,
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'Please check the reel details.',
+        details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+      },
+    });
+  }
+
   try {
     if (!(await assertOwnsGuideProfile(req, res, id!))) return;
 
     const newReel = await prisma.guideReel.create({
       data: {
         guideProfileId: id,
-        videoUrl,
-        thumbnailUrl: thumbnailUrl || null,
-        caption: caption || '',
-      }
+        videoUrl: parsed.data.videoUrl,
+        thumbnailUrl: parsed.data.thumbnailUrl ?? null,
+        caption: parsed.data.caption ?? '',
+      },
     });
     return res.status(201).json({ ok: true, data: newReel });
   } catch (err) {
@@ -512,14 +617,19 @@ router.get('/:id/live-status', async (req, res) => {
       orderBy: { bookingDate: 'desc' },
     });
 
-    return res.status(200).json({ ok: true, data: {
+    return res.status(200).json({
+      ok: true,
+      data: {
         location: latestLoc,
-        activeGuiding: activeBooking ? {
-          bookingId: activeBooking.id,
-          targetId: activeBooking.targetId,
-          amount: activeBooking.amount,
-        } : null,
-      } });
+        activeGuiding: activeBooking
+          ? {
+              bookingId: activeBooking.id,
+              targetId: activeBooking.targetId,
+              amount: activeBooking.amount,
+            }
+          : null,
+      },
+    });
   } catch (err) {
     logger.error('[Guides] Get live status error:', err);
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve live status' } });
@@ -553,7 +663,7 @@ router.post('/:id/live-status', async (req, res) => {
           latitude: parseFloat(latitude),
           longitude: parseFloat(longitude),
           updatedAt: new Date(),
-        }
+        },
       });
     } else {
       updatedLoc = await prisma.liveLocation.create({
@@ -561,14 +671,16 @@ router.post('/:id/live-status', async (req, res) => {
           userId: guideProfile.userId,
           latitude: parseFloat(latitude),
           longitude: parseFloat(longitude),
-        }
+        },
       });
     }
 
     return res.status(200).json({ ok: true, data: updatedLoc });
   } catch (err) {
     logger.error('[Guides] Post live status error:', err);
-    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to update live location status' } });
+    return res
+      .status(500)
+      .json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to update live location status' } });
   }
 });
 
@@ -612,8 +724,12 @@ router.get('/:id/leads', async (req, res) => {
       const profile = jr.user?.profile;
       return {
         id: jr.id,
-        name: profile ? `${profile.firstName} ${profile.lastName || ''}`.trim() : (jr.user?.email?.split('@')[0] || 'Traveler'),
-        avatar: profile?.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
+        name: profile
+          ? `${profile.firstName} ${profile.lastName || ''}`.trim()
+          : jr.user?.email?.split('@')[0] || 'Traveler',
+        avatar:
+          profile?.avatarUrl ||
+          'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
         destination: jr.trip?.cities?.join(' & ') || jr.trip?.name || 'Unknown',
         groupSize: jr.trip?.totalSeats || 1,
         durationDays: jr.trip?.durationDays || 1,
@@ -633,4 +749,3 @@ router.get('/:id/leads', async (req, res) => {
 });
 
 export default router;
-

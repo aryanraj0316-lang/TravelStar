@@ -28,7 +28,6 @@ function isOfflineFailure(e: unknown): boolean {
   return e instanceof ApiError && e.statusCode === null && e.code !== 'UNAUTHORIZED';
 }
 
-
 export type UserRole = 'TOURIST' | 'GUIDE' | 'ORGANIZER' | 'FAMILY_TRAVELER' | 'ADMIN';
 
 export interface UserProfile {
@@ -166,7 +165,6 @@ interface AppContextType {
   sosAlerts: SOSAlert[];
   triggerSOS: (lat: number, lng: number) => void;
   resolveSOS: (id: string) => void;
-  withdrawWalletFunds: (amount: number) => void;
   activeRoomId: string | null;
   setActiveRoomId: (id: string | null) => void;
   navbarHidden: boolean;
@@ -214,14 +212,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
     return unsub;
   }, []);
+  // Placeholder shown only until the real profile loads (or the session
+  // restores as logged-out, at which point GUEST_PROFILE above takes over).
+  // `walletBalance`/`rewardPoints` used to be fabricated non-zero numbers
+  // (2450.0 / 120) here — a real fresh wallet always starts at 0
+  // (backend/src/api/routes/auth.ts's register route), so a fabricated
+  // balance could flash before the real fetch resolves. `isVerified: true`
+  // was also wrong for the same reason: nothing is verified before a real
+  // profile says so.
   const [profile, setProfile] = useState<UserProfile>({
     name: 'Aarav Sharma',
     avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
     role: 'TOURIST',
-    isVerified: true,
+    isVerified: false,
     guideLicenseStatus: 'NONE',
-    walletBalance: 2450.0,
-    rewardPoints: 120,
+    walletBalance: 0,
+    rewardPoints: 0,
   });
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -251,13 +257,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setProfile(GUEST_PROFILE);
     socketService.disconnect();
 
-    apiService.logout().catch((e) => logger.warn('[Auth] Server-side logout failed (clearing local session anyway):', e));
+    apiService
+      .logout()
+      .catch((e) => logger.warn('[Auth] Server-side logout failed (clearing local session anyway):', e));
 
-    Promise.all([
-      clearTokens(),
-      safeStorage.removeItem('isLoggedIn'),
-      safeStorage.removeItem('savedProfile'),
-    ]).catch((e) => logger.warn('[Auth] Failed to fully clear local session:', e));
+    Promise.all([clearTokens(), safeStorage.removeItem('isLoggedIn'), safeStorage.removeItem('savedProfile')]).catch(
+      (e) => logger.warn('[Auth] Failed to fully clear local session:', e),
+    );
   }, []);
 
   useEffect(() => {
@@ -274,9 +280,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // §2.3's fix) mutated whichever profile the server last saw.
     if (!isLoggedIn) return;
     setProfile((prev) => ({ ...prev, role: currentRole }));
-    apiService.updateProfile({ role: currentRole }).catch((e) =>
-      logger.warn('[Profile] Failed to sync role change:', e)
-    );
+    apiService
+      .updateProfile({ role: currentRole })
+      .catch((e) => logger.warn('[Profile] Failed to sync role change:', e));
   }, [currentRole, isLoggedIn]);
 
   const [trips, setTrips] = useState<Trip[]>([
@@ -521,38 +527,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Auto-sign-in from backend profile (only on initial load). A 401 here
     // just means there's no valid session yet (the common case pre-login) —
     // that's expected and quiet, not an error to surface.
-    apiService.getProfile().then((remoteProfile) => {
-      if (remoteProfile) {
-        setProfile((prev) => {
-          const merged = { ...prev, ...remoteProfile };
-          if (merged.email && merged.email !== 'aarav@example.com' && merged.name !== 'Guest Traveler') {
-            setIsLoggedIn(true);
-          }
-          safeStorage.setItem('savedProfile', JSON.stringify(merged)).catch((e) =>
-            logger.warn('[Hydrate] Failed to persist merged profile locally:', e)
-          );
-          return merged;
-        });
-      }
-    }).catch((e) => logger.warn('[Hydrate] Profile fetch failed (no session yet, or offline):', e));
+    apiService
+      .getProfile()
+      .then((remoteProfile) => {
+        if (remoteProfile) {
+          setProfile((prev) => {
+            const merged = { ...prev, ...remoteProfile };
+            if (merged.email && merged.email !== 'aarav@example.com' && merged.name !== 'Guest Traveler') {
+              setIsLoggedIn(true);
+            }
+            safeStorage
+              .setItem('savedProfile', JSON.stringify(merged))
+              .catch((e) => logger.warn('[Hydrate] Failed to persist merged profile locally:', e));
+            return merged;
+          });
+        }
+      })
+      .catch((e) => logger.warn('[Hydrate] Profile fetch failed (no session yet, or offline):', e));
 
-    apiService.getGuides().then((remoteGuides) => {
-      if (remoteGuides && remoteGuides.length > 0) {
-        setGuides(remoteGuides);
-      }
-    }).catch((e) => logger.warn('[Hydrate] Guides fetch failed:', e));
+    apiService
+      .getGuides()
+      .then((remoteGuides) => {
+        if (remoteGuides && remoteGuides.length > 0) {
+          setGuides(remoteGuides);
+        }
+      })
+      .catch((e) => logger.warn('[Hydrate] Guides fetch failed:', e));
 
-    apiService.getSOSAlerts().then((alerts) => {
-      if (alerts && alerts.length > 0) {
-        setSosAlerts(alerts);
-      }
-    }).catch((e) => logger.warn('[Hydrate] SOS alerts fetch failed:', e));
+    apiService
+      .getSOSAlerts()
+      .then((alerts) => {
+        if (alerts && alerts.length > 0) {
+          setSosAlerts(alerts);
+        }
+      })
+      .catch((e) => logger.warn('[Hydrate] SOS alerts fetch failed:', e));
 
-    apiService.getStories().then((remoteStories) => {
-      if (remoteStories && remoteStories.length > 0) {
-        setStoriesList(remoteStories);
-      }
-    }).catch((e) => logger.warn('[Hydrate] Stories fetch failed:', e));
+    apiService
+      .getStories()
+      .then((remoteStories) => {
+        if (remoteStories && remoteStories.length > 0) {
+          setStoriesList(remoteStories);
+        }
+      })
+      .catch((e) => logger.warn('[Hydrate] Stories fetch failed:', e));
   }, []);
 
   // ── Reactive: refresh trips, join requests, and socket when login/room changes ──
@@ -631,36 +649,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const reloadJoinRequests = useCallback(() => {
     if (!isLoggedIn) return;
-    apiService.getJoinRequests().then((reqs) => {
-      if (reqs && reqs.length > 0) {
-        const tripIds = reqs.filter((r: any) => r.status === 'PENDING' || r.status === 'APPROVED').map((r: any) => r.tripId);
-        setRequestedTrips(new Set(tripIds));
-      } else {
-        setRequestedTrips(new Set());
-      }
-    }).catch((e) => logger.warn('[Trips] Reload join requests failed:', e));
+    apiService
+      .getJoinRequests()
+      .then((reqs) => {
+        if (reqs && reqs.length > 0) {
+          const tripIds = reqs
+            .filter((r: any) => r.status === 'PENDING' || r.status === 'APPROVED')
+            .map((r: any) => r.tripId);
+          setRequestedTrips(new Set(tripIds));
+        } else {
+          setRequestedTrips(new Set());
+        }
+      })
+      .catch((e) => logger.warn('[Trips] Reload join requests failed:', e));
   }, [isLoggedIn]);
 
   const refreshTrips = useCallback(() => {
-    apiService.getTrips().then((remoteTrips) => {
-      if (remoteTrips && remoteTrips.length > 0) {
-        setTrips(remoteTrips);
-      }
-    }).catch((e) => logger.warn('[Trips] Refresh failed:', e));
+    apiService
+      .getTrips()
+      .then((remoteTrips) => {
+        if (remoteTrips && remoteTrips.length > 0) {
+          setTrips(remoteTrips);
+        }
+      })
+      .catch((e) => logger.warn('[Trips] Refresh failed:', e));
   }, []);
 
   const reloadIncomingRequestsCount = useCallback(() => {
     if (!isLoggedIn) return;
-    apiService.getIncomingRequests().then((reqs) => {
-      if (reqs && reqs.length > 0) {
-        const pending = reqs.filter((r: any) => r.status === 'PENDING').length;
-        setPendingRequestsCount(pending);
-      } else {
+    apiService
+      .getIncomingRequests()
+      .then((reqs) => {
+        if (reqs && reqs.length > 0) {
+          const pending = reqs.filter((r: any) => r.status === 'PENDING').length;
+          setPendingRequestsCount(pending);
+        } else {
+          setPendingRequestsCount(0);
+        }
+      })
+      .catch(() => {
         setPendingRequestsCount(0);
-      }
-    }).catch(() => {
-      setPendingRequestsCount(0);
-    });
+      });
   }, [isLoggedIn]);
 
   const clearChatUnread = useCallback(() => {
@@ -669,32 +698,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const checkUnreadNotifications = useCallback(() => {
     if (!isLoggedIn) return;
-    apiService.getNotifications().then((notifs) => {
-      if (notifs && notifs.length > 0) {
-        const hasAnyUnread = notifs.some((n: any) => n.unread === true);
-        setHasUnreadNotification(hasAnyUnread);
-        const hasUnreadJoinAccepted = notifs.some(
-          (n: any) => (n.category === 'CHAT_ADDED' || n.category === 'JOIN_ACCEPTED') && n.unread === true
-        );
-        if (hasUnreadJoinAccepted) {
-          setHasUnreadChat(true);
+    apiService
+      .getNotifications()
+      .then((notifs) => {
+        if (notifs && notifs.length > 0) {
+          const hasAnyUnread = notifs.some((n: any) => n.unread === true);
+          setHasUnreadNotification(hasAnyUnread);
+          const hasUnreadJoinAccepted = notifs.some(
+            (n: any) => (n.category === 'CHAT_ADDED' || n.category === 'JOIN_ACCEPTED') && n.unread === true,
+          );
+          if (hasUnreadJoinAccepted) {
+            setHasUnreadChat(true);
+          }
+        } else {
+          setHasUnreadNotification(false);
         }
-      } else {
-        setHasUnreadNotification(false);
-      }
-    }).catch((e) => logger.warn('[Notifications] Unread check failed:', e));
+      })
+      .catch((e) => logger.warn('[Notifications] Unread check failed:', e));
   }, [isLoggedIn]);
 
   const checkUnreadChats = useCallback(() => {
     if (!isLoggedIn) return;
-    apiService.getChats().then((rooms) => {
-      if (rooms && rooms.length > 0) {
-        const hasUnread = rooms.some((r: any) => r.unread === true || r.unreadCount > 0);
-        setHasUnreadChat(hasUnread);
-      } else {
-        setHasUnreadChat(false);
-      }
-    }).catch((e) => logger.warn('[Chats] Unread check failed:', e));
+    apiService
+      .getChats()
+      .then((rooms) => {
+        if (rooms && rooms.length > 0) {
+          const hasUnread = rooms.some((r: any) => r.unread === true || r.unreadCount > 0);
+          setHasUnreadChat(hasUnread);
+        } else {
+          setHasUnreadChat(false);
+        }
+      })
+      .catch((e) => logger.warn('[Chats] Unread check failed:', e));
   }, [isLoggedIn]);
 
   useEffect(() => {
@@ -707,16 +742,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     reloadIncomingRequestsCount();
     checkUnreadNotifications();
     checkUnreadChats();
-  }, [isLoggedIn, profile?.id, reloadJoinRequests, reloadIncomingRequestsCount, checkUnreadNotifications, checkUnreadChats]);
+  }, [
+    isLoggedIn,
+    profile?.id,
+    reloadJoinRequests,
+    reloadIncomingRequestsCount,
+    checkUnreadNotifications,
+    checkUnreadChats,
+  ]);
 
   const updateProfile = useCallback((updated: Partial<UserProfile>) => {
     let previous: UserProfile | null = null;
     setProfile((prev) => {
       previous = prev;
       const next = { ...prev, ...updated };
-      safeStorage.setItem('savedProfile', JSON.stringify(next)).catch((e) =>
-        logger.warn('[Profile] Failed to persist profile locally:', e)
-      );
+      safeStorage
+        .setItem('savedProfile', JSON.stringify(next))
+        .catch((e) => logger.warn('[Profile] Failed to persist profile locally:', e));
       return next;
     });
     apiService.updateProfile(updated).catch((e) => {
@@ -726,23 +768,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   }, []);
 
-  const addTrip = useCallback((trip: Trip) => {
-    const tripWithMeta = {
-      ...trip,
-      creatorId: profile?.id,
-      isMyTrip: true,
-    };
-    setTrips((prev) => [tripWithMeta, ...prev]);
-    apiService.createTrip(tripWithMeta).then(() => {
-      toast('Trip created', 'success');
-      // Re-fetch all trips from backend so isMyTrip is correctly calculated server-side
-      refreshTrips();
-    }).catch((e) => {
-      logger.warn('[Trips] Create trip failed, rolling back:', e);
-      setTrips((prev) => prev.filter((t) => t !== tripWithMeta));
-      toast(errorToastMessage(e, 'Could not create the trip.'), 'error');
-    });
-  }, [profile?.id, refreshTrips]);
+  const addTrip = useCallback(
+    (trip: Trip) => {
+      const tripWithMeta = {
+        ...trip,
+        creatorId: profile?.id,
+        isMyTrip: true,
+      };
+      setTrips((prev) => [tripWithMeta, ...prev]);
+      apiService
+        .createTrip(tripWithMeta)
+        .then(() => {
+          toast('Trip created', 'success');
+          // Re-fetch all trips from backend so isMyTrip is correctly calculated server-side
+          refreshTrips();
+        })
+        .catch((e) => {
+          logger.warn('[Trips] Create trip failed, rolling back:', e);
+          setTrips((prev) => prev.filter((t) => t !== tripWithMeta));
+          toast(errorToastMessage(e, 'Could not create the trip.'), 'error');
+        });
+    },
+    [profile?.id, refreshTrips],
+  );
 
   const joinTrip = useCallback((tripId: string, opts?: { midway?: boolean; fromCity?: string; toCity?: string }) => {
     // Optimistic UI: mark as "requested", but do NOT touch availableSeats/membersCount here.
@@ -756,23 +804,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
     // adjustedPrice is never sent — the server computes and owns it
     // (docs/REMEDIATION.md §8.6); the client only proposes a segment.
-    apiService.createJoinRequest(tripId, opts).then(() => {
-      toast('Join request sent', 'success');
-    }).catch((e) => {
-      if (isOfflineFailure(e)) {
-        logger.warn('[Trips] Join request offline, queued for retry:', e);
-        enqueueMutation('join-request', { tripId, ...opts }).catch((qe) => logger.warn('[Trips] Failed to queue join request:', qe));
-        toast('You\'re offline — your join request will send once you reconnect.', 'info');
-        return;
-      }
-      logger.warn('[Trips] Join request failed, rolling back:', e);
-      setRequestedTrips((prev) => {
-        const next = new Set(prev);
-        next.delete(tripId);
-        return next;
+    apiService
+      .createJoinRequest(tripId, opts)
+      .then(() => {
+        toast('Join request sent', 'success');
+      })
+      .catch((e) => {
+        if (isOfflineFailure(e)) {
+          logger.warn('[Trips] Join request offline, queued for retry:', e);
+          enqueueMutation('join-request', { tripId, ...opts }).catch((qe) =>
+            logger.warn('[Trips] Failed to queue join request:', qe),
+          );
+          toast("You're offline — your join request will send once you reconnect.", 'info');
+          return;
+        }
+        logger.warn('[Trips] Join request failed, rolling back:', e);
+        setRequestedTrips((prev) => {
+          const next = new Set(prev);
+          next.delete(tripId);
+          return next;
+        });
+        toast(errorToastMessage(e, 'Could not send the join request.'), 'error');
       });
-      toast(errorToastMessage(e, 'Could not send the join request.'), 'error');
-    });
   }, []);
 
   const cancelJoinRequest = useCallback((tripId: string) => {
@@ -781,53 +834,71 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       next.delete(tripId);
       return next;
     });
-    apiService.cancelJoinRequest(tripId).then(() => {
-      toast('Request withdrawn', 'success');
-    }).catch((e) => {
-      logger.warn('[Trips] Cancel join request failed, rolling back:', e);
-      setRequestedTrips((prev) => {
-        const next = new Set(prev);
-        next.add(tripId);
-        return next;
+    apiService
+      .cancelJoinRequest(tripId)
+      .then(() => {
+        toast('Request withdrawn', 'success');
+      })
+      .catch((e) => {
+        logger.warn('[Trips] Cancel join request failed, rolling back:', e);
+        setRequestedTrips((prev) => {
+          const next = new Set(prev);
+          next.add(tripId);
+          return next;
+        });
+        toast(errorToastMessage(e, 'Could not withdraw the request.'), 'error');
       });
-      toast(errorToastMessage(e, 'Could not withdraw the request.'), 'error');
-    });
   }, []);
 
-  const sendMessage = useCallback((content: string, mediaType: 'NONE' | 'IMAGE' | 'VOICE' = 'NONE') => {
-    socketService.sendMessage(activeRoomId || 'trip-1', content, mediaType);
-  }, [activeRoomId]);
+  const sendMessage = useCallback(
+    (content: string, mediaType: 'NONE' | 'IMAGE' | 'VOICE' = 'NONE') => {
+      socketService.sendMessage(activeRoomId || 'trip-1', content, mediaType);
+    },
+    [activeRoomId],
+  );
 
-  const triggerSOS = useCallback((lat: number, lng: number) => {
-    const newAlert: SOSAlert = {
-      id: `sos-${Date.now()}`,
-      userName: profile.name,
-      latitude: lat,
-      longitude: lng,
-      timestamp: new Date().toLocaleTimeString(),
-      status: 'ACTIVE',
-    };
-    setSosAlerts((prev) => [newAlert, ...prev]);
-    // Fire over both transports: the socket delta reaches connected devices
-    // immediately, the REST call is the durable, retried-by-nothing-else
-    // write to SOSAlert. A user in distress must see a failure, not silence.
-    apiService.triggerSOS(profile.name, lat, lng).catch((e) => {
-      if (isOfflineFailure(e)) {
-        logger.error('[Safety] SOS trigger offline, queued for retry the moment connectivity returns:', e);
-        enqueueMutation('sos', { userName: profile.name, lat, lng }).catch((qe) => logger.error('[Safety] Failed to queue SOS trigger:', qe));
-        toast('No connection — your SOS will be sent the instant you reconnect. Call local emergency services directly if you can.', 'error');
-        return;
-      }
-      logger.error('[Safety] SOS trigger failed to reach the server:', e);
-      toast(errorToastMessage(e, 'Could not reach emergency services. Try again or call local emergency services directly.'), 'error');
-    });
-    socketService.triggerSOS(profile.name, lat, lng);
-  }, [profile.name]);
+  const triggerSOS = useCallback(
+    (lat: number, lng: number) => {
+      const newAlert: SOSAlert = {
+        id: `sos-${Date.now()}`,
+        userName: profile.name,
+        latitude: lat,
+        longitude: lng,
+        timestamp: new Date().toLocaleTimeString(),
+        status: 'ACTIVE',
+      };
+      setSosAlerts((prev) => [newAlert, ...prev]);
+      // Fire over both transports: the socket delta reaches connected devices
+      // immediately, the REST call is the durable, retried-by-nothing-else
+      // write to SOSAlert. A user in distress must see a failure, not silence.
+      apiService.triggerSOS(profile.name, lat, lng).catch((e) => {
+        if (isOfflineFailure(e)) {
+          logger.error('[Safety] SOS trigger offline, queued for retry the moment connectivity returns:', e);
+          enqueueMutation('sos', { userName: profile.name, lat, lng }).catch((qe) =>
+            logger.error('[Safety] Failed to queue SOS trigger:', qe),
+          );
+          toast(
+            'No connection — your SOS will be sent the instant you reconnect. Call local emergency services directly if you can.',
+            'error',
+          );
+          return;
+        }
+        logger.error('[Safety] SOS trigger failed to reach the server:', e);
+        toast(
+          errorToastMessage(
+            e,
+            'Could not reach emergency services. Try again or call local emergency services directly.',
+          ),
+          'error',
+        );
+      });
+      socketService.triggerSOS(profile.name, lat, lng);
+    },
+    [profile.name],
+  );
 
   const resolveSOS = useCallback((id: string) => {
-    setSosAlerts((prev) =>
-      prev.map((alert) => (alert.id === id ? { ...alert, status: 'RESOLVED' } : alert))
-    );
+    setSosAlerts((prev) => prev.map((alert) => (alert.id === id ? { ...alert, status: 'RESOLVED' } : alert)));
     apiService.resolveSOS(id).catch((e) => {
       logger.warn('[Safety] SOS resolve failed:', e);
       setSosAlerts((prev) => prev.map((alert) => (alert.id === id ? { ...alert, status: 'ACTIVE' } : alert)));
@@ -836,110 +907,106 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     socketService.resolveSOS(id);
   }, []);
 
-  // Guide earnings cash-out only — payments/wallet were removed for v1
-  // (REMEDIATION.md §5.5/5.6). This just decrements the locally-tracked
-  // balance; it is not backed by a ledger or any server persistence.
-  const withdrawWalletFunds = useCallback((amount: number) => {
-    setProfile((prev) => (prev.walletBalance >= amount ? { ...prev, walletBalance: prev.walletBalance - amount } : prev));
-  }, []);
-
-  const addStory = useCallback((storyData: any) => {
-    const newStory = {
-      id: `story-${Date.now()}`,
-      authorName: profile.name,
-      authorAvatar: profile.avatar,
-      title: storyData.title,
-      content: storyData.content,
-      coverImg: storyData.coverImg || 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1000&q=80',
-      likesCount: 0,
-      location: storyData.location || 'India',
-      createdAt: new Date().toISOString(),
-    };
-    setStoriesList((prev) => [newStory, ...prev]);
-    apiService.createStory(newStory).then(() => {
-      toast('Story shared', 'success');
-    }).catch((e) => {
-      logger.warn('[Stories] Create story failed, rolling back:', e);
-      setStoriesList((prev) => prev.filter((s) => s !== newStory));
-      toast(errorToastMessage(e, 'Could not share your story.'), 'error');
-    });
-  }, [profile.name, profile.avatar]);
-
-  const providerValue = useMemo(() => ({
-    currentRole,
-    setCurrentRole,
-    profile,
-    updateProfile,
-    isLoggedIn,
-    sessionRestored,
-    login,
-    logout,
-    trips,
-    addTrip,
-    joinTrip,
-    cancelJoinRequest,
-    guides,
-    messages,
-    sendMessage,
-    sosAlerts,
-    triggerSOS,
-    resolveSOS,
-    withdrawWalletFunds,
-    activeRoomId,
-    setActiveRoomId,
-    navbarHidden,
-    setNavbarHidden,
-    storiesList,
-    addStory,
-    requestedTrips,
-    setRequestedTrips,
-    reloadJoinRequests,
-    refreshTrips,
-    pendingRequestsCount,
-    reloadIncomingRequestsCount,
-    hasUnreadChat,
-    clearChatUnread,
-    checkUnreadNotifications,
-    hasUnreadNotification,
-  }), [
-    currentRole,
-    profile,
-    updateProfile,
-    isLoggedIn,
-    sessionRestored,
-    login,
-    logout,
-    trips,
-    addTrip,
-    joinTrip,
-    cancelJoinRequest,
-    guides,
-    messages,
-    sendMessage,
-    sosAlerts,
-    triggerSOS,
-    resolveSOS,
-    withdrawWalletFunds,
-    activeRoomId,
-    navbarHidden,
-    storiesList,
-    addStory,
-    requestedTrips,
-    reloadJoinRequests,
-    refreshTrips,
-    pendingRequestsCount,
-    reloadIncomingRequestsCount,
-    hasUnreadChat,
-    clearChatUnread,
-    checkUnreadNotifications,
-    hasUnreadNotification,
-  ]);
-
-  return (
-    <AppContext.Provider value={providerValue}>
-      {children}
-    </AppContext.Provider>
+  const addStory = useCallback(
+    (storyData: any) => {
+      const newStory = {
+        id: `story-${Date.now()}`,
+        authorName: profile.name,
+        authorAvatar: profile.avatar,
+        title: storyData.title,
+        content: storyData.content,
+        coverImg: storyData.coverImg || 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1000&q=80',
+        likesCount: 0,
+        location: storyData.location || 'India',
+        createdAt: new Date().toISOString(),
+      };
+      setStoriesList((prev) => [newStory, ...prev]);
+      apiService
+        .createStory(newStory)
+        .then(() => {
+          toast('Story shared', 'success');
+        })
+        .catch((e) => {
+          logger.warn('[Stories] Create story failed, rolling back:', e);
+          setStoriesList((prev) => prev.filter((s) => s !== newStory));
+          toast(errorToastMessage(e, 'Could not share your story.'), 'error');
+        });
+    },
+    [profile.name, profile.avatar],
   );
+
+  const providerValue = useMemo(
+    () => ({
+      currentRole,
+      setCurrentRole,
+      profile,
+      updateProfile,
+      isLoggedIn,
+      sessionRestored,
+      login,
+      logout,
+      trips,
+      addTrip,
+      joinTrip,
+      cancelJoinRequest,
+      guides,
+      messages,
+      sendMessage,
+      sosAlerts,
+      triggerSOS,
+      resolveSOS,
+      activeRoomId,
+      setActiveRoomId,
+      navbarHidden,
+      setNavbarHidden,
+      storiesList,
+      addStory,
+      requestedTrips,
+      setRequestedTrips,
+      reloadJoinRequests,
+      refreshTrips,
+      pendingRequestsCount,
+      reloadIncomingRequestsCount,
+      hasUnreadChat,
+      clearChatUnread,
+      checkUnreadNotifications,
+      hasUnreadNotification,
+    }),
+    [
+      currentRole,
+      profile,
+      updateProfile,
+      isLoggedIn,
+      sessionRestored,
+      login,
+      logout,
+      trips,
+      addTrip,
+      joinTrip,
+      cancelJoinRequest,
+      guides,
+      messages,
+      sendMessage,
+      sosAlerts,
+      triggerSOS,
+      resolveSOS,
+      activeRoomId,
+      navbarHidden,
+      storiesList,
+      addStory,
+      requestedTrips,
+      reloadJoinRequests,
+      refreshTrips,
+      pendingRequestsCount,
+      reloadIncomingRequestsCount,
+      hasUnreadChat,
+      clearChatUnread,
+      checkUnreadNotifications,
+      hasUnreadNotification,
+    ],
+  );
+
+  return <AppContext.Provider value={providerValue}>{children}</AppContext.Provider>;
 };
 
 export const useApp = () => {

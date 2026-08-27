@@ -1345,6 +1345,52 @@ partial, exactly what's blocking full completion.
       states (trips are created PUBLIC/PRIVATE/INVITE_ONLY today with no
       draft concept — introducing one is a schema change, not a bug fix,
       and wasn't attempted this pass).
+      §8.17 done (partial — reel/story media upload, the STORY/REEL
+      backend conflation bug, and a dead fake-wallet UI; itinerary
+      planner/time-estimator/lead-quoting deliberately not touched) —
+      travel-guide.tsx's "Upload Stories & Reels" tab had a "Simulated
+      media selection gallery" (the code's own comment) of 5 hardcoded
+      stock Unsplash photos in place of a real picker, and its one real
+      picker (video, for reels) never uploaded the picked file — same
+      local-file-URI bug as §8.2/§8.4. Worse: publishing always called
+      `uploadGuideReel` regardless of whether the user had picked "Quick
+      Story" or "Travel Reel," so a story post silently created a
+      GuideReel DB row instead of a TravelStory. Reused and extended the
+      §8.2/§8.4 upload infrastructure: object-storage.ts now accepts
+      video/mp4 and video/quicktime alongside images, new
+      POST /guides/media-upload-url (registered ahead of the /:id routes,
+      tested), new pickCoverImage/pickThumbnail/handlePickVideo real
+      pickers replacing the stock-photo gallery entirely, and
+      handlePublishMedia now branches STORY → apiService.createStory vs
+      REEL → apiService.uploadGuideReel with real uploaded URLs only —
+      publishing is blocked until the required photo/video has actually
+      finished uploading. Also fixed in passing (§5.1): POST
+      /guides/:id/reels had zero input validation (raw req.body,
+      unbounded strings, no URL check) — added a zod schema. 5 new tests
+      (guide-media-upload.test.ts). Also removed: travel-guide.tsx's
+      "Cashout" button/modal and AppContext's `withdrawWalletFunds` — a
+      real, persisted Wallet model backs the balance *display* (correctly
+      §5.6-scoped, read-only, always 0 for a fresh account since nothing
+      credits it), but Cashout was a pure client-side
+      `setProfile(balance - amount)` with a "successfully queued for
+      payout" alert and zero backend call or persistence — reappearing at
+      the real (unchanged) balance on next load. No real payout rail
+      exists to wire it to (payments were removed for v1, §5.5/§5.6), so
+      per the doc's own "remove it" instruction this was deleted rather
+      than built out. Also corrected AppContext's default pre-hydration
+      profile: `walletBalance: 2450.0` and `isVerified: true` were
+      fabricated non-zero/true values with no basis (a fresh real wallet
+      always starts at 0 per auth.ts's register route) — now 0/false,
+      matching GUEST_PROFILE's own defaults. Full suite 78/78. Not done,
+      flagged not fixed: the itinerary planner, time estimator, and
+      quote-response-to-lead flow (`handleSendQuote`) are all local
+      `useState` with no backend persistence and no real endpoint to wire
+      to (`GET /:id/leads` repurposes real JoinRequest rows as "leads,"
+      but there's no quote/response field or route on that model) —
+      building real versions of these is comparably large to reels/story
+      upload and wasn't attempted this pass. profile/packages
+      CRUD/earnings/live-status were already real (pre-existing, not
+      re-verified in depth this pass beyond what §5.7 already covered).
       §8.5 done — AppContext.cancelJoinRequest wired up (was fake:
       local-state-only + Alert.alert, never called the API).
       §8.6 done — all three documented Family Connect breaks fixed

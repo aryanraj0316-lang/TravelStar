@@ -673,6 +673,17 @@ export const apiService = {
     });
   },
 
+  // A story cover photo, reel video, or reel thumbnail (docs/REMEDIATION.md
+  // §8.17) — same pattern as getAvatarUploadUrl/getTripCoverUploadUrl.
+  async getGuideMediaUploadUrl(
+    contentType: 'image/jpeg' | 'image/png' | 'image/webp' | 'video/mp4' | 'video/quicktime',
+  ) {
+    return request<{ uploadUrl: string; publicUrl: string }>('/guides/media-upload-url', {
+      method: 'POST',
+      body: JSON.stringify({ contentType }),
+    });
+  },
+
   async getGuideLiveStatus(guideId: string): Promise<any | null> {
     return request<any>(`/guides/${guideId}/live-status`);
   },

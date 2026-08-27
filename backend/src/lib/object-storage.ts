@@ -20,6 +20,9 @@ const ALLOWED_CONTENT_TYPES: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/png': 'png',
   'image/webp': 'webp',
+  // Guide reels (§8.17) are the one upload kind that's video, not a photo.
+  'video/mp4': 'mp4',
+  'video/quicktime': 'mov',
 };
 
 export function isObjectStorageConfigured(): boolean {
@@ -124,4 +127,15 @@ export function createAvatarUploadUrl(userId: string, contentType: string) {
 // id, because the trip doesn't exist yet when the cover is picked.
 export function createTripCoverUploadUrl(uploaderId: string, contentType: string) {
   return createUploadUrl('trip-covers', uploaderId, contentType);
+}
+
+// docs/REMEDIATION.md §8.17 — travel-guide.tsx's "Upload Stories & Reels"
+// tab had a "Simulated media selection gallery" (its own comment's words)
+// of 5 hardcoded stock Unsplash photos in place of a real picker, and the
+// one real picker it did have (video, for reels) never uploaded the picked
+// file — it set the local uri directly as videoUrl, same class of bug as
+// §8.2/§8.4. Covers a guide's story cover photo, reel video, and reel
+// thumbnail — all keyed by the uploading user, same as trip covers.
+export function createGuideMediaUploadUrl(uploaderId: string, contentType: string) {
+  return createUploadUrl('guide-media', uploaderId, contentType);
 }
