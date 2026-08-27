@@ -5,6 +5,7 @@ import { logger } from './lib/logger';
 import { env } from './config/env';
 import { createSocketServer } from './socket-server';
 import { initObservability, captureException, flushObservability } from './lib/observability';
+import { closeCache } from './lib/cache';
 
 initObservability();
 
@@ -42,6 +43,7 @@ async function shutdown(signal: string): Promise<void> {
       void io.close(() => resolve());
     });
     await prisma.$disconnect();
+    await closeCache();
     await flushObservability();
     logger.info('[shutdown] clean exit');
     clearTimeout(hardExit);

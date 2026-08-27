@@ -8,6 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import {
   ActivityIndicator,
+  FlatList,
   Image,
   RefreshControl,
   ScrollView,
@@ -82,6 +83,81 @@ function nightsBetween(start: string, end: string): number {
   return Math.round((e - s) / (24 * 60 * 60 * 1000));
 }
 
+// Each card is its own component so the React Compiler
+// (app.json > experiments.reactCompiler) memoizes cards independently — a
+// hand-written React.memo here would make the compiler skip the component
+// instead. The Phase 10 change is virtualization: this list used to be a
+// ScrollView + .map() that mounted every trip and every cover image at once
+// (docs/REMEDIATION.md Phase 10).
+function BudgetTripCard({
+  trip,
+  isMyTrip,
+  onPress,
+}: {
+  trip: BudgetTrip;
+  isMyTrip: boolean;
+  onPress: (trip: BudgetTrip) => void;
+}) {
+  const nights = nightsBetween(trip.startDate, trip.endDate);
+  const inclusions =
+    [
+      trip.guideIncluded && 'guide',
+      trip.hotelIncluded && 'hotel',
+      trip.foodIncluded && 'meals',
+      trip.cabIncluded && 'transport',
+    ]
+      .filter(Boolean)
+      .join(', ') || 'no inclusions listed';
+
+  return (
+    <TouchableOpacity activeOpacity={0.9} style={styles.tripCard} onPress={() => onPress(trip)}>
+      <View style={styles.tripImgWrap}>
+        <Image source={{ uri: trip.coverImage }} style={styles.tripImg} />
+        <LinearGradient colors={['rgba(6,8,20,0.15)', 'rgba(6,8,20,0.92)']} style={StyleSheet.absoluteFill} />
+        <View style={styles.priceBadge}>
+          <Text style={styles.priceBadgeText}>₹{Number(trip.budget).toLocaleString('en-IN')}</Text>
+        </View>
+        {isMyTrip && (
+          <View style={styles.myTripBadge}>
+            <Text style={styles.myTripBadgeText}>YOUR TRIP</Text>
+          </View>
+        )}
+      </View>
+      <View style={styles.tripBody}>
+        <Text style={styles.tripTitle} numberOfLines={1}>
+          {trip.name}
+        </Text>
+        <Text style={styles.tripOrganizer} numberOfLines={1}>
+          {trip.creator}
+        </Text>
+
+        <View style={styles.tripRow}>
+          <MapPin size={12} color={C.green} />
+          <Text style={styles.tripRowText} numberOfLines={1}>
+            {trip.cities.join(' → ')} · {trip.cities.length} {trip.cities.length === 1 ? 'place' : 'places'}
+          </Text>
+        </View>
+        <View style={styles.tripRow}>
+          <Calendar size={12} color={C.textMuted} />
+          <Text style={styles.tripMetaText}>
+            {trip.startDate} → {trip.endDate}
+            {nights > 0 ? ` · ${nights} night${nights === 1 ? '' : 's'}` : ''}
+          </Text>
+        </View>
+        <View style={styles.tripRow}>
+          <User size={12} color={C.textMuted} />
+          <Text style={styles.tripMetaText}>
+            {trip.membersCount}/{trip.totalSeats} joined · {inclusions}
+          </Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+const keyExtractor = (t: BudgetTrip) => t.id;
+const listFooter = <View style={{ height: 100 }} />;
+
 export default function BudgetTripsScreen() {
   const router = useRouter();
   const { profile, isLoggedIn } = useApp();
@@ -130,12 +206,22 @@ export default function BudgetTripsScreen() {
     setBudgetText(String(val));
   };
 
+  const openTrip = (trip: BudgetTrip) => {
+    setSelectedTrip(trip);
+    setShowJoinModal(true);
+  };
+
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor={C.bg} />
 
       <View style={styles.topNavRow}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back">
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
           <ArrowLeft size={18} color={C.white} />
         </TouchableOpacity>
         <Text style={styles.topNavTitle}>Budget Trips</Text>
@@ -164,7 +250,11 @@ export default function BudgetTripsScreen() {
           {PRESET_BUDGETS.map((b) => {
             const active = maxBudget === b;
             return (
-              <TouchableOpacity key={b} style={[styles.presetPill, active && styles.presetPillActive]} onPress={() => selectPreset(b)}>
+              <TouchableOpacity
+                key={b}
+                style={[styles.presetPill, active && styles.presetPillActive]}
+                onPress={() => selectPreset(b)}
+              >
                 <Text style={[styles.presetText, active && styles.presetTextActive]}>≤ ₹{(b / 1000).toFixed(0)}k</Text>
               </TouchableOpacity>
             );
@@ -174,14 +264,20 @@ export default function BudgetTripsScreen() {
 
       {/* Organizer filter */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.orgTabsRow}>
-        {([
-          { key: 'ALL', label: 'All trips', Icon: Compass },
-          { key: 'GUIDE', label: 'Guided', Icon: Briefcase },
-          { key: 'ORGANIZER', label: 'Community', Icon: Users },
-        ] as { key: OrgFilter; label: string; Icon: typeof Compass }[]).map(({ key, label, Icon }) => {
+        {(
+          [
+            { key: 'ALL', label: 'All trips', Icon: Compass },
+            { key: 'GUIDE', label: 'Guided', Icon: Briefcase },
+            { key: 'ORGANIZER', label: 'Community', Icon: Users },
+          ] as { key: OrgFilter; label: string; Icon: typeof Compass }[]
+        ).map(({ key, label, Icon }) => {
           const active = orgFilter === key;
           return (
-            <TouchableOpacity key={key} style={[styles.orgTab, active && styles.orgTabActive]} onPress={() => setOrgFilter(key)}>
+            <TouchableOpacity
+              key={key}
+              style={[styles.orgTab, active && styles.orgTabActive]}
+              onPress={() => setOrgFilter(key)}
+            >
               <Icon size={13} color={active ? C.white : C.textSec} />
               <Text style={[styles.orgTabText, active && styles.orgTabTextActive]}>{label}</Text>
             </TouchableOpacity>
@@ -208,76 +304,30 @@ export default function BudgetTripsScreen() {
           <Text style={styles.stateText}>No trips under ₹{maxBudget.toLocaleString('en-IN')} right now.</Text>
         </View>
       ) : (
-        <ScrollView
+        <FlatList
+          data={visibleTrips}
+          keyExtractor={keyExtractor}
+          renderItem={({ item }) => (
+            <BudgetTripCard
+              trip={item}
+              isMyTrip={isLoggedIn && !!(profile?.id && item.creatorId && item.creatorId === profile.id)}
+              onPress={openTrip}
+            />
+          )}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContent}
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={C.blue} />}
-        >
-          <Text style={styles.listHeader}>
-            {visibleTrips.length} trip{visibleTrips.length === 1 ? '' : 's'} ≤ ₹{maxBudget.toLocaleString('en-IN')}
-          </Text>
-          {visibleTrips.map((t) => {
-            const nights = nightsBetween(t.startDate, t.endDate);
-            const isMyTrip = isLoggedIn && !!(profile?.id && t.creatorId && t.creatorId === profile.id);
-            return (
-              <TouchableOpacity
-                key={t.id}
-                activeOpacity={0.9}
-                style={styles.tripCard}
-                onPress={() => {
-                  setSelectedTrip(t);
-                  setShowJoinModal(true);
-                }}
-              >
-                <View style={styles.tripImgWrap}>
-                  <Image source={{ uri: t.coverImage }} style={styles.tripImg} />
-                  <LinearGradient colors={['rgba(6,8,20,0.15)', 'rgba(6,8,20,0.92)']} style={StyleSheet.absoluteFill} />
-                  <View style={styles.priceBadge}>
-                    <Text style={styles.priceBadgeText}>₹{Number(t.budget).toLocaleString('en-IN')}</Text>
-                  </View>
-                  {isMyTrip && (
-                    <View style={styles.myTripBadge}>
-                      <Text style={styles.myTripBadgeText}>YOUR TRIP</Text>
-                    </View>
-                  )}
-                </View>
-                <View style={styles.tripBody}>
-                  <Text style={styles.tripTitle} numberOfLines={1}>{t.name}</Text>
-                  <Text style={styles.tripOrganizer} numberOfLines={1}>{t.creator}</Text>
-
-                  <View style={styles.tripRow}>
-                    <MapPin size={12} color={C.green} />
-                    <Text style={styles.tripRowText} numberOfLines={1}>
-                      {t.cities.join(' → ')} · {t.cities.length} {t.cities.length === 1 ? 'place' : 'places'}
-                    </Text>
-                  </View>
-                  <View style={styles.tripRow}>
-                    <Calendar size={12} color={C.textMuted} />
-                    <Text style={styles.tripMetaText}>
-                      {t.startDate} → {t.endDate}
-                      {nights > 0 ? ` · ${nights} night${nights === 1 ? '' : 's'}` : ''}
-                    </Text>
-                  </View>
-                  <View style={styles.tripRow}>
-                    <User size={12} color={C.textMuted} />
-                    <Text style={styles.tripMetaText}>
-                      {t.membersCount}/{t.totalSeats} joined ·{' '}
-                      {[
-                        t.guideIncluded && 'guide',
-                        t.hotelIncluded && 'hotel',
-                        t.foodIncluded && 'meals',
-                        t.cabIncluded && 'transport',
-                      ]
-                        .filter(Boolean)
-                        .join(', ') || 'no inclusions listed'}
-                    </Text>
-                  </View>
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-          <View style={{ height: 100 }} />
-        </ScrollView>
+          initialNumToRender={4}
+          maxToRenderPerBatch={6}
+          windowSize={7}
+          removeClippedSubviews
+          ListHeaderComponent={
+            <Text style={styles.listHeader}>
+              {visibleTrips.length} trip{visibleTrips.length === 1 ? '' : 's'} ≤ ₹{maxBudget.toLocaleString('en-IN')}
+            </Text>
+          }
+          ListFooterComponent={listFooter}
+        />
       )}
 
       <TripDetailModal visible={showJoinModal} trip={selectedTrip} onClose={() => setShowJoinModal(false)} />

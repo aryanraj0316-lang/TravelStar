@@ -1,4 +1,4 @@
-import { useApp } from '@/store/AppContext';
+import { Trip, useApp } from '@/store/AppContext';
 import { logger } from '@/lib/logger';
 import { toast, errorToastMessage } from '@/lib/feedback';
 import { apiService } from '@/services/api';
@@ -40,6 +40,7 @@ import {
   Image,
   Modal,
   Pressable,
+  FlatList,
   ScrollView,
   StyleSheet,
   Text,
@@ -70,7 +71,8 @@ const QUICK_ACCESS = [
 // Helper: derive a badge from trip category or travelStyle (DB-driven)
 const getCategoryBadge = (trip: any): { label: string; color: string; bg: string } | null => {
   const cat = (trip.category || trip.travelStyle || '').toLowerCase();
-  if (cat.includes('religious') || cat.includes('spiritual')) return { label: 'Popular', color: '#FFFFFF', bg: '#6C5CE7' };
+  if (cat.includes('religious') || cat.includes('spiritual'))
+    return { label: 'Popular', color: '#FFFFFF', bg: '#6C5CE7' };
   if (cat.includes('adventure') || cat.includes('bike')) return { label: 'Adventure', color: '#FFFFFF', bg: '#2ECC71' };
   if (cat.includes('nature') || cat.includes('scenic')) return { label: 'Scenic', color: '#FFFFFF', bg: '#00B894' };
   if (cat.includes('heritage')) return { label: 'Heritage', color: '#FFFFFF', bg: '#E17055' };
@@ -149,6 +151,231 @@ const LIGHT = {
   capsuleBg: '#EEF1F6',
 };
 
+// One search result. This is the app's main browse list, and the card is
+// expensive: a cover image, two gradients, an optional BlurView and ~20
+// nested views. It used to live in a `ScrollView` + `.map()`, so every trip
+// in the result set was mounted at once — the FlatList below is the fix
+// (docs/REMEDIATION.md Phase 10).
+//
+// Rows are a separate component so the React Compiler
+// (app.json > experiments.reactCompiler) can memoize them independently.
+// There is deliberately no hand-written React.memo/useCallback: when the
+// compiler cannot prove manual memoization matches what it would infer, it
+// skips optimizing the component entirely.
+//
+// `trips` is untyped through AppContext today (see §6.4 — generating client
+// types from the server is still open), so `trip: any` here matches the
+// surrounding code rather than inventing a shape that may not match the wire.
+function TripResultCard({
+  trip,
+  C,
+  isDark,
+  isLiked,
+  isMyTrip,
+  isRequested,
+  onToggleLike,
+  onOpenTrip,
+}: {
+  trip: Trip;
+  C: typeof DARK;
+  isDark: boolean;
+  isLiked: boolean;
+  isMyTrip: boolean;
+  isRequested: boolean;
+  onToggleLike: (id: string) => void;
+  onOpenTrip: (trip: Trip) => void;
+}) {
+  // All display data comes from the trip object (populated from DB)
+  const duration = computeDuration(trip.startDate, trip.endDate);
+  const transport = deriveTransport(trip);
+  const displayCities = trip.cities;
+  const displayPrice = trip.budget;
+  const displayMeeting = trip.meetingPoint;
+  const displayDate = formatTripDate(trip.startDate);
+  const badge = getCategoryBadge(trip);
+  // Use coverImage from DB, fallback to generic scenic photo
+  const imageUri =
+    trip.coverImage || 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=600&q=80';
+  const imageSource = typeof imageUri === 'string' ? { uri: imageUri } : imageUri;
+
+  return (
+    <TouchableOpacity
+      activeOpacity={isMyTrip ? 1 : 0.85}
+      disabled={isMyTrip}
+      onPress={() => onOpenTrip(trip)}
+      style={[styles.tripCard, { backgroundColor: C.card, borderColor: C.cardBorder }, isMyTrip && { opacity: 0.65 }]}
+    >
+      {isMyTrip && (
+        <LinearGradient
+          colors={isDark ? ['#141629', '#101220', '#0A0B14'] : ['#F2F5FA', '#FAFBFD', '#FFFFFF']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[StyleSheet.absoluteFill, { borderRadius: 16 }]}
+        />
+      )}
+      {/* Left side: Image */}
+      <View style={styles.tripImageContainer}>
+        <Image source={imageSource} style={styles.tripImage} />
+        {/* Subtle dark vignette overlay to make borders darker and enhance readability */}
+        <LinearGradient
+          colors={['rgba(0, 0, 0, 0.65)', 'rgba(0, 0, 0, 0.1)', 'rgba(0, 0, 0, 0.75)']}
+          locations={[0, 0.45, 1]}
+          style={StyleSheet.absoluteFill}
+        />
+        {/* Pill Badge */}
+        {isMyTrip ? (
+          <View style={[styles.tripBadge, { backgroundColor: C.accent }]}>
+            <Text style={[styles.tripBadgeText, { color: '#FFF', fontWeight: '800' }]}>Yours</Text>
+          </View>
+        ) : (
+          badge && (
+            <View style={[styles.tripBadge, { backgroundColor: badge.bg }]}>
+              <Text style={styles.tripBadgeText}>{badge.label}</Text>
+            </View>
+          )
+        )}
+        {/* Heart button */}
+        {!isMyTrip && (
+          <TouchableOpacity
+            style={[styles.heartBtn, { backgroundColor: C.heartBg }]}
+            onPress={() => onToggleLike(trip.id)}
+          >
+            <Heart size={14} color={isLiked ? '#FF3B30' : '#FFF'} fill={isLiked ? '#FF3B30' : 'transparent'} />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Right side: Detailed trip content */}
+      <View style={styles.tripContent}>
+        {/* Title and Verified badge */}
+        <View style={styles.tripHeaderRow}>
+          <Text style={[styles.tripName, { color: C.text }]} numberOfLines={3}>
+            {trip.name}
+          </Text>
+        </View>
+
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2, marginBottom: 4 }}>
+          <View
+            style={[
+              styles.verifiedBadge,
+              { backgroundColor: isMyTrip ? C.capsuleBg : C.accentLight, marginTop: 0, marginBottom: 0 },
+            ]}
+          >
+            <Check size={9} color={isMyTrip ? C.textSecondary : C.accent} strokeWidth={3} />
+            <Text style={[styles.verifiedText, { color: isMyTrip ? C.textSecondary : C.accent }]}>Verified Route</Text>
+          </View>
+          <Text style={{ fontSize: 9.5, fontWeight: '600', color: isMyTrip ? C.textSecondary : '#10B981' }}>
+            {trip.availableSeats ?? 0} left
+          </Text>
+        </View>
+
+        {/* Route cities with arrow */}
+        <View style={styles.routeCities}>
+          {displayCities.map((city: string, i: number) => (
+            <React.Fragment key={city}>
+              <Text style={[styles.cityText, { color: isMyTrip ? C.textSecondary : C.routeColor }]}>{city}</Text>
+              {i < displayCities.length - 1 && <Text style={[styles.routeArrow, { color: C.textSecondary }]}>→</Text>}
+            </React.Fragment>
+          ))}
+        </View>
+
+        {/* 2x2 grid of pill capsules */}
+        <View style={styles.capsulesContainer}>
+          <View style={styles.capsulesRow}>
+            <View style={[styles.capsule, { backgroundColor: C.capsuleBg }]}>
+              <MapPin size={9} color={C.textSecondary} />
+              <Text style={[styles.capsuleText, { color: C.textSecondary }]} numberOfLines={1}>
+                {displayMeeting}
+              </Text>
+            </View>
+            <View style={[styles.capsule, { backgroundColor: C.capsuleBg }]}>
+              <Calendar size={9} color={C.textSecondary} />
+              <Text style={[styles.capsuleText, { color: C.textSecondary }]} numberOfLines={1}>
+                {displayDate}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.capsulesRow}>
+            <View style={[styles.capsule, { backgroundColor: C.capsuleBg }]}>
+              <Clock size={9} color={C.textSecondary} />
+              <Text style={[styles.capsuleText, { color: C.textSecondary }]} numberOfLines={1}>
+                {duration}
+              </Text>
+            </View>
+            <View style={[styles.capsule, { backgroundColor: C.capsuleBg }]}>
+              {trip.name.toLowerCase().includes('bike') ? (
+                <Bike size={9} color={C.textSecondary} />
+              ) : (
+                <Bus size={9} color={C.textSecondary} />
+              )}
+              <Text style={[styles.capsuleText, { color: C.textSecondary }]} numberOfLines={1}>
+                {transport}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Price and Action Button row */}
+        <View style={[styles.priceRow, { borderTopColor: C.divider }]}>
+          <View style={{ flex: 1, marginRight: 4 }}>
+            <Text style={[styles.priceLabel, { color: C.textSecondary }]} numberOfLines={1}>
+              Full Trip Cost
+            </Text>
+            <Text style={[styles.priceAmount, { color: isMyTrip ? C.textSecondary : C.priceColor }]} numberOfLines={1}>
+              ₹{displayPrice}
+            </Text>
+            <Text style={[styles.pricePer, { color: C.textSecondary, marginTop: -2 }]} numberOfLines={1}>
+              per person
+            </Text>
+          </View>
+          <View style={{ gap: 4, flexShrink: 0, width: 120 }}>
+            {isMyTrip ? (
+              <View
+                style={[
+                  styles.myTripBadge,
+                  {
+                    backgroundColor: isDark ? 'rgba(0, 102, 255, 0.12)' : 'rgba(0, 102, 255, 0.06)',
+                    borderColor: isDark ? 'rgba(0, 102, 255, 0.35)' : 'rgba(0, 102, 255, 0.22)',
+                  },
+                ]}
+              >
+                <Sparkles size={11} color={C.accent} style={{ marginRight: 4 }} />
+                <Text style={[styles.myTripBadgeText, { color: C.accent, fontWeight: '800' }]}>Your Creation</Text>
+              </View>
+            ) : isRequested ? (
+              <View style={[styles.joinBtn, styles.joinBtnRequested]}>
+                <Check size={11} color="#2ECC71" style={{ marginRight: 4 }} />
+                <Text style={[styles.joinBtnText, styles.joinBtnRequestedText]} numberOfLines={1}>
+                  Requested
+                </Text>
+              </View>
+            ) : (
+              <TouchableOpacity style={styles.joinBtn} onPress={() => onOpenTrip(trip)}>
+                <Text style={styles.joinBtnText} numberOfLines={1}>
+                  Request to Join
+                </Text>
+                <ChevronRight size={11} color="#FFF" style={{ marginLeft: 2 }} />
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </View>
+      {isMyTrip && (
+        <BlurView
+          intensity={isDark ? 55 : 45}
+          tint={isDark ? 'dark' : 'light'}
+          style={[
+            styles.myTripOverlay,
+            { backgroundColor: isDark ? 'rgba(10, 12, 22, 0.35)' : 'rgba(255, 255, 255, 0.4)' },
+          ]}
+        />
+      )}
+    </TouchableOpacity>
+  );
+}
+
+const keyExtractor = (t: Trip) => t.id;
+
 function SearchScreen() {
   useEffect(() => {
     logger.log('Screen mounted: SearchScreen');
@@ -179,13 +406,16 @@ function SearchScreen() {
   // progress notes for why that wasn't converted this pass.)
   useEffect(() => {
     const fetchStates = () => {
-      apiService.getLikedTrips().then((ids) => {
-        if (ids && ids.length > 0) {
-          setLikedTrips(new Set(ids));
-        } else {
-          setLikedTrips(new Set());
-        }
-      }).catch((e) => logger.warn('[Search] Liked trips fetch failed:', e));
+      apiService
+        .getLikedTrips()
+        .then((ids) => {
+          if (ids && ids.length > 0) {
+            setLikedTrips(new Set(ids));
+          } else {
+            setLikedTrips(new Set());
+          }
+        })
+        .catch((e) => logger.warn('[Search] Liked trips fetch failed:', e));
 
       reloadJoinRequests();
       void refetchUnreadNotifs();
@@ -207,6 +437,11 @@ function SearchScreen() {
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
   }, []);
+
+  const openTrip = (trip: Trip) => {
+    setSelectedTrip(trip);
+    setShowJoinModal(true);
+  };
 
   const toggleLike = (id: string) => {
     let wasLiked = false;
@@ -284,9 +519,11 @@ function SearchScreen() {
         const tripCat = (t.category || '').toLowerCase();
         const tripName = (t.name || '').toLowerCase();
         if (selectedCategory === 'Religious') {
-          if (!tripCat.includes('religious') && !tripName.includes('spiritual') && !tripName.includes('varanasi')) return false;
+          if (!tripCat.includes('religious') && !tripName.includes('spiritual') && !tripName.includes('varanasi'))
+            return false;
         } else if (selectedCategory === 'Adventure') {
-          if (!tripCat.includes('adventure') && !tripName.includes('bike') && !tripName.includes('expedition')) return false;
+          if (!tripCat.includes('adventure') && !tripName.includes('bike') && !tripName.includes('expedition'))
+            return false;
         } else if (selectedCategory === 'Family Friendly') {
           if (!tripCat.includes('family') && !tripCat.includes('heritage') && !tripCat.includes('nature')) return false;
         } else if (selectedCategory === 'Bike') {
@@ -314,7 +551,12 @@ function SearchScreen() {
       // Transport Mode Filter
       const transport = deriveTransport(t);
       if (selectedTransport === 'BIKE' && !transport.toLowerCase().includes('bike')) return false;
-      if (selectedTransport === 'BUS' && !transport.toLowerCase().includes('bus') && !transport.toLowerCase().includes('ac')) return false;
+      if (
+        selectedTransport === 'BUS' &&
+        !transport.toLowerCase().includes('bus') &&
+        !transport.toLowerCase().includes('ac')
+      )
+        return false;
 
       // Midway Join Filter
       if (midwayOnly && t.cities.length < 3) return false;
@@ -335,11 +577,11 @@ function SearchScreen() {
 
       const scoreA = getPopularityScore(a);
       const scoreB = getPopularityScore(b);
-      
+
       if (scoreA !== scoreB) {
         return scoreA - scoreB;
       }
-      
+
       return (a.membersCount || 0) - (b.membersCount || 0);
     });
 
@@ -358,7 +600,10 @@ function SearchScreen() {
               onChangeText={setSearchQuery}
             />
             <TouchableOpacity
-              style={[styles.filterIconBtn, activeFilterCount > 0 && { backgroundColor: C.accentLight, borderColor: C.accent }]}
+              style={[
+                styles.filterIconBtn,
+                activeFilterCount > 0 && { backgroundColor: C.accentLight, borderColor: C.accent },
+              ]}
               activeOpacity={0.7}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               onPress={() => setShowFilterModal(true)}
@@ -440,7 +685,9 @@ function SearchScreen() {
               )}
               {maxBudget < 50000 && (
                 <View style={[styles.filterTagPill, { backgroundColor: C.accentLight, borderColor: C.accent }]}>
-                  <Text style={[styles.filterTagText, { color: C.accent }]}>Max ₹{maxBudget.toLocaleString('en-IN')}</Text>
+                  <Text style={[styles.filterTagText, { color: C.accent }]}>
+                    Max ₹{maxBudget.toLocaleString('en-IN')}
+                  </Text>
                   <TouchableOpacity onPress={() => setMaxBudget(50000)}>
                     <X size={12} color={C.accent} style={{ marginLeft: 4 }} />
                   </TouchableOpacity>
@@ -463,7 +710,12 @@ function SearchScreen() {
                 </View>
               )}
               {guideRequired && (
-                <View style={[styles.filterTagPill, { backgroundColor: 'rgba(16, 185, 129, 0.15)', borderColor: '#10B981' }]}>
+                <View
+                  style={[
+                    styles.filterTagPill,
+                    { backgroundColor: 'rgba(16, 185, 129, 0.15)', borderColor: '#10B981' },
+                  ]}
+                >
                   <Text style={[styles.filterTagText, { color: '#10B981' }]}>Guide Included</Text>
                   <TouchableOpacity onPress={() => setGuideRequired(false)}>
                     <X size={12} color="#10B981" style={{ marginLeft: 4 }} />
@@ -479,7 +731,12 @@ function SearchScreen() {
                 </View>
               )}
               {midwayOnly && (
-                <View style={[styles.filterTagPill, { backgroundColor: 'rgba(245, 158, 11, 0.15)', borderColor: '#F59E0B' }]}>
+                <View
+                  style={[
+                    styles.filterTagPill,
+                    { backgroundColor: 'rgba(245, 158, 11, 0.15)', borderColor: '#F59E0B' },
+                  ]}
+                >
                   <Text style={[styles.filterTagText, { color: '#F59E0B' }]}>Midway Join</Text>
                   <TouchableOpacity onPress={() => setMidwayOnly(false)}>
                     <X size={12} color="#F59E0B" style={{ marginLeft: 4 }} />
@@ -494,14 +751,31 @@ function SearchScreen() {
           </View>
         )}
 
-        <ScrollView
+        <FlatList
+          data={filteredTrips}
+          keyExtractor={keyExtractor}
+          renderItem={({ item }) => (
+            <TripResultCard
+              trip={item}
+              C={C}
+              isDark={isDark}
+              isLiked={likedTrips.has(item.id)}
+              isMyTrip={
+                isLoggedIn &&
+                (item.isMyTrip === true || !!(profile && profile.id && item.creatorId && item.creatorId === profile.id))
+              }
+              isRequested={requestedTrips.has(item.id)}
+              onToggleLike={toggleLike}
+              onOpenTrip={openTrip}
+            />
+          )}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
           scrollEventThrottle={16}
           onScroll={(e) => {
             const y = e.nativeEvent.contentOffset.y;
             const diff = y - lastScrollYRef.current;
-            
+
             if (y <= 15) {
               if (navbarHiddenRef.current) {
                 navbarHiddenRef.current = false;
@@ -521,308 +795,138 @@ function SearchScreen() {
 
             lastScrollYRef.current = y;
           }}
-        >
-          {/* ─── QUICK ACCESS GRID (VECTOR ICONS) ────────────────── */}
-          <View style={styles.quickGrid}>
-            {QUICK_ACCESS.map((item) => (
-              <TouchableOpacity
-                key={item.key}
-                activeOpacity={0.7}
-                style={[styles.quickCard, { backgroundColor: C.card, borderColor: C.cardBorder }]}
-                onPress={() => {
-                  if (item.key === 'custom') {
-                    router.navigate('/create');
-                  } else if (item.key === 'nearby') {
-                    router.push('/nearby-trips');
-                  } else if (item.key === 'budget') {
-                    router.push('/budget-trips');
-                  }
-                }}
-              >
-                <View style={[styles.quickIconCircle, { backgroundColor: item.color + '15' }]}>
-                  <item.Icon size={18} color={item.color} />
+          initialNumToRender={4}
+          maxToRenderPerBatch={6}
+          windowSize={7}
+          removeClippedSubviews
+          ListHeaderComponent={
+            <>
+              {/* ─── QUICK ACCESS GRID (VECTOR ICONS) ────────────────── */}
+              <View style={styles.quickGrid}>
+                {QUICK_ACCESS.map((item) => (
+                  <TouchableOpacity
+                    key={item.key}
+                    activeOpacity={0.7}
+                    style={[styles.quickCard, { backgroundColor: C.card, borderColor: C.cardBorder }]}
+                    onPress={() => {
+                      if (item.key === 'custom') {
+                        router.navigate('/create');
+                      } else if (item.key === 'nearby') {
+                        router.push('/nearby-trips');
+                      } else if (item.key === 'budget') {
+                        router.push('/budget-trips');
+                      }
+                    }}
+                  >
+                    <View style={[styles.quickIconCircle, { backgroundColor: item.color + '15' }]}>
+                      <item.Icon size={18} color={item.color} />
+                    </View>
+                    <Text style={[styles.quickLabel, { color: C.text }]}>{item.label}</Text>
+                    <Text style={[styles.quickSub, { color: C.textSecondary }]}>{item.sub}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* ─── POPULARITY HEADER ───────────────────────────────── */}
+              <View style={styles.sectionHeader}>
+                <Text style={[styles.sectionTitle, { color: C.textSecondary }]}>
+                  TRIPS BY POPULARITY ({filteredTrips.length} {filteredTrips.length === 1 ? 'TRIP' : 'TRIPS'})
+                </Text>
+                {activeFilterCount > 0 && (
+                  <TouchableOpacity style={styles.resetInlineBtn} onPress={resetFilters}>
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: '#FF3B30' }}>Reset Filters</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* ─── EMPTY STATE WHEN NO TRIPS MATCH FILTERS ────────── */}
+              {filteredTrips.length === 0 && (
+                <View style={[styles.emptyStateCard, { backgroundColor: C.card, borderColor: C.cardBorder }]}>
+                  <SlidersHorizontal size={36} color={C.textSecondary} style={{ marginBottom: 12 }} />
+                  <Text style={[styles.emptyStateTitle, { color: C.text }]}>No Matching Trips Found</Text>
+                  <Text style={[styles.emptyStateSub, { color: C.textSecondary }]}>
+                    No tour routes match your current search query or filter preferences. Try adjusting budget or
+                    resetting filters.
+                  </Text>
+                  <TouchableOpacity style={styles.resetEmptyBtn} onPress={resetFilters}>
+                    <Text style={styles.resetEmptyBtnText}>Reset Preferences</Text>
+                  </TouchableOpacity>
                 </View>
-                <Text style={[styles.quickLabel, { color: C.text }]}>{item.label}</Text>
-                <Text style={[styles.quickSub, { color: C.textSecondary }]}>{item.sub}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* ─── POPULARITY HEADER ───────────────────────────────── */}
-          <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: C.textSecondary }]}>
-              TRIPS BY POPULARITY ({filteredTrips.length} {filteredTrips.length === 1 ? 'TRIP' : 'TRIPS'})
-            </Text>
-            {activeFilterCount > 0 && (
-              <TouchableOpacity style={styles.resetInlineBtn} onPress={resetFilters}>
-                <Text style={{ fontSize: 12, fontWeight: '600', color: '#FF3B30' }}>Reset Filters</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {/* ─── EMPTY STATE WHEN NO TRIPS MATCH FILTERS ────────── */}
-          {filteredTrips.length === 0 && (
+              )}
+            </>
+          }
+          ListEmptyComponent={
             <View style={[styles.emptyStateCard, { backgroundColor: C.card, borderColor: C.cardBorder }]}>
               <SlidersHorizontal size={36} color={C.textSecondary} style={{ marginBottom: 12 }} />
               <Text style={[styles.emptyStateTitle, { color: C.text }]}>No Matching Trips Found</Text>
               <Text style={[styles.emptyStateSub, { color: C.textSecondary }]}>
-                No tour routes match your current search query or filter preferences. Try adjusting budget or resetting filters.
+                No tour routes match your current search query or filter preferences. Try adjusting budget or resetting
+                filters.
               </Text>
               <TouchableOpacity style={styles.resetEmptyBtn} onPress={resetFilters}>
                 <Text style={styles.resetEmptyBtnText}>Reset Preferences</Text>
               </TouchableOpacity>
             </View>
-          )}
+          }
+          ListFooterComponent={
+            <>
+              {/* ─── CTA BANNER ────────────────────────────────────── */}
+              <View style={styles.ctaBannerContainer}>
+                <Image source={require('@/assets/images/cta-banner.png')} style={styles.ctaBannerImage} />
+                <Pressable
+                  onPress={() => {
+                    router.navigate('/create');
+                  }}
+                  style={({ pressed }) => [
+                    styles.ctaHotspot,
+                    pressed && {
+                      backgroundColor: 'rgba(255, 255, 255, 0.16)',
+                      transform: [{ scale: 0.94 }],
+                    },
+                  ]}
+                />
+              </View>
 
-          {/* ─── TRIP CARDS (MATCHING THE SCREENSHOT EXACTLY) ───── */}
-          {filteredTrips.map((trip) => {
-            // All display data comes from the trip object (populated from DB)
-            const duration = computeDuration(trip.startDate, trip.endDate);
-            const transport = deriveTransport(trip);
-            const displayCities = trip.cities;
-            const displayPrice = trip.budget;
-            const displayMeeting = trip.meetingPoint;
-            const displayDate = formatTripDate(trip.startDate);
-            const badge = getCategoryBadge(trip);
-            // Use coverImage from DB, fallback to generic scenic photo
-            const imageUri = trip.coverImage || 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=600&q=80';
-            const imageSource = typeof imageUri === 'string' ? { uri: imageUri } : imageUri;
-            const isLiked = likedTrips.has(trip.id);
-            const isMyTrip = isLoggedIn && (trip.isMyTrip === true || !!(profile && profile.id && trip.creatorId && trip.creatorId === profile.id));
-
-
-            return (
-              <TouchableOpacity
-                key={trip.id}
-                activeOpacity={isMyTrip ? 1 : 0.85}
-                disabled={isMyTrip}
-                onPress={() => {
-                  setSelectedTrip(trip);
-                  setShowJoinModal(true);
-                }}
-                style={[
-                  styles.tripCard,
-                  { backgroundColor: C.card, borderColor: C.cardBorder },
-                  isMyTrip && { opacity: 0.65 }
-                ]}
-              >
-                {isMyTrip && (
-                  <LinearGradient
-                    colors={isDark ? ['#141629', '#101220', '#0A0B14'] : ['#F2F5FA', '#FAFBFD', '#FFFFFF']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={[StyleSheet.absoluteFill, { borderRadius: 16 }]}
-                  />
-                )}
-                {/* Left side: Image */}
-                <View style={styles.tripImageContainer}>
-                  <Image source={imageSource} style={styles.tripImage} />
-                  {/* Subtle dark vignette overlay to make borders darker and enhance readability */}
-                  <LinearGradient
-                    colors={['rgba(0, 0, 0, 0.65)', 'rgba(0, 0, 0, 0.1)', 'rgba(0, 0, 0, 0.75)']}
-                    locations={[0, 0.45, 1]}
-                    style={StyleSheet.absoluteFill}
-                  />
-                  {/* Pill Badge */}
-                  {isMyTrip ? (
-                    <View style={[styles.tripBadge, { backgroundColor: C.accent }]}>
-                      <Text style={[styles.tripBadgeText, { color: '#FFF', fontWeight: '800' }]}>Yours</Text>
-                    </View>
-                  ) : badge && (
-                    <View style={[styles.tripBadge, { backgroundColor: badge.bg }]}>
-                      <Text style={styles.tripBadgeText}>{badge.label}</Text>
-                    </View>
-                  )}
-                  {/* Heart button */}
-                  {!isMyTrip && (
-                    <TouchableOpacity
-                      style={[styles.heartBtn, { backgroundColor: C.heartBg }]}
-                      onPress={() => toggleLike(trip.id)}
-                    >
-                      <Heart
-                        size={14}
-                        color={isLiked ? '#FF3B30' : '#FFF'}
-                        fill={isLiked ? '#FF3B30' : 'transparent'}
-                      />
-                    </TouchableOpacity>
-                  )}
+              {/* ─── TRUST BADGES ──────────────────────────────────── */}
+              <View style={styles.trustRow}>
+                <View style={styles.trustItem}>
+                  <View style={[styles.trustIcon, { backgroundColor: C.accentLight }]}>
+                    <Shield size={16} color={C.accent} />
+                  </View>
+                  <Text style={[styles.trustLabel, { color: C.text }]}>Verified Routes</Text>
+                  <Text style={[styles.trustSub, { color: C.textSecondary }]}>Safe & Trusted</Text>
                 </View>
-
-                {/* Right side: Detailed trip content */}
-                <View style={styles.tripContent}>
-                  {/* Title and Verified badge */}
-                  <View style={styles.tripHeaderRow}>
-                    <Text style={[styles.tripName, { color: C.text }]} numberOfLines={3}>
-                      {trip.name}
-                    </Text>
+                <View style={styles.trustItem}>
+                  <View style={[styles.trustIcon, { backgroundColor: 'rgba(46, 204, 113, 0.08)' }]}>
+                    <UserCheck size={16} color="#2ECC71" />
                   </View>
-
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2, marginBottom: 4 }}>
-                    <View style={[styles.verifiedBadge, { backgroundColor: isMyTrip ? C.capsuleBg : C.accentLight, marginTop: 0, marginBottom: 0 }]}>
-                      <Check size={9} color={isMyTrip ? C.textSecondary : C.accent} strokeWidth={3} />
-                      <Text style={[styles.verifiedText, { color: isMyTrip ? C.textSecondary : C.accent }]}>Verified Route</Text>
-                    </View>
-                    <Text style={{ fontSize: 9.5, fontWeight: '600', color: isMyTrip ? C.textSecondary : '#10B981' }}>{trip.availableSeats ?? 0} left</Text>
-                  </View>
-
-                  {/* Route cities with arrow */}
-                  <View style={styles.routeCities}>
-                    {displayCities.map((city, i) => (
-                      <React.Fragment key={city}>
-                        <Text style={[styles.cityText, { color: isMyTrip ? C.textSecondary : C.routeColor }]}>{city}</Text>
-                        {i < displayCities.length - 1 && (
-                          <Text style={[styles.routeArrow, { color: C.textSecondary }]}>→</Text>
-                        )}
-                      </React.Fragment>
-                    ))}
-                  </View>
-
-                  {/* 2x2 grid of pill capsules */}
-                  <View style={styles.capsulesContainer}>
-                    <View style={styles.capsulesRow}>
-                      <View style={[styles.capsule, { backgroundColor: C.capsuleBg }]}>
-                        <MapPin size={9} color={C.textSecondary} />
-                        <Text style={[styles.capsuleText, { color: C.textSecondary }]} numberOfLines={1}>
-                          {displayMeeting}
-                        </Text>
-                      </View>
-                      <View style={[styles.capsule, { backgroundColor: C.capsuleBg }]}>
-                        <Calendar size={9} color={C.textSecondary} />
-                        <Text style={[styles.capsuleText, { color: C.textSecondary }]} numberOfLines={1}>
-                          {displayDate}
-                        </Text>
-                      </View>
-                    </View>
-                    <View style={styles.capsulesRow}>
-                      <View style={[styles.capsule, { backgroundColor: C.capsuleBg }]}>
-                        <Clock size={9} color={C.textSecondary} />
-                        <Text style={[styles.capsuleText, { color: C.textSecondary }]} numberOfLines={1}>
-                          {duration}
-                        </Text>
-                      </View>
-                      <View style={[styles.capsule, { backgroundColor: C.capsuleBg }]}>
-                        {trip.name.toLowerCase().includes('bike') ? (
-                          <Bike size={9} color={C.textSecondary} />
-                        ) : (
-                          <Bus size={9} color={C.textSecondary} />
-                        )}
-                        <Text style={[styles.capsuleText, { color: C.textSecondary }]} numberOfLines={1}>
-                          {transport}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  {/* Price and Action Button row */}
-                  <View style={[styles.priceRow, { borderTopColor: C.divider }]}>
-                    <View style={{ flex: 1, marginRight: 4 }}>
-                      <Text style={[styles.priceLabel, { color: C.textSecondary }]} numberOfLines={1}>Full Trip Cost</Text>
-                      <Text style={[styles.priceAmount, { color: isMyTrip ? C.textSecondary : C.priceColor }]} numberOfLines={1}>
-                        ₹{displayPrice}
-                      </Text>
-                      <Text style={[styles.pricePer, { color: C.textSecondary, marginTop: -2 }]} numberOfLines={1}>per person</Text>
-                    </View>
-                    <View style={{ gap: 4, flexShrink: 0, width: 120 }}>
-                      {isMyTrip ? (
-                        <View style={[styles.myTripBadge, { backgroundColor: isDark ? 'rgba(0, 102, 255, 0.12)' : 'rgba(0, 102, 255, 0.06)', borderColor: isDark ? 'rgba(0, 102, 255, 0.35)' : 'rgba(0, 102, 255, 0.22)' }]}>
-                          <Sparkles size={11} color={C.accent} style={{ marginRight: 4 }} />
-                          <Text style={[styles.myTripBadgeText, { color: C.accent, fontWeight: '800' }]}>Your Creation</Text>
-                        </View>
-                      ) : requestedTrips.has(trip.id) ? (
-                        <View style={[styles.joinBtn, styles.joinBtnRequested]}>
-                          <Check size={11} color="#2ECC71" style={{ marginRight: 4 }} />
-                          <Text style={[styles.joinBtnText, styles.joinBtnRequestedText]} numberOfLines={1}>
-                            Requested
-                          </Text>
-                        </View>
-                      ) : (
-                        <TouchableOpacity
-                          style={styles.joinBtn}
-                          onPress={() => {
-                            setSelectedTrip(trip);
-                            setShowJoinModal(true);
-                          }}
-                        >
-                          <Text style={styles.joinBtnText} numberOfLines={1}>Request to Join</Text>
-                          <ChevronRight size={11} color="#FFF" style={{ marginLeft: 2 }} />
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  </View>
+                  <Text style={[styles.trustLabel, { color: C.text }]}>Expert Trip Leaders</Text>
+                  <Text style={[styles.trustSub, { color: C.textSecondary }]}>Experienced Guides</Text>
                 </View>
-                {isMyTrip && (
-                  <BlurView
-                    intensity={isDark ? 55 : 45}
-                    tint={isDark ? "dark" : "light"}
-                    style={[styles.myTripOverlay, { backgroundColor: isDark ? 'rgba(10, 12, 22, 0.35)' : 'rgba(255, 255, 255, 0.4)' }]}
-                  />
-                )}
-              </TouchableOpacity>
-            );
-          })}
+                <View style={styles.trustItem}>
+                  <View style={[styles.trustIcon, { backgroundColor: 'rgba(255, 204, 0, 0.08)' }]}>
+                    <BadgePercent size={16} color="#FFCC00" />
+                  </View>
+                  <Text style={[styles.trustLabel, { color: C.text }]}>Best Price Guarantee</Text>
+                  <Text style={[styles.trustSub, { color: C.textSecondary }]}>No Hidden Costs</Text>
+                </View>
+                <View style={styles.trustItem}>
+                  <View style={[styles.trustIcon, { backgroundColor: 'rgba(108, 92, 231, 0.08)' }]}>
+                    <Headphones size={16} color="#6C5CE7" />
+                  </View>
+                  <Text style={[styles.trustLabel, { color: C.text }]}>24/7 Support</Text>
+                  <Text style={[styles.trustSub, { color: C.textSecondary }]}>We're Here</Text>
+                </View>
+              </View>
 
-          {/* ─── CTA BANNER ────────────────────────────────────── */}
-          <View style={styles.ctaBannerContainer}>
-            <Image
-              source={require('@/assets/images/cta-banner.png')}
-              style={styles.ctaBannerImage}
-            />
-            <Pressable
-              onPress={() => {
-                router.navigate('/create');
-              }}
-              style={({ pressed }) => [
-                styles.ctaHotspot,
-                pressed && {
-                  backgroundColor: 'rgba(255, 255, 255, 0.16)',
-                  transform: [{ scale: 0.94 }],
-                },
-              ]}
-            />
-          </View>
-
-          {/* ─── TRUST BADGES ──────────────────────────────────── */}
-          <View style={styles.trustRow}>
-            <View style={styles.trustItem}>
-              <View style={[styles.trustIcon, { backgroundColor: C.accentLight }]}>
-                <Shield size={16} color={C.accent} />
-              </View>
-              <Text style={[styles.trustLabel, { color: C.text }]}>Verified Routes</Text>
-              <Text style={[styles.trustSub, { color: C.textSecondary }]}>Safe & Trusted</Text>
-            </View>
-            <View style={styles.trustItem}>
-              <View style={[styles.trustIcon, { backgroundColor: 'rgba(46, 204, 113, 0.08)' }]}>
-                <UserCheck size={16} color="#2ECC71" />
-              </View>
-              <Text style={[styles.trustLabel, { color: C.text }]}>Expert Trip Leaders</Text>
-              <Text style={[styles.trustSub, { color: C.textSecondary }]}>Experienced Guides</Text>
-            </View>
-            <View style={styles.trustItem}>
-              <View style={[styles.trustIcon, { backgroundColor: 'rgba(255, 204, 0, 0.08)' }]}>
-                <BadgePercent size={16} color="#FFCC00" />
-              </View>
-              <Text style={[styles.trustLabel, { color: C.text }]}>Best Price Guarantee</Text>
-              <Text style={[styles.trustSub, { color: C.textSecondary }]}>No Hidden Costs</Text>
-            </View>
-            <View style={styles.trustItem}>
-              <View style={[styles.trustIcon, { backgroundColor: 'rgba(108, 92, 231, 0.08)' }]}>
-                <Headphones size={16} color="#6C5CE7" />
-              </View>
-              <Text style={[styles.trustLabel, { color: C.text }]}>24/7 Support</Text>
-              <Text style={[styles.trustSub, { color: C.textSecondary }]}>We're Here</Text>
-            </View>
-          </View>
-
-          {/* Padding at the bottom for safety */}
-          <View style={{ height: 100 }} />
-        </ScrollView>
+              {/* Padding at the bottom for safety */}
+              <View style={{ height: 100 }} />
+            </>
+          }
+        />
       </Animated.View>
 
-      <TripDetailModal
-        visible={showJoinModal}
-        trip={selectedTrip}
-        onClose={() => setShowJoinModal(false)}
-      />
+      <TripDetailModal visible={showJoinModal} trip={selectedTrip} onClose={() => setShowJoinModal(false)} />
 
       {/* ─── FILTER & PREFERENCES MODAL ───────────────────────── */}
       <Modal
@@ -832,11 +936,7 @@ function SearchScreen() {
         onRequestClose={() => setShowFilterModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <TouchableOpacity
-            style={styles.modalBackdrop}
-            activeOpacity={1}
-            onPress={() => setShowFilterModal(false)}
-          />
+          <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setShowFilterModal(false)} />
           <View style={[styles.filterSheet, { backgroundColor: isDark ? '#111322' : '#FFFFFF' }]}>
             {/* Header */}
             <View style={[styles.filterHeader, { borderBottomColor: C.divider }]}>
@@ -858,7 +958,10 @@ function SearchScreen() {
                 )}
                 <TouchableOpacity
                   onPress={() => setShowFilterModal(false)}
-                  style={[styles.closeIconBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)' }]}
+                  style={[
+                    styles.closeIconBtn,
+                    { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)' },
+                  ]}
                 >
                   <X size={18} color={C.text} />
                 </TouchableOpacity>
@@ -884,7 +987,7 @@ function SearchScreen() {
                         style={[
                           styles.filterSelectChip,
                           {
-                            backgroundColor: isSelected ? C.accent : (isDark ? '#1A1D30' : '#F0F2F6'),
+                            backgroundColor: isSelected ? C.accent : isDark ? '#1A1D30' : '#F0F2F6',
                             borderColor: isSelected ? C.accent : C.cardBorder,
                           },
                         ]}
@@ -922,7 +1025,7 @@ function SearchScreen() {
                         style={[
                           styles.filterSelectChip,
                           {
-                            backgroundColor: isSelected ? C.accent : (isDark ? '#1A1D30' : '#F0F2F6'),
+                            backgroundColor: isSelected ? C.accent : isDark ? '#1A1D30' : '#F0F2F6',
                             borderColor: isSelected ? C.accent : C.cardBorder,
                           },
                         ]}
@@ -954,7 +1057,7 @@ function SearchScreen() {
                         style={[
                           styles.filterSelectChip,
                           {
-                            backgroundColor: isSelected ? C.accent : (isDark ? '#1A1D30' : '#F0F2F6'),
+                            backgroundColor: isSelected ? C.accent : isDark ? '#1A1D30' : '#F0F2F6',
                             borderColor: isSelected ? C.accent : C.cardBorder,
                           },
                         ]}
@@ -985,7 +1088,7 @@ function SearchScreen() {
                         style={[
                           styles.filterSelectChip,
                           {
-                            backgroundColor: isSelected ? C.accent : (isDark ? '#1A1D30' : '#F0F2F6'),
+                            backgroundColor: isSelected ? C.accent : isDark ? '#1A1D30' : '#F0F2F6',
                             borderColor: isSelected ? C.accent : C.cardBorder,
                           },
                         ]}
@@ -1013,10 +1116,17 @@ function SearchScreen() {
                     <Shield size={18} color={C.accent} style={{ marginRight: 10 }} />
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.prefToggleTitle, { color: C.text }]}>Verified Organizers Only</Text>
-                      <Text style={[styles.prefToggleSub, { color: C.textSecondary }]}>Only show background-verified group leaders</Text>
+                      <Text style={[styles.prefToggleSub, { color: C.textSecondary }]}>
+                        Only show background-verified group leaders
+                      </Text>
                     </View>
                   </View>
-                  <View style={[styles.toggleTrack, verifiedOnly ? { backgroundColor: C.accent } : { backgroundColor: 'rgba(120,120,128,0.3)' }]}>
+                  <View
+                    style={[
+                      styles.toggleTrack,
+                      verifiedOnly ? { backgroundColor: C.accent } : { backgroundColor: 'rgba(120,120,128,0.3)' },
+                    ]}
+                  >
                     <View style={[styles.toggleCircle, verifiedOnly ? styles.circleOn : styles.circleOff]} />
                   </View>
                 </TouchableOpacity>
@@ -1031,10 +1141,17 @@ function SearchScreen() {
                     <UserCheck size={18} color="#10B981" style={{ marginRight: 10 }} />
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.prefToggleTitle, { color: C.text }]}>Certified Guide Included</Text>
-                      <Text style={[styles.prefToggleSub, { color: C.textSecondary }]}>Trips with expert local travel guide on board</Text>
+                      <Text style={[styles.prefToggleSub, { color: C.textSecondary }]}>
+                        Trips with expert local travel guide on board
+                      </Text>
                     </View>
                   </View>
-                  <View style={[styles.toggleTrack, guideRequired ? { backgroundColor: '#10B981' } : { backgroundColor: 'rgba(120,120,128,0.3)' }]}>
+                  <View
+                    style={[
+                      styles.toggleTrack,
+                      guideRequired ? { backgroundColor: '#10B981' } : { backgroundColor: 'rgba(120,120,128,0.3)' },
+                    ]}
+                  >
                     <View style={[styles.toggleCircle, guideRequired ? styles.circleOn : styles.circleOff]} />
                   </View>
                 </TouchableOpacity>
@@ -1049,15 +1166,21 @@ function SearchScreen() {
                     <MapPin size={18} color="#F59E0B" style={{ marginRight: 10 }} />
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.prefToggleTitle, { color: C.text }]}>Midway Segment Join Available</Text>
-                      <Text style={[styles.prefToggleSub, { color: C.textSecondary }]}>Allows joining route from intermediate cities</Text>
+                      <Text style={[styles.prefToggleSub, { color: C.textSecondary }]}>
+                        Allows joining route from intermediate cities
+                      </Text>
                     </View>
                   </View>
-                  <View style={[styles.toggleTrack, midwayOnly ? { backgroundColor: '#F59E0B' } : { backgroundColor: 'rgba(120,120,128,0.3)' }]}>
+                  <View
+                    style={[
+                      styles.toggleTrack,
+                      midwayOnly ? { backgroundColor: '#F59E0B' } : { backgroundColor: 'rgba(120,120,128,0.3)' },
+                    ]}
+                  >
                     <View style={[styles.toggleCircle, midwayOnly ? styles.circleOn : styles.circleOff]} />
                   </View>
                 </TouchableOpacity>
               </View>
-
             </ScrollView>
 
             {/* Footer */}

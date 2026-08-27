@@ -12,14 +12,14 @@ import {
   Mountain,
   Phone,
   ShieldAlert,
-  Waves
+  Waves,
 } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
+  FlatList,
   Image,
-  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
@@ -69,6 +69,117 @@ const C = {
 
 type SeverityFilter = 'ALL' | 'CRITICAL' | 'WARNING' | 'ADVISORY';
 
+function getAlertIcon(category: string) {
+  switch (category) {
+    case 'LANDSLIDE':
+      return <Mountain size={18} color={C.red} />;
+    case 'FLOOD_RAIN':
+      return <Waves size={18} color={C.cyan} />;
+    case 'CLOUDBURST':
+      return <CloudRain size={18} color={C.orange} />;
+    case 'TRAFFIC_RUSH':
+      return <Car size={18} color={C.orange} />;
+    default:
+      return <AlertTriangle size={18} color={C.orange} />;
+  }
+}
+
+function getSeverityStyle(severity: string) {
+  switch (severity) {
+    case 'CRITICAL':
+      return {
+        bg: 'rgba(239, 68, 68, 0.1)',
+        border: 'rgba(239, 68, 68, 0.3)',
+        text: C.red,
+        glow: '#EF4444',
+      };
+    case 'WARNING':
+      return {
+        bg: 'rgba(245, 158, 11, 0.1)',
+        border: 'rgba(245, 158, 11, 0.3)',
+        text: C.orange,
+        glow: '#F59E0B',
+      };
+    default:
+      return {
+        bg: 'rgba(0, 102, 255, 0.1)',
+        border: 'rgba(0, 102, 255, 0.3)',
+        text: C.blue,
+        glow: '#0066FF',
+      };
+  }
+}
+
+// Each hazard card is its own component so the React Compiler
+// (app.json > experiments.reactCompiler) memoizes cards independently — no
+// hand-written React.memo, which would make the compiler skip the component
+// instead. The Phase 10 change here is virtualization: this list used to be a
+// ScrollView + .map() that mounted and image-decoded every alert at once
+// (docs/REMEDIATION.md Phase 10).
+function AlertCard({ alert }: { alert: HazardAlert }) {
+  const sev = getSeverityStyle(alert.severity);
+
+  return (
+    <View style={styles.alertCard}>
+      {/* Card Header Info */}
+      <View style={styles.cardHeaderRow}>
+        <View style={styles.cardCategoryWrap}>
+          <View style={[styles.iconBox, { backgroundColor: sev.bg }]}>{getAlertIcon(alert.category)}</View>
+          <View>
+            <Text style={styles.categoryLabel}>{CATEGORY_LABELS[alert.category] ?? alert.category}</Text>
+            <View style={styles.locationRow}>
+              <MapPin size={10} color={C.textSec} />
+              <Text style={styles.locationText} numberOfLines={1}>
+                {alert.location}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={[styles.severityBadge, { backgroundColor: sev.bg, borderColor: sev.border }]}>
+          <Text style={[styles.severityBadgeText, { color: sev.text }]}>{alert.severity}</Text>
+        </View>
+      </View>
+
+      {/* disaster image */}
+      <View style={styles.alertImageContainer}>
+        <Image source={{ uri: alert.image }} style={styles.alertImage} />
+      </View>
+
+      {/* Main Title & Description */}
+      <Text style={styles.alertCardTitle}>{alert.title}</Text>
+      <Text style={styles.alertCardDesc}>{alert.desc}</Text>
+
+      {/* Highlighted Affected Route */}
+      <View style={styles.routeWrap}>
+        <Text style={styles.routeHeader}>Affected Route कॉरिडोर</Text>
+        <Text style={styles.routeName}>{alert.affectedRoute}</Text>
+      </View>
+
+      {/* Precautions Guidelines List */}
+      <View style={styles.precautionsSection}>
+        <Text style={styles.precautionsHeader}>Precautions & Safety Guidelines</Text>
+        {alert.precautions.map((precaution, idx) => (
+          <View key={idx} style={styles.precautionItem}>
+            <View style={styles.checkCircle}>
+              <Check size={9} color={C.green} strokeWidth={3} />
+            </View>
+            <Text style={styles.precautionText}>{precaution}</Text>
+          </View>
+        ))}
+      </View>
+
+      {/* Alert Age / Timestamp Footer */}
+      <View style={styles.cardFooter}>
+        <Clock size={11} color={C.textMuted} />
+        <Text style={styles.cardTimeText}>Issued {alert.time}</Text>
+      </View>
+    </View>
+  );
+}
+
+const keyExtractor = (a: HazardAlert) => a.id;
+
 export default function MonsoonAdvisoryScreen() {
   const router = useRouter();
   const [filter, setFilter] = useState<SeverityFilter>('ALL');
@@ -76,14 +187,17 @@ export default function MonsoonAdvisoryScreen() {
   const [loadError, setLoadError] = useState(false);
 
   const loadAlerts = () => {
-    apiService.getAlerts().then((data) => {
-      if (data) {
-        setAlerts(data as HazardAlert[]);
-        setLoadError(false);
-      } else {
-        setLoadError(true);
-      }
-    }).catch(() => setLoadError(true));
+    apiService
+      .getAlerts()
+      .then((data) => {
+        if (data) {
+          setAlerts(data as HazardAlert[]);
+          setLoadError(false);
+        } else {
+          setLoadError(true);
+        }
+      })
+      .catch(() => setLoadError(true));
   };
 
   useEffect(() => {
@@ -91,51 +205,7 @@ export default function MonsoonAdvisoryScreen() {
   }, []);
 
   // Filter alerts based on current state selection
-  const filteredAlerts = (alerts ?? []).filter((alert) => {
-    if (filter === 'ALL') return true;
-    return alert.severity === filter;
-  });
-
-  const getAlertIcon = (category: string) => {
-    switch (category) {
-      case 'LANDSLIDE':
-        return <Mountain size={18} color={C.red} />;
-      case 'FLOOD_RAIN':
-        return <Waves size={18} color={C.cyan} />;
-      case 'CLOUDBURST':
-        return <CloudRain size={18} color={C.orange} />;
-      case 'TRAFFIC_RUSH':
-        return <Car size={18} color={C.orange} />;
-      default:
-        return <AlertTriangle size={18} color={C.orange} />;
-    }
-  };
-
-  const getSeverityStyle = (severity: string) => {
-    switch (severity) {
-      case 'CRITICAL':
-        return {
-          bg: 'rgba(239, 68, 68, 0.1)',
-          border: 'rgba(239, 68, 68, 0.3)',
-          text: C.red,
-          glow: '#EF4444',
-        };
-      case 'WARNING':
-        return {
-          bg: 'rgba(245, 158, 11, 0.1)',
-          border: 'rgba(245, 158, 11, 0.3)',
-          text: C.orange,
-          glow: '#F59E0B',
-        };
-      default:
-        return {
-          bg: 'rgba(0, 102, 255, 0.1)',
-          border: 'rgba(0, 102, 255, 0.3)',
-          text: C.blue,
-          glow: '#0066FF',
-        };
-    }
-  };
+  const filteredAlerts = (alerts ?? []).filter((alert) => filter === 'ALL' || alert.severity === filter);
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
@@ -143,11 +213,7 @@ export default function MonsoonAdvisoryScreen() {
 
       {/* ─── Header ──────────────────────────────────────────────────────── */}
       <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backBtn}
-          activeOpacity={0.8}
-          onPress={() => router.back()}
-        >
+        <TouchableOpacity style={styles.backBtn} activeOpacity={0.8} onPress={() => router.back()}>
           <ArrowLeft size={20} color={C.white} />
         </TouchableOpacity>
 
@@ -160,63 +226,73 @@ export default function MonsoonAdvisoryScreen() {
         </View>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-
-        {/* ─── Informative Intro Banner ───────────────────────────────────── */}
-        <LinearGradient
-          colors={['#181C2E', '#111322']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.introCard}
-        >
-          <ShieldAlert size={24} color={C.orange} style={styles.introIcon} />
-          <View style={styles.introTextWrap}>
-            <Text style={styles.introTitle}>Monsoon Travel Security Desk</Text>
-            <Text style={styles.introDesc}>
-              Real-time route hazards and safety advisories curated by weather stations and state emergency operations. Check warning zones before route planning.
-            </Text>
-          </View>
-        </LinearGradient>
-
-        {/* ─── Filter Tabs ─────────────────────────────────────────────────── */}
-        <View style={styles.filterTabs}>
-          {(['ALL', 'CRITICAL', 'WARNING', 'ADVISORY'] as const).map((tab) => {
-            const isActive = filter === tab;
-            const count = tab === 'ALL'
-              ? (alerts ?? []).length
-              : (alerts ?? []).filter(a => a.severity === tab).length;
-
-            return (
-              <TouchableOpacity
-                key={tab}
-                activeOpacity={0.8}
-                onPress={() => setFilter(tab)}
-                style={[
-                  styles.filterTabItem,
-                  isActive && styles.filterTabItemActive,
-                  isActive && tab === 'CRITICAL' && styles.filterTabCriticalActive,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.filterTabText,
-                    isActive && styles.filterTabTextActive,
-                    tab === 'CRITICAL' && { color: C.red },
-                    tab === 'WARNING' && { color: C.orange },
-                    tab === 'ADVISORY' && { color: C.blue },
-                    isActive && { color: C.white },
-                  ]}
-                >
-                  {tab.charAt(0) + tab.slice(1).toLowerCase()} ({count})
+      <FlatList
+        data={filteredAlerts}
+        keyExtractor={keyExtractor}
+        renderItem={({ item }) => <AlertCard alert={item} />}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        initialNumToRender={2}
+        maxToRenderPerBatch={3}
+        windowSize={5}
+        removeClippedSubviews
+        ListHeaderComponent={
+          <>
+            {/* ─── Informative Intro Banner ───────────────────────────────────── */}
+            <LinearGradient
+              colors={['#181C2E', '#111322']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.introCard}
+            >
+              <ShieldAlert size={24} color={C.orange} style={styles.introIcon} />
+              <View style={styles.introTextWrap}>
+                <Text style={styles.introTitle}>Monsoon Travel Security Desk</Text>
+                <Text style={styles.introDesc}>
+                  Real-time route hazards and safety advisories curated by weather stations and state emergency
+                  operations. Check warning zones before route planning.
                 </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+              </View>
+            </LinearGradient>
 
-        {/* ─── Active Alerts List ─────────────────────────────────────────── */}
-        <View style={styles.alertsList}>
-          {alerts === null && !loadError ? (
+            {/* ─── Filter Tabs ─────────────────────────────────────────────────── */}
+            <View style={styles.filterTabs}>
+              {(['ALL', 'CRITICAL', 'WARNING', 'ADVISORY'] as const).map((tab) => {
+                const isActive = filter === tab;
+                const count =
+                  tab === 'ALL' ? (alerts ?? []).length : (alerts ?? []).filter((a) => a.severity === tab).length;
+
+                return (
+                  <TouchableOpacity
+                    key={tab}
+                    activeOpacity={0.8}
+                    onPress={() => setFilter(tab)}
+                    style={[
+                      styles.filterTabItem,
+                      isActive && styles.filterTabItemActive,
+                      isActive && tab === 'CRITICAL' && styles.filterTabCriticalActive,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.filterTabText,
+                        isActive && styles.filterTabTextActive,
+                        tab === 'CRITICAL' && { color: C.red },
+                        tab === 'WARNING' && { color: C.orange },
+                        tab === 'ADVISORY' && { color: C.blue },
+                        isActive && { color: C.white },
+                      ]}
+                    >
+                      {tab.charAt(0) + tab.slice(1).toLowerCase()} ({count})
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </>
+        }
+        ListEmptyComponent={
+          alerts === null && !loadError ? (
             <View style={styles.emptyContainer}>
               <ActivityIndicator color={C.blue} />
             </View>
@@ -227,101 +303,33 @@ export default function MonsoonAdvisoryScreen() {
                 <Text style={[styles.emptyText, { color: C.blue, fontWeight: '700' }]}>Retry</Text>
               </TouchableOpacity>
             </View>
-          ) : filteredAlerts.length === 0 ? (
+          ) : (
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>No active alerts found in this category.</Text>
             </View>
-          ) : (
-            filteredAlerts.map((alert) => {
-              const sev = getSeverityStyle(alert.severity);
-
-              return (
-                <View key={alert.id} style={styles.alertCard}>
-                  {/* Card Header Info */}
-                  <View style={styles.cardHeaderRow}>
-                    <View style={styles.cardCategoryWrap}>
-                      <View style={[styles.iconBox, { backgroundColor: sev.bg }]}>
-                        {getAlertIcon(alert.category)}
-                      </View>
-                      <View>
-                        <Text style={styles.categoryLabel}>{CATEGORY_LABELS[alert.category] ?? alert.category}</Text>
-                        <View style={styles.locationRow}>
-                          <MapPin size={10} color={C.textSec} />
-                          <Text style={styles.locationText} numberOfLines={1}>
-                            {alert.location}
-                          </Text>
-                        </View>
-                      </View>
-                    </View>
-
-                    <View
-                      style={[
-                        styles.severityBadge,
-                        { backgroundColor: sev.bg, borderColor: sev.border },
-                      ]}
-                    >
-                      <Text style={[styles.severityBadgeText, { color: sev.text }]}>
-                        {alert.severity}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* disaster image */}
-                  <View style={styles.alertImageContainer}>
-                    <Image source={{ uri: alert.image }} style={styles.alertImage} />
-                  </View>
-
-                  {/* Main Title & Description */}
-                  <Text style={styles.alertCardTitle}>{alert.title}</Text>
-                  <Text style={styles.alertCardDesc}>{alert.desc}</Text>
-
-                  {/* Highlighted Affected Route */}
-                  <View style={styles.routeWrap}>
-                    <Text style={styles.routeHeader}>Affected Route कॉरिडोर</Text>
-                    <Text style={styles.routeName}>{alert.affectedRoute}</Text>
-                  </View>
-
-                  {/* Precautions Guidelines List */}
-                  <View style={styles.precautionsSection}>
-                    <Text style={styles.precautionsHeader}>Precautions & Safety Guidelines</Text>
-                    {alert.precautions.map((precaution, idx) => (
-                      <View key={idx} style={styles.precautionItem}>
-                        <View style={styles.checkCircle}>
-                          <Check size={9} color={C.green} strokeWidth={3} />
-                        </View>
-                        <Text style={styles.precautionText}>{precaution}</Text>
-                      </View>
-                    ))}
-                  </View>
-
-                  {/* Alert Age / Timestamp Footer */}
-                  <View style={styles.cardFooter}>
-                    <Clock size={11} color={C.textMuted} />
-                    <Text style={styles.cardTimeText}>Issued {alert.time}</Text>
-                  </View>
-                </View>
-              );
-            })
-          )}
-        </View>
-
-        {/* ─── Emergency Call Helpline Section ─────────────────────────────── */}
-        <LinearGradient
-          colors={['rgba(239, 68, 68, 0.15)', 'rgba(6, 8, 20, 0.4)']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={styles.emergencyCard}
-        >
-          <View style={styles.emergencyIconWrap}>
-            <Phone size={20} color={C.red} />
-          </View>
-          <View style={styles.emergencyInfo}>
-            <Text style={styles.emergencyTitle}>National Emergency Helpline</Text>
-            <Text style={styles.emergencySub}>For heavy floods, stranded vehicles or rescue requests</Text>
-            <Text style={styles.emergencyNumbers}>NDRF desk: 011-23438091 • Toll Free: 1078</Text>
-          </View>
-        </LinearGradient>
-      </ScrollView>
+          )
+        }
+        ListFooterComponent={
+          <>
+            {/* ─── Emergency Call Helpline Section ─────────────────────────────── */}
+            <LinearGradient
+              colors={['rgba(239, 68, 68, 0.15)', 'rgba(6, 8, 20, 0.4)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={styles.emergencyCard}
+            >
+              <View style={styles.emergencyIconWrap}>
+                <Phone size={20} color={C.red} />
+              </View>
+              <View style={styles.emergencyInfo}>
+                <Text style={styles.emergencyTitle}>National Emergency Helpline</Text>
+                <Text style={styles.emergencySub}>For heavy floods, stranded vehicles or rescue requests</Text>
+                <Text style={styles.emergencyNumbers}>NDRF desk: 011-23438091 • Toll Free: 1078</Text>
+              </View>
+            </LinearGradient>
+          </>
+        }
+      />
     </SafeAreaView>
   );
 }

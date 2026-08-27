@@ -1,18 +1,27 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import prisma from '../../services/db';
+import { cacheDelete, cached } from '../../lib/cache';
 import { logger } from '../../lib/logger';
 
 const router = Router();
+
+// Destinations are reference data: seeded out of band, read on nearly every
+// screen, and changed rarely. Cache the whole list rather than hitting
+// Postgres for it on every app launch (docs/REMEDIATION.md §10). The TTL is
+// short enough that a POST is visible quickly even without the explicit
+// invalidation below.
+const DESTINATIONS_CACHE_KEY = 'destinations:all';
+const DESTINATIONS_CACHE_TTL_SECONDS = 600;
 
 // Get all destinations. Reference data is seeded once via
 // `npm run seed:reference` (prisma/seed-reference-data.ts), not implicitly
 // on read — see docs/REMEDIATION.md §4.9.
 router.get('/', async (req, res) => {
   try {
-    const destinations = await prisma.destination.findMany({
-      orderBy: { rank: 'asc' },
-    });
+    const destinations = await cached(DESTINATIONS_CACHE_KEY, DESTINATIONS_CACHE_TTL_SECONDS, () =>
+      prisma.destination.findMany({ orderBy: { rank: 'asc' } })
+    );
     res.setHeader('Cache-Control', 'public, max-age=600'); // reference data (docs §10)
     res.status(200).json({ ok: true, data: destinations });
   } catch (err) {
@@ -56,6 +65,9 @@ router.post('/', async (req, res) => {
 
   try {
     const destination = await prisma.destination.create({ data: parsed.data });
+    // Drop the list cache so the new destination shows up immediately rather
+    // than up to a TTL later.
+    await cacheDelete(DESTINATIONS_CACHE_KEY);
     res.status(201).json({ ok: true, data: destination });
   } catch (err) {
     logger.warn('[Destinations] Create error:', err);

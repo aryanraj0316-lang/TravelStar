@@ -1,4 +1,5 @@
 import 'express-async-errors';
+import compression from 'compression';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import express from 'express';
@@ -74,6 +75,13 @@ app.use(
 
 // JSON endpoints do not need 10mb. Media uploads get their own limit when
 // those routes exist (Phase 8).
+// Gzip/deflate JSON responses (docs/REMEDIATION.md Phase 10). Trip and chat
+// payloads are highly compressible text and the app is used on Indian mobile
+// networks, where bytes on the wire dominate response time. `threshold` skips
+// the CPU cost on small bodies where a compressed frame can be larger than
+// the original.
+app.use(compression({ threshold: 1024 }));
+
 app.use(express.json({ limit: '256kb' }));
 app.use(express.urlencoded({ extended: true, limit: '256kb' }));
 

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import prisma from '../../services/db';
+import { cached } from '../../lib/cache';
 import { logger } from '../../lib/logger';
 
 const router = Router();
@@ -37,20 +38,24 @@ function mapWeatherCode(code: number): string {
 
 type LiveWeather = { temp: string; condition: string; humidity: string; windSpeed: string };
 
-// Short-lived in-process cache so /weather's background refresh and repeated
-// /weather/live calls for the same place don't each hit Open-Meteo
-// (docs/REMEDIATION.md §10). Keyed by coordinates rounded to ~1km. This is
-// per-instance and that's fine — it's a rate-limit courtesy, not a source
-// of truth. A shared Redis cache is the scale-out version.
-const weatherCache = new Map<string, { at: number; value: LiveWeather }>();
-const WEATHER_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+// Cache TTL for a live Open-Meteo reading. Weather does not move fast enough
+// for a shorter window to buy anything, and Open-Meteo's free tier is a
+// courtesy we should not spend one request per instance per call
+// (docs/REMEDIATION.md §10). Keys round coordinates to ~1km so a moving
+// guide doesn't miss the cache on every GPS jitter.
+const WEATHER_CACHE_TTL_SECONDS = 10 * 60;
 
-// Fetch live weather from Open-Meteo (free, no API key), cached.
-async function fetchLiveWeather(lat: number, lon: number): Promise<LiveWeather | null> {
-  const key = `${lat.toFixed(2)},${lon.toFixed(2)}`;
-  const cached = weatherCache.get(key);
-  if (cached && Date.now() - cached.at < WEATHER_CACHE_TTL_MS) return cached.value;
+function weatherCacheKey(lat: number, lon: number): string {
+  return `weather:live:${lat.toFixed(2)},${lon.toFixed(2)}`;
+}
 
+// Fetch live weather from Open-Meteo (free, no API key), cached — shared
+// across instances when REDIS_URL is set, per-process otherwise.
+function fetchLiveWeather(lat: number, lon: number): Promise<LiveWeather | null> {
+  return cached(weatherCacheKey(lat, lon), WEATHER_CACHE_TTL_SECONDS, () => fetchLiveWeatherUncached(lat, lon));
+}
+
+async function fetchLiveWeatherUncached(lat: number, lon: number): Promise<LiveWeather | null> {
   try {
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&timezone=auto`;
     const controller = new AbortController();
@@ -67,14 +72,12 @@ async function fetchLiveWeather(lat: number, lon: number): Promise<LiveWeather |
     const current = data.current;
     if (!current) return null;
 
-    const value: LiveWeather = {
+    return {
       temp: `${Math.round(current.temperature_2m)}°C`,
       condition: mapWeatherCode(current.weather_code),
       humidity: `${current.relative_humidity_2m}%`,
       windSpeed: `${Math.round(current.wind_speed_10m)} km/h`,
     };
-    weatherCache.set(key, { at: Date.now(), value });
-    return value;
   } catch (err) {
     logger.warn('[Weather] Open-Meteo fetch failed:', err);
     return null;

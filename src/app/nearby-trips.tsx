@@ -6,9 +6,9 @@ import TripDetailModal from '@/components/TripDetailModal';
 import { useQuery } from '@tanstack/react-query';
 import {
   ActivityIndicator,
+  FlatList,
   Image,
   RefreshControl,
-  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
@@ -65,6 +65,62 @@ type NearbyTrip = {
   nearestCity: string | null;
 };
 
+// Each row is its own component so the React Compiler
+// (app.json > experiments.reactCompiler) can memoize rows independently —
+// which is why there is no hand-written React.memo/useCallback here. The
+// compiler does NOT virtualize, though, so the FlatList below is the actual
+// Phase 10 win: this list used to be a ScrollView + .map() that mounted
+// every trip at once (docs/REMEDIATION.md Phase 10).
+function NearbyTripCard({ trip, onPress }: { trip: NearbyTrip; onPress: (trip: NearbyTrip) => void }) {
+  const distance =
+    trip.distanceKm === null
+      ? (trip.cities[0] ?? 'Route TBD')
+      : `≈ ${trip.distanceKm.toLocaleString('en-IN')} km away · straight-line`;
+
+  return (
+    <TouchableOpacity activeOpacity={0.9} style={styles.tripCard} onPress={() => onPress(trip)}>
+      <View style={styles.tripImgWrap}>
+        <Image source={{ uri: trip.coverImage }} style={styles.tripImg} />
+        <LinearGradient colors={['rgba(6,8,20,0.15)', 'rgba(6,8,20,0.9)']} style={StyleSheet.absoluteFill} />
+        <View style={styles.distBadge}>
+          <Navigation size={11} color={C.white} />
+          <Text style={styles.distBadgeText}>{distance}</Text>
+        </View>
+      </View>
+      <View style={styles.tripBody}>
+        <Text style={styles.tripTitle} numberOfLines={1}>
+          {trip.name}
+        </Text>
+        <View style={styles.tripRow}>
+          <MapPin size={12} color={C.green} />
+          <Text style={styles.tripRowText} numberOfLines={1}>
+            {trip.cities.join(' → ')}
+          </Text>
+        </View>
+        <View style={styles.tripMetaRow}>
+          <View style={styles.tripRow}>
+            <Users size={12} color={C.textMuted} />
+            <Text style={styles.tripMetaText}>
+              {trip.membersCount}/{trip.totalSeats} joined
+            </Text>
+          </View>
+          <Text style={styles.tripPrice}>₹{Number(trip.budget).toLocaleString('en-IN')}</Text>
+        </View>
+        <Text style={styles.tripDates}>
+          {trip.startDate} → {trip.endDate}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+// No getItemLayout: the card's height is only *mostly* fixed (a user with a
+// large system font scale grows the text rows), and a getItemLayout that
+// lies about row height produces scroll jumps worse than the measurement it
+// saves.
+const keyExtractor = (t: NearbyTrip) => t.id;
+const listFooter = <View style={{ height: 100 }} />;
+
 type LocationState =
   | { status: 'idle' }
   | { status: 'loading' }
@@ -81,9 +137,15 @@ export default function NearbyTripsScreen() {
     setLocation({ status: 'loading' });
     const res = await getCurrentDeviceLocation();
     if (res.ok) {
-      setLocation({ status: 'granted', latitude: res.latitude, longitude: res.longitude });
+      setLocation({
+        status: 'granted',
+        latitude: res.latitude,
+        longitude: res.longitude,
+      });
     } else {
-      setLocation({ status: res.reason === 'PERMISSION_DENIED' ? 'denied' : 'unavailable' });
+      setLocation({
+        status: res.reason === 'PERMISSION_DENIED' ? 'denied' : 'unavailable',
+      });
     }
   };
 
@@ -110,17 +172,17 @@ export default function NearbyTripsScreen() {
     setShowJoinModal(true);
   };
 
-  const distanceLabel = (t: NearbyTrip) => {
-    if (t.distanceKm === null) return t.cities[0] ?? 'Route TBD';
-    return `≈ ${t.distanceKm.toLocaleString('en-IN')} km away · straight-line`;
-  };
-
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor={C.bg} />
 
       <View style={styles.topNavRow}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back">
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
           <ArrowLeft size={18} color={C.white} />
         </TouchableOpacity>
         <Text style={styles.topNavTitle}>Trips Near You</Text>
@@ -154,7 +216,12 @@ export default function NearbyTripsScreen() {
           )}
         </View>
         {location.status !== 'granted' && location.status !== 'loading' && (
-          <TouchableOpacity style={styles.locBtn} onPress={requestLocation} accessibilityRole="button" accessibilityLabel="Use my location">
+          <TouchableOpacity
+            style={styles.locBtn}
+            onPress={requestLocation}
+            accessibilityRole="button"
+            accessibilityLabel="Use my location"
+          >
             <Navigation size={13} color={C.blue} />
             <Text style={styles.locBtnText}>Use location</Text>
           </TouchableOpacity>
@@ -169,7 +236,9 @@ export default function NearbyTripsScreen() {
       ) : isError ? (
         <View style={styles.stateWrap}>
           <AlertCircle size={52} color={C.rose} strokeWidth={1.4} />
-          <Text style={styles.stateText}>{error instanceof Error ? error.message : 'Could not load nearby trips.'}</Text>
+          <Text style={styles.stateText}>
+            {error instanceof Error ? error.message : 'Could not load nearby trips.'}
+          </Text>
           <TouchableOpacity style={styles.retryBtn} onPress={() => refetch()}>
             <Text style={styles.retryBtnText}>Retry</Text>
           </TouchableOpacity>
@@ -180,40 +249,19 @@ export default function NearbyTripsScreen() {
           <Text style={styles.stateText}>No upcoming trips are open right now.</Text>
         </View>
       ) : (
-        <ScrollView
+        <FlatList
+          data={trips}
+          keyExtractor={keyExtractor}
+          renderItem={({ item }) => <NearbyTripCard trip={item} onPress={openTrip} />}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={C.blue} />}
-        >
-          {trips.map((t) => (
-            <TouchableOpacity key={t.id} activeOpacity={0.9} style={styles.tripCard} onPress={() => openTrip(t)}>
-              <View style={styles.tripImgWrap}>
-                <Image source={{ uri: t.coverImage }} style={styles.tripImg} />
-                <LinearGradient colors={['rgba(6,8,20,0.15)', 'rgba(6,8,20,0.9)']} style={StyleSheet.absoluteFill} />
-                <View style={styles.distBadge}>
-                  <Navigation size={11} color={C.white} />
-                  <Text style={styles.distBadgeText}>{distanceLabel(t)}</Text>
-                </View>
-              </View>
-              <View style={styles.tripBody}>
-                <Text style={styles.tripTitle} numberOfLines={1}>{t.name}</Text>
-                <View style={styles.tripRow}>
-                  <MapPin size={12} color={C.green} />
-                  <Text style={styles.tripRowText} numberOfLines={1}>{t.cities.join(' → ')}</Text>
-                </View>
-                <View style={styles.tripMetaRow}>
-                  <View style={styles.tripRow}>
-                    <Users size={12} color={C.textMuted} />
-                    <Text style={styles.tripMetaText}>{t.membersCount}/{t.totalSeats} joined</Text>
-                  </View>
-                  <Text style={styles.tripPrice}>₹{Number(t.budget).toLocaleString('en-IN')}</Text>
-                </View>
-                <Text style={styles.tripDates}>{t.startDate} → {t.endDate}</Text>
-              </View>
-            </TouchableOpacity>
-          ))}
-          <View style={{ height: 100 }} />
-        </ScrollView>
+          initialNumToRender={4}
+          maxToRenderPerBatch={6}
+          windowSize={7}
+          removeClippedSubviews
+          ListFooterComponent={listFooter}
+        />
       )}
 
       <TripDetailModal visible={showJoinModal} trip={selectedTrip} onClose={() => setShowJoinModal(false)} />
@@ -275,9 +323,26 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(59,130,246,0.3)',
   },
   locBtnText: { fontSize: 10.5, fontWeight: '700', color: C.blue },
-  stateWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, paddingHorizontal: 40 },
-  stateText: { color: C.textSec, fontSize: 13.5, fontWeight: '600', textAlign: 'center', lineHeight: 19 },
-  retryBtn: { backgroundColor: C.blue, paddingHorizontal: 22, paddingVertical: 10, borderRadius: 12 },
+  stateWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 14,
+    paddingHorizontal: 40,
+  },
+  stateText: {
+    color: C.textSec,
+    fontSize: 13.5,
+    fontWeight: '600',
+    textAlign: 'center',
+    lineHeight: 19,
+  },
+  retryBtn: {
+    backgroundColor: C.blue,
+    paddingHorizontal: 22,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
   retryBtnText: { color: C.white, fontSize: 13, fontWeight: '700' },
   scrollContent: { paddingHorizontal: 16, paddingTop: 8 },
   tripCard: {
@@ -307,7 +372,11 @@ const styles = StyleSheet.create({
   tripTitle: { fontSize: 14.5, fontWeight: '800', color: C.white },
   tripRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   tripRowText: { fontSize: 12, fontWeight: '600', color: C.green, flex: 1 },
-  tripMetaRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  tripMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   tripMetaText: { fontSize: 11, color: C.textMuted, fontWeight: '600' },
   tripPrice: { fontSize: 13.5, fontWeight: '800', color: C.amber },
   tripDates: { fontSize: 10.5, color: C.textMuted },

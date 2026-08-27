@@ -38,7 +38,7 @@ import {
   Globe as TranslateIcon,
   Trash2,
   Users as UsersIcon,
-  X
+  X,
 } from 'lucide-react-native';
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -49,6 +49,7 @@ import {
   Keyboard,
   PanResponder,
   Platform,
+  FlatList,
   ScrollView,
   StyleSheet,
   Text,
@@ -125,7 +126,7 @@ const INITIAL_TRIP_MESSAGES: Record<string, CustomMessage[]> = {
       senderName: 'Vikram Singh',
       senderRole: 'Organizer',
       avatar: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=100&q=80',
-      content: 'Welcome everyone to the Ranchi-Vrindavan spiritual journey! 🌸 Let\'s coordinate our schedules here.',
+      content: "Welcome everyone to the Ranchi-Vrindavan spiritual journey! 🌸 Let's coordinate our schedules here.",
       timestamp: 'Yesterday, 10:30 AM',
       isMe: false,
     },
@@ -134,7 +135,8 @@ const INITIAL_TRIP_MESSAGES: Record<string, CustomMessage[]> = {
       senderName: 'Rajesh Kumar',
       senderRole: 'Guide',
       avatar: 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=150&q=80',
-      content: 'Radhe Radhe! 🙏 I am Rajesh, your spiritual guide for this trip. I will meet you all at Mathura Junction. Let me know if you need help with temple entry details or special darshan.',
+      content:
+        'Radhe Radhe! 🙏 I am Rajesh, your spiritual guide for this trip. I will meet you all at Mathura Junction. Let me know if you need help with temple entry details or special darshan.',
       timestamp: 'Yesterday, 04:00 PM',
       isMe: false,
     },
@@ -147,8 +149,8 @@ const INITIAL_TRIP_MESSAGES: Record<string, CustomMessage[]> = {
       timestamp: '10:30 AM',
       isMe: false,
       translations: {
-        hindi: 'हे टीम! 👋 हम 12 अगस्त को रांची जंक्शन से शुरू करेंगे। सुनिश्चित करें कि आपका सामान टैग किया गया है।'
-      }
+        hindi: 'हे टीम! 👋 हम 12 अगस्त को रांची जंक्शन से शुरू करेंगे। सुनिश्चित करें कि आपका सामान टैग किया गया है।',
+      },
     },
     {
       id: 't1-gen-2',
@@ -159,8 +161,8 @@ const INITIAL_TRIP_MESSAGES: Record<string, CustomMessage[]> = {
       timestamp: '10:32 AM',
       isMe: false,
       translations: {
-        hindi: 'बेहद उत्साहित! 😍 क्या ट्रेन टिकट बुकिंग बजट में शामिल है या हमें अलग से भुगतान करना होगा?'
-      }
+        hindi: 'बेहद उत्साहित! 😍 क्या ट्रेन टिकट बुकिंग बजट में शामिल है या हमें अलग से भुगतान करना होगा?',
+      },
     },
     {
       id: 't1-gen-3',
@@ -171,9 +173,9 @@ const INITIAL_TRIP_MESSAGES: Record<string, CustomMessage[]> = {
       timestamp: '10:33 AM',
       isMe: false,
       translations: {
-        hindi: 'हां, यह ₹8500 प्रति व्यक्ति के मूल पैकेज में शामिल है।'
-      }
-    }
+        hindi: 'हां, यह ₹8500 प्रति व्यक्ति के मूल पैकेज में शामिल है।',
+      },
+    },
   ],
 
   // --- TRIP 2: Leh Ladakh ---
@@ -183,7 +185,8 @@ const INITIAL_TRIP_MESSAGES: Record<string, CustomMessage[]> = {
       senderName: 'Aditya Sen',
       senderRole: 'Organizer',
       avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
-      content: 'Welcome riders! 🏍️ Leh Ladakh expedition is locked. Acclimatization is key. First 2 days in Leh we will rest. No high altitude rides on Day 1 & 2.',
+      content:
+        'Welcome riders! 🏍️ Leh Ladakh expedition is locked. Acclimatization is key. First 2 days in Leh we will rest. No high altitude rides on Day 1 & 2.',
       timestamp: '3 Days ago',
       isMe: false,
     },
@@ -192,7 +195,8 @@ const INITIAL_TRIP_MESSAGES: Record<string, CustomMessage[]> = {
       senderName: 'Lobsang Yeshi',
       senderRole: 'Guide',
       avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80',
-      content: 'Juley! 👋 Welcome to Ladakh. I am Lobsang Yeshi, your native guide. I have arranged the Inner Line Permits for Pangong and Nubra. I will bring extra oxygen cylinders in our backup vehicle.',
+      content:
+        'Juley! 👋 Welcome to Ladakh. I am Lobsang Yeshi, your native guide. I have arranged the Inner Line Permits for Pangong and Nubra. I will bring extra oxygen cylinders in our backup vehicle.',
       timestamp: 'Yesterday',
       isMe: false,
     },
@@ -201,7 +205,8 @@ const INITIAL_TRIP_MESSAGES: Record<string, CustomMessage[]> = {
       senderName: 'Aditya Sen',
       senderRole: 'Organizer',
       avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
-      content: 'Ready to roll guys? Make sure your bikes are serviced. Changing engine oil and checking brake pads is highly recommended.',
+      content:
+        'Ready to roll guys? Make sure your bikes are serviced. Changing engine oil and checking brake pads is highly recommended.',
       timestamp: '09:00 AM',
       isMe: false,
     },
@@ -213,7 +218,7 @@ const INITIAL_TRIP_MESSAGES: Record<string, CustomMessage[]> = {
       content: 'Servicing is complete! Fitted off-road tires too. Ready for the Sarchu river crossings.',
       timestamp: '09:12 AM',
       isMe: false,
-    }
+    },
   ],
 
   // --- TRIP 3: Kerala ---
@@ -223,7 +228,8 @@ const INITIAL_TRIP_MESSAGES: Record<string, CustomMessage[]> = {
       senderName: 'Priya Nair',
       senderRole: 'Organizer',
       avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150&q=80',
-      content: 'Hello family! 🌴 Kerala Backwaters trip itinerary finalized. We have booked private luxury houseboats in Alleppey. Check in at 12 PM on 28th Aug.',
+      content:
+        'Hello family! 🌴 Kerala Backwaters trip itinerary finalized. We have booked private luxury houseboats in Alleppey. Check in at 12 PM on 28th Aug.',
       timestamp: '2 days ago',
       isMe: false,
     },
@@ -232,7 +238,8 @@ const INITIAL_TRIP_MESSAGES: Record<string, CustomMessage[]> = {
       senderName: 'Anjali Sharma',
       senderRole: 'Guide',
       avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150&q=80',
-      content: 'Namaskaram! 🙏 I am Anjali Sharma, your tourist guide. I speak English, Hindi, and Malayalam. Looking forward to showing you the beautiful tea gardens of Munnar.',
+      content:
+        'Namaskaram! 🙏 I am Anjali Sharma, your tourist guide. I speak English, Hindi, and Malayalam. Looking forward to showing you the beautiful tea gardens of Munnar.',
       timestamp: 'Yesterday',
       isMe: false,
     },
@@ -244,33 +251,36 @@ const INITIAL_TRIP_MESSAGES: Record<string, CustomMessage[]> = {
       content: 'Weather check: Munnar is cool (18°C) but carrying an umbrella is smart since rains are unpredictable.',
       timestamp: 'Yesterday',
       isMe: false,
-    }
+    },
   ],
 };
 
 // Initial Polls per Trip
-const INITIAL_TRIP_POLLS: Record<string, { question: string; options: { text: string; votes: number }[]; voted?: number }> = {
+const INITIAL_TRIP_POLLS: Record<
+  string,
+  { question: string; options: { text: string; votes: number }[]; voted?: number }
+> = {
   'trip-1': {
     question: 'Where should we have group dinner in Vrindavan?',
     options: [
-      { text: 'Govinda\'s Restaurant (ISKCON)', votes: 8 },
-      { text: 'Prem Mandir Local Braj Dhaba', votes: 4 }
+      { text: "Govinda's Restaurant (ISKCON)", votes: 8 },
+      { text: 'Prem Mandir Local Braj Dhaba', votes: 4 },
     ],
   },
   'trip-2': {
-    question: 'Select tomorrow\'s ride departure time from Sarchu:',
+    question: "Select tomorrow's ride departure time from Sarchu:",
     options: [
       { text: '06:00 AM (Avoid water crossings)', votes: 5 },
-      { text: '08:00 AM (Warm sunshine, but water rises)', votes: 2 }
+      { text: '08:00 AM (Warm sunshine, but water rises)', votes: 2 },
     ],
   },
   'trip-3': {
     question: 'Lunch preference on the Houseboat trip:',
     options: [
       { text: 'Traditional Kerala Sadya (Veg on leaf)', votes: 6 },
-      { text: 'Mixed Seafood Platter & Grill', votes: 3 }
+      { text: 'Mixed Seafood Platter & Grill', votes: 3 },
     ],
-  }
+  },
 };
 
 // Initial Expenses per Trip
@@ -293,11 +303,19 @@ const INITIAL_TRIP_EXPENSES: Record<string, TripExpense[]> = {
   ],
   'trip-3': [
     { id: 'exp-1', amount: 9000, description: 'Alleppey Resort Advance', paidBy: 'Priya Nair', splitWith: 10 },
-  ]
+  ],
 };
 
 // Swipe to Reply gesture wrapper component
-const SwipeableMessageRow = ({ children, onSwipeReply, isMe }: { children: React.ReactNode, onSwipeReply: () => void, isMe: boolean }) => {
+const SwipeableMessageRow = ({
+  children,
+  onSwipeReply,
+  isMe,
+}: {
+  children: React.ReactNode;
+  onSwipeReply: () => void;
+  isMe: boolean;
+}) => {
   const pan = useRef(new Animated.Value(0)).current;
 
   const panResponder = useRef(
@@ -331,8 +349,8 @@ const SwipeableMessageRow = ({ children, onSwipeReply, isMe }: { children: React
           toValue: 0,
           useNativeDriver: true,
         }).start();
-      }
-    })
+      },
+    }),
   ).current;
 
   return (
@@ -407,6 +425,307 @@ interface ChatRoom {
   lastMessageAt?: string;
 }
 
+// One chat message. Extracted from an inline `.map()` so the message list can
+// be virtualized (the FlatList below) and so the React Compiler
+// (app.json > experiments.reactCompiler) can memoize bubbles independently —
+// which is why there is no hand-written React.memo here. A busy trip group is
+// the app's only truly unbounded list, and it previously mounted every message
+// it had ever loaded, all at once (docs/REMEDIATION.md Phase 10).
+function MessageBubble({
+  msg,
+  previousSenderName,
+  isTranslated,
+  onReply,
+  onShowOptions,
+  onToggleTranslate,
+  onPollVote,
+  onOpenMap,
+  canResolveSOS,
+  onResolveSOS,
+}: {
+  msg: CustomMessage;
+  previousSenderName: string | null;
+  isTranslated: boolean;
+  onReply: (msg: CustomMessage) => void;
+  onShowOptions: (msg: CustomMessage) => void;
+  onToggleTranslate: (id: string) => void;
+  onPollVote: (msgId: string, optionIdx: number) => void;
+  onOpenMap: () => void;
+  // Resolving an SOS is an organizer/guide action, and it clears the trip's
+  // *active* alert rather than this message — hence no message argument.
+  canResolveSOS: boolean;
+  onResolveSOS: () => void;
+}) {
+  const hasTranslation = isTranslated;
+  const displayedContent = hasTranslation && msg.translations?.hindi ? msg.translations.hindi : msg.content;
+  const isSOS = msg.type === 'sos';
+  const isSystem = msg.senderRole === 'SYSTEM' || msg.senderName === 'System';
+
+  if (isSystem) {
+    return (
+      <View style={styles.systemMessageContainer}>
+        <Text style={styles.systemMessageText}>{displayedContent}</Text>
+      </View>
+    );
+  }
+
+  // Check if previous message was sent by the same sender using senderName as key
+  const isConsecutive = previousSenderName === msg.senderName;
+
+  return (
+    <SwipeableMessageRow isMe={msg.isMe} onSwipeReply={() => onReply(msg)}>
+      <View
+        style={[
+          styles.messageRow,
+          msg.isMe && { justifyContent: 'flex-end' },
+          isSOS && styles.sosMessageBg,
+          isConsecutive && { marginTop: 2 },
+        ]}
+      >
+        {!msg.isMe && (
+          <View style={styles.avatarContainer}>
+            {!isConsecutive && (
+              <>
+                <Image source={{ uri: msg.avatar }} style={styles.messageAvatar} />
+              </>
+            )}
+          </View>
+        )}
+
+        <View style={[styles.messageBody, msg.isMe ? { flex: 1, alignItems: 'flex-end' } : { flex: 1 }]}>
+          {!isConsecutive && (
+            <View style={[styles.senderHeader, msg.isMe && { justifyContent: 'flex-end' }]}>
+              <Text
+                style={[
+                  styles.senderNameText,
+                  msg.senderRole === 'Organizer'
+                    ? { color: C.blueGlow }
+                    : msg.senderRole === 'Guide'
+                      ? { color: C.purple }
+                      : { color: C.green },
+                ]}
+              >
+                {msg.isMe ? 'You' : msg.senderName}
+              </Text>
+              {msg.senderRole && !msg.isMe && (
+                <View
+                  style={[
+                    styles.rolePill,
+                    msg.senderRole === 'Organizer'
+                      ? styles.rolePillOrganizer
+                      : msg.senderRole === 'Guide'
+                        ? styles.rolePillGuide
+                        : styles.rolePillTourist,
+                  ]}
+                >
+                  <Text style={styles.rolePillText}>{msg.senderRole}</Text>
+                </View>
+              )}
+            </View>
+          )}
+
+          {msg.type === 'poll' ? (
+            <View style={styles.pollCard}>
+              <View style={styles.pollHeader}>
+                <BarChart2 size={16} color={C.orange} style={{ marginRight: 6 }} />
+                <Text style={styles.pollQuestionText}>{msg.pollQuestion}</Text>
+              </View>
+              {msg.pollOptions?.map((opt, idx) => {
+                const totalVotes = msg.pollOptions?.reduce((acc, current) => acc + current.votes, 0) || 1;
+                const percent = Math.round((opt.votes / totalVotes) * 100) || 0;
+                const isVotedByMe = msg.pollVoted === idx;
+
+                return (
+                  <TouchableOpacity
+                    key={opt.text}
+                    style={[styles.pollOptionTouch, isVotedByMe && styles.pollOptionVoted]}
+                    onPress={() => onPollVote(msg.id, idx)}
+                  >
+                    <View style={[styles.pollProgressFill, { width: `${percent}%` }]} />
+                    <View style={styles.pollOptionContent}>
+                      <Text style={[styles.pollOptionLabel, isVotedByMe && { fontWeight: '800', color: '#FFF' }]}>
+                        {opt.text}
+                      </Text>
+                      <Text style={styles.pollOptionPercent}>
+                        {percent}% ({opt.votes})
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+              <Text style={styles.pollFooter}>Tap option to vote in thread</Text>
+            </View>
+          ) : msg.type === 'expense' ? (
+            <View style={styles.expenseCard}>
+              <View style={styles.expenseHeader}>
+                <DollarSign size={16} color={C.green} />
+                <Text style={styles.expenseHeaderTitle}>Shared Expense Logged</Text>
+              </View>
+              <Text style={styles.expenseBillDesc}>{msg.expenseDesc}</Text>
+              <Text style={styles.expenseBillAmount}>₹{msg.expenseAmount}</Text>
+              <View style={styles.expenseDivider} />
+              <View style={styles.expenseFooterRow}>
+                <Text style={styles.expenseShareText}>Split with {msg.expenseSplitWith} members</Text>
+                <Text style={styles.expenseCostHead}>
+                  ₹{Math.round((msg.expenseAmount || 0) / (msg.expenseSplitWith || 1))}/head
+                </Text>
+              </View>
+            </View>
+          ) : msg.type === 'location' ? (
+            <View style={styles.locationCard}>
+              <View style={styles.locationHeader}>
+                <MapPin size={16} color={C.blueGlow} />
+                <Text style={styles.locationCardTitle}>Shared Meeting Point</Text>
+              </View>
+              <Text style={styles.locationText}>{msg.content}</Text>
+              <View style={styles.miniMapPlaceholder}>
+                <View style={styles.radarRing1} />
+                <View style={styles.radarRing2} />
+                <MapPin size={24} color={C.red} style={styles.miniMapPin} />
+                <Text style={styles.coordsText}>
+                  Lat: {msg.locationCoords?.latitude.toFixed(4)}, Lng: {msg.locationCoords?.longitude.toFixed(4)}
+                </Text>
+              </View>
+              <TouchableOpacity style={styles.locationActionTouch} onPress={onOpenMap}>
+                <Text style={styles.locationActionText}>Open Live Navigation</Text>
+              </TouchableOpacity>
+            </View>
+          ) : msg.type === 'voice' ? (
+            <View style={styles.voiceNoteCard}>
+              <TouchableOpacity style={styles.playButtonCircle}>
+                <View style={styles.playArrow} />
+              </TouchableOpacity>
+              <View style={styles.waveformContainer}>
+                <View style={[styles.waveBar, { height: 12, backgroundColor: C.blueGlow }]} />
+                <View style={[styles.waveBar, { height: 22, backgroundColor: C.blueGlow }]} />
+                <View style={[styles.waveBar, { height: 18, backgroundColor: C.blueGlow }]} />
+                <View style={[styles.waveBar, { height: 14, backgroundColor: C.textSec }]} />
+                <View style={[styles.waveBar, { height: 8, backgroundColor: C.textSec }]} />
+                <View style={[styles.waveBar, { height: 16, backgroundColor: C.textSec }]} />
+                <View style={[styles.waveBar, { height: 24, backgroundColor: C.textSec }]} />
+                <View style={[styles.waveBar, { height: 10, backgroundColor: C.textSec }]} />
+              </View>
+              <Text style={styles.voiceDuration}>0:04</Text>
+            </View>
+          ) : msg.type === 'image' ? (
+            <View style={styles.imageCard}>
+              <Image source={{ uri: msg.mediaUrl }} style={styles.imageMedia} />
+              <View style={styles.imageOverlayTextRow}>
+                <Text style={styles.imageCardDesc} numberOfLines={1}>
+                  {msg.content}
+                </Text>
+                <TouchableOpacity style={styles.imageDownloadBtn}>
+                  <Download size={14} color="#FFF" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : msg.type === 'sos' ? (
+            <View style={styles.sosCardAlert}>
+              <View style={styles.sosAlertHeader}>
+                <AlertCircle size={18} color="#FFF" />
+                <Text style={styles.sosAlertHeaderTitle}>CRITICAL EMERGENCY WARNING</Text>
+              </View>
+              <Text style={styles.sosAlertDesc}>{msg.content}</Text>
+              <Text style={styles.sosAlertCoords}>
+                Coordinates: {msg.locationCoords?.latitude.toFixed(4)}, {msg.locationCoords?.longitude.toFixed(4)}
+              </Text>
+              <View style={styles.sosAlertBtnRow}>
+                <TouchableOpacity
+                  style={[styles.sosAlertBtn, { backgroundColor: 'rgba(255,255,255,0.15)' }]}
+                  onPress={onOpenMap}
+                >
+                  <Text style={styles.sosAlertBtnText}>Show on Map</Text>
+                </TouchableOpacity>
+                {canResolveSOS ? (
+                  <TouchableOpacity style={[styles.sosAlertBtn, { backgroundColor: C.green }]} onPress={onResolveSOS}>
+                    <Text style={styles.sosAlertBtnText}>Mark as Safe</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            </View>
+          ) : (
+            <View style={[msg.isMe ? styles.instagramBubbleContainerMe : styles.bubbleContainerOther]}>
+              {msg.isMe ? (
+                <TouchableOpacity activeOpacity={0.9} onLongPress={() => onShowOptions(msg)}>
+                  <LinearGradient
+                    colors={['#0066FF', '#7C3AED', '#BA68C8']}
+                    start={(() => {
+                      // Compute deterministic but randomized start coordinates based on message ID
+                      let hash = 0;
+                      const idStr = msg.id || 'random';
+                      for (let i = 0; i < idStr.length; i++) {
+                        hash = idStr.charCodeAt(i) + ((hash << 5) - hash);
+                      }
+                      const normX = (Math.abs(hash) % 5) / 10; // 0.0 to 0.4
+                      const normY = (Math.abs(hash >> 2) % 5) / 10; // 0.0 to 0.4
+                      return { x: normX, y: normY };
+                    })()}
+                    end={(() => {
+                      let hash = 0;
+                      const idStr = msg.id || 'random';
+                      for (let i = 0; i < idStr.length; i++) {
+                        hash = idStr.charCodeAt(i) + ((hash << 3) - hash);
+                      }
+                      const normX = 0.6 + (Math.abs(hash) % 5) / 10; // 0.6 to 1.0
+                      const normY = 0.6 + (Math.abs(hash >> 2) % 5) / 10; // 0.6 to 1.0
+                      return { x: normX, y: normY };
+                    })()}
+                    style={styles.instagramGradientBubble}
+                  >
+                    {msg.replyTo && (
+                      <View style={styles.bubbleReplyHeaderMe}>
+                        <Text style={styles.bubbleReplySenderMe} numberOfLines={1}>
+                          {msg.replyTo.senderName}
+                        </Text>
+                        <Text style={styles.bubbleReplyContentMe} numberOfLines={1}>
+                          {msg.replyTo.content}
+                        </Text>
+                      </View>
+                    )}
+                    <Text style={styles.bubbleTextMe}>{displayedContent}</Text>
+                    <Text style={styles.timestampTextMe}>{msg.timestamp}</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity activeOpacity={0.9} onLongPress={() => onShowOptions(msg)}>
+                  <View style={[styles.bubble, styles.bubbleOther]}>
+                    {msg.replyTo && (
+                      <View style={styles.bubbleReplyHeaderOther}>
+                        <Text style={styles.bubbleReplySenderOther} numberOfLines={1}>
+                          {msg.replyTo.senderName}
+                        </Text>
+                        <Text style={styles.bubbleReplyContentOther} numberOfLines={1}>
+                          {msg.replyTo.content}
+                        </Text>
+                      </View>
+                    )}
+                    <Text style={styles.bubbleText}>{displayedContent}</Text>
+                    {msg.translations && (
+                      <TouchableOpacity
+                        activeOpacity={0.7}
+                        onPress={() => onToggleTranslate(msg.id)}
+                        style={styles.translateRow}
+                      >
+                        <TranslateIcon size={12} color={C.blueGlow} />
+                        <Text style={styles.translateText}>
+                          {hasTranslation ? 'Show Original' : 'Translate to Hindi'}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                    <Text style={styles.timestampText}>{msg.timestamp}</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+        </View>
+      </View>
+    </SwipeableMessageRow>
+  );
+}
+
+const messageKeyExtractor = (m: CustomMessage) => m.id;
+
 function ChatScreen() {
   useEffect(() => {
     logger.log('Screen mounted: ChatScreen');
@@ -415,7 +734,20 @@ function ChatScreen() {
   const insets = useSafeAreaInsets();
   const lastScrollYRef = useRef(0);
   const navbarHiddenRef = useRef(false);
-  const { trips, guides, profile, sosAlerts, triggerSOS, resolveSOS, activeRoomId, setActiveRoomId, messages, sendMessage, clearChatUnread, refreshTrips } = useApp();
+  const {
+    trips,
+    guides,
+    profile,
+    sosAlerts,
+    triggerSOS,
+    resolveSOS,
+    activeRoomId,
+    setActiveRoomId,
+    messages,
+    sendMessage,
+    clearChatUnread,
+    refreshTrips,
+  } = useApp();
 
   useEffect(() => {
     clearChatUnread();
@@ -434,22 +766,78 @@ function ChatScreen() {
   const [showGroupUpdate, setShowGroupUpdate] = useState(true);
 
   // Initial Documents per Trip
-  const [tripDocs, setTripDocs] = useState<Record<string, { id: string; title: string; subtitle: string; status: string; date: string }[]>>({
+  const [tripDocs, setTripDocs] = useState<
+    Record<string, { id: string; title: string; subtitle: string; status: string; date: string }[]>
+  >({
     'trip-1': [
-      { id: 'doc-1-1', title: 'Train Tickets (Ranchi - Mathura)', subtitle: 'IRCTC PNR #2847395837', status: 'Confirmed', date: '2026-07-21' },
-      { id: 'doc-1-2', title: 'Temple Special Darshan Passes', subtitle: 'Banke Bihari Temple Entry Pass', status: 'Booked', date: '2026-07-22' },
-      { id: 'doc-1-3', title: 'Aadhaar ID Verification', subtitle: 'All participants verified', status: 'Completed', date: '2026-07-18' },
+      {
+        id: 'doc-1-1',
+        title: 'Train Tickets (Ranchi - Mathura)',
+        subtitle: 'IRCTC PNR #2847395837',
+        status: 'Confirmed',
+        date: '2026-07-21',
+      },
+      {
+        id: 'doc-1-2',
+        title: 'Temple Special Darshan Passes',
+        subtitle: 'Banke Bihari Temple Entry Pass',
+        status: 'Booked',
+        date: '2026-07-22',
+      },
+      {
+        id: 'doc-1-3',
+        title: 'Aadhaar ID Verification',
+        subtitle: 'All participants verified',
+        status: 'Completed',
+        date: '2026-07-18',
+      },
     ],
     'trip-2': [
-      { id: 'doc-2-1', title: 'Inner Line Permits (ILP)', subtitle: 'Approved & Managed by Lobsang Yeshi', status: 'Approved', date: '2026-07-22' },
-      { id: 'doc-2-2', title: 'Bike Rental Agreement', subtitle: 'Royal Enfield Himalayan 411cc', status: 'Signed', date: '2026-07-20' },
-      { id: 'doc-2-3', title: 'Aadhaar / ID Verification', subtitle: 'Aditya, Priya, Vikram verified', status: 'Completed', date: '2026-07-18' },
-      { id: 'doc-2-4', title: 'Travel Insurance Policy', subtitle: 'Digit Policy #DG-2026-9938', status: 'Valid', date: '2026-07-15' },
+      {
+        id: 'doc-2-1',
+        title: 'Inner Line Permits (ILP)',
+        subtitle: 'Approved & Managed by Lobsang Yeshi',
+        status: 'Approved',
+        date: '2026-07-22',
+      },
+      {
+        id: 'doc-2-2',
+        title: 'Bike Rental Agreement',
+        subtitle: 'Royal Enfield Himalayan 411cc',
+        status: 'Signed',
+        date: '2026-07-20',
+      },
+      {
+        id: 'doc-2-3',
+        title: 'Aadhaar / ID Verification',
+        subtitle: 'Aditya, Priya, Vikram verified',
+        status: 'Completed',
+        date: '2026-07-18',
+      },
+      {
+        id: 'doc-2-4',
+        title: 'Travel Insurance Policy',
+        subtitle: 'Digit Policy #DG-2026-9938',
+        status: 'Valid',
+        date: '2026-07-15',
+      },
     ],
     'trip-3': [
-      { id: 'doc-3-1', title: 'Alleppey Houseboat Booking Voucher', subtitle: 'Voucher #LH-938592', status: 'Confirmed', date: '2026-07-21' },
-      { id: 'doc-3-2', title: 'Munnar Resort Stay Confirmation', subtitle: 'Standard Rooms x 4', status: 'Confirmed', date: '2026-07-20' },
-    ]
+      {
+        id: 'doc-3-1',
+        title: 'Alleppey Houseboat Booking Voucher',
+        subtitle: 'Voucher #LH-938592',
+        status: 'Confirmed',
+        date: '2026-07-21',
+      },
+      {
+        id: 'doc-3-2',
+        title: 'Munnar Resort Stay Confirmation',
+        subtitle: 'Standard Rooms x 4',
+        status: 'Confirmed',
+        date: '2026-07-20',
+      },
+    ],
   });
 
   // Document Upload form states
@@ -492,63 +880,69 @@ function ChatScreen() {
     } catch (e) {
       logger.warn('Failed to load chat rooms from backend:', e);
     }
-  };
+  }
 
   // Load message history from DB
   useEffect(() => {
     if (selectedRoomId) {
-      apiService.markChatRead(selectedRoomId).then(() => {
-        setInboxRooms((prevRooms) =>
-          prevRooms.map((room) =>
-            room.id === selectedRoomId ? { ...room, unreadCount: 0 } : room
-          )
-        );
-      }).catch((e) => logger.warn('[Chat] Mark-read failed:', e));
+      apiService
+        .markChatRead(selectedRoomId)
+        .then(() => {
+          setInboxRooms((prevRooms) =>
+            prevRooms.map((room) => (room.id === selectedRoomId ? { ...room, unreadCount: 0 } : room)),
+          );
+        })
+        .catch((e) => logger.warn('[Chat] Mark-read failed:', e));
 
-      apiService.getChatMessages(selectedRoomId).then((history: any[] | null) => {
-        if (history && history.length > 0) {
-          const mappedHistory: CustomMessage[] = history.map((m: any) => {
-            const isMe = m.senderId === profile.id || !!(profile.name && m.senderName === profile.name);
-            return {
-              id: m.id,
-              senderId: m.senderId,
-              senderName: m.senderName,
-              senderRole: m.senderRole,
-              avatar: isMe ? profile.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
-              content: m.content,
-              timestamp: m.timestamp,
-              isMe: isMe,
-              type: m.mediaType === 'IMAGE' ? 'image' : m.mediaType === 'VOICE' ? 'voice' : 'text',
-            };
-          });
-
-          setTripMessages((prev) => ({
-            ...prev,
-            [selectedRoomId]: mappedHistory,
-          }));
-
-          const lastMsg = history[history.length - 1];
-          setInboxRooms((prevRooms) => {
-            const nowIso = new Date().toISOString();
-            const existingRoom = prevRooms.find((r) => r.id === selectedRoomId);
-            const otherRooms = prevRooms.filter((r) => r.id !== selectedRoomId);
-
-            if (existingRoom) {
-              const updatedRoom: ChatRoom = {
-                ...existingRoom,
-                latestMessage: `${lastMsg.senderName === profile.name ? 'You' : lastMsg.senderName}: ${lastMsg.content}`,
-                latestTime: lastMsg.timestamp,
-                unreadCount: 0,
-                lastMessageAt: nowIso,
+      apiService
+        .getChatMessages(selectedRoomId)
+        .then((history: any[] | null) => {
+          if (history && history.length > 0) {
+            const mappedHistory: CustomMessage[] = history.map((m: any) => {
+              const isMe = m.senderId === profile.id || !!(profile.name && m.senderName === profile.name);
+              return {
+                id: m.id,
+                senderId: m.senderId,
+                senderName: m.senderName,
+                senderRole: m.senderRole,
+                avatar: isMe
+                  ? profile.avatar
+                  : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
+                content: m.content,
+                timestamp: m.timestamp,
+                isMe: isMe,
+                type: m.mediaType === 'IMAGE' ? 'image' : m.mediaType === 'VOICE' ? 'voice' : 'text',
               };
-              return [updatedRoom, ...otherRooms];
-            }
-            return prevRooms;
-          });
-        }
-      }).catch((e: any) => {
-        logger.warn('Failed to load chat messages:', e);
-      });
+            });
+
+            setTripMessages((prev) => ({
+              ...prev,
+              [selectedRoomId]: mappedHistory,
+            }));
+
+            const lastMsg = history[history.length - 1];
+            setInboxRooms((prevRooms) => {
+              const nowIso = new Date().toISOString();
+              const existingRoom = prevRooms.find((r) => r.id === selectedRoomId);
+              const otherRooms = prevRooms.filter((r) => r.id !== selectedRoomId);
+
+              if (existingRoom) {
+                const updatedRoom: ChatRoom = {
+                  ...existingRoom,
+                  latestMessage: `${lastMsg.senderName === profile.name ? 'You' : lastMsg.senderName}: ${lastMsg.content}`,
+                  latestTime: lastMsg.timestamp,
+                  unreadCount: 0,
+                  lastMessageAt: nowIso,
+                };
+                return [updatedRoom, ...otherRooms];
+              }
+              return prevRooms;
+            });
+          }
+        })
+        .catch((e: any) => {
+          logger.warn('Failed to load chat messages:', e);
+        });
     }
   }, [selectedRoomId]);
 
@@ -575,7 +969,7 @@ function ChatScreen() {
               name: userName,
               avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
               role: 'Tourist',
-            }
+            },
           ];
         });
       }
@@ -609,7 +1003,9 @@ function ChatScreen() {
           senderId: latestMsg.senderId,
           senderName: latestMsg.senderName,
           senderRole: latestMsg.senderRole,
-          avatar: isMe ? profile.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
+          avatar: isMe
+            ? profile.avatar
+            : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
           content: latestMsg.content,
           timestamp: latestMsg.timestamp,
           isMe: isMe,
@@ -625,7 +1021,7 @@ function ChatScreen() {
       setInboxRooms((prevRooms) => {
         const nowIso = new Date().toISOString();
         const isMe = latestMsg.senderId === profile.id || !!(profile.name && latestMsg.senderName === profile.name);
-        const senderLabel = isMe ? 'You' : (latestMsg.senderName || 'System');
+        const senderLabel = isMe ? 'You' : latestMsg.senderName || 'System';
         const snippetText = `${senderLabel}: ${latestMsg.content}`;
 
         const existingRoom = prevRooms.find((room) => room.id === key);
@@ -644,13 +1040,17 @@ function ChatScreen() {
           const roomType = key.includes('guide') || key.includes('dm') ? 'GUIDE' : 'GROUP';
           const newRoom: ChatRoom = {
             id: key,
-            tripId: latestMsg.roomId?.startsWith('room-') ? latestMsg.roomId.replace('room-', '').split('-')[0] : 'trip-1',
-            name: key.includes('group') ? 'New Group Chat' : (latestMsg.senderName || 'New Chat'),
-            avatar: isMe ? profile.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
+            tripId: latestMsg.roomId?.startsWith('room-')
+              ? latestMsg.roomId.replace('room-', '').split('-')[0]
+              : 'trip-1',
+            name: key.includes('group') ? 'New Group Chat' : latestMsg.senderName || 'New Chat',
+            avatar: isMe
+              ? profile.avatar
+              : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
             type: roomType,
             latestMessage: snippetText,
             latestTime: latestMsg.timestamp || 'Just Now',
-            unreadCount: (key === activeRoomId || isMe) ? 0 : 1,
+            unreadCount: key === activeRoomId || isMe ? 0 : 1,
             badge: roomType === 'GUIDE' ? 'Guide' : 'Group Chat',
             lastMessageAt: nowIso,
           };
@@ -673,7 +1073,8 @@ function ChatScreen() {
   // Load trip members from database dynamically when selectedTripId changes
   useEffect(() => {
     if (selectedTripId) {
-      apiService.getTripMembers(selectedTripId)
+      apiService
+        .getTripMembers(selectedTripId)
         .then((membersData) => {
           if (membersData && Array.isArray(membersData)) {
             const mapped = membersData.map((m: any) => {
@@ -681,9 +1082,10 @@ function ChatScreen() {
               const profileObj = userObj.profile || {};
               const firstName = profileObj.firstName || '';
               const lastName = profileObj.lastName || '';
-              const fullName = (firstName && lastName)
-                ? `${firstName} ${lastName}`.trim()
-                : (userObj.name || userObj.email?.split('@')[0] || 'Traveler');
+              const fullName =
+                firstName && lastName
+                  ? `${firstName} ${lastName}`.trim()
+                  : userObj.name || userObj.email?.split('@')[0] || 'Traveler';
 
               let roleName = m.role || userObj.role || 'Tourist';
               if (roleName === 'TOURIST' || roleName === 'MEMBER') roleName = 'Tourist';
@@ -693,7 +1095,10 @@ function ChatScreen() {
               return {
                 id: userObj.id || m.userId,
                 name: fullName,
-                avatar: profileObj.avatarUrl || userObj.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
+                avatar:
+                  profileObj.avatarUrl ||
+                  userObj.avatar ||
+                  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
                 role: roleName,
               };
             });
@@ -735,10 +1140,11 @@ function ChatScreen() {
           senderName: 'Rajesh Kumar',
           senderRole: 'Guide',
           avatar: 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=150&q=80',
-          content: 'Hello! Feel free to ask me any private questions about temple entry or darshan coordinates here. 🙏',
+          content:
+            'Hello! Feel free to ask me any private questions about temple entry or darshan coordinates here. 🙏',
           timestamp: 'Yesterday, 04:00 PM',
           isMe: false,
-        }
+        },
       ],
       'room-guide-lobsang': [
         {
@@ -749,11 +1155,11 @@ function ChatScreen() {
           content: 'Hello! I am Lobsang Yeshi. We can coordinate here regarding bike gears or acclimatization rest. 🏔️',
           timestamp: 'Yesterday',
           isMe: false,
-        }
+        },
       ],
     };
   });
-  const [tripPolls] = useState<Record<string, typeof INITIAL_TRIP_POLLS['trip-1']>>(INITIAL_TRIP_POLLS);
+  const [tripPolls] = useState<Record<string, (typeof INITIAL_TRIP_POLLS)['trip-1']>>(INITIAL_TRIP_POLLS);
   const [tripExpenses, setTripExpenses] = useState<Record<string, TripExpense[]>>(INITIAL_TRIP_EXPENSES);
 
   // Inbox Rooms state - updates snippet text in real-time
@@ -817,7 +1223,7 @@ function ChatScreen() {
       unreadCount: 0,
       badge: 'Local Rider',
       lastMessageAt: new Date(Date.now() - 1000 * 60 * 60 * 26).toISOString(),
-    }
+    },
   ]);
 
   // Dynamic Room Sync effect
@@ -842,17 +1248,25 @@ function ChatScreen() {
       if (missingTrips.length === 0) return prevRooms;
 
       const newRooms: ChatRoom[] = missingTrips.map((t) => ({
-        id: t.chatRoomId || (
-          t.id === 'trip-1' ? 'room-vrindavan-group' :
-            t.id === 'trip-2' ? 'room-ladakh-group' :
-              t.id === 'trip-3' ? 'room-kerala-group' : `room-${t.id}`
-        ),
+        id:
+          t.chatRoomId ||
+          (t.id === 'trip-1'
+            ? 'room-vrindavan-group'
+            : t.id === 'trip-2'
+              ? 'room-ladakh-group'
+              : t.id === 'trip-3'
+                ? 'room-kerala-group'
+                : `room-${t.id}`),
         tripId: t.id,
         name: t.name.includes('Chat') || t.name.includes('Group') ? t.name : `${t.name} Group Chat`,
-        avatar: t.id === 'trip-1' ? 'https://images.unsplash.com/photo-1548013146-72479768bada?w=150&q=80' :
-          t.id === 'trip-2' ? 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=150&q=80' :
-            t.id === 'trip-3' ? 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=150&q=80' :
-              'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=150&q=80',
+        avatar:
+          t.id === 'trip-1'
+            ? 'https://images.unsplash.com/photo-1548013146-72479768bada?w=150&q=80'
+            : t.id === 'trip-2'
+              ? 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=150&q=80'
+              : t.id === 'trip-3'
+                ? 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=150&q=80'
+                : 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=150&q=80',
         type: 'GROUP',
         latestMessage: 'System: Welcome to the group chat! Start planning together.',
         latestTime: 'Just Now',
@@ -882,10 +1296,12 @@ function ChatScreen() {
   const countdownInterval = useRef<any>(null);
 
   // Scroll ref
-  const scrollViewRef = useRef<ScrollView>(null);
+  // FlatList, not ScrollView, since the message list was virtualized in
+  // Phase 10. `scrollToEnd` exists on both, so scrollToBottom is unchanged.
+  const messageListRef = useRef<FlatList<CustomMessage>>(null);
 
   // Fetch current active trip data
-  const activeTrip = trips.find(t => t.id === selectedTripId) || {
+  const activeTrip = trips.find((t) => t.id === selectedTripId) || {
     id: 'trip-1',
     name: 'Ranchi to Vrindavan Spiritual Journey',
     cities: ['Ranchi', 'Delhi', 'Mathura', 'Vrindavan'],
@@ -897,14 +1313,15 @@ function ChatScreen() {
   };
 
   // Find guide details
-  const activeGuide = guides.find(g => {
-    if (selectedTripId === 'trip-1') return g.id === 'guide-1';
-    if (selectedTripId === 'trip-2') return g.id === 'guide-3';
-    return g.id === 'guide-2';
-  }) || guides[0];
+  const activeGuide =
+    guides.find((g) => {
+      if (selectedTripId === 'trip-1') return g.id === 'guide-1';
+      if (selectedTripId === 'trip-2') return g.id === 'guide-3';
+      return g.id === 'guide-2';
+    }) || guides[0];
 
   // Active global SOS check
-  const activeSOS = sosAlerts.find(sos => sos.status === 'ACTIVE');
+  const activeSOS = sosAlerts.find((sos) => sos.status === 'ACTIVE');
 
   // Retrieve current active messages list (unified feed)
   const currentMessages = tripMessages[selectedRoomId || selectedTripId] || [];
@@ -918,13 +1335,13 @@ function ChatScreen() {
       membersMap.set(activeGuide.name, {
         name: activeGuide.name,
         avatar: activeGuide.avatar,
-        role: 'Guide'
+        role: 'Guide',
       });
     }
 
     // Add database/real-time members
     if (dbMembers && dbMembers.length > 0) {
-      dbMembers.forEach(m => {
+      dbMembers.forEach((m) => {
         // Normalize role name
         let roleName = m.role || 'Tourist';
         if (roleName === 'TOURIST' || roleName === 'MEMBER') roleName = 'Tourist';
@@ -934,20 +1351,22 @@ function ChatScreen() {
         membersMap.set(m.name, {
           name: m.name,
           avatar: m.avatar,
-          role: roleName
+          role: roleName,
         });
       });
     }
 
     // Add other senders from the current active messages
-    currentMessages.forEach(msg => {
+    currentMessages.forEach((msg) => {
       if (msg.senderName && !msg.isMe) {
         // Only add if not already present to avoid overriding database entries
         if (!membersMap.has(msg.senderName)) {
           membersMap.set(msg.senderName, {
             name: msg.senderName,
-            avatar: msg.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
-            role: msg.senderRole || 'Tourist'
+            avatar:
+              msg.avatar ||
+              'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
+            role: msg.senderRole || 'Tourist',
           });
         }
       }
@@ -956,12 +1375,28 @@ function ChatScreen() {
     // Fallback static list of members if message history and database are empty
     if (membersMap.size <= 1) {
       const mockMembers = [
-        { name: 'Neha Sharma', avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80', role: 'Tourist' },
-        { name: 'Vikram Singh', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80', role: 'Tourist' },
-        { name: 'Suman Gupta', avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=150&q=80', role: 'Tourist' },
-        { name: 'Aditya Sen', avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80', role: 'Tourist' },
+        {
+          name: 'Neha Sharma',
+          avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80',
+          role: 'Tourist',
+        },
+        {
+          name: 'Vikram Singh',
+          avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80',
+          role: 'Tourist',
+        },
+        {
+          name: 'Suman Gupta',
+          avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=150&q=80',
+          role: 'Tourist',
+        },
+        {
+          name: 'Aditya Sen',
+          avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80',
+          role: 'Tourist',
+        },
       ];
-      mockMembers.forEach(m => {
+      mockMembers.forEach((m) => {
         if (m.name !== activeGuide?.name) {
           membersMap.set(m.name, m);
         }
@@ -1030,7 +1465,7 @@ function ChatScreen() {
   const scrollToBottom = useCallback((animated = true) => {
     if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
     scrollTimerRef.current = setTimeout(() => {
-      scrollViewRef.current?.scrollToEnd({ animated });
+      messageListRef.current?.scrollToEnd({ animated });
     }, 40);
   }, []);
 
@@ -1066,20 +1501,20 @@ function ChatScreen() {
       content: msgData.content || '',
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       isMe: true,
-      ...msgData
+      ...msgData,
     };
 
     // Update messages map
-    setTripMessages(prev => ({
+    setTripMessages((prev) => ({
       ...prev,
-      [key]: [...(prev[key] || []), newMsg]
+      [key]: [...(prev[key] || []), newMsg],
     }));
 
     // Update the WhatsApp Inbox snippet text dynamically and move room to index 0 (TOP)!
-    setInboxRooms(prevRooms => {
+    setInboxRooms((prevRooms) => {
       const nowIso = new Date().toISOString();
-      const existingRoom = prevRooms.find(r => r.id === selectedRoomId);
-      const otherRooms = prevRooms.filter(r => r.id !== selectedRoomId);
+      const existingRoom = prevRooms.find((r) => r.id === selectedRoomId);
+      const otherRooms = prevRooms.filter((r) => r.id !== selectedRoomId);
 
       if (existingRoom) {
         const updatedRoom: ChatRoom = {
@@ -1102,14 +1537,14 @@ function ChatScreen() {
     if (inputText.trim() === '') return;
     const msgData: Partial<CustomMessage> = {
       content: inputText,
-      type: 'text'
+      type: 'text',
     };
 
     if (replyingToMessage) {
       msgData.replyTo = {
         id: replyingToMessage.id,
         senderName: replyingToMessage.senderName,
-        content: replyingToMessage.content
+        content: replyingToMessage.content,
       };
       setReplyingToMessage(null);
     }
@@ -1135,11 +1570,11 @@ function ChatScreen() {
   // Delete message from current active room history stream
   const handleDeleteMessage = (msgId: string) => {
     const key = selectedRoomId || selectedTripId;
-    setTripMessages(prev => {
+    setTripMessages((prev) => {
       const list = prev[key] || [];
       return {
         ...prev,
-        [key]: list.filter(m => m.id !== msgId)
+        [key]: list.filter((m) => m.id !== msgId),
       };
     });
     setSelectedMessageForOptions(null);
@@ -1147,23 +1582,19 @@ function ChatScreen() {
 
   // Delete document from vault
   const handleDeleteDoc = (docId: string) => {
-    Alert.alert(
-      'Delete Document',
-      'Are you sure you want to delete this document?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            setTripDocs(prev => ({
-              ...prev,
-              [selectedTripId]: (prev[selectedTripId] || []).filter(d => d.id !== docId)
-            }));
-          }
-        }
-      ]
-    );
+    Alert.alert('Delete Document', 'Are you sure you want to delete this document?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          setTripDocs((prev) => ({
+            ...prev,
+            [selectedTripId]: (prev[selectedTripId] || []).filter((d) => d.id !== docId),
+          }));
+        },
+      },
+    ]);
   };
 
   // Simulated upload and submission of document
@@ -1188,12 +1619,12 @@ function ChatScreen() {
           title: docTitle.trim(),
           subtitle: docSubtitle.trim() || 'Uploaded certificate file',
           status: 'Approved',
-          date: new Date().toISOString().split('T')[0]
+          date: new Date().toISOString().split('T')[0],
         };
 
-        setTripDocs(prev => ({
+        setTripDocs((prev) => ({
           ...prev,
-          [selectedTripId]: [...(prev[selectedTripId] || []), newDoc]
+          [selectedTripId]: [...(prev[selectedTripId] || []), newDoc],
         }));
 
         setIsUploading(false);
@@ -1212,7 +1643,7 @@ function ChatScreen() {
     const dmRoomId = `room-dm-${senderName.toLowerCase().replace(/\s+/g, '-')}`;
 
     // Check if DM room already exists in state
-    const existingRoom = inboxRooms.find(r => r.id === dmRoomId);
+    const existingRoom = inboxRooms.find((r) => r.id === dmRoomId);
     if (existingRoom) {
       setSelectedRoomId(dmRoomId);
       setSelectedTripId(existingRoom.tripId);
@@ -1231,10 +1662,10 @@ function ChatScreen() {
         lastMessageAt: new Date().toISOString(),
       };
 
-      setInboxRooms(prev => [newRoom, ...prev]);
+      setInboxRooms((prev) => [newRoom, ...prev]);
 
       // Initialize message history
-      setTripMessages(prev => ({
+      setTripMessages((prev) => ({
         ...prev,
         [dmRoomId]: [
           {
@@ -1245,8 +1676,8 @@ function ChatScreen() {
             content: `This is the beginning of your private message thread with ${senderName}. 👋`,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             isMe: false,
-          }
-        ]
+          },
+        ],
       }));
 
       setSelectedRoomId(dmRoomId);
@@ -1257,9 +1688,9 @@ function ChatScreen() {
   // Vote in Poll
   const handlePollVote = (msgId: string, optionIndex: number) => {
     const key = selectedTripId;
-    setTripMessages(prev => {
+    setTripMessages((prev) => {
       const currentList = prev[key] || [];
-      const updatedList = currentList.map(msg => {
+      const updatedList = currentList.map((msg) => {
         if (msg.id === msgId && msg.pollOptions) {
           const votedPrev = msg.pollVoted;
           const updatedOptions = msg.pollOptions.map((opt, idx) => {
@@ -1271,7 +1702,7 @@ function ChatScreen() {
           return {
             ...msg,
             pollOptions: updatedOptions,
-            pollVoted: votedPrev === optionIndex ? undefined : optionIndex
+            pollVoted: votedPrev === optionIndex ? undefined : optionIndex,
           };
         }
         return msg;
@@ -1289,8 +1720,8 @@ function ChatScreen() {
       pollQuestion: pollForm.question,
       pollOptions: [
         { text: pollForm.opt1, votes: 0 },
-        { text: pollForm.opt2, votes: 0 }
-      ]
+        { text: pollForm.opt2, votes: 0 },
+      ],
     };
     sendNewMessage(pollMessage);
     setPollForm({ question: '', opt1: '', opt2: '' });
@@ -1308,12 +1739,12 @@ function ChatScreen() {
       amount: amt,
       description: expenseForm.desc,
       paidBy: profile.name,
-      splitWith: activeTrip.membersCount || 10
+      splitWith: activeTrip.membersCount || 10,
     };
 
-    setTripExpenses(prev => ({
+    setTripExpenses((prev) => ({
       ...prev,
-      [selectedTripId]: [...(prev[selectedTripId] || []), newExpense]
+      [selectedTripId]: [...(prev[selectedTripId] || []), newExpense],
     }));
 
     const expenseMessage: Partial<CustomMessage> = {
@@ -1321,7 +1752,7 @@ function ChatScreen() {
       content: `💸 Shared Expense: ${expenseForm.desc} - ₹${amt}`,
       expenseAmount: amt,
       expenseDesc: expenseForm.desc,
-      expenseSplitWith: activeTrip.membersCount || 10
+      expenseSplitWith: activeTrip.membersCount || 10,
     };
 
     sendNewMessage(expenseMessage);
@@ -1333,7 +1764,7 @@ function ChatScreen() {
   // Submit Location
   const handleShareLocationSubmit = () => {
     if (!locationForm.label) return;
-    const lat = parseFloat(locationForm.lat) || 27.5650;
+    const lat = parseFloat(locationForm.lat) || 27.565;
     const lng = parseFloat(locationForm.lng) || 77.6593;
 
     const locationMessage: Partial<CustomMessage> = {
@@ -1354,7 +1785,7 @@ function ChatScreen() {
     sendNewMessage({
       content: '🎙️ Audio Recording...',
       type: 'voice',
-      mediaUrl: 'simulated_voice_note.mp3'
+      mediaUrl: 'simulated_voice_note.mp3',
     });
   };
 
@@ -1368,7 +1799,10 @@ function ChatScreen() {
       }
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permissionResult?.granted) {
-        Alert.alert('Permission Required', 'Permission to access photo gallery is required to select photos from your device.');
+        Alert.alert(
+          'Permission Required',
+          'Permission to access photo gallery is required to select photos from your device.',
+        );
         return;
       }
 
@@ -1382,7 +1816,7 @@ function ChatScreen() {
         sendNewMessage({
           content: '📷 Photo Sent',
           type: 'image',
-          mediaUrl: result.assets[0].uri
+          mediaUrl: result.assets[0].uri,
         });
       }
     } catch (err: any) {
@@ -1394,7 +1828,7 @@ function ChatScreen() {
   const startSOSCountdown = () => {
     setSosCountdown(3);
     countdownInterval.current = setInterval(() => {
-      setSosCountdown(prev => {
+      setSosCountdown((prev) => {
         if (prev === null) return null;
         if (prev <= 1) {
           clearInterval(countdownInterval.current!);
@@ -1420,9 +1854,10 @@ function ChatScreen() {
   const triggerSOSEvent = async () => {
     const location = await getCurrentDeviceLocation();
     if (!location.ok) {
-      const message = location.reason === 'PERMISSION_DENIED'
-        ? 'Location permission is required to send an accurate SOS. Please enable it and try again, or call 112 directly.'
-        : 'Could not get your current location. Please try again, or call 112 directly.';
+      const message =
+        location.reason === 'PERMISSION_DENIED'
+          ? 'Location permission is required to send an accurate SOS. Please enable it and try again, or call 112 directly.'
+          : 'Could not get your current location. Please try again, or call 112 directly.';
       toast(message, 'error');
       return;
     }
@@ -1444,16 +1879,16 @@ function ChatScreen() {
       isMe: true,
     };
 
-    setTripMessages(prev => {
+    setTripMessages((prev) => {
       const key = selectedTripId;
       return {
         ...prev,
-        [key]: [...(prev[key] || []), sosMessage]
+        [key]: [...(prev[key] || []), sosMessage],
       };
     });
 
-    setInboxRooms(prevRooms =>
-      prevRooms.map(room => {
+    setInboxRooms((prevRooms) =>
+      prevRooms.map((room) => {
         if (room.tripId === selectedTripId) {
           return {
             ...room,
@@ -1463,7 +1898,7 @@ function ChatScreen() {
           };
         }
         return room;
-      })
+      }),
     );
   };
 
@@ -1487,8 +1922,9 @@ function ChatScreen() {
   // Filtered and sorted rooms listing (pins at the top!)
   const filteredRooms = useMemo(() => {
     return inboxRooms
-      .filter(room => {
-        const matchesSearch = room.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      .filter((room) => {
+        const matchesSearch =
+          room.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
           room.latestMessage.toLowerCase().includes(searchQuery.toLowerCase());
 
         if (!matchesSearch) return false;
@@ -1512,18 +1948,25 @@ function ChatScreen() {
   }, [inboxRooms, searchQuery, inboxFilter, pinnedRoomIds]);
 
   // Find Room info of the selected room
-  let activeRoom = inboxRooms.find(r => r.id === selectedRoomId);
+  let activeRoom = inboxRooms.find((r) => r.id === selectedRoomId);
   if (!activeRoom && selectedRoomId) {
-    const matchedTrip = trips.find(t => t.chatRoomId === selectedRoomId || `room-${t.id}` === selectedRoomId);
+    const matchedTrip = trips.find((t) => t.chatRoomId === selectedRoomId || `room-${t.id}` === selectedRoomId);
     if (matchedTrip) {
       activeRoom = {
         id: selectedRoomId,
         tripId: matchedTrip.id,
-        name: matchedTrip.name.includes('Chat') || matchedTrip.name.includes('Group') ? matchedTrip.name : `${matchedTrip.name} Group Chat`,
-        avatar: matchedTrip.id === 'trip-1' ? 'https://images.unsplash.com/photo-1548013146-72479768bada?w=150&q=80' :
-          matchedTrip.id === 'trip-2' ? 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=150&q=80' :
-            matchedTrip.id === 'trip-3' ? 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=150&q=80' :
-              'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=150&q=80',
+        name:
+          matchedTrip.name.includes('Chat') || matchedTrip.name.includes('Group')
+            ? matchedTrip.name
+            : `${matchedTrip.name} Group Chat`,
+        avatar:
+          matchedTrip.id === 'trip-1'
+            ? 'https://images.unsplash.com/photo-1548013146-72479768bada?w=150&q=80'
+            : matchedTrip.id === 'trip-2'
+              ? 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=150&q=80'
+              : matchedTrip.id === 'trip-3'
+                ? 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=150&q=80'
+                : 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=150&q=80',
         type: 'GROUP',
         latestMessage: 'System: Welcome to the group chat! Start planning together.',
         latestTime: 'Just Now',
@@ -1537,7 +1980,6 @@ function ChatScreen() {
   if (!selectedRoomId) {
     return (
       <SafeAreaView edges={['top', 'left', 'right']} style={styles.inboxContainer}>
-
         {/* WhatsApp-Style Header */}
         <View style={styles.inboxHeader}>
           <Text style={styles.inboxHeaderTitle}>TravelStar Chats</Text>
@@ -1567,10 +2009,9 @@ function ChatScreen() {
 
         {/* Category filters */}
         <View style={styles.inboxFiltersRow}>
-          {(['ALL', 'GROUPS', 'GUIDES'] as const).map(filter => {
+          {(['ALL', 'GROUPS', 'GUIDES'] as const).map((filter) => {
             const isSelected = inboxFilter === filter;
-            const label = filter === 'ALL' ? 'All Chats' :
-              filter === 'GROUPS' ? 'Groups' : 'Guides';
+            const label = filter === 'ALL' ? 'All Chats' : filter === 'GROUPS' ? 'Groups' : 'Guides';
 
             return (
               <TouchableOpacity
@@ -1579,9 +2020,7 @@ function ChatScreen() {
                 onPress={() => setInboxFilter(filter)}
                 activeOpacity={0.8}
               >
-                <Text style={[styles.filterPillText, isSelected && styles.filterPillTextSelected]}>
-                  {label}
-                </Text>
+                <Text style={[styles.filterPillText, isSelected && styles.filterPillTextSelected]}>{label}</Text>
               </TouchableOpacity>
             );
           })}
@@ -1641,7 +2080,7 @@ function ChatScreen() {
                 key={room.id}
                 style={[
                   styles.roomItemTouch,
-                  activeSOS && room.tripId === activeSOS.id.split('-')[1] && styles.sosBlinkingRoomBorder
+                  activeSOS && room.tripId === activeSOS.id.split('-')[1] && styles.sosBlinkingRoomBorder,
                 ]}
                 onPress={() => {
                   setSelectedRoomId(room.id);
@@ -1660,24 +2099,24 @@ function ChatScreen() {
                 <View style={styles.roomMetaWrap}>
                   <View style={styles.roomNameRow}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 6 }}>
-                      <Text style={[styles.roomNameText, { flex: 1, marginRight: 4 }]} numberOfLines={1}>{room.name}</Text>
-                      {pinnedRoomIds.has(room.id) && (
-                        <Pin size={12} color={C.blueGlow} />
-                      )}
+                      <Text style={[styles.roomNameText, { flex: 1, marginRight: 4 }]} numberOfLines={1}>
+                        {room.name}
+                      </Text>
+                      {pinnedRoomIds.has(room.id) && <Pin size={12} color={C.blueGlow} />}
                     </View>
                     <Text style={[styles.roomTimeText, hasUnread && { color: C.blueGlow }]}>{room.latestTime}</Text>
                   </View>
 
                   <View style={styles.roomSnippetRow}>
-                    <Text style={[styles.roomSnippetText, hasUnread && { color: '#FFF', fontWeight: '500' }]} numberOfLines={1}>
+                    <Text
+                      style={[styles.roomSnippetText, hasUnread && { color: '#FFF', fontWeight: '500' }]}
+                      numberOfLines={1}
+                    >
                       {room.latestMessage}
                     </Text>
                     <View style={styles.roomBadgeWrap}>
                       {room.badge && (
-                        <View style={[
-                          styles.inboxTag,
-                          room.type === 'GUIDE' ? styles.tagPurple : styles.tagBlue
-                        ]}>
+                        <View style={[styles.inboxTag, room.type === 'GUIDE' ? styles.tagPurple : styles.tagBlue]}>
                           <Text style={styles.inboxTagText}>{room.badge}</Text>
                         </View>
                       )}
@@ -1708,7 +2147,8 @@ function ChatScreen() {
                   {selectedRoomForOptions.name} Options
                 </Text>
                 <Text style={styles.optionsHeaderSubText} numberOfLines={1}>
-                  {selectedRoomForOptions.type === 'GROUP' ? 'Group Chat' : 'Direct Message'} • {selectedRoomForOptions.badge || 'Contact'}
+                  {selectedRoomForOptions.type === 'GROUP' ? 'Group Chat' : 'Direct Message'} •{' '}
+                  {selectedRoomForOptions.badge || 'Contact'}
                 </Text>
               </View>
 
@@ -1719,7 +2159,7 @@ function ChatScreen() {
                 style={styles.optionsRowBtn}
                 onPress={() => {
                   const roomId = selectedRoomForOptions.id;
-                  setPinnedRoomIds(prev => {
+                  setPinnedRoomIds((prev) => {
                     const next = new Set(prev);
                     next.has(roomId) ? next.delete(roomId) : next.add(roomId);
                     return next;
@@ -1738,13 +2178,13 @@ function ChatScreen() {
                 style={styles.optionsRowBtn}
                 onPress={() => {
                   const roomId = selectedRoomForOptions.id;
-                  setInboxRooms(prev =>
-                    prev.map(r => {
+                  setInboxRooms((prev) =>
+                    prev.map((r) => {
                       if (r.id === roomId) {
                         return { ...r, unreadCount: r.unreadCount > 0 ? 0 : 3 };
                       }
                       return r;
-                    })
+                    }),
                   );
                   setSelectedRoomForOptions(null);
                 }}
@@ -1769,22 +2209,22 @@ function ChatScreen() {
                         text: 'Clear',
                         style: 'destructive',
                         onPress: () => {
-                          setTripMessages(prev => ({
+                          setTripMessages((prev) => ({
                             ...prev,
-                            [roomId]: []
+                            [roomId]: [],
                           }));
                           // Reset the room's latest message snippet
-                          setInboxRooms(prev =>
-                            prev.map(r => {
+                          setInboxRooms((prev) =>
+                            prev.map((r) => {
                               if (r.id === roomId) {
                                 return { ...r, latestMessage: 'No messages in this chat' };
                               }
                               return r;
-                            })
+                            }),
                           );
-                        }
-                      }
-                    ]
+                        },
+                      },
+                    ],
                   );
                   setSelectedRoomForOptions(null);
                 }}
@@ -1811,10 +2251,10 @@ function ChatScreen() {
                         text: isGroup ? 'Leave' : 'Delete',
                         style: 'destructive',
                         onPress: () => {
-                          setInboxRooms(prev => prev.filter(r => r.id !== roomId));
-                        }
-                      }
-                    ]
+                          setInboxRooms((prev) => prev.filter((r) => r.id !== roomId));
+                        },
+                      },
+                    ],
                   );
                   setSelectedRoomForOptions(null);
                 }}
@@ -1827,10 +2267,7 @@ function ChatScreen() {
 
               <View style={styles.optionsCancelDivider} />
 
-              <TouchableOpacity
-                style={styles.optionsCancelBtn}
-                onPress={() => setSelectedRoomForOptions(null)}
-              >
+              <TouchableOpacity style={styles.optionsCancelBtn} onPress={() => setSelectedRoomForOptions(null)}>
                 <Text style={styles.optionsCancelText}>Cancel</Text>
               </TouchableOpacity>
             </View>
@@ -1843,7 +2280,6 @@ function ChatScreen() {
   // --- SCREEN 2: CLEAN CONVERSATION DETAIL VIEW ---
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
-
       {/* ─── CLEAN ROOM HEADER BAR ───────────────────────────── */}
       <View style={styles.roomHeaderBar}>
         <View style={styles.headerLeftMeta}>
@@ -1859,12 +2295,10 @@ function ChatScreen() {
 
           <Image source={{ uri: activeRoom?.avatar }} style={styles.roomHeaderAvatar} />
 
-          <TouchableOpacity
-            style={styles.roomHeaderTitles}
-            onPress={() => setIsSettingsOpen(true)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.roomHeaderNameText} numberOfLines={1}>{activeRoom?.name}</Text>
+          <TouchableOpacity style={styles.roomHeaderTitles} onPress={() => setIsSettingsOpen(true)} activeOpacity={0.7}>
+            <Text style={styles.roomHeaderNameText} numberOfLines={1}>
+              {activeRoom?.name}
+            </Text>
             <View style={styles.activityStatusRow}>
               <View style={styles.statusGreenDot} />
               <Text style={styles.roomHeaderStatusText}>
@@ -1903,9 +2337,7 @@ function ChatScreen() {
             activeOpacity={0.8}
           >
             <MessageSquare size={17} color={activeTab === 'chat' ? '#C084FC' : '#7E8494'} />
-            <Text style={[styles.tabItemLabel, activeTab === 'chat' && styles.tabItemLabelActive]}>
-              Chat
-            </Text>
+            <Text style={[styles.tabItemLabel, activeTab === 'chat' && styles.tabItemLabelActive]}>Chat</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -1914,9 +2346,7 @@ function ChatScreen() {
             activeOpacity={0.8}
           >
             <Calendar size={17} color={activeTab === 'itinerary' ? '#C084FC' : '#7E8494'} />
-            <Text style={[styles.tabItemLabel, activeTab === 'itinerary' && styles.tabItemLabelActive]}>
-              Itinerary
-            </Text>
+            <Text style={[styles.tabItemLabel, activeTab === 'itinerary' && styles.tabItemLabelActive]}>Itinerary</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -1925,9 +2355,7 @@ function ChatScreen() {
             activeOpacity={0.8}
           >
             <FileText size={17} color={activeTab === 'docs' ? '#C084FC' : '#7E8494'} />
-            <Text style={[styles.tabItemLabel, activeTab === 'docs' && styles.tabItemLabelActive]}>
-              Docs
-            </Text>
+            <Text style={[styles.tabItemLabel, activeTab === 'docs' && styles.tabItemLabelActive]}>Docs</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -1936,9 +2364,7 @@ function ChatScreen() {
             activeOpacity={0.8}
           >
             <UsersIcon size={17} color={activeTab === 'members' ? '#C084FC' : '#7E8494'} />
-            <Text style={[styles.tabItemLabel, activeTab === 'members' && styles.tabItemLabelActive]}>
-              Members
-            </Text>
+            <Text style={[styles.tabItemLabel, activeTab === 'members' && styles.tabItemLabelActive]}>Members</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -1953,15 +2379,10 @@ function ChatScreen() {
         >
           <View style={styles.sosBannerLeft}>
             <AlertTriangle size={18} color="#FFF" style={styles.sosPulse} />
-            <Text style={styles.sosBannerText}>
-              🚨 SOS Alert: {activeSOS.userName} needs help!
-            </Text>
+            <Text style={styles.sosBannerText}>🚨 SOS Alert: {activeSOS.userName} needs help!</Text>
           </View>
           <View style={styles.sosBannerRight}>
-            <TouchableOpacity
-              style={styles.sosBannerActionBtn}
-              onPress={() => router.navigate('/map')}
-            >
+            <TouchableOpacity style={styles.sosBannerActionBtn} onPress={() => router.navigate('/map')}>
               <Text style={styles.sosBannerBtnText}>Locate</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -1992,307 +2413,74 @@ function ChatScreen() {
                 </View>
               </View>
               <View style={styles.groupUpdateRight}>
-                <TouchableOpacity
-                  style={styles.groupUpdateViewBtn}
-                  onPress={() => setIsSettingsOpen(true)}
-                >
+                <TouchableOpacity style={styles.groupUpdateViewBtn} onPress={() => setIsSettingsOpen(true)}>
                   <Text style={styles.groupUpdateViewBtnText}>View Details</Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.groupUpdateCloseBtn}
-                  onPress={() => setShowGroupUpdate(false)}
-                >
+                <TouchableOpacity style={styles.groupUpdateCloseBtn} onPress={() => setShowGroupUpdate(false)}>
                   <X size={14} color="#7E8494" />
                 </TouchableOpacity>
               </View>
             </View>
           )}
 
-          <ScrollView
-            ref={scrollViewRef}
+          <FlatList
+            ref={messageListRef}
+            data={currentMessages}
+            keyExtractor={messageKeyExtractor}
+            renderItem={({ item, index }) => (
+              <MessageBubble
+                msg={item}
+                previousSenderName={index > 0 ? currentMessages[index - 1].senderName : null}
+                isTranslated={translatedMsgs.has(item.id)}
+                onReply={setReplyingToMessage}
+                onShowOptions={setSelectedMessageForOptions}
+                onToggleTranslate={toggleTranslate}
+                onPollVote={handlePollVote}
+                onOpenMap={() => router.navigate('/map')}
+                canResolveSOS={profile.role === 'ORGANIZER' || profile.role === 'GUIDE'}
+                onResolveSOS={handleResolveSOSEvent}
+              />
+            )}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.scrollContent}
             onContentSizeChange={() => scrollToBottom(false)}
-          >
-            {currentMessages.map((msg, idx) => {
-              const hasTranslation = !!translatedMsgs.has(msg.id);
-              const displayedContent = hasTranslation && msg.translations?.hindi ? msg.translations.hindi : msg.content;
-              const isSOS = msg.type === 'sos';
-              const isSystem = msg.senderRole === 'SYSTEM' || msg.senderName === 'System';
-
-              if (isSystem) {
-                return (
-                  <View key={msg.id} style={styles.systemMessageContainer}>
-                    <Text style={styles.systemMessageText}>{displayedContent}</Text>
-                  </View>
-                );
-              }
-
-              // Check if previous message was sent by the same sender using senderName as key
-              const isConsecutive = idx > 0 && currentMessages[idx - 1].senderName === msg.senderName;
-
-              return (
-                <SwipeableMessageRow
-                  key={msg.id}
-                  isMe={msg.isMe}
-                  onSwipeReply={() => setReplyingToMessage(msg)}
-                >
-                  <View style={[styles.messageRow, msg.isMe && { justifyContent: 'flex-end' }, isSOS && styles.sosMessageBg, isConsecutive && { marginTop: 2 }]}>
-                    {!msg.isMe && (
-                      <View style={styles.avatarContainer}>
-                        {!isConsecutive && (
-                          <>
-                            <Image source={{ uri: msg.avatar }} style={styles.messageAvatar} />
-                          </>
-                        )}
-                      </View>
-                    )}
-
-                    <View style={[styles.messageBody, msg.isMe ? { flex: 1, alignItems: 'flex-end' } : { flex: 1 }]}>
-                      {!isConsecutive && (
-                        <View style={[styles.senderHeader, msg.isMe && { justifyContent: 'flex-end' }]}>
-                          <Text style={[
-                            styles.senderNameText,
-                            msg.senderRole === 'Organizer' ? { color: C.blueGlow } :
-                              msg.senderRole === 'Guide' ? { color: C.purple } : { color: C.green }
-                          ]}>
-                            {msg.isMe ? 'You' : msg.senderName}
-                          </Text>
-                          {msg.senderRole && !msg.isMe && (
-                            <View style={[
-                              styles.rolePill,
-                              msg.senderRole === 'Organizer' ? styles.rolePillOrganizer :
-                                msg.senderRole === 'Guide' ? styles.rolePillGuide : styles.rolePillTourist
-                            ]}>
-                              <Text style={styles.rolePillText}>{msg.senderRole}</Text>
-                            </View>
-                          )}
-                        </View>
-                      )}
-
-                      {msg.type === 'poll' ? (
-                        <View style={styles.pollCard}>
-                          <View style={styles.pollHeader}>
-                            <BarChart2 size={16} color={C.orange} style={{ marginRight: 6 }} />
-                            <Text style={styles.pollQuestionText}>{msg.pollQuestion}</Text>
-                          </View>
-                          {msg.pollOptions?.map((opt, idx) => {
-                            const totalVotes = msg.pollOptions?.reduce((acc, current) => acc + current.votes, 0) || 1;
-                            const percent = Math.round((opt.votes / totalVotes) * 100) || 0;
-                            const isVotedByMe = msg.pollVoted === idx;
-
-                            return (
-                              <TouchableOpacity
-                                key={opt.text}
-                                style={[styles.pollOptionTouch, isVotedByMe && styles.pollOptionVoted]}
-                                onPress={() => handlePollVote(msg.id, idx)}
-                              >
-                                <View style={[styles.pollProgressFill, { width: `${percent}%` }]} />
-                                <View style={styles.pollOptionContent}>
-                                  <Text style={[styles.pollOptionLabel, isVotedByMe && { fontWeight: '800', color: '#FFF' }]}>{opt.text}</Text>
-                                  <Text style={styles.pollOptionPercent}>{percent}% ({opt.votes})</Text>
-                                </View>
-                              </TouchableOpacity>
-                            );
-                          })}
-                          <Text style={styles.pollFooter}>Tap option to vote in thread</Text>
-                        </View>
-                      ) : msg.type === 'expense' ? (
-                        <View style={styles.expenseCard}>
-                          <View style={styles.expenseHeader}>
-                            <DollarSign size={16} color={C.green} />
-                            <Text style={styles.expenseHeaderTitle}>Shared Expense Logged</Text>
-                          </View>
-                          <Text style={styles.expenseBillDesc}>{msg.expenseDesc}</Text>
-                          <Text style={styles.expenseBillAmount}>₹{msg.expenseAmount}</Text>
-                          <View style={styles.expenseDivider} />
-                          <View style={styles.expenseFooterRow}>
-                            <Text style={styles.expenseShareText}>Split with {msg.expenseSplitWith} members</Text>
-                            <Text style={styles.expenseCostHead}>₹{Math.round((msg.expenseAmount || 0) / (msg.expenseSplitWith || 1))}/head</Text>
-                          </View>
-                        </View>
-                      ) : msg.type === 'location' ? (
-                        <View style={styles.locationCard}>
-                          <View style={styles.locationHeader}>
-                            <MapPin size={16} color={C.blueGlow} />
-                            <Text style={styles.locationCardTitle}>Shared Meeting Point</Text>
-                          </View>
-                          <Text style={styles.locationText}>{msg.content}</Text>
-                          <View style={styles.miniMapPlaceholder}>
-                            <View style={styles.radarRing1} />
-                            <View style={styles.radarRing2} />
-                            <MapPin size={24} color={C.red} style={styles.miniMapPin} />
-                            <Text style={styles.coordsText}>Lat: {msg.locationCoords?.latitude.toFixed(4)}, Lng: {msg.locationCoords?.longitude.toFixed(4)}</Text>
-                          </View>
-                          <TouchableOpacity
-                            style={styles.locationActionTouch}
-                            onPress={() => router.navigate('/map')}
-                          >
-                            <Text style={styles.locationActionText}>Open Live Navigation</Text>
-                          </TouchableOpacity>
-                        </View>
-                      ) : msg.type === 'voice' ? (
-                        <View style={styles.voiceNoteCard}>
-                          <TouchableOpacity style={styles.playButtonCircle}>
-                            <View style={styles.playArrow} />
-                          </TouchableOpacity>
-                          <View style={styles.waveformContainer}>
-                            <View style={[styles.waveBar, { height: 12, backgroundColor: C.blueGlow }]} />
-                            <View style={[styles.waveBar, { height: 22, backgroundColor: C.blueGlow }]} />
-                            <View style={[styles.waveBar, { height: 18, backgroundColor: C.blueGlow }]} />
-                            <View style={[styles.waveBar, { height: 14, backgroundColor: C.textSec }]} />
-                            <View style={[styles.waveBar, { height: 8, backgroundColor: C.textSec }]} />
-                            <View style={[styles.waveBar, { height: 16, backgroundColor: C.textSec }]} />
-                            <View style={[styles.waveBar, { height: 24, backgroundColor: C.textSec }]} />
-                            <View style={[styles.waveBar, { height: 10, backgroundColor: C.textSec }]} />
-                          </View>
-                          <Text style={styles.voiceDuration}>0:04</Text>
-                        </View>
-                      ) : msg.type === 'image' ? (
-                        <View style={styles.imageCard}>
-                          <Image source={{ uri: msg.mediaUrl }} style={styles.imageMedia} />
-                          <View style={styles.imageOverlayTextRow}>
-                            <Text style={styles.imageCardDesc} numberOfLines={1}>{msg.content}</Text>
-                            <TouchableOpacity style={styles.imageDownloadBtn}>
-                              <Download size={14} color="#FFF" />
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                      ) : msg.type === 'sos' ? (
-                        <View style={styles.sosCardAlert}>
-                          <View style={styles.sosAlertHeader}>
-                            <AlertCircle size={18} color="#FFF" />
-                            <Text style={styles.sosAlertHeaderTitle}>CRITICAL EMERGENCY WARNING</Text>
-                          </View>
-                          <Text style={styles.sosAlertDesc}>{msg.content}</Text>
-                          <Text style={styles.sosAlertCoords}>Coordinates: {msg.locationCoords?.latitude.toFixed(4)}, {msg.locationCoords?.longitude.toFixed(4)}</Text>
-                          <View style={styles.sosAlertBtnRow}>
-                            <TouchableOpacity
-                              style={[styles.sosAlertBtn, { backgroundColor: 'rgba(255,255,255,0.15)' }]}
-                              onPress={() => router.navigate('/map')}
-                            >
-                              <Text style={styles.sosAlertBtnText}>Show on Map</Text>
-                            </TouchableOpacity>
-                            {profile.role === 'ORGANIZER' || profile.role === 'GUIDE' ? (
-                              <TouchableOpacity
-                                style={[styles.sosAlertBtn, { backgroundColor: C.green }]}
-                                onPress={handleResolveSOSEvent}
-                              >
-                                <Text style={styles.sosAlertBtnText}>Mark as Safe</Text>
-                              </TouchableOpacity>
-                            ) : null}
-                          </View>
-                        </View>
-                      ) : (
-                        <View style={[msg.isMe ? styles.instagramBubbleContainerMe : styles.bubbleContainerOther]}>
-                          {msg.isMe ? (
-                            <TouchableOpacity
-                              activeOpacity={0.9}
-                              onLongPress={() => setSelectedMessageForOptions(msg)}
-                            >
-                              <LinearGradient
-                                colors={['#0066FF', '#7C3AED', '#BA68C8']}
-                                start={(() => {
-                                  // Compute deterministic but randomized start coordinates based on message ID
-                                  let hash = 0;
-                                  const idStr = msg.id || 'random';
-                                  for (let i = 0; i < idStr.length; i++) {
-                                    hash = idStr.charCodeAt(i) + ((hash << 5) - hash);
-                                  }
-                                  const normX = (Math.abs(hash) % 5) / 10; // 0.0 to 0.4
-                                  const normY = (Math.abs(hash >> 2) % 5) / 10; // 0.0 to 0.4
-                                  return { x: normX, y: normY };
-                                })()}
-                                end={(() => {
-                                  let hash = 0;
-                                  const idStr = msg.id || 'random';
-                                  for (let i = 0; i < idStr.length; i++) {
-                                    hash = idStr.charCodeAt(i) + ((hash << 3) - hash);
-                                  }
-                                  const normX = 0.6 + (Math.abs(hash) % 5) / 10; // 0.6 to 1.0
-                                  const normY = 0.6 + (Math.abs(hash >> 2) % 5) / 10; // 0.6 to 1.0
-                                  return { x: normX, y: normY };
-                                })()}
-                                style={styles.instagramGradientBubble}
-                              >
-                                {msg.replyTo && (
-                                  <View style={styles.bubbleReplyHeaderMe}>
-                                    <Text style={styles.bubbleReplySenderMe} numberOfLines={1}>
-                                      {msg.replyTo.senderName}
-                                    </Text>
-                                    <Text style={styles.bubbleReplyContentMe} numberOfLines={1}>
-                                      {msg.replyTo.content}
-                                    </Text>
-                                  </View>
-                                )}
-                                <Text style={styles.bubbleTextMe}>{displayedContent}</Text>
-                                <Text style={styles.timestampTextMe}>{msg.timestamp}</Text>
-                              </LinearGradient>
-                            </TouchableOpacity>
-                          ) : (
-                            <TouchableOpacity
-                              activeOpacity={0.9}
-                              onLongPress={() => setSelectedMessageForOptions(msg)}
-                            >
-                              <View style={[styles.bubble, styles.bubbleOther]}>
-                                {msg.replyTo && (
-                                  <View style={styles.bubbleReplyHeaderOther}>
-                                    <Text style={styles.bubbleReplySenderOther} numberOfLines={1}>
-                                      {msg.replyTo.senderName}
-                                    </Text>
-                                    <Text style={styles.bubbleReplyContentOther} numberOfLines={1}>
-                                      {msg.replyTo.content}
-                                    </Text>
-                                  </View>
-                                )}
-                                <Text style={styles.bubbleText}>{displayedContent}</Text>
-                                {msg.translations && (
-                                  <TouchableOpacity
-                                    activeOpacity={0.7}
-                                    onPress={() => toggleTranslate(msg.id)}
-                                    style={styles.translateRow}
-                                  >
-                                    <TranslateIcon size={12} color={C.blueGlow} />
-                                    <Text style={styles.translateText}>
-                                      {hasTranslation ? 'Show Original' : 'Translate to Hindi'}
-                                    </Text>
-                                  </TouchableOpacity>
-                                )}
-                                <Text style={styles.timestampText}>{msg.timestamp}</Text>
-                              </View>
-                            </TouchableOpacity>
-                          )}
-                        </View>
-                      )}
+            initialNumToRender={15}
+            maxToRenderPerBatch={12}
+            windowSize={11}
+            removeClippedSubviews
+            ListFooterComponent={
+              <>
+                {isTyping && (
+                  <View style={styles.typingIndicatorRow}>
+                    <View style={styles.typingDotWrap}>
+                      <Text style={styles.typingText}>{typerName} is typing</Text>
+                      <ActivityIndicator size="small" color={C.textSec} style={{ marginLeft: 6 }} />
                     </View>
                   </View>
-                </SwipeableMessageRow>
-              );
-            })}
+                )}
 
-            {isTyping && (
-              <View style={styles.typingIndicatorRow}>
-                <View style={styles.typingDotWrap}>
-                  <Text style={styles.typingText}>{typerName} is typing</Text>
-                  <ActivityIndicator size="small" color={C.textSec} style={{ marginLeft: 6 }} />
-                </View>
-              </View>
-            )}
-
-            {/* Scroll spacer dynamically adjusts with keyboard height to keep latest messages just above the input box */}
-            <Animated.View style={{ height: Animated.add(selectedRoomId ? 110 : 170, keyboardOffset) }} />
-          </ScrollView>
+                {/* Scroll spacer dynamically adjusts with keyboard height to keep latest messages just above the input box */}
+                <Animated.View style={{ height: Animated.add(selectedRoomId ? 110 : 170, keyboardOffset) }} />
+              </>
+            }
+          />
 
           {/* Floating Attachments Drawer */}
-          <Animated.View style={[
-            styles.attachmentPanel,
-            {
-              height: attachMenuHeight,
-              bottom: Animated.add(selectedRoomId ? Math.max(insets.bottom + 58, 74) : 140, keyboardOffset),
-              borderWidth: isAttachmentOpen ? 1 : 0,
-            }
-          ]}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.attachScrollInner}>
+          <Animated.View
+            style={[
+              styles.attachmentPanel,
+              {
+                height: attachMenuHeight,
+                bottom: Animated.add(selectedRoomId ? Math.max(insets.bottom + 58, 74) : 140, keyboardOffset),
+                borderWidth: isAttachmentOpen ? 1 : 0,
+              },
+            ]}
+          >
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.attachScrollInner}
+            >
               <TouchableOpacity style={styles.attachBtn} onPress={() => setActiveModal('POLL')}>
                 <LinearGradient colors={['#FF8A65', '#FF5722']} style={styles.attachIconCircle}>
                   <BarChart2 size={18} color="#FFF" />
@@ -2331,13 +2519,15 @@ function ChatScreen() {
           </Animated.View>
 
           {/* BOTTOM MESSAGE INPUT BAR — lifts with keyboard, dynamically positioned when tab bar is hidden, respecting system bottom inset */}
-          <Animated.View style={[
-            styles.bottomInputBarDetail,
-            {
-              bottom: keyboardOffset,
-              paddingBottom: insets.bottom > 0 ? insets.bottom + 12 : 20
-            }
-          ]}>
+          <Animated.View
+            style={[
+              styles.bottomInputBarDetail,
+              {
+                bottom: keyboardOffset,
+                paddingBottom: insets.bottom > 0 ? insets.bottom + 12 : 20,
+              },
+            ]}
+          >
             {replyingToMessage && (
               <View style={styles.replyPreviewContainer}>
                 <View style={styles.replyPreviewTextCol}>
@@ -2348,10 +2538,7 @@ function ChatScreen() {
                     {replyingToMessage.content}
                   </Text>
                 </View>
-                <TouchableOpacity
-                  style={styles.replyPreviewCloseBtn}
-                  onPress={() => setReplyingToMessage(null)}
-                >
+                <TouchableOpacity style={styles.replyPreviewCloseBtn} onPress={() => setReplyingToMessage(null)}>
                   <X size={14} color={C.textSec} />
                 </TouchableOpacity>
               </View>
@@ -2382,7 +2569,7 @@ function ChatScreen() {
               <TouchableOpacity
                 style={[
                   styles.sendIconCircle,
-                  { backgroundColor: inputText.trim() === '' ? 'rgba(255, 255, 255, 0.08)' : C.blue }
+                  { backgroundColor: inputText.trim() === '' ? 'rgba(255, 255, 255, 0.08)' : C.blue },
                 ]}
                 onPress={handleSendText}
                 disabled={inputText.trim() === ''}
@@ -2393,7 +2580,11 @@ function ChatScreen() {
           </Animated.View>
         </View>
       ) : activeTab === 'itinerary' ? (
-        <ScrollView style={styles.tabScrollView} showsVerticalScrollIndicator={false} contentContainerStyle={styles.tabScrollViewContent}>
+        <ScrollView
+          style={styles.tabScrollView}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.tabScrollViewContent}
+        >
           {/* Summary / Stats Card */}
           <LinearGradient
             colors={['#181236', '#0F0D22']}
@@ -2440,30 +2631,94 @@ function ChatScreen() {
                 const getTripItineraryHighlights = (tripId: string) => {
                   if (tripId === 'trip-2') {
                     return [
-                      { day: 'Day 1', title: 'Manali Assembly', desc: 'Assemble at Mall Road. Bike check & safety briefing.' },
-                      { day: 'Day 2', title: 'Sarchu Ride', desc: 'Cross Rohtang Pass / Atal Tunnel. Rest in Sarchu camps (14k ft).' },
-                      { day: 'Day 3', title: 'Leh Arrival', desc: 'Ride through Nakeela & Tanglang La passes. Reach Leh.' },
-                      { day: 'Day 4-5', title: 'Leh Acclimatization', desc: 'Local exploration, rest, and oxygen checks.' },
-                      { day: 'Day 6-7', title: 'Nubra Valley via Khardung La', desc: 'Cross one of the highest roads. Desert camping & double-hump camels.' },
-                      { day: 'Day 8-9', title: 'Pangong Tso Lakeside', desc: 'High-altitude lake riding. Overnight in lakeside tents.' },
+                      {
+                        day: 'Day 1',
+                        title: 'Manali Assembly',
+                        desc: 'Assemble at Mall Road. Bike check & safety briefing.',
+                      },
+                      {
+                        day: 'Day 2',
+                        title: 'Sarchu Ride',
+                        desc: 'Cross Rohtang Pass / Atal Tunnel. Rest in Sarchu camps (14k ft).',
+                      },
+                      {
+                        day: 'Day 3',
+                        title: 'Leh Arrival',
+                        desc: 'Ride through Nakeela & Tanglang La passes. Reach Leh.',
+                      },
+                      {
+                        day: 'Day 4-5',
+                        title: 'Leh Acclimatization',
+                        desc: 'Local exploration, rest, and oxygen checks.',
+                      },
+                      {
+                        day: 'Day 6-7',
+                        title: 'Nubra Valley via Khardung La',
+                        desc: 'Cross one of the highest roads. Desert camping & double-hump camels.',
+                      },
+                      {
+                        day: 'Day 8-9',
+                        title: 'Pangong Tso Lakeside',
+                        desc: 'High-altitude lake riding. Overnight in lakeside tents.',
+                      },
                       { day: 'Day 10', title: 'Leh Return & Departure', desc: 'Return ride to Leh and board flights.' },
                     ];
                   } else if (tripId === 'trip-1') {
                     return [
-                      { day: 'Day 1', title: 'Departure from Ranchi', desc: 'Board train from Ranchi Junction. Group icebreaker.' },
-                      { day: 'Day 2', title: 'Arrive at Delhi', desc: 'Transit to Mathura via express cabs. Check-in at ashram.' },
-                      { day: 'Day 3', title: 'Vrindavan Temples', desc: 'Banke Bihari special darshan and Prem Mandir light show.' },
-                      { day: 'Day 4', title: 'Barsana & Nandgaon', desc: 'Visit Radha Rani temple and local spiritual walks.' },
+                      {
+                        day: 'Day 1',
+                        title: 'Departure from Ranchi',
+                        desc: 'Board train from Ranchi Junction. Group icebreaker.',
+                      },
+                      {
+                        day: 'Day 2',
+                        title: 'Arrive at Delhi',
+                        desc: 'Transit to Mathura via express cabs. Check-in at ashram.',
+                      },
+                      {
+                        day: 'Day 3',
+                        title: 'Vrindavan Temples',
+                        desc: 'Banke Bihari special darshan and Prem Mandir light show.',
+                      },
+                      {
+                        day: 'Day 4',
+                        title: 'Barsana & Nandgaon',
+                        desc: 'Visit Radha Rani temple and local spiritual walks.',
+                      },
                       { day: 'Day 5', title: 'Mathura Heritage', desc: 'Krishna Janmabhoomi temple and Yamuna Aarti.' },
-                      { day: 'Day 6', title: 'Spiritual Wrap & Return', desc: 'Final morning prayers and return journey to Ranchi.' },
+                      {
+                        day: 'Day 6',
+                        title: 'Spiritual Wrap & Return',
+                        desc: 'Final morning prayers and return journey to Ranchi.',
+                      },
                     ];
                   } else {
                     return [
-                      { day: 'Day 1', title: 'Kochi Meetup', desc: 'Assemble at Airport Terminal. Transfer to Munnar hills.' },
-                      { day: 'Day 2', title: 'Munnar Tea Gardens', desc: 'Trek through Eravikulam National Park and explore tea estates.' },
-                      { day: 'Day 3', title: 'Munnar to Alleppey', desc: 'Drive down to backwaters. Board private luxury houseboat.' },
-                      { day: 'Day 4', title: 'Backwater Cruising', desc: 'Full day cruising through canals. Traditional Kerala lunch.' },
-                      { day: 'Day 5', title: 'Alleppey Beach & Sunset', desc: 'Visit beach, local coir museums, and group dinner.' },
+                      {
+                        day: 'Day 1',
+                        title: 'Kochi Meetup',
+                        desc: 'Assemble at Airport Terminal. Transfer to Munnar hills.',
+                      },
+                      {
+                        day: 'Day 2',
+                        title: 'Munnar Tea Gardens',
+                        desc: 'Trek through Eravikulam National Park and explore tea estates.',
+                      },
+                      {
+                        day: 'Day 3',
+                        title: 'Munnar to Alleppey',
+                        desc: 'Drive down to backwaters. Board private luxury houseboat.',
+                      },
+                      {
+                        day: 'Day 4',
+                        title: 'Backwater Cruising',
+                        desc: 'Full day cruising through canals. Traditional Kerala lunch.',
+                      },
+                      {
+                        day: 'Day 5',
+                        title: 'Alleppey Beach & Sunset',
+                        desc: 'Visit beach, local coir museums, and group dinner.',
+                      },
                       { day: 'Day 6', title: 'Departure', desc: 'Checkout and transfer back to Kochi Airport.' },
                     ];
                   }
@@ -2495,7 +2750,11 @@ function ChatScreen() {
           </View>
         </ScrollView>
       ) : activeTab === 'docs' ? (
-        <ScrollView style={styles.tabScrollView} showsVerticalScrollIndicator={false} contentContainerStyle={styles.tabScrollViewContent}>
+        <ScrollView
+          style={styles.tabScrollView}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.tabScrollViewContent}
+        >
           {/* Docs Info */}
           <View style={styles.docsHeaderBlock}>
             <Text style={styles.docsHeaderTitleText}>Trip Documents Vault</Text>
@@ -2529,7 +2788,7 @@ function ChatScreen() {
 
           {/* Documents list */}
           <View style={styles.docsListContainer}>
-            {((tripDocs[selectedTripId] || []).length === 0) ? (
+            {(tripDocs[selectedTripId] || []).length === 0 ? (
               <Text style={styles.noDocsText}>No documents uploaded yet for this trip.</Text>
             ) : (
               (tripDocs[selectedTripId] || []).map((doc) => {
@@ -2547,19 +2806,22 @@ function ChatScreen() {
                         <FileText size={18} color="#0066FF" />
                       </View>
                       <View style={styles.docItemMeta}>
-                        <Text style={styles.docTitleText} numberOfLines={1}>{doc.title}</Text>
-                        <Text style={styles.docSubText} numberOfLines={1}>{doc.subtitle}</Text>
+                        <Text style={styles.docTitleText} numberOfLines={1}>
+                          {doc.title}
+                        </Text>
+                        <Text style={styles.docSubText} numberOfLines={1}>
+                          {doc.subtitle}
+                        </Text>
                         <Text style={styles.docDateText}>Added: {doc.date}</Text>
                       </View>
                     </View>
                     <View style={styles.docItemRight}>
                       <View style={[styles.docStatusBadge, { borderColor: getStatusColor(doc.status) }]}>
-                        <Text style={[styles.docStatusText, { color: getStatusColor(doc.status) }]}>{doc.status.toUpperCase()}</Text>
+                        <Text style={[styles.docStatusText, { color: getStatusColor(doc.status) }]}>
+                          {doc.status.toUpperCase()}
+                        </Text>
                       </View>
-                      <TouchableOpacity
-                        style={styles.docDeleteBtn}
-                        onPress={() => handleDeleteDoc(doc.id)}
-                      >
+                      <TouchableOpacity style={styles.docDeleteBtn} onPress={() => handleDeleteDoc(doc.id)}>
                         <Trash2 size={13} color="#EF4444" />
                       </TouchableOpacity>
                     </View>
@@ -2570,7 +2832,11 @@ function ChatScreen() {
           </View>
         </ScrollView>
       ) : (
-        <ScrollView style={styles.tabScrollView} showsVerticalScrollIndicator={false} contentContainerStyle={styles.tabScrollViewContent}>
+        <ScrollView
+          style={styles.tabScrollView}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.tabScrollViewContent}
+        >
           {/* Members Title Info */}
           <View style={styles.docsHeaderBlock}>
             <Text style={styles.docsHeaderTitleText}>Group Directory</Text>
@@ -2597,16 +2863,26 @@ function ChatScreen() {
                 </View>
 
                 <View style={styles.memberTabCardRight}>
-                  <View style={[
-                    styles.memberRoleBadge,
-                    member.role === 'Organizer' ? styles.roleBadgeOrganizer :
-                      member.role === 'Guide' ? styles.roleBadgeGuide : styles.roleBadgeTourist
-                  ]}>
-                    <Text style={[
-                      styles.memberRoleBadgeText,
-                      member.role === 'Organizer' ? { color: '#0066FF' } :
-                        member.role === 'Guide' ? { color: '#10B981' } : { color: '#94A3B8' }
-                    ]}>
+                  <View
+                    style={[
+                      styles.memberRoleBadge,
+                      member.role === 'Organizer'
+                        ? styles.roleBadgeOrganizer
+                        : member.role === 'Guide'
+                          ? styles.roleBadgeGuide
+                          : styles.roleBadgeTourist,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.memberRoleBadgeText,
+                        member.role === 'Organizer'
+                          ? { color: '#0066FF' }
+                          : member.role === 'Guide'
+                            ? { color: '#10B981' }
+                            : { color: '#94A3B8' },
+                      ]}
+                    >
                       {member.role.toUpperCase()}
                     </Text>
                   </View>
@@ -2685,16 +2961,11 @@ function ChatScreen() {
               <TouchableOpacity
                 style={styles.optionsRowBtn}
                 onPress={() =>
-                  handleStartDirectMessage(
-                    selectedMessageForOptions.senderName,
-                    selectedMessageForOptions.avatar
-                  )
+                  handleStartDirectMessage(selectedMessageForOptions.senderName, selectedMessageForOptions.avatar)
                 }
               >
                 <MessageSquare size={16} color="#94A3B8" style={styles.optionsRowIcon} />
-                <Text style={styles.optionsRowText}>
-                  Direct Message {selectedMessageForOptions.senderName}
-                </Text>
+                <Text style={styles.optionsRowText}>Direct Message {selectedMessageForOptions.senderName}</Text>
               </TouchableOpacity>
             )}
 
@@ -2711,10 +2982,7 @@ function ChatScreen() {
 
             <View style={styles.optionsCancelDivider} />
 
-            <TouchableOpacity
-              style={styles.optionsCancelBtn}
-              onPress={() => setSelectedMessageForOptions(null)}
-            >
+            <TouchableOpacity style={styles.optionsCancelBtn} onPress={() => setSelectedMessageForOptions(null)}>
               <Text style={styles.optionsCancelText}>Cancel</Text>
             </TouchableOpacity>
           </View>
@@ -2725,7 +2993,6 @@ function ChatScreen() {
       {isSettingsOpen && (
         <View style={styles.settingsOverlay}>
           <SafeAreaView style={{ flex: 1 }}>
-
             {/* Floating Close Button */}
             <TouchableOpacity
               onPress={() => setIsSettingsOpen(false)}
@@ -2736,7 +3003,6 @@ function ChatScreen() {
             </TouchableOpacity>
 
             <ScrollView contentContainerStyle={styles.settingsScrollContent} showsVerticalScrollIndicator={false}>
-
               {/* Group Meta Display */}
               <View style={styles.settingsAvatarBlock}>
                 <Image source={{ uri: activeRoom?.avatar }} style={styles.settingsAvatarImg} />
@@ -2748,7 +3014,7 @@ function ChatScreen() {
 
               {/* ADVANCED TELEMETRY MONITOR CARD */}
               <TouchableOpacity
-                onPress={() => setIsTripDetailsExpanded(prev => !prev)}
+                onPress={() => setIsTripDetailsExpanded((prev) => !prev)}
                 activeOpacity={0.85}
                 style={{ marginBottom: 16 }}
               >
@@ -2763,7 +3029,12 @@ function ChatScreen() {
                       <Compass size={15} color="#C084FC" />
                       <Text style={[styles.telemetryTitle, { color: '#E9D5FF' }]}>TRIP COMMAND CENTER</Text>
                     </View>
-                    <View style={[styles.telemetryStatusBadge, { backgroundColor: 'rgba(192, 132, 252, 0.15)', borderColor: 'rgba(192, 132, 252, 0.3)' }]}>
+                    <View
+                      style={[
+                        styles.telemetryStatusBadge,
+                        { backgroundColor: 'rgba(192, 132, 252, 0.15)', borderColor: 'rgba(192, 132, 252, 0.3)' },
+                      ]}
+                    >
                       <Text style={[styles.telemetryStatusText, { color: '#F3E8FF' }]}>ACTIVE RUN</Text>
                     </View>
                   </View>
@@ -2784,7 +3055,9 @@ function ChatScreen() {
                       <Text style={styles.telemetryMetaLbl}>Last Node</Text>
                     </View>
                     <View style={[styles.telemetryMetaCell, { alignItems: 'flex-end' }]}>
-                      <Text style={styles.telemetryMetaVal}>{activeTrip.cities[activeTrip.cities.length - 1] || 'Vrindavan'}</Text>
+                      <Text style={styles.telemetryMetaVal}>
+                        {activeTrip.cities[activeTrip.cities.length - 1] || 'Vrindavan'}
+                      </Text>
                       <Text style={styles.telemetryMetaLbl}>Target Node</Text>
                     </View>
                   </View>
@@ -2793,7 +3066,9 @@ function ChatScreen() {
 
                   <View style={styles.telemetryFooter}>
                     <Text style={[styles.telemetryFooterText, { color: '#C084FC' }]}>
-                      {isTripDetailsExpanded ? 'Tap to collapse settings & timeline' : 'Tap to expand settings, ledger & logs'}
+                      {isTripDetailsExpanded
+                        ? 'Tap to collapse settings & timeline'
+                        : 'Tap to expand settings, ledger & logs'}
                     </Text>
                     {isTripDetailsExpanded ? (
                       <ChevronUp size={14} color="#C084FC" />
@@ -2819,21 +3094,30 @@ function ChatScreen() {
                         return (
                           <View key={city} style={styles.timelineStepWrap}>
                             <View style={styles.timelineDotContainer}>
-                              <View style={[
-                                styles.timelineDot,
-                                isPassed ? styles.timelineDotActive : styles.timelineDotInactive
-                              ]}>
+                              <View
+                                style={[
+                                  styles.timelineDot,
+                                  isPassed ? styles.timelineDotActive : styles.timelineDotInactive,
+                                ]}
+                              >
                                 {isPassed && <Check size={8} color="#FFF" />}
                               </View>
-                              {!isLast && <View style={[
-                                styles.timelineLine,
-                                isPassed ? styles.timelineLineActive : styles.timelineLineInactive
-                              ]} />}
+                              {!isLast && (
+                                <View
+                                  style={[
+                                    styles.timelineLine,
+                                    isPassed ? styles.timelineLineActive : styles.timelineLineInactive,
+                                  ]}
+                                />
+                              )}
                             </View>
-                            <Text style={[
-                              styles.timelineCityText,
-                              isPassed ? styles.timelineCityTextActive : styles.timelineCityTextInactive
-                            ]} numberOfLines={1}>
+                            <Text
+                              style={[
+                                styles.timelineCityText,
+                                isPassed ? styles.timelineCityTextActive : styles.timelineCityTextInactive,
+                              ]}
+                              numberOfLines={1}
+                            >
                               {city}
                             </Text>
                           </View>
@@ -2843,7 +3127,9 @@ function ChatScreen() {
                     <View style={styles.meetingPointPanel}>
                       <Clock size={14} color="#0066FF" style={{ marginRight: 6 }} />
                       <Text style={styles.meetingTitle}>Assembly point:</Text>
-                      <Text style={styles.meetingLocation} numberOfLines={1}>{activeTrip.meetingPoint}</Text>
+                      <Text style={styles.meetingLocation} numberOfLines={1}>
+                        {activeTrip.meetingPoint}
+                      </Text>
                     </View>
                   </View>
 
@@ -2888,7 +3174,8 @@ function ChatScreen() {
                       <View style={styles.settingsPollMiniCard}>
                         <Text style={styles.miniPollQuestion}>{tripPolls[selectedTripId].question}</Text>
                         <Text style={styles.miniPollSubText}>
-                          Active in room thread • {tripPolls[selectedTripId].options.reduce((a, b) => a + b.votes, 0)} votes cast
+                          Active in room thread • {tripPolls[selectedTripId].options.reduce((a, b) => a + b.votes, 0)}{' '}
+                          votes cast
                         </Text>
                       </View>
                     ) : (
@@ -2942,7 +3229,9 @@ function ChatScreen() {
                         <Text style={styles.controlTitle}>Live Location Pinging</Text>
                         <Text style={styles.controlDesc}>Sends background telemetry updates</Text>
                       </View>
-                      <Text style={{ fontSize: 10, fontWeight: '700', color: '#0066FF', letterSpacing: 0.5 }}>ACTIVE</Text>
+                      <Text style={{ fontSize: 10, fontWeight: '700', color: '#0066FF', letterSpacing: 0.5 }}>
+                        ACTIVE
+                      </Text>
                     </View>
 
                     <View style={styles.safetyControlRow}>
@@ -2962,10 +3251,7 @@ function ChatScreen() {
                         </TouchableOpacity>
                       </View>
                     ) : (
-                      <TouchableOpacity
-                        style={styles.settingsSOSBtn}
-                        onPress={startSOSCountdown}
-                      >
+                      <TouchableOpacity style={styles.settingsSOSBtn} onPress={startSOSCountdown}>
                         <ShieldAlert size={18} color="#FFF" style={{ marginRight: 6 }} />
                         <Text style={styles.settingsSOSBtnText}>TRIGGER PANIC SOS ALERT</Text>
                       </TouchableOpacity>
@@ -2990,7 +3276,7 @@ function ChatScreen() {
                           key={member.name}
                           style={[
                             styles.memberItemRow,
-                            !isLast && { borderBottomWidth: 0.8, borderBottomColor: '#1E293B', paddingBottom: 12 }
+                            !isLast && { borderBottomWidth: 0.8, borderBottomColor: '#1E293B', paddingBottom: 12 },
                           ]}
                           onPress={() => handleMemberClick(member)}
                           activeOpacity={0.7}
@@ -3002,16 +3288,26 @@ function ChatScreen() {
                           </View>
 
                           {/* Role Badge indicator */}
-                          <View style={[
-                            styles.roleBadge,
-                            member.role === 'Organizer' ? styles.roleBadgeOrganizer :
-                              member.role === 'Guide' ? styles.roleBadgeGuide : styles.roleBadgeTourist
-                          ]}>
-                            <Text style={[
-                              styles.roleBadgeText,
-                              member.role === 'Organizer' ? { color: '#0066FF' } :
-                                member.role === 'Guide' ? { color: '#10B981' } : { color: '#94A3B8' }
-                            ]}>
+                          <View
+                            style={[
+                              styles.roleBadge,
+                              member.role === 'Organizer'
+                                ? styles.roleBadgeOrganizer
+                                : member.role === 'Guide'
+                                  ? styles.roleBadgeGuide
+                                  : styles.roleBadgeTourist,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.roleBadgeText,
+                                member.role === 'Organizer'
+                                  ? { color: '#0066FF' }
+                                  : member.role === 'Guide'
+                                    ? { color: '#10B981' }
+                                    : { color: '#94A3B8' },
+                              ]}
+                            >
                               {member.role.toUpperCase()}
                             </Text>
                           </View>
@@ -3046,10 +3342,10 @@ function ChatScreen() {
                           onPress: () => {
                             setIsSettingsOpen(false);
                             setSelectedRoomId(null);
-                            setInboxRooms(prev => prev.filter(r => r.id !== activeRoom?.id));
-                          }
-                        }
-                      ]
+                            setInboxRooms((prev) => prev.filter((r) => r.id !== activeRoom?.id));
+                          },
+                        },
+                      ],
                     );
                   }}
                   activeOpacity={0.8}
@@ -3069,7 +3365,6 @@ function ChatScreen() {
       {activeModal !== 'NONE' && (
         <View style={styles.modalOverlay}>
           <View style={styles.modalContentCard}>
-
             {activeModal === 'POLL' && (
               <View>
                 <Text style={styles.modalHeading}>Create Group Poll</Text>
@@ -3078,7 +3373,7 @@ function ChatScreen() {
                   placeholder="e.g. Which temple to visit next?"
                   placeholderTextColor={C.textMuted}
                   value={pollForm.question}
-                  onChangeText={(val) => setPollForm(p => ({ ...p, question: val }))}
+                  onChangeText={(val) => setPollForm((p) => ({ ...p, question: val }))}
                   style={styles.modalInput}
                 />
                 <Text style={styles.modalSubLabel}>Option A</Text>
@@ -3086,7 +3381,7 @@ function ChatScreen() {
                   placeholder="Option 1"
                   placeholderTextColor={C.textMuted}
                   value={pollForm.opt1}
-                  onChangeText={(val) => setPollForm(p => ({ ...p, opt1: val }))}
+                  onChangeText={(val) => setPollForm((p) => ({ ...p, opt1: val }))}
                   style={styles.modalInput}
                 />
                 <Text style={styles.modalSubLabel}>Option B</Text>
@@ -3094,7 +3389,7 @@ function ChatScreen() {
                   placeholder="Option 2"
                   placeholderTextColor={C.textMuted}
                   value={pollForm.opt2}
-                  onChangeText={(val) => setPollForm(p => ({ ...p, opt2: val }))}
+                  onChangeText={(val) => setPollForm((p) => ({ ...p, opt2: val }))}
                   style={styles.modalInput}
                 />
                 <View style={styles.modalActionButtons}>
@@ -3104,10 +3399,7 @@ function ChatScreen() {
                   >
                     <Text style={styles.modalBtnCancelText}>Cancel</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.modalBtn, styles.modalBtnSubmit]}
-                    onPress={handleCreatePollSubmit}
-                  >
+                  <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSubmit]} onPress={handleCreatePollSubmit}>
                     <Text style={styles.modalBtnSubmitText}>Create</Text>
                   </TouchableOpacity>
                 </View>
@@ -3123,7 +3415,7 @@ function ChatScreen() {
                   keyboardType="numeric"
                   placeholderTextColor={C.textMuted}
                   value={expenseForm.amount}
-                  onChangeText={(val) => setExpenseForm(p => ({ ...p, amount: val }))}
+                  onChangeText={(val) => setExpenseForm((p) => ({ ...p, amount: val }))}
                   style={styles.modalInput}
                 />
                 <Text style={styles.modalSubLabel}>Description</Text>
@@ -3131,7 +3423,7 @@ function ChatScreen() {
                   placeholder="e.g. Dinner at Govindas"
                   placeholderTextColor={C.textMuted}
                   value={expenseForm.desc}
-                  onChangeText={(val) => setExpenseForm(p => ({ ...p, desc: val }))}
+                  onChangeText={(val) => setExpenseForm((p) => ({ ...p, desc: val }))}
                   style={styles.modalInput}
                 />
                 <Text style={styles.modalInfoNotice}>
@@ -3162,7 +3454,7 @@ function ChatScreen() {
                   placeholder="e.g. Prem Mandir Entrance Gate"
                   placeholderTextColor={C.textMuted}
                   value={locationForm.label}
-                  onChangeText={(val) => setLocationForm(p => ({ ...p, label: val }))}
+                  onChangeText={(val) => setLocationForm((p) => ({ ...p, label: val }))}
                   style={styles.modalInput}
                 />
                 <View style={styles.rowInputs}>
@@ -3173,7 +3465,7 @@ function ChatScreen() {
                       keyboardType="numeric"
                       placeholderTextColor={C.textMuted}
                       value={locationForm.lat}
-                      onChangeText={(val) => setLocationForm(p => ({ ...p, lat: val }))}
+                      onChangeText={(val) => setLocationForm((p) => ({ ...p, lat: val }))}
                       style={styles.modalInput}
                     />
                   </View>
@@ -3184,7 +3476,7 @@ function ChatScreen() {
                       keyboardType="numeric"
                       placeholderTextColor={C.textMuted}
                       value={locationForm.lng}
-                      onChangeText={(val) => setLocationForm(p => ({ ...p, lng: val }))}
+                      onChangeText={(val) => setLocationForm((p) => ({ ...p, lng: val }))}
                       style={styles.modalInput}
                     />
                   </View>
@@ -3205,7 +3497,6 @@ function ChatScreen() {
                 </View>
               </View>
             )}
-
           </View>
         </View>
       )}
@@ -3218,11 +3509,15 @@ function ChatScreen() {
 
             {isUploading ? (
               <View style={{ paddingVertical: 20, alignItems: 'center' }}>
-                <Text style={[styles.modalSubLabel, { marginBottom: 12, color: C.textSec }]}>Uploading document to vault...</Text>
+                <Text style={[styles.modalSubLabel, { marginBottom: 12, color: C.textSec }]}>
+                  Uploading document to vault...
+                </Text>
                 <View style={styles.progressBarBg}>
                   <View style={[styles.progressBarFill, { width: `${uploadProgress}%`, backgroundColor: '#0066FF' }]} />
                 </View>
-                <Text style={{ color: '#FFF', fontSize: 13, marginTop: 8, fontWeight: '600' }}>{uploadProgress}% Complete</Text>
+                <Text style={{ color: '#FFF', fontSize: 13, marginTop: 8, fontWeight: '600' }}>
+                  {uploadProgress}% Complete
+                </Text>
               </View>
             ) : (
               <View>
@@ -3263,7 +3558,6 @@ function ChatScreen() {
           </View>
         </View>
       )}
-
     </SafeAreaView>
   );
 }

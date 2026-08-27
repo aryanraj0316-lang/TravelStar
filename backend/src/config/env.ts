@@ -23,6 +23,16 @@ const envSchema = z.object({
   SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0),
   RELEASE_VERSION: z.string().optional(),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).optional(),
+  // Prisma connection-pool sizing (docs/REMEDIATION.md Phase 10). Prisma's
+  // default is `num_cpus * 2 + 1` per process, which is far too many against
+  // a serverless Postgres like Neon once you run more than one instance —
+  // the pool exhausts the database's connection budget rather than its own.
+  // Size this from (database max connections / instance count) instead.
+  DATABASE_POOL_SIZE: z.coerce.number().int().positive().max(100).default(10),
+  // Seconds a query waits for a free connection before failing. Prisma's
+  // default is 10s; failing fast is better than piling up requests behind a
+  // saturated pool.
+  DATABASE_POOL_TIMEOUT: z.coerce.number().int().nonnegative().max(120).default(10),
 });
 
 function loadEnv() {

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
+  FlatList,
   Image,
   Modal,
   RefreshControl,
@@ -90,10 +91,67 @@ interface ExpensesResponse {
   yourShare: string;
   yourNet: string;
   expenses: ExpenseItem[];
-  balances: { userId: string; name: string; avatar: string; isOrganizer: boolean; paid: string; share: string; net: string }[];
+  balances: {
+    userId: string;
+    name: string;
+    avatar: string;
+    isOrganizer: boolean;
+    paid: string;
+    share: string;
+    net: string;
+  }[];
 }
 
 const inr = (v: string | number) => `₹${Math.round(Number(v)).toLocaleString('en-IN')}`;
+
+// The expense ledger is the only part of this screen that grows without
+// bound, so it is the one that moves to a FlatList; the summary card, the
+// per-member balances (one row per trip member) and the trip chips are small
+// and fixed-size, so they ride along as the list header. Nesting a
+// VirtualizedList inside another would cost more than it saves.
+// Each row is its own component so the React Compiler
+// (app.json > experiments.reactCompiler) can memoize rows independently —
+// hand-written React.memo would make it skip the component instead
+// (docs/REMEDIATION.md Phase 10).
+function ExpenseRow({
+  expense,
+  onDelete,
+  deleteDisabled,
+}: {
+  expense: ExpenseItem;
+  onDelete: (id: string) => void;
+  deleteDisabled: boolean;
+}) {
+  const meta = catMeta(expense.category);
+
+  return (
+    <View style={styles.expenseRow}>
+      <View style={[styles.expenseIcon, { backgroundColor: meta.color + '22' }]}>
+        <meta.Icon size={16} color={meta.color} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.expenseTitle}>{expense.description}</Text>
+        <Text style={styles.expenseSub}>
+          {meta.label} · paid by {expense.paidByName} · {new Date(expense.createdAt).toLocaleDateString('en-IN')}
+        </Text>
+      </View>
+      <Text style={styles.expenseAmount}>{inr(expense.amount)}</Text>
+      {expense.canDelete && (
+        <TouchableOpacity
+          style={styles.deleteBtn}
+          onPress={() => onDelete(expense.id)}
+          disabled={deleteDisabled}
+          accessibilityRole="button"
+          accessibilityLabel={`Delete ${expense.description}`}
+        >
+          <Trash2 size={15} color={C.textMuted} />
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+}
+
+const keyExtractor = (e: ExpenseItem) => e.id;
 
 export default function BudgetTrackerScreen() {
   const router = useRouter();
@@ -232,108 +290,92 @@ export default function BudgetTrackerScreen() {
       ) : budgetError || !budget ? (
         <View style={styles.stateWrap}>
           <AlertCircle size={48} color={C.rose} strokeWidth={1.4} />
-          <Text style={styles.stateText}>{error instanceof Error ? error.message : 'Could not load this trip budget.'}</Text>
+          <Text style={styles.stateText}>
+            {error instanceof Error ? error.message : 'Could not load this trip budget.'}
+          </Text>
           <TouchableOpacity style={styles.primaryBtn} onPress={() => refetch()}>
             <Text style={styles.primaryBtnText}>Retry</Text>
           </TouchableOpacity>
         </View>
       ) : (
-        <ScrollView
+        <FlatList
+          data={budget.expenses}
+          keyExtractor={keyExtractor}
+          renderItem={({ item }) => (
+            <ExpenseRow
+              expense={item}
+              onDelete={(id) => deleteMutation.mutate(id)}
+              deleteDisabled={deleteMutation.isPending}
+            />
+          )}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={C.blue} />}
-        >
-          {/* Summary */}
-          <LinearGradient colors={['#12203D', '#0C1526']} style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>TOTAL TRIP SPEND</Text>
-            <Text style={styles.summaryValue}>{inr(budget.total)}</Text>
-            <View style={styles.summaryRow}>
-              <View style={styles.summaryCol}>
-                <Text style={styles.summaryColLabel}>Split {budget.headCount} ways</Text>
-                <Text style={styles.summaryColValue}>{inr(budget.yourShare)} / person</Text>
-              </View>
-              <View style={styles.summaryCol}>
-                <Text style={styles.summaryColLabel}>Your balance</Text>
-                <Text
-                  style={[
-                    styles.summaryColValue,
-                    { color: Number(budget.yourNet) >= 0 ? C.green : C.rose },
-                  ]}
-                >
-                  {Number(budget.yourNet) >= 0 ? 'you are owed ' : 'you owe '}
-                  {inr(Math.abs(Number(budget.yourNet)))}
-                </Text>
-              </View>
-            </View>
-          </LinearGradient>
-
-          {/* Per-member balances */}
-          {budget.balances.length > 1 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Who owes what</Text>
-              {budget.balances.map((b) => (
-                <View key={b.userId} style={styles.balanceRow}>
-                  <Image source={{ uri: b.avatar }} style={styles.balanceAvatar} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.balanceName}>
-                      {b.name}
-                      {b.isOrganizer ? ' · organizer' : ''}
-                    </Text>
-                    <Text style={styles.balanceSub}>paid {inr(b.paid)} of {inr(b.share)} share</Text>
+          initialNumToRender={10}
+          maxToRenderPerBatch={12}
+          windowSize={9}
+          removeClippedSubviews
+          ListHeaderComponent={
+            <>
+              {/* Summary */}
+              <LinearGradient colors={['#12203D', '#0C1526']} style={styles.summaryCard}>
+                <Text style={styles.summaryLabel}>TOTAL TRIP SPEND</Text>
+                <Text style={styles.summaryValue}>{inr(budget.total)}</Text>
+                <View style={styles.summaryRow}>
+                  <View style={styles.summaryCol}>
+                    <Text style={styles.summaryColLabel}>Split {budget.headCount} ways</Text>
+                    <Text style={styles.summaryColValue}>{inr(budget.yourShare)} / person</Text>
                   </View>
-                  <Text style={[styles.balanceNet, { color: Number(b.net) >= 0 ? C.green : C.rose }]}>
-                    {Number(b.net) >= 0 ? '+' : '−'}
-                    {inr(Math.abs(Number(b.net)))}
-                  </Text>
+                  <View style={styles.summaryCol}>
+                    <Text style={styles.summaryColLabel}>Your balance</Text>
+                    <Text style={[styles.summaryColValue, { color: Number(budget.yourNet) >= 0 ? C.green : C.rose }]}>
+                      {Number(budget.yourNet) >= 0 ? 'you are owed ' : 'you owe '}
+                      {inr(Math.abs(Number(budget.yourNet)))}
+                    </Text>
+                  </View>
                 </View>
-              ))}
-            </View>
-          )}
+              </LinearGradient>
 
-          {/* Expense list */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Expenses</Text>
-            {budget.expenses.length === 0 ? (
-              <Text style={styles.emptyExpenses}>No expenses logged for this trip yet.</Text>
-            ) : (
-              budget.expenses.map((e) => {
-                const meta = catMeta(e.category);
-                return (
-                  <View key={e.id} style={styles.expenseRow}>
-                    <View style={[styles.expenseIcon, { backgroundColor: meta.color + '22' }]}>
-                      <meta.Icon size={16} color={meta.color} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.expenseTitle}>{e.description}</Text>
-                      <Text style={styles.expenseSub}>
-                        {meta.label} · paid by {e.paidByName} · {new Date(e.createdAt).toLocaleDateString('en-IN')}
+              {/* Per-member balances */}
+              {budget.balances.length > 1 && (
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>Who owes what</Text>
+                  {budget.balances.map((b) => (
+                    <View key={b.userId} style={styles.balanceRow}>
+                      <Image source={{ uri: b.avatar }} style={styles.balanceAvatar} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.balanceName}>
+                          {b.name}
+                          {b.isOrganizer ? ' · organizer' : ''}
+                        </Text>
+                        <Text style={styles.balanceSub}>
+                          paid {inr(b.paid)} of {inr(b.share)} share
+                        </Text>
+                      </View>
+                      <Text style={[styles.balanceNet, { color: Number(b.net) >= 0 ? C.green : C.rose }]}>
+                        {Number(b.net) >= 0 ? '+' : '−'}
+                        {inr(Math.abs(Number(b.net)))}
                       </Text>
                     </View>
-                    <Text style={styles.expenseAmount}>{inr(e.amount)}</Text>
-                    {e.canDelete && (
-                      <TouchableOpacity
-                        style={styles.deleteBtn}
-                        onPress={() => deleteMutation.mutate(e.id)}
-                        disabled={deleteMutation.isPending}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Delete ${e.description}`}
-                      >
-                        <Trash2 size={15} color={C.textMuted} />
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                );
-              })
-            )}
-          </View>
-
-          <View style={{ height: 100 }} />
-        </ScrollView>
+                  ))}
+                </View>
+              )}
+              <Text style={styles.expensesTitle}>Expenses</Text>
+            </>
+          }
+          ListEmptyComponent={<Text style={styles.emptyExpenses}>No expenses logged for this trip yet.</Text>}
+          ListFooterComponent={<View style={{ height: 100 }} />}
+        />
       )}
 
       {/* Add button */}
       {budget && (
-        <TouchableOpacity style={styles.fab} onPress={() => setShowAdd(true)} accessibilityRole="button" accessibilityLabel="Add expense">
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={() => setShowAdd(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Add expense"
+        >
           <Plus size={22} color={C.white} />
         </TouchableOpacity>
       )}
@@ -410,7 +452,13 @@ function Shell({ title, onBack, children }: { title: string; onBack: () => void;
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={C.bg} />
       <View style={styles.header}>
-        <TouchableOpacity activeOpacity={0.7} onPress={onBack} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Go back">
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={onBack}
+          style={styles.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
           <ArrowLeft size={18} color={C.white} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{title}</Text>
@@ -467,6 +515,9 @@ const styles = StyleSheet.create({
   summaryColLabel: { fontSize: 10, color: C.textMuted, fontWeight: '600' },
   summaryColValue: { fontSize: 13, fontWeight: '800', color: C.white },
   section: { marginBottom: 20 },
+  // The "Expenses" heading sits in the FlatList header rather than inside a
+  // `section` card, so it carries the section's spacing itself.
+  expensesTitle: { fontSize: 13, fontWeight: '800', color: C.white, marginTop: 18, marginBottom: 10 },
   sectionTitle: { fontSize: 14, fontWeight: '800', color: C.white, marginBottom: 10 },
   balanceRow: {
     flexDirection: 'row',

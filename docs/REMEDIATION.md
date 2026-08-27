@@ -1366,7 +1366,47 @@ partial, exactly what's blocking full completion.
       every suite passes in isolation and under --runInBand. Phase 13.2's
       Testcontainers throwaway-Postgres is the real fix.
 - [ ] Phase 9 — Design system, i18n, accessibility (not started)
-- [ ] Phase 10 — Performance (not started)
+- [ ] Phase 10 — Performance (in progress — the list-virtualization and
+      backend caching/pooling items done; bundle analysis, code-splitting,
+      and a measured TTI budget not started):
+      • FlatList conversions: every `ScrollView` + `.map()` list that can
+        grow without a fixed small bound is now a `FlatList` —
+        nearby-trips.tsx, bookings.tsx, monsoon-advisory.tsx,
+        budget-trips.tsx, budget-tracker.tsx's expense ledger (the summary
+        card and per-member balances stay inline as the list header — they
+        don't grow), search.tsx's main trip-browse list, and chat.tsx's
+        per-room message thread (the room list in chat.tsx's sidebar is
+        still a ScrollView — deferred, see below). Each row/card/bubble
+        that used to be inline JSX in the `.map()` is now its own
+        component, with `initialNumToRender`/`maxToRenderPerBatch`/
+        `windowSize`/`removeClippedSubviews` set. No `getItemLayout`
+        anywhere card height depends on wrapped text or system font scale
+        — a wrong fixed height causes worse scroll jumps than the
+        measurement it would save.
+      • Deliberately NOT `React.memo`/`useMemo`/`useCallback`: this repo
+        runs the React Compiler (app.json → experiments.reactCompiler).
+        Hand-written memoization the compiler can't prove matches its own
+        inference makes it skip optimizing the component *entirely*
+        (`react-hooks/preserve-manual-memoization` — hit and reverted
+        during this phase). Splitting each row into its own component is
+        what lets the compiler memoize rows independently; that's the
+        idiom used here instead of manual memoization.
+      • Backend: `compression` (gzip, 1KB threshold) in app.ts. A new
+        `src/lib/cache.ts` — Redis-backed read-through cache when
+        REDIS_URL is set, TTL-pruned in-memory Map fallback otherwise,
+        every read/write failure degrading to "cache miss" rather than an
+        outage. weather.ts's live-weather cache and destinations.ts's
+        reference-data list now go through it (shared across instances,
+        where the old per-process Maps weren't). Prisma connection pool
+        explicitly sized via `DATABASE_POOL_SIZE`/`DATABASE_POOL_TIMEOUT`
+        (stamped onto the connection URL in db.ts) instead of Prisma's
+        num_cpus-based default, which is the wrong side of the
+        Neon-connection-budget relationship once more than one instance
+        runs. `closeCache()` wired into server.ts's graceful shutdown.
+      Not done: bundle analysis / web code-splitting, a verified Hermes
+      check, a measured Android TTI budget, and virtualizing chat.tsx's
+      room-list sidebar (small per-user list, lower priority — flagged,
+      not fixed).
 - [ ] Phase 11 — Observability and operations (in progress — code-shaped
       parts done, secrets/live-wiring deferred per the 2026-08-27 user
       decision):
