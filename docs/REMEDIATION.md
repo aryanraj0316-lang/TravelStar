@@ -1303,6 +1303,24 @@ partial, exactly what's blocking full completion.
       (public-reachability + full detail shape, 404 for missing), full
       suite 51/51. DESTINATION_NOT_FOUND added to both api-error-codes.ts
       copies.
+      §8.14 + §8.21 done by removal — top-reviewed.tsx was 100% fabricated
+      (TOP_RATED_ROUTES / SEASONAL_SUGGESTIONS / TRAVEL_REELS / USER_REVIEWS
+      all hardcoded; handleRouteSelect opened an unrelated trip via
+      `trips.find(...) || trips[0]`; the tab strip scrolled with a magic
+      580px marquee). A real "top reviewed" needs a review/rating system
+      with verified-purchase + moderation (large standalone build, no
+      rating data exists on Trip) — deferred as its own feature. Screen
+      and its search.tsx quick-access entry deleted; no other entry points.
+      §8.16 partial — stories.tsx: removed the hardcoded STORIES_DATABASE
+      fallback (fabricated creators/captions shown whenever the real feed
+      lacked a location) → honest empty state; removed the reply TextInput
+      that silently discarded input (no story-comment API exists); fixed
+      the private `progressAnim._value` read (now a proper Animated
+      listener → ref) and deleted the never-assigned `timerRef` whose
+      every clearTimeout was a no-op. Still deferred for §8.16: real media
+      upload for create-story, merged-feed keyset pagination (§5.9),
+      per-user story like/unlike (the /stories/:id/like route still just
+      increments a global counter — same class as §5.8).
 - [ ] Phase 9 — Design system, i18n, accessibility (not started)
 - [ ] Phase 10 — Performance (not started)
 - [ ] Phase 11 — Observability and operations (not started)

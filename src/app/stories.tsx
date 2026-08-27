@@ -3,11 +3,7 @@ import { apiService } from '@/services/api';
 import { logger } from '@/lib/logger';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import {
-  Heart,
-  Send,
-  X,
-} from 'lucide-react-native';
+import { Heart, X } from 'lucide-react-native';
 import React, { useRef, useState, useEffect } from 'react';
 import {
   Image,
@@ -17,257 +13,142 @@ import {
   View,
   StatusBar,
   Animated,
-  TextInput,
-  Keyboard,
-  Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-interface Story {
-  id: string;
-  creator: string;
-  creatorAvatar: string;
-  image: string;
-  caption: string;
-  location: string;
-}
-
-const STORIES_DATABASE: Record<string, Story[]> = {
-  Sikkim: [
-    {
-      id: 'sikkim-1',
-      creator: 'Tashi (Monk & Guide)',
-      creatorAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&q=80',
-      image: 'https://images.unsplash.com/photo-1548013146-72479768bada?w=800&q=80',
-      caption: 'High pass views in North Sikkim. Breathtaking beauty! 🏔️✨',
-      location: 'Sikkim Corridor',
-    },
-    {
-      id: 'sikkim-2',
-      creator: 'Tashi (Monk & Guide)',
-      creatorAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&q=80',
-      image: 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=800&q=80',
-      caption: 'Golden hour in the valleys. Feels like heaven. 🌅💛',
-      location: 'Gangtok, Sikkim',
-    },
-  ],
-  Jaipur: [
-    {
-      id: 'jaipur-1',
-      creator: 'Amit (Heritage Photographer)',
-      creatorAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&q=80',
-      image: 'https://images.unsplash.com/photo-1599661046289-e31897846e41?w=800&q=80',
-      caption: 'Checking out the intricate facade of Hawa Mahal! 🏰💖',
-      location: 'Jaipur, Rajasthan',
-    },
-    {
-      id: 'jaipur-2',
-      creator: 'Amit (Heritage Photographer)',
-      creatorAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&q=80',
-      image: 'https://images.unsplash.com/photo-1615836245337-f5b9b2303f10?w=800&q=80',
-      caption: 'Amber Fort reflections at dusk. Royal history live. 👑✨',
-      location: 'Amber Fort, Jaipur',
-    },
-  ],
-  Goa: [
-    {
-      id: 'goa-1',
-      creator: 'Sarah (Beach Nomad)',
-      creatorAvatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&q=80',
-      image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80',
-      caption: 'Sun, sand, and palms. Vacation mode is officially ON! 🏖️🥥',
-      location: 'South Goa Beaches',
-    },
-    {
-      id: 'goa-2',
-      creator: 'Sarah (Beach Nomad)',
-      creatorAvatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&q=80',
-      image: 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=800&q=80',
-      caption: 'Tasting local Goan curries at beach shacks. Delicious! 🍛🌊',
-      location: 'Anjuna, Goa',
-    },
-  ],
-  Manali: [
-    {
-      id: 'manali-1',
-      creator: 'Kabir (Ski Instructor)',
-      creatorAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&q=80',
-      image: 'https://images.unsplash.com/photo-1605649487212-47bdab064df7?w=800&q=80',
-      caption: 'Waking up to fresh snowfall in Solang Valley! ❄️🏔️',
-      location: 'Solang Valley, Manali',
-    },
-    {
-      id: 'manali-2',
-      creator: 'Kabir (Ski Instructor)',
-      creatorAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&q=80',
-      image: 'https://images.unsplash.com/photo-1598091383021-15ddea10925d?w=800&q=80',
-      caption: 'Chilly vibes and woodfired pizza in Old Manali. 🍕🌲',
-      location: 'Old Manali',
-    },
-  ],
-  Munnar: [
-    {
-      id: 'munnar-1',
-      creator: 'Meera (Botanist)',
-      creatorAvatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100&q=80',
-      image: 'https://images.unsplash.com/photo-1593693397690-362cb9666fc2?w=800&q=80',
-      caption: 'Lush green rolling tea fields covered in morning mist. 🍃💚',
-      location: 'Munnar, Kerala',
-    },
-    {
-      id: 'munnar-2',
-      creator: 'Meera (Botanist)',
-      creatorAvatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100&q=80',
-      image: 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=800&q=80',
-      caption: 'Sunset hike at Anamudi Peak. Stunning clouds. ⛰️⛅',
-      location: 'Anamudi Peak, Munnar',
-    },
-  ],
-};
+// docs/REMEDIATION.md §8.16: this screen previously fell back to a
+// hardcoded STORIES_DATABASE of fabricated creators/captions whenever the
+// real feed had nothing for a location, and shipped a reply box that
+// silently discarded whatever the user typed (there is no story-comment
+// API). Both are gone — it now renders only real TravelStory rows with an
+// honest empty state, and keeps only the real like action. It also read
+// the private `progressAnim._value` and carried a `timerRef` that was
+// never assigned a timeout (so every `clearTimeout` on it was a no-op);
+// progress is now tracked through a proper Animated listener.
 
 const STORY_DURATION = 5000; // 5 seconds per story slide
+
+interface FeedStory {
+  id: string;
+  coverImg?: string;
+  image?: string;
+  content?: string;
+  caption?: string;
+  authorName?: string;
+  creator?: string;
+  authorAvatar?: string;
+  creatorAvatar?: string;
+  location?: string;
+  title?: string;
+}
 
 export default function StoriesScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const locationParam = (params.location as string) ?? 'Sikkim';
+  const locationParam = (params.location as string) ?? '';
   const { storiesList } = useApp();
+  const insets = useSafeAreaInsets();
 
-  const [activeStoriesList, setActiveStoriesList] = useState<any[]>([]);
-
-  useEffect(() => {
-    // Dynamically filter stories from DB based on location
-    const matched = storiesList.filter(
+  const activeStoriesList: FeedStory[] = React.useMemo(() => {
+    if (!locationParam) return storiesList as FeedStory[];
+    return (storiesList as FeedStory[]).filter(
       (s) =>
         s.location?.toLowerCase().includes(locationParam.toLowerCase()) ||
         s.title?.toLowerCase().includes(locationParam.toLowerCase())
     );
-    if (matched.length > 0) {
-      setActiveStoriesList(matched);
-    } else {
-      // Fallback to static stories database
-      const fallback = STORIES_DATABASE[locationParam] ?? STORIES_DATABASE['Sikkim'];
-      setActiveStoriesList(fallback);
-    }
   }, [locationParam, storiesList]);
 
-  const insets = useSafeAreaInsets();
   const [currentIdx, setCurrentIdx] = useState(0);
-  const [inputText, setInputText] = useState('');
   const [isLiked, setIsLiked] = useState<Record<string, boolean>>({});
 
-  // Anim progress bar
+  // Progress bar. progressValueRef mirrors the animated value via a
+  // listener so we never have to reach for the private `._value`.
   const progressAnim = useRef(new Animated.Value(0)).current;
-  const timerRef = useRef<any>(null);
-
-  // Keyboard offset tracking
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const progressValueRef = useRef(0);
 
   useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-
-    const onShow = Keyboard.addListener(showEvent, (e) => {
-      setKeyboardHeight(e.endCoordinates.height);
-      // Pause progress when typing
-      progressAnim.stopAnimation();
-      if (timerRef.current) clearTimeout(timerRef.current);
+    const id = progressAnim.addListener(({ value }) => {
+      progressValueRef.current = value;
     });
+    return () => progressAnim.removeListener(id);
+  }, [progressAnim]);
 
-    const onHide = Keyboard.addListener(hideEvent, () => {
-      setKeyboardHeight(0);
-      // Resume current slide animation
-      startStoryTimer((progressAnim as any)._value || 0);
+  const goBackOrHome = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace('/');
+  };
+
+  const handleNextStory = () => {
+    setCurrentIdx((prev) => {
+      if (prev < activeStoriesList.length - 1) return prev + 1;
+      goBackOrHome();
+      return prev;
     });
+  };
 
-    return () => {
-      onShow.remove();
-      onHide.remove();
-    };
-  }, [currentIdx, activeStoriesList]);
+  const handlePrevStory = () => {
+    setCurrentIdx((prev) => (prev > 0 ? prev - 1 : prev));
+  };
 
   const startStoryTimer = (startFrom = 0) => {
     if (activeStoriesList.length === 0) return;
     progressAnim.setValue(startFrom);
-
-    // Stop any existing timers
-    if (timerRef.current) clearTimeout(timerRef.current);
-
-    const remainingTime = STORY_DURATION * (1 - startFrom);
-
     Animated.timing(progressAnim, {
       toValue: 1,
-      duration: remainingTime,
+      duration: STORY_DURATION * (1 - startFrom),
       useNativeDriver: false,
     }).start(({ finished }) => {
-      if (finished) {
-        handleNextStory();
-      }
+      if (finished) handleNextStory();
     });
   };
 
-  const handleNextStory = () => {
-    if (currentIdx < activeStoriesList.length - 1) {
-      setCurrentIdx((prev) => prev + 1);
-    } else {
-      // Out of stories, navigate back
-      if (router.canGoBack()) {
-        router.back();
-      } else {
-        router.replace('/');
-      }
-    }
-  };
-
-  const handlePrevStory = () => {
-    if (currentIdx > 0) {
-      setCurrentIdx((prev) => prev - 1);
-    }
-  };
-
-  // Reset and restart animation whenever story changes
+  // Restart the slide timer whenever the story changes.
   useEffect(() => {
-    if (activeStoriesList.length > 0) {
-      startStoryTimer(0);
-    }
+    if (activeStoriesList.length > 0) startStoryTimer(0);
     return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
+      progressAnim.stopAnimation();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentIdx, activeStoriesList]);
 
   if (activeStoriesList.length === 0) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
-        <Text style={{ color: '#FFF' }}>Loading stories...</Text>
-      </View>
+      <SafeAreaView style={styles.emptyContainer}>
+        <StatusBar barStyle="light-content" backgroundColor="#000" />
+        <Text style={styles.emptyTitle}>No stories yet</Text>
+        <Text style={styles.emptyText}>
+          {locationParam
+            ? `Nobody has shared a story from ${locationParam} yet.`
+            : 'Be the first to share a travel story.'}
+        </Text>
+        <TouchableOpacity style={styles.emptyBtn} onPress={goBackOrHome}>
+          <Text style={styles.emptyBtnText}>Go back</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
     );
   }
 
-  const activeStory = activeStoriesList[currentIdx];
-
-  // Helper getters to unify shapes of static vs DB stories
-  const storyImage = activeStory.coverImg || activeStory.image || 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1000&q=80';
+  const activeStory = activeStoriesList[Math.min(currentIdx, activeStoriesList.length - 1)];
+  const storyImage =
+    activeStory.coverImg ||
+    activeStory.image ||
+    'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1000&q=80';
   const storyCaption = activeStory.content || activeStory.caption || '';
   const storyCreator = activeStory.authorName || activeStory.creator || 'Traveler';
-  const storyCreatorAvatar = activeStory.authorAvatar || activeStory.creatorAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80';
-  const storyLocation = activeStory.location || activeStory.location || 'India';
-
-  const handleSendReply = () => {
-    if (!inputText.trim()) return;
-    setInputText('');
-    Keyboard.dismiss();
-  };
+  const storyCreatorAvatar =
+    activeStory.authorAvatar ||
+    activeStory.creatorAvatar ||
+    'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80';
+  const storyLocation = activeStory.location || 'India';
 
   const handleToggleLike = async () => {
-    setIsLiked(prev => ({
-      ...prev,
-      [activeStory.id]: !prev[activeStory.id]
-    }));
+    const wasLiked = !!isLiked[activeStory.id];
+    setIsLiked((prev) => ({ ...prev, [activeStory.id]: !wasLiked }));
     try {
       await apiService.likeStory(activeStory.id);
     } catch (e) {
       logger.warn('[Stories] Like failed:', e);
-      setIsLiked((prev) => ({ ...prev, [activeStory.id]: !prev[activeStory.id] }));
+      setIsLiked((prev) => ({ ...prev, [activeStory.id]: wasLiked }));
     }
   };
 
@@ -275,7 +156,6 @@ export default function StoriesScreen() {
     <SafeAreaView edges={['top', 'bottom']} style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
 
-      {/* Slide Images */}
       <View style={styles.storyImageContainer}>
         <Image source={{ uri: storyImage }} style={styles.storyImg} resizeMode="cover" />
         <LinearGradient
@@ -284,13 +164,10 @@ export default function StoriesScreen() {
         />
       </View>
 
-      {/* Progress Bars Row */}
+      {/* Progress bars */}
       <View style={styles.progressBarWrapper}>
         {activeStoriesList.map((story, index) => {
-          let progressFillWidth: any = '0%';
-          if (index < currentIdx) {
-            progressFillWidth = '100%';
-          } else if (index === currentIdx) {
+          if (index === currentIdx) {
             return (
               <View key={story.id} style={styles.progressBarTrack}>
                 <Animated.View
@@ -309,13 +186,13 @@ export default function StoriesScreen() {
           }
           return (
             <View key={story.id} style={styles.progressBarTrack}>
-              <View style={[styles.progressBarFill, { width: progressFillWidth }]} />
+              <View style={[styles.progressBarFill, { width: index < currentIdx ? '100%' : '0%' }]} />
             </View>
           );
         })}
       </View>
 
-      {/* Top Header info (Creator details + Close Button) */}
+      {/* Header */}
       <View style={styles.storyHeader}>
         <View style={styles.creatorMeta}>
           <Image source={{ uri: storyCreatorAvatar }} style={styles.creatorAvatar} />
@@ -324,57 +201,39 @@ export default function StoriesScreen() {
             <Text style={styles.locationText}>{storyLocation}</Text>
           </View>
         </View>
-        <TouchableOpacity
-          style={styles.closeBtn}
-          onPress={() => {
-            if (router.canGoBack()) {
-              router.back();
-            } else {
-              router.replace('/');
-            }
-          }}
-        >
+        <TouchableOpacity style={styles.closeBtn} onPress={goBackOrHome} accessibilityRole="button" accessibilityLabel="Close stories">
           <X size={20} color="#FFF" />
         </TouchableOpacity>
       </View>
 
-      {/* Tap triggers for navigation (Left 30% goes back, Right 70% goes forward) */}
+      {/* Tap zones */}
       <View style={styles.touchControlsContainer}>
         <TouchableOpacity style={styles.leftTouchBlock} activeOpacity={1} onPress={handlePrevStory} />
         <TouchableOpacity style={styles.rightTouchBlock} activeOpacity={1} onPress={handleNextStory} />
       </View>
 
-      {/* Bottom overlay: Caption + Send Message Reply Box */}
-      <Animated.View style={[styles.bottomController, { bottom: keyboardHeight > 0 ? keyboardHeight : Math.max(insets.bottom, 16) }]}>
-        <View style={styles.captionPanel}>
-          <Text style={styles.captionText}>{storyCaption}</Text>
-        </View>
-
-        <View style={styles.replyBoxRow}>
-          <View style={styles.inputOuterWrapper}>
-            <TextInput
-              placeholder="Send message..."
-              placeholderTextColor="rgba(255,255,255,0.6)"
-              style={styles.replyInput}
-              value={inputText}
-              onChangeText={setInputText}
-              onSubmitEditing={handleSendReply}
-            />
+      {/* Bottom: caption + like */}
+      <View style={[styles.bottomController, { bottom: Math.max(insets.bottom, 16) }]}>
+        {storyCaption.length > 0 && (
+          <View style={styles.captionPanel}>
+            <Text style={styles.captionText}>{storyCaption}</Text>
           </View>
-
-          <TouchableOpacity style={styles.controlIconCircle} onPress={handleToggleLike}>
+        )}
+        <View style={styles.actionRow}>
+          <TouchableOpacity
+            style={styles.controlIconCircle}
+            onPress={handleToggleLike}
+            accessibilityRole="button"
+            accessibilityLabel={isLiked[activeStory.id] ? 'Unlike story' : 'Like story'}
+          >
             <Heart
               size={20}
               color={isLiked[activeStory.id] ? '#EF4444' : '#FFF'}
               fill={isLiked[activeStory.id] ? '#EF4444' : 'transparent'}
             />
           </TouchableOpacity>
-
-          <TouchableOpacity style={styles.controlIconCircle} onPress={handleSendReply}>
-            <Send size={18} color="#FFF" />
-          </TouchableOpacity>
         </View>
-      </Animated.View>
+      </View>
     </SafeAreaView>
   );
 }
@@ -383,6 +242,37 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
+  },
+  emptyContainer: {
+    flex: 1,
+    backgroundColor: '#000',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 40,
+    gap: 12,
+  },
+  emptyTitle: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  emptyText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 19,
+  },
+  emptyBtn: {
+    marginTop: 8,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  emptyBtnText: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '700',
   },
   storyImageContainer: {
     ...StyleSheet.absoluteFill,
@@ -444,7 +334,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   closeBtn: {
-    padding: 6,
+    padding: 12,
   },
   touchControlsContainer: {
     position: 'absolute',
@@ -480,30 +370,16 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
-  replyBoxRow: {
+  actionRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'flex-end',
     gap: 10,
   },
-  inputOuterWrapper: {
-    flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.22)',
-    paddingHorizontal: 16,
-    height: 40,
-    justifyContent: 'center',
-  },
-  replyInput: {
-    color: '#FFF',
-    fontSize: 13,
-    padding: 0,
-  },
   controlIconCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: 'rgba(0,0,0,0.4)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.15)',

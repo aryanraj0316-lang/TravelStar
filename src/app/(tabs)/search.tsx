@@ -18,7 +18,6 @@ import {
   Check,
   ChevronRight,
   Clock,
-  Flame,
   Grid2x2,
   Headphones,
   Heart,
@@ -66,7 +65,6 @@ const QUICK_ACCESS = [
   { key: 'custom', label: 'Custom Trips', sub: 'Plan your own', Icon: Sparkles, color: '#FFB300' },
   { key: 'nearby', label: 'Nearby Trips', sub: 'Around you', Icon: MapPin, color: '#0066FF' },
   { key: 'budget', label: 'Budget Trips', sub: 'Best deals', Icon: Wallet, color: '#FFCC00' },
-  { key: 'top', label: 'Top Reviewed', Icon: Flame, sub: 'Highly rated', color: '#FF3B30' },
 ];
 
 // Helper: derive a badge from trip category or travelStyle (DB-driven)
@@ -538,8 +536,6 @@ function SearchScreen() {
                     router.push('/nearby-trips');
                   } else if (item.key === 'budget') {
                     router.push('/budget-trips');
-                  } else if (item.key === 'top') {
-                    router.push('/top-reviewed');
                   }
                 }}
               >
