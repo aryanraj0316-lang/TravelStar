@@ -10,6 +10,13 @@ export const queryKeys = {
   trip: (tripId: string) => ['trips', tripId] as const,
   tripMembers: (tripId: string) => ['trips', tripId, 'members'] as const,
   nearbyPlaces: () => ['trips', 'nearby'] as const,
+  tripsSearch: (filters: {
+    search?: string;
+    category?: string;
+    maxBudget?: number;
+    guideRequired?: boolean;
+    verifiedOnly?: boolean;
+  }) => ['trips', 'search', filters] as const,
   likedTrips: () => ['trips', 'liked'] as const,
   myTrips: () => ['trips', 'mine'] as const,
   tripExpenses: (tripId: string) => ['trips', tripId, 'expenses'] as const,

@@ -1241,6 +1241,47 @@ partial, exactly what's blocking full completion.
       by design (§2.6) so there is no "self-service role change" flow to
       build. Not done: email/phone verification (no verification-code
       flow exists at all, front or back end).
+      §8.3 done (partial — pagination and 4 of 8 filters; the rest
+      deliberately left client-side) — search.tsx used to source its whole
+      "browse trips" list from AppContext's `trips`, itself GET /trips's
+      plain 20-row default with no query params, and then ran every filter
+      (search text, category, budget, duration, transport, verified,
+      guide, midway) as a client-side `.filter()`/`.sort()` over that fixed
+      page. Any trip past the most recent 20 was invisible to search or any
+      filter, no matter what was typed — the doc's "kill the client-side
+      .filter() on a fully-loaded list" complaint undersold it, since the
+      list wasn't even fully loaded. Backend: GET /trips gained a validated
+      query schema, createdAt-keyed cursor pagination (same convention as
+      feed.ts), and guideRequired/verifiedOnly filters (verifiedOnly now
+      checks the creator's real `role` column, not string-matching
+      mapTrip's *display* label as the client used to — that broke the
+      moment the label's wording changed). `search`'s OR-clause extended to
+      match meetingPoint and creator name too, so moving it server-side
+      didn't quietly narrow what it can find. Client: added
+      `requestWithMeta`/`requestEnvelope` to api.ts (`request()` was
+      silently dropping the envelope's `meta.cursor` for every endpoint,
+      which is also why feed.ts's existing cursor pagination was never
+      reachable from the client — see §8.16); search.tsx now runs its own
+      `useInfiniteQuery` (search/budget/guideRequired/verifiedOnly as real
+      query params, debounced text, cursor-driven `onEndReached`) instead
+      of reading AppContext's shared `trips`, plus first-load/error/retry
+      states and pull-to-refresh it never had before. Also fixed in
+      passing: Phase 10's FlatList conversion had left a duplicate
+      "No Matching Trips Found" block (one in the header, one as
+      ListEmptyComponent) that would have rendered twice. Category,
+      duration, transport, and midway-eligibility stay client-side
+      refinements over whatever's loaded so far — they're compound
+      heuristics over trip.name text or array length rather than single
+      real columns (computeDuration/deriveTransport/getCategoryBadge), and
+      porting each faithfully into SQL was judged higher-risk than the
+      value it added this pass. 5 new tests (trips-list.test.ts: cursor
+      pagination reaches the whole set with no gap/overlap, guideRequired,
+      verifiedOnly, search-field parity, invalid-query rejection), full
+      suite 67/67. Not done: §8.4 (create-trip validation/geocoding/
+      draft-publish), infinite scroll for any other list screen, and a real
+      full-text/substring index (`cities`'s `has` filter is still an
+      exact-element match, not a substring one — pre-existing, not
+      introduced here).
       §8.5 done — AppContext.cancelJoinRequest wired up (was fake:
       local-state-only + Alert.alert, never called the API).
       §8.6 done — all three documented Family Connect breaks fixed

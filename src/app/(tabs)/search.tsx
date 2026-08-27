@@ -2,7 +2,7 @@ import { Trip, useApp } from '@/store/AppContext';
 import { logger } from '@/lib/logger';
 import { toast, errorToastMessage } from '@/lib/feedback';
 import { apiService } from '@/services/api';
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/query-keys';
 import TripDetailModal from '@/components/TripDetailModal';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -12,6 +12,7 @@ import { BlurView } from 'expo-blur';
 import {
   BadgePercent,
   Bell,
+  AlertCircle,
   Bike,
   Bus,
   Calendar,
@@ -36,11 +37,13 @@ import {
 } from 'lucide-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Animated,
   Image,
   Modal,
   Pressable,
   FlatList,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -162,10 +165,6 @@ const LIGHT = {
 // There is deliberately no hand-written React.memo/useCallback: when the
 // compiler cannot prove manual memoization matches what it would infer, it
 // skips optimizing the component entirely.
-//
-// `trips` is untyped through AppContext today (see §6.4 — generating client
-// types from the server is still open), so `trip: any` here matches the
-// surrounding code rather than inventing a shape that may not match the wire.
 function TripResultCard({
   trip,
   C,
@@ -387,7 +386,7 @@ function SearchScreen() {
   const C = isDark ? DARK : LIGHT;
   const lastScrollYRef = useRef(0);
   const navbarHiddenRef = useRef(false);
-  const { trips, profile, isLoggedIn, requestedTrips, reloadJoinRequests } = useApp();
+  const { profile, isLoggedIn, requestedTrips, reloadJoinRequests } = useApp();
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [likedTrips, setLikedTrips] = useState<Set<string>>(new Set());
@@ -493,6 +492,55 @@ function SearchScreen() {
     setMidwayOnly(false);
   };
 
+  // Debounce the free-text search so every keystroke doesn't fire a new
+  // server request — 350ms is long enough to skip intermediate keystrokes
+  // during normal typing, short enough not to feel laggy.
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 350);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  // docs/REMEDIATION.md §8.3: this list used to be `useApp().trips` — a
+  // fixed 20-row page fetched once by AppContext for the whole app — with
+  // every filter below applied to that same truncated page. A trip past
+  // row 20 was invisible to search no matter what was typed. These four
+  // filters (search text, budget, guide-included, verified-organizer) now
+  // go to the server as real query params and page in via cursor-based
+  // infinite scroll, so the full result set is reachable. Category,
+  // duration, transport, and midway stay client-side refinements over
+  // whatever pages have loaded so far — they're compound heuristics over
+  // trip.name text (see computeDuration/deriveTransport/getCategoryBadge
+  // above) rather than single real columns, and porting that same
+  // heuristic into SQL faithfully was judged higher-risk than the value it
+  // added for this pass.
+  const searchFilters = {
+    search: debouncedSearch || undefined,
+    maxBudget: maxBudget < 50000 ? maxBudget : undefined,
+    guideRequired: guideRequired || undefined,
+    verifiedOnly: verifiedOnly || undefined,
+  };
+
+  const {
+    data: tripsPages,
+    isLoading: tripsLoading,
+    isError: tripsError,
+    error: tripsFetchError,
+    refetch: refetchTrips,
+    isRefetching: tripsRefetching,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: queryKeys.tripsSearch(searchFilters),
+    queryFn: ({ pageParam }: { pageParam?: string }) =>
+      apiService.getTripsPage({ ...searchFilters, cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+  });
+
+  const trips: Trip[] = tripsPages?.pages.flatMap((page) => page.trips) ?? [];
+
   const getPopularityScore = (t: any) => {
     const total = t.totalSeats || 10;
     const available = t.availableSeats !== undefined ? t.availableSeats : total;
@@ -500,20 +548,15 @@ function SearchScreen() {
     return filled / total;
   };
 
+  // Search text, budget, verified-organizer, and guide-included are now
+  // real server-side query params (see searchFilters/useInfiniteQuery
+  // above) — `trips` already satisfies all four, so re-checking them here
+  // would be redundant at best. What's left is the filters that stayed
+  // client-side: category (a compound name/category-text heuristic),
+  // duration and transport (derived from dates/name text, no dedicated
+  // columns), and midway-eligibility.
   const filteredTrips = trips
     .filter((t) => {
-      const price = t.budget;
-
-      // Search Query Filter
-      if (searchQuery.trim() !== '') {
-        const q = searchQuery.toLowerCase();
-        const matchName = t.name.toLowerCase().includes(q);
-        const matchCities = t.cities.some((c) => c.toLowerCase().includes(q));
-        const matchCreator = t.creator.toLowerCase().includes(q);
-        const matchMeeting = t.meetingPoint.toLowerCase().includes(q);
-        if (!matchName && !matchCities && !matchCreator && !matchMeeting) return false;
-      }
-
       // Category Chip Filter — uses trip.category from DB
       if (selectedCategory !== 'All') {
         const tripCat = (t.category || '').toLowerCase();
@@ -530,15 +573,6 @@ function SearchScreen() {
           if (!tripName.includes('bike') && !tripName.includes('expedition')) return false;
         }
       }
-
-      // Max Budget Filter
-      if (maxBudget < 50000 && price > maxBudget) return false;
-
-      // Verified Organizers Filter — check for (Organizer) tag from DB
-      if (verifiedOnly && !t.creator.includes('Organizer') && !t.creator.includes('Guide')) return false;
-
-      // Guide Included Filter
-      if (guideRequired && !t.guideIncluded) return false;
 
       // Duration Filter — compute from dates
       const duration = computeDuration(t.startDate, t.endDate);
@@ -754,6 +788,11 @@ function SearchScreen() {
         <FlatList
           data={filteredTrips}
           keyExtractor={keyExtractor}
+          refreshControl={<RefreshControl refreshing={tripsRefetching} onRefresh={refetchTrips} tintColor={C.accent} />}
+          onEndReached={() => {
+            if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
+          }}
+          onEndReachedThreshold={0.5}
           renderItem={({ item }) => (
             <TripResultCard
               trip={item}
@@ -838,38 +877,49 @@ function SearchScreen() {
                   </TouchableOpacity>
                 )}
               </View>
-
-              {/* ─── EMPTY STATE WHEN NO TRIPS MATCH FILTERS ────────── */}
-              {filteredTrips.length === 0 && (
-                <View style={[styles.emptyStateCard, { backgroundColor: C.card, borderColor: C.cardBorder }]}>
-                  <SlidersHorizontal size={36} color={C.textSecondary} style={{ marginBottom: 12 }} />
-                  <Text style={[styles.emptyStateTitle, { color: C.text }]}>No Matching Trips Found</Text>
-                  <Text style={[styles.emptyStateSub, { color: C.textSecondary }]}>
-                    No tour routes match your current search query or filter preferences. Try adjusting budget or
-                    resetting filters.
-                  </Text>
-                  <TouchableOpacity style={styles.resetEmptyBtn} onPress={resetFilters}>
-                    <Text style={styles.resetEmptyBtnText}>Reset Preferences</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
             </>
           }
           ListEmptyComponent={
-            <View style={[styles.emptyStateCard, { backgroundColor: C.card, borderColor: C.cardBorder }]}>
-              <SlidersHorizontal size={36} color={C.textSecondary} style={{ marginBottom: 12 }} />
-              <Text style={[styles.emptyStateTitle, { color: C.text }]}>No Matching Trips Found</Text>
-              <Text style={[styles.emptyStateSub, { color: C.textSecondary }]}>
-                No tour routes match your current search query or filter preferences. Try adjusting budget or resetting
-                filters.
-              </Text>
-              <TouchableOpacity style={styles.resetEmptyBtn} onPress={resetFilters}>
-                <Text style={styles.resetEmptyBtnText}>Reset Preferences</Text>
-              </TouchableOpacity>
-            </View>
+            tripsLoading ? (
+              <View style={[styles.emptyStateCard, { backgroundColor: C.card, borderColor: C.cardBorder }]}>
+                <ActivityIndicator color={C.accent} style={{ marginBottom: 12 }} />
+                <Text style={[styles.emptyStateSub, { color: C.textSecondary }]}>Finding trips for you…</Text>
+              </View>
+            ) : tripsError ? (
+              <View style={[styles.emptyStateCard, { backgroundColor: C.card, borderColor: C.cardBorder }]}>
+                <AlertCircle size={36} color="#FF3B30" style={{ marginBottom: 12 }} />
+                <Text style={[styles.emptyStateTitle, { color: C.text }]}>Couldn&apos;t Load Trips</Text>
+                <Text style={[styles.emptyStateSub, { color: C.textSecondary }]}>
+                  {tripsFetchError instanceof Error
+                    ? tripsFetchError.message
+                    : 'Please check your connection and try again.'}
+                </Text>
+                <TouchableOpacity style={styles.resetEmptyBtn} onPress={() => refetchTrips()}>
+                  <Text style={styles.resetEmptyBtnText}>Retry</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={[styles.emptyStateCard, { backgroundColor: C.card, borderColor: C.cardBorder }]}>
+                <SlidersHorizontal size={36} color={C.textSecondary} style={{ marginBottom: 12 }} />
+                <Text style={[styles.emptyStateTitle, { color: C.text }]}>No Matching Trips Found</Text>
+                <Text style={[styles.emptyStateSub, { color: C.textSecondary }]}>
+                  No tour routes match your current search query or filter preferences. Try adjusting budget or
+                  resetting filters.
+                </Text>
+                <TouchableOpacity style={styles.resetEmptyBtn} onPress={resetFilters}>
+                  <Text style={styles.resetEmptyBtnText}>Reset Preferences</Text>
+                </TouchableOpacity>
+              </View>
+            )
           }
           ListFooterComponent={
             <>
+              {isFetchingNextPage && (
+                <View style={styles.loadMoreRow}>
+                  <ActivityIndicator color={C.accent} />
+                </View>
+              )}
+
               {/* ─── CTA BANNER ────────────────────────────────────── */}
               <View style={styles.ctaBannerContainer}>
                 <Image source={require('@/assets/images/cta-banner.png')} style={styles.ctaBannerImage} />
@@ -1834,6 +1884,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     marginVertical: 16,
+  },
+  loadMoreRow: {
+    paddingVertical: 20,
+    alignItems: 'center',
   },
   emptyStateTitle: {
     fontSize: 16,

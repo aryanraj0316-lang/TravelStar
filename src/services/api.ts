@@ -167,7 +167,12 @@ function isRetryableNetworkError(err: unknown): boolean {
  * code, message, and details verbatim so the UI can react to specific cases
  * (e.g. ACCOUNT_LOCKED) without string-matching a message.
  */
-async function request<T>(endpoint: string, options?: RequestOptions, isAuthRetry = false, attempt = 0): Promise<T> {
+async function requestEnvelope<T>(
+  endpoint: string,
+  options?: RequestOptions,
+  isAuthRetry = false,
+  attempt = 0,
+): Promise<{ data: T; meta?: { cursor?: string; total?: number } }> {
   const url = `${getApiBaseUrl()}${endpoint}`;
   const method = (options?.method ?? 'GET').toUpperCase();
   const requestId = generateRequestId();
@@ -193,7 +198,7 @@ async function request<T>(endpoint: string, options?: RequestOptions, isAuthRetr
     } catch (err) {
       if (isRetryableNetworkError(err) && !options?.noRetry && attempt < MAX_RETRIES) {
         await sleep(RETRY_BASE_DELAY_MS * 2 ** attempt);
-        return request<T>(endpoint, options, isAuthRetry, attempt + 1);
+        return requestEnvelope<T>(endpoint, options, isAuthRetry, attempt + 1);
       }
       const timedOut = err instanceof DOMException && err.name === 'AbortError';
       logger.warn(
@@ -228,7 +233,7 @@ async function request<T>(endpoint: string, options?: RequestOptions, isAuthRetr
 
       const newToken = await refreshAccessToken();
       if (newToken) {
-        return request<T>(endpoint, options, true, attempt);
+        return requestEnvelope<T>(endpoint, options, true, attempt);
       }
       // A real session existed and refresh failed — the session is gone. Let
       // AppContext react (clear state, show a "session expired" toast, route
@@ -240,7 +245,7 @@ async function request<T>(endpoint: string, options?: RequestOptions, isAuthRetr
 
     if (res.status >= 500 && !options?.noRetry && RETRYABLE_METHODS.has(method) && attempt < MAX_RETRIES) {
       await sleep(RETRY_BASE_DELAY_MS * 2 ** attempt);
-      return request<T>(endpoint, options, isAuthRetry, attempt + 1);
+      return requestEnvelope<T>(endpoint, options, isAuthRetry, attempt + 1);
     }
 
     let json: any = null;
@@ -257,10 +262,34 @@ async function request<T>(endpoint: string, options?: RequestOptions, isAuthRetr
       throw new ApiError(code, message, res.status, json?.error?.details, requestId);
     }
 
-    return (json?.data !== undefined ? json.data : json) as T;
+    return { data: (json?.data !== undefined ? json.data : json) as T, meta: json?.meta };
   } finally {
     clearTimeout(timeout);
   }
+}
+
+/**
+ * Thin wrapper over requestEnvelope for the overwhelming majority of call
+ * sites, which only ever want the unwrapped `data`. Kept as the default so
+ * every existing `apiService` method stays untouched by the pagination work
+ * below — only paginated endpoints need requestWithMeta.
+ */
+async function request<T>(endpoint: string, options?: RequestOptions, isAuthRetry = false, attempt = 0): Promise<T> {
+  return (await requestEnvelope<T>(endpoint, options, isAuthRetry, attempt)).data;
+}
+
+/**
+ * Same contract as `request()`, but also returns the envelope's `meta`
+ * (currently just `cursor`, docs/REMEDIATION.md §0.2.1) — every paginated
+ * endpoint (feed, trips search) needs this to reach its next page; plain
+ * `request()` silently drops `meta`, which is why feed pagination has never
+ * been reachable from the client (§8.16) despite the backend supporting it.
+ */
+async function requestWithMeta<T>(
+  endpoint: string,
+  options?: RequestOptions,
+): Promise<{ data: T; meta?: { cursor?: string; total?: number } }> {
+  return requestEnvelope<T>(endpoint, options);
 }
 
 export const apiService = {
@@ -343,6 +372,33 @@ export const apiService = {
   // "?maxBudget=15000&limit=50" or "?category=Nature&search=kerala".
   async getTrips(query = ''): Promise<Trip[] | null> {
     return request<Trip[]>(`/trips${query}`);
+  },
+
+  // Paginated variant for search.tsx's browse list (docs/REMEDIATION.md
+  // §8.3). `getTrips` above still exists for the several other screens/
+  // AppContext that just want "the first page" — this is additive, not a
+  // replacement. `cursor` comes from a previous call's own return value;
+  // omit it for the first page.
+  async getTripsPage(params: {
+    search?: string;
+    category?: string;
+    maxBudget?: number;
+    guideRequired?: boolean;
+    verifiedOnly?: boolean;
+    cursor?: string;
+    limit?: number;
+  }): Promise<{ trips: Trip[]; nextCursor?: string }> {
+    const qs = new URLSearchParams();
+    if (params.search) qs.set('search', params.search);
+    if (params.category && params.category !== 'All') qs.set('category', params.category);
+    if (params.maxBudget !== undefined) qs.set('maxBudget', String(params.maxBudget));
+    if (params.guideRequired) qs.set('guideRequired', 'true');
+    if (params.verifiedOnly) qs.set('verifiedOnly', 'true');
+    if (params.cursor) qs.set('cursor', params.cursor);
+    if (params.limit) qs.set('limit', String(params.limit));
+
+    const { data, meta } = await requestWithMeta<Trip[]>(`/trips?${qs.toString()}`);
+    return { trips: data, nextCursor: meta?.cursor };
   },
 
   // Trips the current user is a confirmed member of — real data backing

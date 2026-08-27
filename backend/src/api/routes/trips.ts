@@ -104,32 +104,72 @@ const MAX_PAGE_SIZE = 50;
 
 // List Trips (with optional query filters), pushed into SQL rather than
 // loading everything and filtering in JS — docs/REMEDIATION.md §5.9.
+// docs/REMEDIATION.md §8.3: search.tsx used to source its "browse all trips"
+// list from this route's plain 20-row default and then filter/sort that
+// fixed page entirely client-side — so anything past the most recent 20
+// trips was invisible to search, category, and budget filters alike, no
+// matter what the user typed. `cursor` (same createdAt-keyed pattern as
+// feed.ts) makes the full result set reachable via infinite scroll, and
+// `guideRequired`/`verifiedOnly` join the filters that were already
+// server-side (category/search/maxBudget) so the client no longer needs to
+// re-derive them from a possibly-truncated page. `search`/`cities` still
+// need a real full-text index to substring-match a city name rather than
+// `has`'s exact-element match — not addressed here.
+const listTripsQuerySchema = z.object({
+  category: z.string().trim().min(1).optional(),
+  search: z.string().trim().min(1).max(200).optional(),
+  maxBudget: z.coerce.number().positive().optional(),
+  guideRequired: z.coerce.boolean().optional(),
+  verifiedOnly: z.coerce.boolean().optional(),
+  limit: z.coerce.number().int().min(1).max(MAX_PAGE_SIZE).optional(),
+  cursor: z.coerce.date().optional(),
+});
+
 router.get('/', async (req, res) => {
-  const { category, search, maxBudget } = req.query;
+  const parsed = listTripsQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid trips query.' } });
+  }
+  const { category, search, maxBudget, guideRequired, verifiedOnly, cursor } = parsed.data;
   // Public browse route — anonymous callers get isMyTrip: false throughout.
   const tokenUserId = req.user?.id ?? null;
 
-  const pageSize = Math.min(
-    MAX_PAGE_SIZE,
-    Math.max(1, parseInt(req.query.limit as string) || DEFAULT_PAGE_SIZE)
-  );
+  const pageSize = Math.min(MAX_PAGE_SIZE, parsed.data.limit ?? DEFAULT_PAGE_SIZE);
 
   try {
     const where: Record<string, unknown> = {};
-    if (category && typeof category === 'string' && category !== 'All') {
+    if (category && category !== 'All') {
       where.category = { equals: category, mode: 'insensitive' };
     }
-    if (maxBudget) {
-      const limit = parseFloat(maxBudget as string);
-      if (!isNaN(limit)) {
-        where.budget = { lte: limit };
-      }
+    if (maxBudget !== undefined) {
+      where.budget = { lte: maxBudget };
     }
-    if (search && typeof search === 'string') {
+    if (search) {
+      // Matches every field search.tsx's old client-side filter checked
+      // (name, cities, creator, meetingPoint) so moving this server-side
+      // doesn't quietly narrow what search can find.
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
         { cities: { has: search } },
+        { meetingPoint: { contains: search, mode: 'insensitive' } },
+        { creator: { profile: { firstName: { contains: search, mode: 'insensitive' } } } },
+        { creator: { profile: { lastName: { contains: search, mode: 'insensitive' } } } },
       ];
+    }
+    if (guideRequired) {
+      where.guideIncluded = true;
+    }
+    if (verifiedOnly) {
+      // "Verified" here means the trip's creator is a Guide or Organizer
+      // account, not a plain Tourist — the same distinction the client used
+      // to make by string-matching mapTrip's *display* creator label
+      // (`.includes('Organizer')`/`.includes('Guide')`), which broke the
+      // moment that label's wording changed. Filtering the real role
+      // column is both server-side and more correct.
+      where.creator = { role: { in: ['GUIDE', 'ORGANIZER'] } };
+    }
+    if (cursor) {
+      where.createdAt = { lt: cursor };
     }
 
     const dbTrips = await prisma.trip.findMany({
@@ -139,7 +179,12 @@ router.get('/', async (req, res) => {
       take: pageSize,
     });
 
-    return res.status(200).json({ ok: true, data: dbTrips.map((t) => mapTrip(t, tokenUserId)) });
+    const lastTrip = dbTrips[dbTrips.length - 1];
+    const nextCursor = dbTrips.length === pageSize && lastTrip ? lastTrip.createdAt.toISOString() : undefined;
+
+    return res
+      .status(200)
+      .json({ ok: true, data: dbTrips.map((t) => mapTrip(t, tokenUserId)), meta: { cursor: nextCursor } });
   } catch (err) {
     logger.error('[Trips] List error:', err);
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve trips' } });
@@ -166,7 +211,16 @@ const nearbyQuerySchema = z.object({
 router.get('/nearby', async (req, res) => {
   const parsed = nearbyQuerySchema.safeParse(req.query);
   if (!parsed.success) {
-    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid location query.', details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })) } });
+    return res
+      .status(400)
+      .json({
+        ok: false,
+        error: {
+          code: 'VALIDATION_FAILED',
+          message: 'Invalid location query.',
+          details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+        },
+      });
   }
   const { lat, lng, limit } = parsed.data;
   const origin = lat !== undefined && lng !== undefined ? { lat, lng } : null;
@@ -259,7 +313,7 @@ router.get('/mine', async (req, res) => {
         ...mapped,
         status,
         joinedAt: (isOrganizer ? t.createdAt : t.members[0]!.joinedAt).toISOString(),
-        memberRole: isOrganizer ? 'ORGANIZER' as const : t.members[0]!.role,
+        memberRole: isOrganizer ? ('ORGANIZER' as const) : t.members[0]!.role,
       };
     });
 
@@ -318,7 +372,16 @@ const createTripSchema = z
 router.post('/', async (req, res) => {
   const parsed = createTripSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Please check the trip details.', details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })) } });
+    return res
+      .status(400)
+      .json({
+        ok: false,
+        error: {
+          code: 'VALIDATION_FAILED',
+          message: 'Please check the trip details.',
+          details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+        },
+      });
   }
   const data = parsed.data;
 
@@ -333,7 +396,7 @@ router.post('/', async (req, res) => {
 
     const durationDays = Math.max(
       1,
-      Math.round((data.endDate.getTime() - data.startDate.getTime()) / (24 * 60 * 60 * 1000))
+      Math.round((data.endDate.getTime() - data.startDate.getTime()) / (24 * 60 * 60 * 1000)),
     );
 
     const { newTrip, chatRoom } = await prisma.$transaction(async (tx) => {
@@ -374,7 +437,9 @@ router.post('/', async (req, res) => {
     const mappedTrip = {
       id: newTrip.id,
       name: newTrip.name,
-      creator: user.profile ? `${user.profile.firstName} ${user.profile.lastName} (Organizer)` : `${user.email} (Organizer)`,
+      creator: user.profile
+        ? `${user.profile.firstName} ${user.profile.lastName} (Organizer)`
+        : `${user.email} (Organizer)`,
       creatorId: user.id,
       chatRoomId: chatRoom.id,
       cities: newTrip.cities,
@@ -399,7 +464,9 @@ router.post('/', async (req, res) => {
     return res.status(201).json({ ok: true, data: mappedTrip });
   } catch (err) {
     logger.error('[Trips] Create error:', err);
-    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to create trip. Please try again.' } });
+    return res
+      .status(500)
+      .json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to create trip. Please try again.' } });
   }
 });
 
@@ -417,7 +484,15 @@ router.post('/:id/join', async (req, res) => {
       return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found.' } });
     }
     if (trip.privacy !== 'PUBLIC') {
-      return res.status(400).json({ ok: false, error: { code: 'APPROVAL_REQUIRED', message: 'This trip requires the organiser\'s approval. Send a join request instead.' } });
+      return res
+        .status(400)
+        .json({
+          ok: false,
+          error: {
+            code: 'APPROVAL_REQUIRED',
+            message: "This trip requires the organiser's approval. Send a join request instead.",
+          },
+        });
     }
 
     const result = await claimSeatAndJoin(tripId, userId);
@@ -426,7 +501,9 @@ router.post('/:id/join', async (req, res) => {
       if (result.reason === 'TRIP_NOT_FOUND') {
         return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found.' } });
       }
-      return res.status(409).json({ ok: false, error: { code: 'TRIP_FULL', message: 'No available seats on this trip.' } });
+      return res
+        .status(409)
+        .json({ ok: false, error: { code: 'TRIP_FULL', message: 'No available seats on this trip.' } });
     }
 
     const updated = await prisma.trip.findUnique({ where: { id: tripId }, include: TRIP_INCLUDE });
@@ -499,17 +576,25 @@ router.post('/:id/midway-join', async (req, res) => {
     const fullPrice = Number(trip.budget);
     const result = calculateMidwayPrice(trip.cities, fullPrice, fromCity, toCity);
     if (!result.ok) {
-      return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid midway segments selected for this trip route' } });
+      return res
+        .status(400)
+        .json({
+          ok: false,
+          error: { code: 'VALIDATION_FAILED', message: 'Invalid midway segments selected for this trip route' },
+        });
     }
 
-    res.status(200).json({ ok: true, data: {
+    res.status(200).json({
+      ok: true,
+      data: {
         tripId: id,
         fromCity,
         toCity,
         fullPrice: fullPrice.toString(),
         adjustedPrice: result.adjustedPrice.toString(),
         segmentsTraversed: result.segmentsTraversed,
-      } });
+      },
+    });
   } catch (err) {
     logger.error('[Trips] Midway-join error:', err);
     res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to calculate midway price.' } });
@@ -534,8 +619,11 @@ router.get('/:id/members', async (req, res) => {
 
     const creatorName = trip.creator.profile
       ? `${trip.creator.profile.firstName} ${trip.creator.profile.lastName}`.trim()
-      : (trip.creator.email ? trip.creator.email.split('@')[0] : 'Organizer');
-    const creatorAvatar = trip.creator.profile?.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150';
+      : trip.creator.email
+        ? trip.creator.email.split('@')[0]
+        : 'Organizer';
+    const creatorAvatar =
+      trip.creator.profile?.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150';
 
     const creatorItem = {
       id: `creator-${trip.creatorId}`,
@@ -548,7 +636,9 @@ router.get('/:id/members', async (req, res) => {
     const memberItems = trip.members.map((m) => {
       const name = m.user.profile
         ? `${m.user.profile.firstName} ${m.user.profile.lastName}`.trim()
-        : (m.user.email ? m.user.email.split('@')[0] : 'Traveler');
+        : m.user.email
+          ? m.user.email.split('@')[0]
+          : 'Traveler';
       const avatar = m.user.profile?.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150';
 
       return {
@@ -689,7 +779,16 @@ router.post('/:tripId/expenses', async (req, res) => {
   const { tripId } = req.params;
   const parsed = createExpenseSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Please check the expense details.', details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })) } });
+    return res
+      .status(400)
+      .json({
+        ok: false,
+        error: {
+          code: 'VALIDATION_FAILED',
+          message: 'Please check the expense details.',
+          details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+        },
+      });
   }
   try {
     const participants = await loadTripParticipants(tripId);
@@ -735,7 +834,12 @@ router.delete('/:tripId/expenses/:expenseId', async (req, res) => {
       return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Expense not found' } });
     }
     if (expense.paidById !== userId && !me.isOrganizer) {
-      return res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'Only the person who paid or the organizer can remove this.' } });
+      return res
+        .status(403)
+        .json({
+          ok: false,
+          error: { code: 'FORBIDDEN', message: 'Only the person who paid or the organizer can remove this.' },
+        });
     }
 
     await prisma.tripExpense.delete({ where: { id: expenseId } });
