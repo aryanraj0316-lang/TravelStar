@@ -1284,6 +1284,25 @@ partial, exactly what's blocking full completion.
       exists yet (§8.14, not built). 3 new backend tests (401, organizer/
       joiner/stranger visibility, cancelled-trip exclusion), all passing
       against the real DB — full suite is 49/49. See commit 95725ec.)
+      §8.19 done — destination-details.tsx rendered a hardcoded client-side
+      DESTINATIONS_DATABASE constant keyed by a fabricated numeric id, with
+      a fake "simulated video player" (setInterval-driven progress bar, a
+      play/pause icon bound to a ref so it never re-rendered, a
+      setState-inside-a-setState-updater) that streamed nothing. Added
+      description/gallery/specialties columns to the Destination model
+      (migration 000000000004, backfilling the 8 existing rows by name +
+      matching seed-reference-data.ts for fresh installs), a new
+      GET /destinations/:id (public, added to auth.ts PUBLIC_GET_PATTERNS)
+      returning DESTINATION_NOT_FOUND/404, and apiService.getDestination.
+      The screen now runs on useQuery with real loading/error/not-found
+      states. The video player is deleted outright (no real video content
+      to point expo-video at) and there is no reviews section (no
+      review-authoring feature — §8.14, not built — so fabricated reviewer
+      names/avatars would be exactly the mock data §0.2 bans). Deleted the
+      now-dead src/constants/destinations.ts. 2 new backend tests
+      (public-reachability + full detail shape, 404 for missing), full
+      suite 51/51. DESTINATION_NOT_FOUND added to both api-error-codes.ts
+      copies.
 - [ ] Phase 9 — Design system, i18n, accessibility (not started)
 - [ ] Phase 10 — Performance (not started)
 - [ ] Phase 11 — Observability and operations (not started)

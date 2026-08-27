@@ -861,6 +861,16 @@ model Destination {
   image     String
   rank      Int      @default(0)
   featured  Boolean  @default(false)
+  // Detail-screen content (docs/REMEDIATION.md §8.19 — destination-details.tsx
+  // previously rendered a hardcoded client-side DESTINATIONS_DATABASE
+  // constant instead of the API). No reviews field: there is no real
+  // review-authoring feature yet (§8.14, not built), and fabricating
+  // reviewer identities to fill the space would be exactly the kind of
+  // mock data §0.2 bans — the detail screen shows an honest empty state
+  // instead.
+  description String   @default("")
+  gallery     String[] @default([])
+  specialties Json     @default("[]")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

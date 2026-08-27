@@ -56,6 +56,7 @@ const PUBLIC_GET_PATTERNS = [
   /^\/trips\/(?!mine$)[^/]+$/,
   /^\/guides\/[^/]+\/packages$/, // /guides/:id/packages
   /^\/guides\/[^/]+\/reels$/, // /guides/:id/reels
+  /^\/destinations\/[^/]+$/, // /destinations/:id
 ];
 
 function isPublicRoute(req: Request): boolean {

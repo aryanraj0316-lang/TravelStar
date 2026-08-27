@@ -3,7 +3,7 @@ import { eventBus } from './event-bus';
 import { logger } from '@/lib/logger';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
-import { Guide, MyTripBooking, SOSAlert, Trip, UserProfile } from '../store/AppContext';
+import { DestinationDetail, Guide, MyTripBooking, SOSAlert, Trip, UserProfile } from '../store/AppContext';
 import { ApiErrorCode } from '@/types/api-error-codes';
 
 // Request-ID / idempotency-key generation only needs uniqueness, not
@@ -422,6 +422,10 @@ export const apiService = {
   // Homepage — Destinations
   async getDestinations(): Promise<any[] | null> {
     return request<any[]>('/destinations');
+  },
+
+  async getDestination(id: string): Promise<DestinationDetail | null> {
+    return request<DestinationDetail>(`/destinations/${id}`);
   },
 
   async createDestination(data: any): Promise<any> {

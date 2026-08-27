@@ -8,6 +8,7 @@ export type ApiErrorCode =
   | 'FORBIDDEN'
   | 'NOT_FOUND'
   | 'CONFLICT'
+  | 'DESTINATION_NOT_FOUND'
   | 'BUSINESS_RULE_VIOLATION'
   | 'RATE_LIMITED'
   | 'INTERNAL'

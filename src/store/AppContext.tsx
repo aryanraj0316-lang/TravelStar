@@ -88,6 +88,20 @@ export interface MyTripBooking extends Trip {
   memberRole: 'MEMBER' | 'ORGANIZER' | 'CO_LEAD';
 }
 
+// Full destination-detail content from GET /destinations/:id
+// (docs/REMEDIATION.md §8.19). No `reviews` field — there is no real
+// review-authoring feature yet (§8.14, not built).
+export interface DestinationDetail {
+  id: string;
+  name: string;
+  tags: string;
+  rating: number;
+  image: string;
+  description: string;
+  gallery: string[];
+  specialties: { icon: string; title: string; desc: string }[];
+}
+
 export interface Guide {
   id: string;
   name: string;

@@ -36,6 +36,7 @@ export const queryKeys = {
   unreadNotificationCount: () => ['notifications', 'unread-count'] as const,
 
   destinations: () => ['destinations'] as const,
+  destination: (id: string) => ['destinations', id] as const,
   weatherLocations: () => ['weather-locations'] as const,
   liveWeather: (lat: number, lon: number) => ['weather-locations', 'live', lat, lon] as const,
   alerts: () => ['alerts'] as const,
