@@ -8,6 +8,7 @@ import helmet from 'helmet';
 dotenv.config();
 
 import { env } from './config/env';
+import prisma from './services/db';
 import { authenticateJWT } from './middleware/auth';
 import { requestId } from './middleware/request-id';
 import authRoutes from './api/routes/auth';
@@ -164,8 +165,24 @@ app.use('/api/v1/interactions', interactionRoutes);
 app.use('/api/v1/chats', chatRoutes);
 app.use('/api/v1/feed', feedRoutes);
 
+// Liveness — no dependencies. If the process is up, this returns 200.
 app.get('/health', (req, res) => {
   res.status(200).json({ ok: true, data: { status: 'ok', service: 'TravelStar Backend', timestamp: new Date().toISOString() } });
+});
+
+// Readiness — checks the dependencies the app needs to serve traffic
+// (docs/REMEDIATION.md Phase 11). Returns 503 while the DB is unreachable
+// so a load balancer stops routing to this instance.
+app.get('/ready', async (req, res) => {
+  const checks: Record<string, 'ok' | 'fail'> = {};
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    checks.database = 'ok';
+  } catch {
+    checks.database = 'fail';
+  }
+  const ready = Object.values(checks).every((c) => c === 'ok');
+  res.status(ready ? 200 : 503).json({ ok: ready, data: { ready, checks } });
 });
 
 app.use('/api/v1', (req, res) => {

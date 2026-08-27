@@ -15,6 +15,14 @@ const envSchema = z.object({
   // no cross-instance room fan-out) — fine for local dev, not for a
   // horizontally-scaled deployment. See docs/REMEDIATION.md §3.8.
   REDIS_URL: z.string().min(1).optional(),
+  // Optional observability (docs/REMEDIATION.md Phase 11). When SENTRY_DSN
+  // is set AND `@sentry/node` is installed, errors are reported to Sentry
+  // with PII scrubbing; otherwise error reporting is a no-op. LOG_LEVEL
+  // controls the structured logger's floor.
+  SENTRY_DSN: z.string().url().optional(),
+  SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0),
+  RELEASE_VERSION: z.string().optional(),
+  LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).optional(),
 });
 
 function loadEnv() {

@@ -2,6 +2,7 @@ import { NextFunction, Request, Response } from 'express';
 import { Prisma } from '@prisma/client';
 import { ZodError } from 'zod';
 import { logger } from '../lib/logger';
+import { captureException } from '../lib/observability';
 import { ApiError } from '../lib/http';
 import { ApiErrorCode } from '../types/api-error-codes';
 
@@ -35,6 +36,7 @@ export const errorHandler = (err: unknown, req: Request, res: Response, _next: N
 
   if (statusCode >= 500) {
     logger.error(`[${req.id}] ${req.method} ${req.originalUrl} ->`, err instanceof Error ? err.stack ?? err.message : err);
+    captureException(err, { requestId: req.id, method: req.method, path: req.originalUrl, userId: req.user?.id });
   } else {
     logger.warn(`[${req.id}] ${req.method} ${req.originalUrl} -> ${statusCode} ${code}`);
   }

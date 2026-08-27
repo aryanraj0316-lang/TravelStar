@@ -1367,6 +1367,38 @@ partial, exactly what's blocking full completion.
       Testcontainers throwaway-Postgres is the real fix.
 - [ ] Phase 9 — Design system, i18n, accessibility (not started)
 - [ ] Phase 10 — Performance (not started)
-- [ ] Phase 11 — Observability and operations (not started)
+- [ ] Phase 11 — Observability and operations (in progress — code-shaped
+      parts done, secrets/live-wiring deferred per the 2026-08-27 user
+      decision):
+      • Structured JSON logging: backend/src/lib/logger.ts rewritten
+        zero-dep — one JSON object per line, levels (LOG_LEVEL), a
+        redaction pass (tokens/passwords/Aadhaar/coordinates never logged),
+        and logger.child(bindings) for request-id/user-id correlation.
+        Swapping the internals for pino is a documented drop-in. No raw
+        console.* left in backend/src except the pre-boot env-failure
+        path in config/env.ts (intentional, eslint-disabled).
+      • /health (liveness, dependency-free) kept; new /ready (503 while the
+        DB is unreachable, per-dependency check map). 2 new tests
+        (health.test.ts).
+      • Graceful shutdown in server.ts: SIGTERM/SIGINT → stop accepting →
+        close HTTP + sockets → prisma.$disconnect → flush observability →
+        exit, with a 15s hard-exit guard. unhandledRejection /
+        uncaughtException handlers report + (for uncaught) drain.
+      • Sentry: config-gated. backend/src/lib/observability.ts is a safe
+        no-op unless SENTRY_DSN is set AND `@sentry/node` is installed
+        (dynamic require keeps it an optional dep). Wired into the 500
+        path of middleware/error.ts (with PII-scrubbed context) and
+        server.ts process handlers. env.ts parses SENTRY_DSN /
+        SENTRY_TRACES_SAMPLE_RATE / RELEASE_VERSION / LOG_LEVEL.
+      • backend/Dockerfile (multi-stage, non-root `node` user, dumb-init
+        for signals, HEALTHCHECK), backend/.dockerignore, root
+        docker-compose.yml (postgres + redis + api), .github/workflows/
+        ci.yml (web typecheck; backend typecheck/lint/build/test against a
+        throwaway Postgres+Redis, prisma migrate deploy). .env.example
+        updated.
+      Not done (needs the user / infra): real Sentry DSN + `npm i
+      @sentry/node`, source-map upload per release, metrics/dashboards/
+      alerts, backups + tested restore + RPO/RTO, runbooks, branch
+      protection, CD pipeline. `pino` swap left as a follow-up.
 - [ ] Phase 12 — Legal, privacy, and compliance (not started)
 - [ ] Phase 13 — Testing and release readiness (not started)

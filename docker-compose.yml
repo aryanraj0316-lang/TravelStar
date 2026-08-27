@@ -1,0 +1,56 @@
+# Local development stack (docs/REMEDIATION.md Phase 11): Postgres + Redis +
+# the backend API. The Expo app is not containerised — run it with
+# `npm start` and point EXPO_PUBLIC_API_URL at http://localhost:5000.
+#
+#   docker compose up --build
+#   docker compose exec api npx prisma migrate deploy
+#   docker compose exec api npm run seed:reference
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: travelstar
+      POSTGRES_PASSWORD: travelstar
+      POSTGRES_DB: travelstar
+    ports:
+      - '5432:5432'
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U travelstar']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ./backend
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: '5000'
+      DATABASE_URL: postgresql://travelstar:travelstar@db:5432/travelstar
+      # 48 random bytes — dev only, never reuse this anywhere real.
+      JWT_SECRET: dev_only_secret_change_me_0123456789abcdef0123456789
+      CORS_ALLOWED_ORIGINS: http://localhost:8081,http://localhost:19006
+      REDIS_URL: redis://redis:6379
+    ports:
+      - '5000:5000'
+
+volumes:
+  db-data:
