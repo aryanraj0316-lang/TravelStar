@@ -1317,6 +1317,34 @@ partial, exactly what's blocking full completion.
       Not done: language-switcher (no i18n library in the app at all —
       Phase 9 scope, not a §8.2 bug fix), and there is still no real
       bucket provisioned for anyone to test the configured path against.
+      §8.4 done (partial — cover-image upload only) — create.tsx's custom-
+      cover-image picker had the exact same bug §8.2 fixed for avatars:
+      the picked asset's local file://(/blob:/data: on web) `uri` was set
+      directly as `coverImage`, reachable only on the organizer's own
+      device — every other trip list/detail screen, on every other user's
+      device, tried to load that same local path and silently failed (one
+      screen even had `isCustomImage = coverImage.startsWith('file')`
+      logic built around this, i.e. the bug was load-bearing). Reused the
+      §8.2 infrastructure: object-storage.ts's upload-URL helper is now
+      generic (`createUploadUrl(keyPrefix, ownerId, contentType)`, keyed by
+      the *uploader's* id — a trip cover is picked before the trip exists,
+      so it can't be keyed by a trip id yet), with `createAvatarUploadUrl`/
+      `createTripCoverUploadUrl` as thin wrappers. New
+      POST /trips/cover-upload-url (registered ahead of the /:id routes so
+      it isn't swallowed as `id: 'cover-upload-url'` — a test asserts
+      this), same STORAGE_UNAVAILABLE-not-fake-success contract. Client
+      reuses src/lib/upload.ts unchanged. 3 new tests
+      (trip-cover-upload.test.ts, same shape as avatar-upload.test.ts),
+      full suite 73/73. Not done: `durationDays` derivation (nights are
+      already computed from dates client-side where displayed — no
+      dedicated stored field exists, and none of the screens that read it
+      showed a bug from computing it on demand), city/route builder
+      geocoding (no geocoding-service credentials in this project, same
+      constraint noted at §8.13), seat/budget business-rule validation
+      beyond what POST /trips already zod-validates, and draft/publish
+      states (trips are created PUBLIC/PRIVATE/INVITE_ONLY today with no
+      draft concept — introducing one is a schema change, not a bug fix,
+      and wasn't attempted this pass).
       §8.5 done — AppContext.cancelJoinRequest wired up (was fake:
       local-state-only + Alert.alert, never called the API).
       §8.6 done — all three documented Family Connect breaks fixed

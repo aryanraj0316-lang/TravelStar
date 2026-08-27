@@ -69,14 +69,21 @@ const PRESIGNED_URL_TTL_SECONDS = 5 * 60;
 
 /**
  * Returns a short-lived presigned PUT URL the client uploads directly to
- * (never through this server — an avatar photo doesn't belong in our
+ * (never through this server — a photo doesn't belong in our
  * request/response cycle), plus the public URL it will be readable at
  * afterwards. Throws ObjectStorageNotConfiguredError if the five
  * OBJECT_STORAGE_* vars aren't set, or UnsupportedContentTypeError for
  * anything that isn't a plain image.
+ *
+ * `keyPrefix` namespaces the upload by what it's for (`avatars`,
+ * `trip-covers`, …) and `ownerId` scopes it to whoever's uploading — not
+ * necessarily the eventual owner of the *entity* the photo is for, since a
+ * trip cover is picked before the trip exists and so can't be keyed by a
+ * trip id yet.
  */
-export async function createAvatarUploadUrl(
-  userId: string,
+async function createUploadUrl(
+  keyPrefix: string,
+  ownerId: string,
   contentType: string,
 ): Promise<{ uploadUrl: string; publicUrl: string }> {
   if (!isObjectStorageConfigured()) {
@@ -87,11 +94,11 @@ export async function createAvatarUploadUrl(
     throw new UnsupportedContentTypeError(contentType);
   }
 
-  // A fresh random key per upload (not a fixed per-user path) so an old
-  // cached copy of the previous avatar can't be resurrected by re-signing
-  // the same URL, and so a race between two uploads from the same account
-  // can't corrupt one file.
-  const key = `avatars/${userId}/${randomUUID()}.${ext}`;
+  // A fresh random key per upload (not a fixed path) so an old cached copy
+  // of a previous photo can't be resurrected by re-signing the same URL,
+  // and so a race between two uploads from the same account can't corrupt
+  // one file.
+  const key = `${keyPrefix}/${ownerId}/${randomUUID()}.${ext}`;
 
   const command = new PutObjectCommand({
     Bucket: env.OBJECT_STORAGE_BUCKET!,
@@ -102,4 +109,19 @@ export async function createAvatarUploadUrl(
   const publicUrl = `${env.OBJECT_STORAGE_PUBLIC_URL_BASE!.replace(/\/$/, '')}/${key}`;
 
   return { uploadUrl, publicUrl };
+}
+
+export function createAvatarUploadUrl(userId: string, contentType: string) {
+  return createUploadUrl('avatars', userId, contentType);
+}
+
+// docs/REMEDIATION.md §8.4 — create.tsx's custom-cover-image picker had the
+// exact same bug as the avatar picker (§8.2): it set the picked asset's
+// local file://(/blob:/data: on web) URI directly as `coverImage`, which is
+// only ever reachable on the organizer's own device. Every other trip
+// list/detail screen rendering that trip for anyone else would try to load
+// that same local path and fail. Keyed by the *uploader's* id, not a trip
+// id, because the trip doesn't exist yet when the cover is picked.
+export function createTripCoverUploadUrl(uploaderId: string, contentType: string) {
+  return createUploadUrl('trip-covers', uploaderId, contentType);
 }

@@ -379,6 +379,15 @@ export const apiService = {
     });
   },
 
+  // Same as getAvatarUploadUrl, for create.tsx's custom trip-cover picker
+  // (docs/REMEDIATION.md §8.4).
+  async getTripCoverUploadUrl(contentType: 'image/jpeg' | 'image/png' | 'image/webp') {
+    return request<{ uploadUrl: string; publicUrl: string }>('/trips/cover-upload-url', {
+      method: 'POST',
+      body: JSON.stringify({ contentType }),
+    });
+  },
+
   // Trips
   // `query` is an optional pre-built query string, e.g.
   // "?maxBudget=15000&limit=50" or "?category=Nature&search=kerala".

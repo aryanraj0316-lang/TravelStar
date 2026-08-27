@@ -7,6 +7,7 @@ import { requireUserId } from '../../lib/auth-context';
 import { claimSeatAndJoin } from '../../services/trip-membership';
 import { calculateMidwayPrice } from '../../services/midway-pricing';
 import { coordsForCity, haversineKm } from '../../lib/india-city-coords';
+import { createTripCoverUploadUrl, ObjectStorageNotConfiguredError } from '../../lib/object-storage';
 
 const router = Router();
 
@@ -211,16 +212,14 @@ const nearbyQuerySchema = z.object({
 router.get('/nearby', async (req, res) => {
   const parsed = nearbyQuerySchema.safeParse(req.query);
   if (!parsed.success) {
-    return res
-      .status(400)
-      .json({
-        ok: false,
-        error: {
-          code: 'VALIDATION_FAILED',
-          message: 'Invalid location query.',
-          details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
-        },
-      });
+    return res.status(400).json({
+      ok: false,
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'Invalid location query.',
+        details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+      },
+    });
   }
   const { lat, lng, limit } = parsed.data;
   const origin = lat !== undefined && lng !== undefined ? { lat, lng } : null;
@@ -372,16 +371,14 @@ const createTripSchema = z
 router.post('/', async (req, res) => {
   const parsed = createTripSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res
-      .status(400)
-      .json({
-        ok: false,
-        error: {
-          code: 'VALIDATION_FAILED',
-          message: 'Please check the trip details.',
-          details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
-        },
-      });
+    return res.status(400).json({
+      ok: false,
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'Please check the trip details.',
+        details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+      },
+    });
   }
   const data = parsed.data;
 
@@ -470,6 +467,47 @@ router.post('/', async (req, res) => {
   }
 });
 
+// docs/REMEDIATION.md §8.4 — create.tsx's custom-cover-image picker set the
+// picked asset's local file://(/blob:/data: on web) uri directly as
+// coverImage: unreachable by anyone browsing the trip other than the
+// organizer's own device (before its cache clears). Same fix as the
+// avatar-upload route (§8.2): a short-lived presigned PUT URL the client
+// uploads straight to the bucket, keyed by the *uploader's* id since the
+// trip doesn't have an id yet at pick time — registered before the /:id
+// routes below so it isn't swallowed as `id: 'cover-upload-url'`.
+const coverUploadUrlSchema = z.object({
+  contentType: z.enum(['image/jpeg', 'image/png', 'image/webp']),
+});
+
+router.post('/cover-upload-url', async (req, res) => {
+  const parsed = coverUploadUrlSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res
+      .status(400)
+      .json({
+        ok: false,
+        error: { code: 'VALIDATION_FAILED', message: 'contentType must be image/jpeg, image/png, or image/webp.' },
+      });
+  }
+
+  try {
+    const userId = requireUserId(req);
+    const { uploadUrl, publicUrl } = await createTripCoverUploadUrl(userId, parsed.data.contentType);
+    return res.status(200).json({ ok: true, data: { uploadUrl, publicUrl } });
+  } catch (err) {
+    if (err instanceof ObjectStorageNotConfiguredError) {
+      return res
+        .status(503)
+        .json({
+          ok: false,
+          error: { code: 'STORAGE_UNAVAILABLE', message: 'Photo upload is not available right now.' },
+        });
+    }
+    logger.error('[Trips] Cover upload URL failed:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not start the upload.' } });
+  }
+});
+
 // Instant join — PUBLIC trips only. PRIVATE/INVITE_ONLY trips require the
 // creator's approval via POST /interactions/join-request, which shares the
 // same seat-claiming logic (services/trip-membership.ts) so both paths are
@@ -484,15 +522,13 @@ router.post('/:id/join', async (req, res) => {
       return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found.' } });
     }
     if (trip.privacy !== 'PUBLIC') {
-      return res
-        .status(400)
-        .json({
-          ok: false,
-          error: {
-            code: 'APPROVAL_REQUIRED',
-            message: "This trip requires the organiser's approval. Send a join request instead.",
-          },
-        });
+      return res.status(400).json({
+        ok: false,
+        error: {
+          code: 'APPROVAL_REQUIRED',
+          message: "This trip requires the organiser's approval. Send a join request instead.",
+        },
+      });
     }
 
     const result = await claimSeatAndJoin(tripId, userId);
@@ -576,12 +612,10 @@ router.post('/:id/midway-join', async (req, res) => {
     const fullPrice = Number(trip.budget);
     const result = calculateMidwayPrice(trip.cities, fullPrice, fromCity, toCity);
     if (!result.ok) {
-      return res
-        .status(400)
-        .json({
-          ok: false,
-          error: { code: 'VALIDATION_FAILED', message: 'Invalid midway segments selected for this trip route' },
-        });
+      return res.status(400).json({
+        ok: false,
+        error: { code: 'VALIDATION_FAILED', message: 'Invalid midway segments selected for this trip route' },
+      });
     }
 
     res.status(200).json({
@@ -779,16 +813,14 @@ router.post('/:tripId/expenses', async (req, res) => {
   const { tripId } = req.params;
   const parsed = createExpenseSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res
-      .status(400)
-      .json({
-        ok: false,
-        error: {
-          code: 'VALIDATION_FAILED',
-          message: 'Please check the expense details.',
-          details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
-        },
-      });
+    return res.status(400).json({
+      ok: false,
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'Please check the expense details.',
+        details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+      },
+    });
   }
   try {
     const participants = await loadTripParticipants(tripId);
@@ -834,12 +866,10 @@ router.delete('/:tripId/expenses/:expenseId', async (req, res) => {
       return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Expense not found' } });
     }
     if (expense.paidById !== userId && !me.isOrganizer) {
-      return res
-        .status(403)
-        .json({
-          ok: false,
-          error: { code: 'FORBIDDEN', message: 'Only the person who paid or the organizer can remove this.' },
-        });
+      return res.status(403).json({
+        ok: false,
+        error: { code: 'FORBIDDEN', message: 'Only the person who paid or the organizer can remove this.' },
+      });
     }
 
     await prisma.tripExpense.delete({ where: { id: expenseId } });

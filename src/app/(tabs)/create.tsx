@@ -1,6 +1,8 @@
 import { useApp } from '@/store/AppContext';
 import { logger } from '@/lib/logger';
 import { apiService } from '@/services/api';
+import { errorToastMessage, toast } from '@/lib/feedback';
+import { uploadFileToUrl } from '@/lib/upload';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, type ErrorBoundaryProps } from 'expo-router';
@@ -29,10 +31,11 @@ import {
   Users,
   Utensils,
   X,
-  XCircle
+  XCircle,
 } from 'lucide-react-native';
 import React, { useRef, useState, useEffect, memo } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Dimensions,
   Image,
@@ -55,86 +58,86 @@ import { eventBus } from '@/services/event-bus';
 // Coordinates registry for Indian cities
 const CITY_COORDS: Record<string, { latitude: number; longitude: number }> = {
   // Northern India
-  'Delhi': { latitude: 28.6139, longitude: 77.2090 },
-  'New Delhi': { latitude: 28.6139, longitude: 77.2090 },
-  'Noida': { latitude: 28.5355, longitude: 77.3910 },
-  'Gurugram': { latitude: 28.4595, longitude: 77.0266 },
-  'Gurgaon': { latitude: 28.4595, longitude: 77.0266 },
-  'Faridabad': { latitude: 28.4089, longitude: 77.3178 },
-  'Ghaziabad': { latitude: 28.6692, longitude: 77.4538 },
-  'Agra': { latitude: 27.1767, longitude: 78.0081 },
-  'Mathura': { latitude: 27.4924, longitude: 77.6737 },
-  'Vrindavan': { latitude: 27.5650, longitude: 77.7008 },
-  'Varanasi': { latitude: 25.3176, longitude: 82.9739 },
-  'Sarnath': { latitude: 25.3762, longitude: 83.0227 },
-  'Lucknow': { latitude: 26.8467, longitude: 80.9462 },
-  'Kanpur': { latitude: 26.4499, longitude: 80.3319 },
-  'Ayodhya': { latitude: 26.7922, longitude: 82.1998 },
-  'Allahabad': { latitude: 25.4358, longitude: 81.8463 },
-  'Prayagraj': { latitude: 25.4358, longitude: 81.8463 },
-  'Haridwar': { latitude: 29.9457, longitude: 78.1642 },
-  'Rishikesh': { latitude: 30.0869, longitude: 78.2676 },
-  'Dehradun': { latitude: 30.3165, longitude: 78.0322 },
-  'Shimla': { latitude: 31.1048, longitude: 77.1734 },
-  'Manali': { latitude: 32.2396, longitude: 77.1887 },
-  'Srinagar': { latitude: 34.0837, longitude: 74.7973 },
-  'Gulmarg': { latitude: 34.0484, longitude: 74.3805 },
-  'Pahalgam': { latitude: 34.0161, longitude: 75.1950 },
-  'Leh': { latitude: 34.1526, longitude: 77.5771 },
-  'Ladakh': { latitude: 34.1526, longitude: 77.5771 },
-  'Amritsar': { latitude: 31.6340, longitude: 74.8723 },
-  'Chandigarh': { latitude: 30.7333, longitude: 76.7794 },
+  Delhi: { latitude: 28.6139, longitude: 77.209 },
+  'New Delhi': { latitude: 28.6139, longitude: 77.209 },
+  Noida: { latitude: 28.5355, longitude: 77.391 },
+  Gurugram: { latitude: 28.4595, longitude: 77.0266 },
+  Gurgaon: { latitude: 28.4595, longitude: 77.0266 },
+  Faridabad: { latitude: 28.4089, longitude: 77.3178 },
+  Ghaziabad: { latitude: 28.6692, longitude: 77.4538 },
+  Agra: { latitude: 27.1767, longitude: 78.0081 },
+  Mathura: { latitude: 27.4924, longitude: 77.6737 },
+  Vrindavan: { latitude: 27.565, longitude: 77.7008 },
+  Varanasi: { latitude: 25.3176, longitude: 82.9739 },
+  Sarnath: { latitude: 25.3762, longitude: 83.0227 },
+  Lucknow: { latitude: 26.8467, longitude: 80.9462 },
+  Kanpur: { latitude: 26.4499, longitude: 80.3319 },
+  Ayodhya: { latitude: 26.7922, longitude: 82.1998 },
+  Allahabad: { latitude: 25.4358, longitude: 81.8463 },
+  Prayagraj: { latitude: 25.4358, longitude: 81.8463 },
+  Haridwar: { latitude: 29.9457, longitude: 78.1642 },
+  Rishikesh: { latitude: 30.0869, longitude: 78.2676 },
+  Dehradun: { latitude: 30.3165, longitude: 78.0322 },
+  Shimla: { latitude: 31.1048, longitude: 77.1734 },
+  Manali: { latitude: 32.2396, longitude: 77.1887 },
+  Srinagar: { latitude: 34.0837, longitude: 74.7973 },
+  Gulmarg: { latitude: 34.0484, longitude: 74.3805 },
+  Pahalgam: { latitude: 34.0161, longitude: 75.195 },
+  Leh: { latitude: 34.1526, longitude: 77.5771 },
+  Ladakh: { latitude: 34.1526, longitude: 77.5771 },
+  Amritsar: { latitude: 31.634, longitude: 74.8723 },
+  Chandigarh: { latitude: 30.7333, longitude: 76.7794 },
 
   // Western India
-  'Jaipur': { latitude: 26.9124, longitude: 75.7873 },
-  'Udaipur': { latitude: 24.5854, longitude: 73.7125 },
-  'Jodhpur': { latitude: 26.2389, longitude: 73.0243 },
-  'Jaisalmer': { latitude: 26.9157, longitude: 70.9083 },
-  'Mumbai': { latitude: 19.0760, longitude: 72.8777 },
-  'Pune': { latitude: 18.5204, longitude: 73.8567 },
-  'Nagpur': { latitude: 21.1458, longitude: 79.0882 },
-  'Ahmedabad': { latitude: 23.0225, longitude: 72.5714 },
-  'Surat': { latitude: 21.1702, longitude: 72.8311 },
-  'Vadodara': { latitude: 22.3072, longitude: 73.1812 },
-  'Goa': { latitude: 15.2993, longitude: 74.1240 },
+  Jaipur: { latitude: 26.9124, longitude: 75.7873 },
+  Udaipur: { latitude: 24.5854, longitude: 73.7125 },
+  Jodhpur: { latitude: 26.2389, longitude: 73.0243 },
+  Jaisalmer: { latitude: 26.9157, longitude: 70.9083 },
+  Mumbai: { latitude: 19.076, longitude: 72.8777 },
+  Pune: { latitude: 18.5204, longitude: 73.8567 },
+  Nagpur: { latitude: 21.1458, longitude: 79.0882 },
+  Ahmedabad: { latitude: 23.0225, longitude: 72.5714 },
+  Surat: { latitude: 21.1702, longitude: 72.8311 },
+  Vadodara: { latitude: 22.3072, longitude: 73.1812 },
+  Goa: { latitude: 15.2993, longitude: 74.124 },
   'North Goa': { latitude: 15.5898, longitude: 73.8278 },
   'South Goa': { latitude: 15.0644, longitude: 74.0229 },
-  'Dudhsagar': { latitude: 15.3185, longitude: 74.3142 },
+  Dudhsagar: { latitude: 15.3185, longitude: 74.3142 },
 
   // Eastern India
-  'Patna': { latitude: 25.5941, longitude: 85.1376 },
-  'Gaya': { latitude: 24.7955, longitude: 85.0002 },
-  'Ranchi': { latitude: 23.3441, longitude: 85.3090 },
-  'Jamshedpur': { latitude: 22.8046, longitude: 86.2029 },
-  'Kolkata': { latitude: 22.5726, longitude: 88.3639 },
-  'Bhubaneswar': { latitude: 20.2961, longitude: 85.8245 },
-  'Puri': { latitude: 19.8135, longitude: 85.8312 },
-  'Darjeeling': { latitude: 27.0410, longitude: 88.2627 },
-  'Gangtok': { latitude: 27.3314, longitude: 88.6138 },
-  'Guwahati': { latitude: 26.1445, longitude: 91.7362 },
-  'Shillong': { latitude: 25.5788, longitude: 91.8833 },
+  Patna: { latitude: 25.5941, longitude: 85.1376 },
+  Gaya: { latitude: 24.7955, longitude: 85.0002 },
+  Ranchi: { latitude: 23.3441, longitude: 85.309 },
+  Jamshedpur: { latitude: 22.8046, longitude: 86.2029 },
+  Kolkata: { latitude: 22.5726, longitude: 88.3639 },
+  Bhubaneswar: { latitude: 20.2961, longitude: 85.8245 },
+  Puri: { latitude: 19.8135, longitude: 85.8312 },
+  Darjeeling: { latitude: 27.041, longitude: 88.2627 },
+  Gangtok: { latitude: 27.3314, longitude: 88.6138 },
+  Guwahati: { latitude: 26.1445, longitude: 91.7362 },
+  Shillong: { latitude: 25.5788, longitude: 91.8833 },
 
   // Southern India
-  'Bengaluru': { latitude: 12.9716, longitude: 77.5946 },
-  'Bangalore': { latitude: 12.9716, longitude: 77.5946 },
-  'Mysore': { latitude: 12.2958, longitude: 76.6394 },
-  'Mysuru': { latitude: 12.2958, longitude: 76.6394 },
-  'Ooty': { latitude: 11.4102, longitude: 76.6950 },
-  'Chennai': { latitude: 13.0827, longitude: 80.2707 },
-  'Madurai': { latitude: 9.9252, longitude: 78.1198 },
-  'Hyderabad': { latitude: 17.3850, longitude: 78.4867 },
-  'Secunderabad': { latitude: 17.4399, longitude: 78.5000 },
-  'Visakhapatnam': { latitude: 17.6868, longitude: 83.2185 },
-  'Kochi': { latitude: 9.9312, longitude: 76.2673 },
-  'Munnar': { latitude: 10.0889, longitude: 77.0595 },
-  'Alleppey': { latitude: 9.4981, longitude: 76.3388 },
-  'Trivandrum': { latitude: 8.5241, longitude: 76.9366 },
-  'Thiruvananthapuram': { latitude: 8.5241, longitude: 76.9366 },
+  Bengaluru: { latitude: 12.9716, longitude: 77.5946 },
+  Bangalore: { latitude: 12.9716, longitude: 77.5946 },
+  Mysore: { latitude: 12.2958, longitude: 76.6394 },
+  Mysuru: { latitude: 12.2958, longitude: 76.6394 },
+  Ooty: { latitude: 11.4102, longitude: 76.695 },
+  Chennai: { latitude: 13.0827, longitude: 80.2707 },
+  Madurai: { latitude: 9.9252, longitude: 78.1198 },
+  Hyderabad: { latitude: 17.385, longitude: 78.4867 },
+  Secunderabad: { latitude: 17.4399, longitude: 78.5 },
+  Visakhapatnam: { latitude: 17.6868, longitude: 83.2185 },
+  Kochi: { latitude: 9.9312, longitude: 76.2673 },
+  Munnar: { latitude: 10.0889, longitude: 77.0595 },
+  Alleppey: { latitude: 9.4981, longitude: 76.3388 },
+  Trivandrum: { latitude: 8.5241, longitude: 76.9366 },
+  Thiruvananthapuram: { latitude: 8.5241, longitude: 76.9366 },
 
   // Central India
-  'Bhopal': { latitude: 23.2599, longitude: 77.4126 },
-  'Indore': { latitude: 22.7196, longitude: 75.8577 },
-  'Raipur': { latitude: 21.2514, longitude: 81.6296 },
+  Bhopal: { latitude: 23.2599, longitude: 77.4126 },
+  Indore: { latitude: 22.7196, longitude: 75.8577 },
+  Raipur: { latitude: 21.2514, longitude: 81.6296 },
 };
 
 // Build Leaflet HTML preview
@@ -169,7 +172,7 @@ function buildPreviewMapHTML(routeCoords: { latitude: number; longitude: number;
   <body>
     <div id="map"></div>
     <script>
-      var pathPoints = ${JSON.stringify(routeCoords.map(c => [c.latitude, c.longitude]))};
+      var pathPoints = ${JSON.stringify(routeCoords.map((c) => [c.latitude, c.longitude]))};
       var map = L.map('map', {
         zoomControl: false,
         attributionControl: false,
@@ -266,8 +269,6 @@ const PRESET_COVERS = [
 
 const TRIP_CATEGORIES = ['Adventure', 'Religious', 'Family', 'Road Trip', 'Beach', 'Wildlife', 'Heritage', 'Honeymoon'];
 
-
-
 function CreateTripScreen() {
   useEffect(() => {
     logger.log('Screen mounted: CreateTripScreen');
@@ -313,7 +314,7 @@ function CreateTripScreen() {
                 headers: {
                   'User-Agent': 'TravelStarApp/1.0',
                 },
-              }
+              },
             );
             const data = await response.json();
             if (data && data.length > 0) {
@@ -347,6 +348,9 @@ function CreateTripScreen() {
   // Cover Image State (preset or gallery)
   const [coverImage, setCoverImage] = useState(PRESET_COVERS[0].url);
   const [customCoverUri, setCustomCoverUri] = useState<string | null>(null);
+  // docs/REMEDIATION.md §8.4 — true while a picked cover photo is uploading
+  // to object storage (see pickImageFromGallery below).
+  const [coverUploading, setCoverUploading] = useState(false);
 
   // Custom Trip Studio Tab Switcher
   const [activeTab, setActiveTab] = useState<'PLANNER' | 'TIMELINE' | 'TRAVELERS' | 'CHECKLIST'>('PLANNER');
@@ -359,13 +363,13 @@ function CreateTripScreen() {
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
       (e) => {
         setKeyboardHeight(e.endCoordinates.height);
-      }
+      },
     );
     const hideSubscription = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
       () => {
         setKeyboardHeight(0);
-      }
+      },
     );
     return () => {
       showSubscription.remove();
@@ -430,6 +434,17 @@ function CreateTripScreen() {
   const [calendarYear, setCalendarYear] = useState(2026);
   const [calendarMonth, setCalendarMonth] = useState(7); // August (0-indexed)
 
+  // docs/REMEDIATION.md §8.4: the picker result's `uri` is a local
+  // file://(/blob:/data: on web) path — reachable only on the organizer's
+  // own device. Setting it straight as the cover (the old behaviour) meant
+  // every other trip list/detail screen, on every other user's device,
+  // tried to load that same local path and failed — the "custom cover"
+  // silently only rendered for the organizer. This uploads the bytes to
+  // object storage first (same route/pattern as the avatar picker, §8.2)
+  // and only ever sets a real, publicly-readable URL. Per the 2026-08-27
+  // decision on credential-dependent features: no fake fallback — if
+  // storage isn't configured, the picked photo is discarded with a real
+  // error, not silently kept as a local-only URI.
   const pickImageFromGallery = async () => {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -440,11 +455,24 @@ function CreateTripScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         allowsEditing: true,
-        aspect: [9, 16],   // strict portrait — matches the card image slot on Search tab
+        aspect: [9, 16], // strict portrait — matches the card image slot on Search tab
         quality: 1,
       });
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        setCustomCoverUri(result.assets[0].uri);
+      if (result.canceled || !result.assets || result.assets.length === 0) return;
+
+      const asset = result.assets[0];
+      const contentType =
+        asset.mimeType === 'image/png' || asset.mimeType === 'image/webp' ? asset.mimeType : 'image/jpeg';
+      setCoverUploading(true);
+      try {
+        const { uploadUrl, publicUrl } = await apiService.getTripCoverUploadUrl(contentType);
+        await uploadFileToUrl(asset.uri, uploadUrl, contentType);
+        setCustomCoverUri(publicUrl);
+      } catch (uploadErr) {
+        logger.warn('[Create] Cover upload failed:', uploadErr);
+        toast(errorToastMessage(uploadErr, 'Could not upload that photo. Please try again.'), 'error');
+      } finally {
+        setCoverUploading(false);
       }
     } catch (e) {
       logger.log('Gallery pick error:', e);
@@ -457,25 +485,25 @@ function CreateTripScreen() {
     .map((c) => c.trim())
     .filter((c) => c !== '');
 
-  const previewRouteCoords = parsedCities
-    .map((city) => {
-      const clean = city.trim();
-      const found = verifiedCoords[clean] || CITY_COORDS[clean] || Object.entries(CITY_COORDS).find(([k]) => clean.toLowerCase().includes(k.toLowerCase()))?.[1];
-      if (found) {
-        return { latitude: found.latitude, longitude: found.longitude, name: clean };
-      } else {
-        // Deterministic fallback based on name hash
-        let hash = 0;
-        for (let i = 0; i < clean.length; i++) {
-          hash = clean.charCodeAt(i) + ((hash << 5) - hash);
-        }
-        const lat = 18.0 + (Math.abs(hash % 100) / 100) * 8.0;
-        const lon = 74.0 + (Math.abs((hash >> 8) % 100) / 100) * 10.0;
-        return { latitude: lat, longitude: lon, name: clean };
+  const previewRouteCoords = parsedCities.map((city) => {
+    const clean = city.trim();
+    const found =
+      verifiedCoords[clean] ||
+      CITY_COORDS[clean] ||
+      Object.entries(CITY_COORDS).find(([k]) => clean.toLowerCase().includes(k.toLowerCase()))?.[1];
+    if (found) {
+      return { latitude: found.latitude, longitude: found.longitude, name: clean };
+    } else {
+      // Deterministic fallback based on name hash
+      let hash = 0;
+      for (let i = 0; i < clean.length; i++) {
+        hash = clean.charCodeAt(i) + ((hash << 5) - hash);
       }
-    });
-
-
+      const lat = 18.0 + (Math.abs(hash % 100) / 100) * 8.0;
+      const lon = 74.0 + (Math.abs((hash >> 8) % 100) / 100) * 10.0;
+      return { latitude: lat, longitude: lon, name: clean };
+    }
+  });
 
   const handleCreate = () => {
     if (!tripName || !citiesInput || !startDate || !budget || !totalSeats) {
@@ -664,14 +692,14 @@ function CreateTripScreen() {
           style={{ flex: 1 }}
           contentContainerStyle={[
             styles.scrollContent,
-            { paddingBottom: Platform.OS === 'ios' ? 140 : keyboardHeight + 140 }
+            { paddingBottom: Platform.OS === 'ios' ? 140 : keyboardHeight + 140 },
           ]}
           keyboardShouldPersistTaps="handled"
           scrollEventThrottle={16}
           onScroll={(e) => {
             const y = e.nativeEvent.contentOffset.y;
             const diff = y - lastScrollYRef.current;
-            
+
             if (y <= 15) {
               if (navbarHiddenRef.current) {
                 navbarHiddenRef.current = false;
@@ -692,11 +720,10 @@ function CreateTripScreen() {
             lastScrollYRef.current = y;
           }}
         >
-
           {/* ─── ORGANIZER CREATIONS NOTIFICATION BANNER (TOP LEVEL) ─── */}
           {(() => {
-            const myTrips = trips.filter(t => !!(profile && profile.id && t.creatorId === profile.id));
-            const pendingCount = joinRequests.filter(req => req.status === 'PENDING').length;
+            const myTrips = trips.filter((t) => !!(profile && profile.id && t.creatorId === profile.id));
+            const pendingCount = joinRequests.filter((req) => req.status === 'PENDING').length;
             const hasAlert = pendingCount > 0;
 
             return (
@@ -712,10 +739,7 @@ function CreateTripScreen() {
                   colors={hasAlert ? ['#2A1B54', '#150D33'] : ['#1E123C', '#0E0720']}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={[
-                    styles.notificationBanner,
-                    hasAlert && styles.notificationBannerActive
-                  ]}
+                  style={[styles.notificationBanner, hasAlert && styles.notificationBannerActive]}
                 >
                   <View style={styles.notificationMain}>
                     <View style={[styles.notificationIconWrap, hasAlert && styles.notificationIconWrapAlert]}>
@@ -757,15 +781,8 @@ function CreateTripScreen() {
             SCENIC TOURIST HERO BANNER WITH IMAGE OVERLAY
             ════════════════════════════════════════════════ */}
           <View style={styles.heroWrap}>
-            <Image
-              source={{ uri: customCoverUri || coverImage }}
-              style={StyleSheet.absoluteFill}
-              resizeMode="cover"
-            />
-            <LinearGradient
-              colors={['rgba(18,21,36,0.2)', 'rgba(0,0,0,0.85)']}
-              style={StyleSheet.absoluteFill}
-            />
+            <Image source={{ uri: customCoverUri || coverImage }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+            <LinearGradient colors={['rgba(18,21,36,0.2)', 'rgba(0,0,0,0.85)']} style={StyleSheet.absoluteFill} />
 
             <View style={styles.heroBadgeRow}>
               <View style={styles.heroBadge}>
@@ -773,10 +790,19 @@ function CreateTripScreen() {
                 <Text style={styles.heroBadgeText}>ORGANIZER SUITE</Text>
               </View>
               {/* Gallery pick button inside hero — clean pill */}
-              <TouchableOpacity style={styles.galleryPickBtn} onPress={pickImageFromGallery} activeOpacity={0.8}>
-                <ImageIcon size={13} color={customCoverUri ? C.green : C.white} />
+              <TouchableOpacity
+                style={styles.galleryPickBtn}
+                onPress={pickImageFromGallery}
+                activeOpacity={0.8}
+                disabled={coverUploading}
+              >
+                {coverUploading ? (
+                  <ActivityIndicator size="small" color={C.white} />
+                ) : (
+                  <ImageIcon size={13} color={customCoverUri ? C.green : C.white} />
+                )}
                 <Text style={[styles.galleryPickBtnText, customCoverUri && { color: C.green }]}>
-                  {customCoverUri ? 'Custom Photo' : 'Upload Photo'}
+                  {coverUploading ? 'Uploading…' : customCoverUri ? 'Custom Photo' : 'Upload Photo'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -796,18 +822,25 @@ function CreateTripScreen() {
               style={[styles.galleryCard, customCoverUri && styles.galleryCardSelected]}
               onPress={pickImageFromGallery}
               activeOpacity={0.85}
+              disabled={coverUploading}
             >
               <View style={[styles.galleryIconCircle, customCoverUri && styles.galleryIconCircleSelected]}>
-                <ImageIcon size={20} color={customCoverUri ? C.green : C.blue} />
+                {coverUploading ? (
+                  <ActivityIndicator size="small" color={C.blue} />
+                ) : (
+                  <ImageIcon size={20} color={customCoverUri ? C.green : C.blue} />
+                )}
               </View>
               <View style={styles.galleryCardContent}>
                 <Text style={styles.galleryCardTitle}>
-                  {customCoverUri ? 'Custom Cover Photo Applied' : 'Upload Cover Photo'}
+                  {coverUploading ? 'Uploading…' : customCoverUri ? 'Custom Cover Photo Applied' : 'Upload Cover Photo'}
                 </Text>
                 <Text style={styles.galleryCardSub}>
-                  {customCoverUri
-                    ? 'Tap to replace with a different image from your gallery'
-                    : 'Select an image from your device photo library'}
+                  {coverUploading
+                    ? 'Hold on while your photo uploads'
+                    : customCoverUri
+                      ? 'Tap to replace with a different image from your gallery'
+                      : 'Select an image from your device photo library'}
                 </Text>
               </View>
               <View style={[styles.galleryChevron, customCoverUri && styles.galleryChevronSelected]}>
@@ -832,7 +865,10 @@ function CreateTripScreen() {
                   <TouchableOpacity
                     key={cov.label}
                     style={[styles.presetChip, isSelected && styles.presetChipActive]}
-                    onPress={() => { setCustomCoverUri(null); setCoverImage(cov.url); }}
+                    onPress={() => {
+                      setCustomCoverUri(null);
+                      setCoverImage(cov.url);
+                    }}
                     activeOpacity={0.8}
                   >
                     <Text style={[styles.presetChipText, isSelected && styles.presetChipTextActive]}>{cov.label}</Text>
@@ -886,7 +922,6 @@ function CreateTripScreen() {
           {/* ─── TAB 1: PLANNER & TRIP DETAILS ────────────────── */}
           {activeTab === 'PLANNER' && (
             <View style={styles.formContainer}>
-
               {/* 1. BASIC INFORMATION */}
               <View style={styles.sectionHeaderRow}>
                 <LinearGradient colors={['#3B82F6', '#1E40AF']} style={styles.stepBadge}>
@@ -944,17 +979,17 @@ function CreateTripScreen() {
                     onChangeText={setCitiesInput}
                   />
                 </View>
-                <Text style={styles.helperText}>
-                  Order matters! Travelers can join midway along any segment.
-                </Text>
-
-
+                <Text style={styles.helperText}>Order matters! Travelers can join midway along any segment.</Text>
 
                 {/* Live Interactive Route Flow Card */}
                 {parsedCities.length > 0 && (
                   <View style={styles.routeFlowCard}>
                     <Text style={styles.routeFlowTitle}>LIVE ROUTE PATH:</Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.routePillRow}>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.routePillRow}
+                    >
                       {parsedCities.map((city, idx) => (
                         <React.Fragment key={idx}>
                           <View style={styles.cityPill}>
@@ -1002,7 +1037,11 @@ function CreateTripScreen() {
 
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>SELECT A CATEGORY *</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryRow}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.categoryRow}
+                >
                   {TRIP_CATEGORIES.map((cat) => {
                     const isActive = selectedCategory === cat;
                     return (
@@ -1192,9 +1231,7 @@ function CreateTripScreen() {
                     <Utensils size={16} color={foodIncluded ? C.white : C.textMuted} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.amenityTitle, foodIncluded && styles.amenityTitleActive]}>
-                      Meals & Food
-                    </Text>
+                    <Text style={[styles.amenityTitle, foodIncluded && styles.amenityTitleActive]}>Meals & Food</Text>
                     <Text style={styles.amenitySub}>Breakfast & Dinner</Text>
                   </View>
                   <View style={[styles.checkDot, foodIncluded && styles.checkDotActive]}>
@@ -1211,9 +1248,7 @@ function CreateTripScreen() {
                     <Hotel size={16} color={hotelIncluded ? C.white : C.textMuted} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.amenityTitle, hotelIncluded && styles.amenityTitleActive]}>
-                      Hotel Stays
-                    </Text>
+                    <Text style={[styles.amenityTitle, hotelIncluded && styles.amenityTitleActive]}>Hotel Stays</Text>
                     <Text style={styles.amenitySub}>Rated 4★ Accommodations</Text>
                   </View>
                   <View style={[styles.checkDot, hotelIncluded && styles.checkDotActive]}>
@@ -1230,9 +1265,7 @@ function CreateTripScreen() {
                     <Car size={16} color={cabIncluded ? C.white : C.textMuted} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.amenityTitle, cabIncluded && styles.amenityTitleActive]}>
-                      AC Vehicle
-                    </Text>
+                    <Text style={[styles.amenityTitle, cabIncluded && styles.amenityTitleActive]}>AC Vehicle</Text>
                     <Text style={styles.amenitySub}>Dedicated Sightseeing</Text>
                   </View>
                   <View style={[styles.checkDot, cabIncluded && styles.checkDotActive]}>
@@ -1276,7 +1309,9 @@ function CreateTripScreen() {
                   onPress={() => setPrivacy('INVITE_ONLY')}
                 >
                   <Mail size={20} color={privacy === 'INVITE_ONLY' ? C.purple : C.textMuted} />
-                  <Text style={[styles.privacyTitle, privacy === 'INVITE_ONLY' && styles.privacyTitleActive]}>Invite Only</Text>
+                  <Text style={[styles.privacyTitle, privacy === 'INVITE_ONLY' && styles.privacyTitleActive]}>
+                    Invite Only
+                  </Text>
                   <Text style={styles.privacySub}>Link sharing</Text>
                 </TouchableOpacity>
               </View>
@@ -1299,16 +1334,13 @@ function CreateTripScreen() {
                   <Text style={styles.secondaryDraftBtnText}>Save Draft</Text>
                 </TouchableOpacity>
               </View>
-
             </View>
           )}
 
           {/* ─── TAB 2: DYNAMIC DAY-BY-DAY VISUAL TIMELINE ────── */}
           {activeTab === 'TIMELINE' && (
             <View style={styles.timelineContainer}>
-              <Text style={styles.timelineHeaderTitle}>
-                Dynamic Day-by-Day Itinerary Timeline
-              </Text>
+              <Text style={styles.timelineHeaderTitle}>Dynamic Day-by-Day Itinerary Timeline</Text>
 
               {parsedCities.length > 0 ? (
                 parsedCities.map((loc, idx) => (
@@ -1324,11 +1356,11 @@ function CreateTripScreen() {
                     </View>
 
                     <View style={styles.timelineContentCard}>
-                      <Text style={styles.dayBadge}>DAY {idx + 1} • {loc.toUpperCase()}</Text>
+                      <Text style={styles.dayBadge}>
+                        DAY {idx + 1} • {loc.toUpperCase()}
+                      </Text>
                       <Text style={styles.timelineTitle}>
-                        {idx === 0
-                          ? `Departure & Arrival at ${loc}`
-                          : `Sightseeing & Exploration at ${loc}`}
+                        {idx === 0 ? `Departure & Arrival at ${loc}` : `Sightseeing & Exploration at ${loc}`}
                       </Text>
                       <Text style={styles.timelineTime}>⏰ Morning & Afternoon Schedule</Text>
                       <Text style={styles.timelineDesc}>
@@ -1344,7 +1376,8 @@ function CreateTripScreen() {
                   <Compass size={32} color={C.blue} style={{ marginBottom: 10 }} />
                   <Text style={styles.emptyTimelineTitle}>Prepare Your Custom Itinerary</Text>
                   <Text style={styles.emptyTimelineSub}>
-                    Enter stopover locations in the Plan tab (e.g. "Delhi, Jaipur, Udaipur") to automatically generate your day-by-day travel timeline here!
+                    Enter stopover locations in the Plan tab (e.g. "Delhi, Jaipur, Udaipur") to automatically generate
+                    your day-by-day travel timeline here!
                   </Text>
                 </View>
               )}
@@ -1354,7 +1387,6 @@ function CreateTripScreen() {
           {/* ─── TAB 3: TRAVELERS & JOIN REQUESTS ────────────── */}
           {activeTab === 'TRAVELERS' && (
             <View style={styles.travelersContainer}>
-
               {/* CAPACITY SELECTOR */}
               <View style={styles.capacityBox}>
                 <Text style={styles.boxTitle}>GROUP CAPACITY (CO-TRAVELERS)</Text>
@@ -1408,45 +1440,46 @@ function CreateTripScreen() {
               </View>
 
               {/* PENDING JOIN REQUESTS */}
-              {privacy !== 'PRIVATE' && joinRequests.filter(req => req.status === 'PENDING').length > 0 && (
+              {privacy !== 'PRIVATE' && joinRequests.filter((req) => req.status === 'PENDING').length > 0 && (
                 <>
                   <View style={styles.sectionHeader}>
                     <UserPlus size={16} color={C.amber} />
                     <Text style={styles.sectionTitle}>
-                      Pending Join Requests ({joinRequests.filter(req => req.status === 'PENDING').length})
+                      Pending Join Requests ({joinRequests.filter((req) => req.status === 'PENDING').length})
                     </Text>
                   </View>
 
-                  {joinRequests.filter(req => req.status === 'PENDING').map((req) => (
-                    <View key={req.id} style={styles.requestItem}>
-                      <View style={styles.reqAvatarWrap}>
-                        <User size={15} color={C.white} />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.reqName}>{req.applicantName}</Text>
-                        <Text style={styles.reqSub}>Requested to join group route</Text>
-                      </View>
+                  {joinRequests
+                    .filter((req) => req.status === 'PENDING')
+                    .map((req) => (
+                      <View key={req.id} style={styles.requestItem}>
+                        <View style={styles.reqAvatarWrap}>
+                          <User size={15} color={C.white} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.reqName}>{req.applicantName}</Text>
+                          <Text style={styles.reqSub}>Requested to join group route</Text>
+                        </View>
 
-                      <TouchableOpacity
-                        style={styles.acceptBtn}
-                        onPress={() => handleAcceptRequest(req.id, req.applicantName)}
-                        activeOpacity={0.8}
-                      >
-                        <Check size={14} color='#FFF' />
-                      </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.acceptBtn}
+                          onPress={() => handleAcceptRequest(req.id, req.applicantName)}
+                          activeOpacity={0.8}
+                        >
+                          <Check size={14} color="#FFF" />
+                        </TouchableOpacity>
 
-                      <TouchableOpacity
-                        style={styles.rejectBtn}
-                        onPress={() => handleRejectRequest(req.id)}
-                        activeOpacity={0.8}
-                      >
-                        <XCircle size={15} color='#EF4444' />
-                      </TouchableOpacity>
-                    </View>
-                  ))}
+                        <TouchableOpacity
+                          style={styles.rejectBtn}
+                          onPress={() => handleRejectRequest(req.id)}
+                          activeOpacity={0.8}
+                        >
+                          <XCircle size={15} color="#EF4444" />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
                 </>
               )}
-
             </View>
           )}
 
@@ -1465,14 +1498,8 @@ function CreateTripScreen() {
                   style={[styles.checklistCard, item.checked && styles.checklistCardChecked]}
                   onPress={() => toggleChecklist(item.id)}
                 >
-                  {item.checked ? (
-                    <CheckSquare size={18} color={C.green} />
-                  ) : (
-                    <Square size={18} color={C.textMuted} />
-                  )}
-                  <Text style={[styles.checkItemText, item.checked && styles.checkItemTextChecked]}>
-                    {item.item}
-                  </Text>
+                  {item.checked ? <CheckSquare size={18} color={C.green} /> : <Square size={18} color={C.textMuted} />}
+                  <Text style={[styles.checkItemText, item.checked && styles.checkItemTextChecked]}>{item.item}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -1495,11 +1522,12 @@ function CreateTripScreen() {
                   <Text style={styles.monthNavText}>◀</Text>
                 </TouchableOpacity>
                 <View style={{ flex: 1, alignItems: 'center' }}>
-                  <Text style={styles.calendarHeaderTitle}>
-                    Select {activeDatePicker.toUpperCase()} Date
-                  </Text>
+                  <Text style={styles.calendarHeaderTitle}>Select {activeDatePicker.toUpperCase()} Date</Text>
                   <Text style={styles.calendarMonthText}>
-                    {new Date(calendarYear, calendarMonth).toLocaleString('default', { month: 'long', year: 'numeric' })}
+                    {new Date(calendarYear, calendarMonth).toLocaleString('default', {
+                      month: 'long',
+                      year: 'numeric',
+                    })}
                   </Text>
                 </View>
                 <TouchableOpacity style={styles.monthNavBtn} onPress={handleNextMonth}>
@@ -1513,7 +1541,9 @@ function CreateTripScreen() {
               {/* Days Grid Headers */}
               <View style={styles.weekDaysRow}>
                 {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, i) => (
-                  <Text key={i} style={styles.weekDayText}>{day}</Text>
+                  <Text key={i} style={styles.weekDayText}>
+                    {day}
+                  </Text>
                 ))}
               </View>
 
@@ -1544,10 +1574,8 @@ function CreateTripScreen() {
                         onPress={() => selectCalendarDay(d)}
                         activeOpacity={0.8}
                       >
-                        <Text style={[styles.dayCellText, isSelected && styles.dayCellTextSelected]}>
-                          {d}
-                        </Text>
-                      </TouchableOpacity>
+                        <Text style={[styles.dayCellText, isSelected && styles.dayCellTextSelected]}>{d}</Text>
+                      </TouchableOpacity>,
                     );
                   }
 
@@ -1555,10 +1583,7 @@ function CreateTripScreen() {
                 })()}
               </View>
 
-              <TouchableOpacity
-                style={styles.calendarConfirmBtn}
-                onPress={() => setActiveDatePicker(null)}
-              >
+              <TouchableOpacity style={styles.calendarConfirmBtn} onPress={() => setActiveDatePicker(null)}>
                 <Text style={styles.calendarConfirmText}>Confirm Date</Text>
               </TouchableOpacity>
             </View>
@@ -1575,31 +1600,25 @@ function CreateTripScreen() {
           onRequestClose={() => setShowCreationsModal(false)}
         >
           <View style={styles.creationsModalOverlay}>
-            <LinearGradient
-              colors={['#0F1225', '#080A12']}
-              style={styles.creationsModalCard}
-            >
+            <LinearGradient colors={['#0F1225', '#080A12']} style={styles.creationsModalCard}>
               {/* Header */}
               <View style={styles.creationsHeader}>
                 <View>
                   <Text style={styles.creationsHeaderTitle}>Published Route Creations</Text>
                   <Text style={styles.creationsHeaderSub}>Verify bookings and accept join requests</Text>
                 </View>
-                <TouchableOpacity
-                  style={styles.creationsCloseBtn}
-                  onPress={() => setShowCreationsModal(false)}
-                >
+                <TouchableOpacity style={styles.creationsCloseBtn} onPress={() => setShowCreationsModal(false)}>
                   <X size={16} color={C.white} />
                 </TouchableOpacity>
               </View>
 
               {/* List */}
               {(() => {
-                const myTrips = trips.filter(t => !!(profile && profile.id && t.creatorId === profile.id));
+                const myTrips = trips.filter((t) => !!(profile && profile.id && t.creatorId === profile.id));
                 if (myTrips.length === 0) {
                   return (
                     <View style={styles.emptyCreations}>
-                      <Sparkles size={36} color='#64748B' style={{ marginBottom: 12 }} />
+                      <Sparkles size={36} color="#64748B" style={{ marginBottom: 12 }} />
                       <Text style={styles.emptyCreationsTitle}>No Creations Yet</Text>
                       <Text style={styles.emptyCreationsSub}>
                         Use the Plan tab to publish your first group tour route itinerary.
@@ -1611,8 +1630,11 @@ function CreateTripScreen() {
                 return (
                   <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.creationsListScroll}>
                     {myTrips.map((trip) => {
-                      const isCustomImage = trip.coverImage && (trip.coverImage.startsWith('http') || trip.coverImage.startsWith('file'));
-                      const displayImage = isCustomImage ? trip.coverImage : 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600';
+                      const isCustomImage =
+                        trip.coverImage && (trip.coverImage.startsWith('http') || trip.coverImage.startsWith('file'));
+                      const displayImage = isCustomImage
+                        ? trip.coverImage
+                        : 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600';
 
                       return (
                         <TouchableOpacity
@@ -1632,7 +1654,7 @@ function CreateTripScreen() {
                               </Text>
                               {(() => {
                                 const tripPendingCount = joinRequests.filter(
-                                  (req) => req.tripId === trip.id && req.status === 'PENDING'
+                                  (req) => req.tripId === trip.id && req.status === 'PENDING',
                                 ).length;
                                 if (tripPendingCount === 0) return null;
                                 return (
@@ -1672,7 +1694,6 @@ function CreateTripScreen() {
                   </ScrollView>
                 );
               })()}
-
             </LinearGradient>
           </View>
         </Modal>
@@ -1691,10 +1712,7 @@ function CreateTripScreen() {
               <View style={[styles.creationDetailCard, { backgroundColor: '#0B0D19', borderColor: '#1E243B' }]}>
                 {/* Header */}
                 <View style={styles.creationDetailHeader}>
-                  <TouchableOpacity
-                    style={styles.detailBackBtn}
-                    onPress={() => setSelectedCreation(null)}
-                  >
+                  <TouchableOpacity style={styles.detailBackBtn} onPress={() => setSelectedCreation(null)}>
                     <Text style={styles.detailBackBtnText}>✕ Close</Text>
                   </TouchableOpacity>
                   <Text style={styles.detailHeaderTitle}>Itinerary Overview</Text>
@@ -1707,9 +1725,12 @@ function CreateTripScreen() {
                   <View style={styles.detailBannerContainer}>
                     <Image
                       source={{
-                        uri: selectedCreation.coverImage && (selectedCreation.coverImage.startsWith('http') || selectedCreation.coverImage.startsWith('file'))
-                          ? selectedCreation.coverImage
-                          : 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600'
+                        uri:
+                          selectedCreation.coverImage &&
+                          (selectedCreation.coverImage.startsWith('http') ||
+                            selectedCreation.coverImage.startsWith('file'))
+                            ? selectedCreation.coverImage
+                            : 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600',
                       }}
                       style={styles.detailBannerImg}
                     />
@@ -1742,7 +1763,7 @@ function CreateTripScreen() {
                   <TouchableOpacity
                     style={[
                       styles.viewOnMapHeaderBtn,
-                      { marginTop: 10, backgroundColor: selectedCreation.chatRoomId ? '#10B981' : '#374151' }
+                      { marginTop: 10, backgroundColor: selectedCreation.chatRoomId ? '#10B981' : '#374151' },
                     ]}
                     activeOpacity={0.8}
                     disabled={!selectedCreation.chatRoomId}
@@ -1767,12 +1788,10 @@ function CreateTripScreen() {
                     {selectedCreation.cities.map((city: string, idx: number) => (
                       <React.Fragment key={idx}>
                         <View style={styles.detailCityChip}>
-                          <MapPin size={10} color='#3B82F6' />
+                          <MapPin size={10} color="#3B82F6" />
                           <Text style={styles.detailCityText}>{city}</Text>
                         </View>
-                        {idx < selectedCreation.cities.length - 1 && (
-                          <Text style={styles.detailArrow}>➔</Text>
-                        )}
+                        {idx < selectedCreation.cities.length - 1 && <Text style={styles.detailArrow}>➔</Text>}
                       </React.Fragment>
                     ))}
                   </View>
@@ -1790,18 +1809,22 @@ function CreateTripScreen() {
                     </View>
                     <View style={styles.detailStatCell}>
                       <Text style={styles.detailStatLabel}>BUDGET</Text>
-                      <Text style={[styles.detailStatVal, { color: '#10B981' }]}>₹{selectedCreation.budget.toLocaleString('en-IN')}</Text>
+                      <Text style={[styles.detailStatVal, { color: '#10B981' }]}>
+                        ₹{selectedCreation.budget.toLocaleString('en-IN')}
+                      </Text>
                     </View>
                     <View style={styles.detailStatCell}>
                       <Text style={styles.detailStatLabel}>AVAILABILITY</Text>
-                      <Text style={[styles.detailStatVal, { color: '#F59E0B' }]}>{selectedCreation.availableSeats} / {selectedCreation.totalSeats} Slots</Text>
+                      <Text style={[styles.detailStatVal, { color: '#F59E0B' }]}>
+                        {selectedCreation.availableSeats} / {selectedCreation.totalSeats} Slots
+                      </Text>
                     </View>
                   </View>
 
                   {/* Meeting point */}
                   <Text style={styles.detailSectionTitle}>ASSEMBLY / DEPARTURE</Text>
                   <View style={styles.detailMeetingCard}>
-                    <MapPin size={14} color='#3B82F6' />
+                    <MapPin size={14} color="#3B82F6" />
                     <View style={{ flex: 1 }}>
                       <Text style={styles.detailMeetingText}>{selectedCreation.meetingPoint}</Text>
                       <Text style={styles.detailMeetingSub}>Please report 30 mins before time.</Text>
@@ -1819,20 +1842,31 @@ function CreateTripScreen() {
                       <Utensils size={12} color={selectedCreation.foodIncluded ? '#10B981' : '#64748B'} />
                       <Text style={styles.detailInclusionText}>Meals / Food</Text>
                     </View>
-                    <View style={[styles.detailInclusionCell, { opacity: selectedCreation.hotelIncluded !== false ? 1 : 0.4 }]}>
+                    <View
+                      style={[
+                        styles.detailInclusionCell,
+                        { opacity: selectedCreation.hotelIncluded !== false ? 1 : 0.4 },
+                      ]}
+                    >
                       <Hotel size={12} color={selectedCreation.hotelIncluded !== false ? '#10B981' : '#64748B'} />
                       <Text style={styles.detailInclusionText}>Hotel Stay</Text>
                     </View>
                   </View>
 
                   {/* PENDING JOIN REQUESTS */}
-                  {joinRequests.filter(req => req.tripId === selectedCreation.id && req.status === 'PENDING').length > 0 && (
+                  {joinRequests.filter((req) => req.tripId === selectedCreation.id && req.status === 'PENDING').length >
+                    0 && (
                     <>
                       <Text style={styles.detailSectionTitle}>
-                        PENDING JOIN REQUESTS ({joinRequests.filter(req => req.tripId === selectedCreation.id && req.status === 'PENDING').length})
+                        PENDING JOIN REQUESTS (
+                        {
+                          joinRequests.filter((req) => req.tripId === selectedCreation.id && req.status === 'PENDING')
+                            .length
+                        }
+                        )
                       </Text>
                       {joinRequests
-                        .filter(req => req.tripId === selectedCreation.id && req.status === 'PENDING')
+                        .filter((req) => req.tripId === selectedCreation.id && req.status === 'PENDING')
                         .map((req) => (
                           <View key={req.id} style={styles.detailRequestItem}>
                             <View style={styles.detailReqAvatarWrap}>
@@ -1871,14 +1905,19 @@ function CreateTripScreen() {
                           <View key={p.id} style={styles.detailRequestItem}>
                             <View style={styles.detailReqAvatarWrap}>
                               {p.avatar ? (
-                                <Image source={{ uri: p.avatar }} style={{ width: '100%', height: '100%', borderRadius: 12 }} />
+                                <Image
+                                  source={{ uri: p.avatar }}
+                                  style={{ width: '100%', height: '100%', borderRadius: 12 }}
+                                />
                               ) : (
                                 <User size={14} color={C.white} />
                               )}
                             </View>
                             <View style={{ flex: 1 }}>
                               <Text style={styles.detailReqName}>{p.name}</Text>
-                              <Text style={styles.detailReqSub}>{p.isCreator ? 'Organizer / Creator' : 'Confirmed Traveler'}</Text>
+                              <Text style={styles.detailReqSub}>
+                                {p.isCreator ? 'Organizer / Creator' : 'Confirmed Traveler'}
+                              </Text>
                             </View>
                             {p.isCreator && (
                               <View style={styles.creatorBadge}>
@@ -1890,7 +1929,6 @@ function CreateTripScreen() {
                       </View>
                     </>
                   )}
-
                 </ScrollView>
               </View>
             </View>
