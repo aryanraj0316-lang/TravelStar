@@ -6,6 +6,7 @@ import { logger } from '../../lib/logger';
 import { requireUserId } from '../../lib/auth-context';
 import { claimSeatAndJoin } from '../../services/trip-membership';
 import { calculateMidwayPrice } from '../../services/midway-pricing';
+import { coordsForCity, haversineKm } from '../../lib/india-city-coords';
 
 const router = Router();
 
@@ -145,98 +146,81 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Get Nearby Places — see docs/REMEDIATION.md §8.13 (Phase 8): this is
-// entirely hardcoded pending real geospatial search. Left as-is; it is not a
-// backend-correctness bug the way the rest of this file was, it is an
-// unbuilt feature, and building real geospatial search here would be
-// guessing at Phase 8 scope rather than fixing Phase 5 issues.
-router.get('/nearby', (req, res) => {
-  const nearbyPlaces = [
-    {
-      id: 'place-1',
-      name: 'Sultanpur Bird Sanctuary & Lake',
-      category: 'Nature & Wildlife',
-      distanceKm: 42,
-      driveTime: '1 hr 05 mins',
-      pricePerHead: 1800,
-      priceDiffText: '✨ SASTA TRIP (Minimal Expense - Save ₹3,100)',
-      isCheapest: true,
-      rating: 4.6,
-      reviewsCount: 1240,
-      imageUrl: 'https://images.unsplash.com/photo-1511497584788-876761c119ef?w=800&q=80',
-      shortDesc: 'Serene wetland lake sanctuary with migratory birds & peaceful walking trails.',
-      transportCost: 600,
-      stayMealCost: 1000,
-      entryCost: 200,
-    },
-    {
-      id: 'place-2',
-      name: 'Surajkund Heritage Lake & Asola Reserve',
-      category: 'Heritage & Nature',
-      distanceKm: 24,
-      driveTime: '35 mins',
-      pricePerHead: 2200,
-      priceDiffText: '📍 NEAREST LOCATION (Only 24 km away)',
-      isNearest: true,
-      rating: 4.5,
-      reviewsCount: 890,
-      imageUrl: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&q=80',
-      shortDesc: 'Ancient 10th-century amphitheater reservoir surrounded by lush green hills.',
-      transportCost: 500,
-      stayMealCost: 1500,
-      entryCost: 200,
-    },
-    {
-      id: 'place-3',
-      name: 'Agra Taj Mahal & Agra Fort',
-      category: 'World Wonder Heritage',
-      distanceKm: 210,
-      driveTime: '3 hrs 15 mins (Expressway)',
-      pricePerHead: 4900,
-      priceDiffText: '👑 BEST RATED #1 DESTINATION (4.9★)',
-      isBestRated: true,
-      rating: 4.9,
-      reviewsCount: 4820,
-      imageUrl: 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=800&q=80',
-      shortDesc: 'Iconic marble monument of eternal love & Mughal grand citadel fort.',
-      transportCost: 1800,
-      stayMealCost: 2500,
-      entryCost: 600,
-    },
-    {
-      id: 'place-4',
-      name: 'Neemrana Fort Palace & Zipline',
-      category: 'Royal Heritage & Adventure',
-      distanceKm: 122,
-      driveTime: '2 hrs 10 mins',
-      pricePerHead: 3800,
-      priceDiffText: '+₹2,000 vs Sasta Trip',
-      rating: 4.7,
-      reviewsCount: 2150,
-      imageUrl: 'https://images.unsplash.com/photo-1585123334904-845d60e97b29?w=800&q=80',
-      shortDesc: '15th-century cliffside palace with flying-fox zipline over Rajasthan hills.',
-      transportCost: 1200,
-      stayMealCost: 2100,
-      entryCost: 500,
-    },
-    {
-      id: 'place-5',
-      name: 'Rishikesh Ganga Ghats & Rafting',
-      category: 'Adventure & Yoga Capital',
-      distanceKm: 240,
-      driveTime: '4 hrs 20 mins',
-      pricePerHead: 3400,
-      priceDiffText: '+₹1,600 vs Sasta Trip',
-      rating: 4.8,
-      reviewsCount: 3910,
-      imageUrl: 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=800&q=80',
-      shortDesc: 'White-water river rafting on River Ganges & evening divine Ganga Aarti.',
-      transportCost: 1400,
-      stayMealCost: 1600,
-      entryCost: 400,
-    },
-  ];
-  res.status(200).json({ ok: true, data: nearbyPlaces });
+// Nearby trips — docs/REMEDIATION.md §8.13. Previously returned a hardcoded
+// list of Delhi-area places regardless of the caller, and the client
+// fabricated a fake Trip object from each place and POSTed a join request
+// for a nonexistent trip id. Now returns real public, active, upcoming
+// trips. When the caller passes their device location (?lat=&lng=), each
+// trip is annotated with an honest straight-line distance from that point
+// to the first city on its route that we have reference coordinates for
+// (see lib/india-city-coords.ts — no geocoding-service credentials in this
+// project), and the list is sorted nearest-first. Trips with no
+// recognisable city sort last with distanceKm: null. A real
+// routing/geocoding integration would replace the straight-line math.
+const nearbyQuerySchema = z.object({
+  lat: z.coerce.number().min(-90).max(90).optional(),
+  lng: z.coerce.number().min(-180).max(180).optional(),
+  limit: z.coerce.number().int().min(1).max(MAX_PAGE_SIZE).optional(),
+});
+
+router.get('/nearby', async (req, res) => {
+  const parsed = nearbyQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid location query.', details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })) } });
+  }
+  const { lat, lng, limit } = parsed.data;
+  const origin = lat !== undefined && lng !== undefined ? { lat, lng } : null;
+  const tokenUserId = req.user?.id ?? null;
+
+  try {
+    const dbTrips = await prisma.trip.findMany({
+      where: {
+        privacy: 'PUBLIC',
+        status: 'ACTIVE',
+        endDate: { gte: new Date() },
+      },
+      include: TRIP_INCLUDE,
+      orderBy: { startDate: 'asc' },
+      take: limit ?? DEFAULT_PAGE_SIZE,
+    });
+
+    const annotated = dbTrips.map((t) => {
+      const base = mapTrip(t, tokenUserId);
+      let distanceKm: number | null = null;
+      let nearestCity: string | null = null;
+      if (origin) {
+        for (const city of t.cities) {
+          const c = coordsForCity(city);
+          if (!c) continue;
+          const d = haversineKm(origin, c);
+          if (distanceKm === null || d < distanceKm) {
+            distanceKm = d;
+            nearestCity = city;
+          }
+        }
+      }
+      return {
+        ...base,
+        distanceKm: distanceKm === null ? null : Math.round(distanceKm),
+        distanceIsApproximate: distanceKm !== null,
+        nearestCity,
+      };
+    });
+
+    if (origin) {
+      annotated.sort((a, b) => {
+        if (a.distanceKm === null && b.distanceKm === null) return 0;
+        if (a.distanceKm === null) return 1;
+        if (b.distanceKm === null) return -1;
+        return a.distanceKm - b.distanceKm;
+      });
+    }
+
+    return res.status(200).json({ ok: true, data: annotated });
+  } catch (err) {
+    logger.error('[Trips] Nearby error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve nearby trips' } });
+  }
 });
 
 // Get the authenticated user's confirmed trips — the real, payment-free v1

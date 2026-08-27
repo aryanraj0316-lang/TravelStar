@@ -350,8 +350,11 @@ export const apiService = {
     });
   },
 
-  async getNearbyPlaces(): Promise<any[] | null> {
-    return request<any[]>('/trips/nearby');
+  // Real upcoming public trips, optionally sorted by straight-line distance
+  // from the caller's device location (docs/REMEDIATION.md §8.13). `query`
+  // is a pre-built query string like "?lat=28.6&lng=77.2" or "".
+  async getNearbyTrips(query = ''): Promise<any[] | null> {
+    return request<any[]>(`/trips/nearby${query}`);
   },
 
   // Guides

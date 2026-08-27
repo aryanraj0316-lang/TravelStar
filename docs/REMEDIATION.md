@@ -1321,6 +1321,22 @@ partial, exactly what's blocking full completion.
       upload for create-story, merged-feed keyset pagination (§5.9),
       per-user story like/unlike (the /stories/:id/like route still just
       increments a global counter — same class as §5.8).
+      §8.13 done (honest v1) — nearby-trips.tsx no longer renders hardcoded
+      "places" with a fake "CURRENT GPS LOCATION: New Delhi" banner and
+      fabricated cost breakdowns, and no longer hands a made-up trip
+      (id 'place-1') to the join modal (which POSTed a join request for a
+      nonexistent trip). GET /trips/nearby now returns real upcoming public
+      ACTIVE trips; with ?lat&lng it annotates each with an honest
+      straight-line distance to the nearest city on its route found in the
+      new backend/src/lib/india-city-coords.ts reference table (public-
+      domain geodata — this project has no geocoding-service credentials;
+      a real routing integration would read GEOCODING_API_URL) and sorts
+      nearest-first. Client uses the existing device-location.ts (real
+      expo-location permission flow) with graceful denied/unavailable
+      fallback, loading/error/empty states, and only ever opens the join
+      modal on a real trip. 3 new backend tests (trips-nearby.test.ts),
+      suite now 54/54. Deferred: real drive-time/routing distances,
+      PostGIS/earthdistance, per-place cost estimates.
 - [ ] Phase 9 — Design system, i18n, accessibility (not started)
 - [ ] Phase 10 — Performance (not started)
 - [ ] Phase 11 — Observability and operations (not started)
