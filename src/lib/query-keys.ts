@@ -12,6 +12,7 @@ export const queryKeys = {
   nearbyPlaces: () => ['trips', 'nearby'] as const,
   likedTrips: () => ['trips', 'liked'] as const,
   myTrips: () => ['trips', 'mine'] as const,
+  tripExpenses: (tripId: string) => ['trips', tripId, 'expenses'] as const,
 
   joinRequests: () => ['join-requests'] as const,
   incomingRequests: () => ['join-requests', 'incoming'] as const,

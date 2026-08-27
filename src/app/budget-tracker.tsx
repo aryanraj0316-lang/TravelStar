@@ -1,29 +1,47 @@
 import React, { useState } from 'react';
 import {
-  ScrollView,
-  StyleSheet,
-  View,
-  TouchableOpacity,
-  Text,
-  StatusBar,
-  TextInput,
+  ActivityIndicator,
+  Image,
   Modal,
+  RefreshControl,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  AlertCircle,
   ArrowLeft,
-  Plus,
   Car,
+  Check,
+  ChevronRight,
   Hotel,
-  Utensils,
+  MapPin,
+  Plus,
   ShoppingBag,
-  Calendar,
+  Ticket,
+  Trash2,
+  Utensils,
   X,
-  TrendingDown,
-  Clock,
 } from 'lucide-react-native';
+
+import { apiService } from '@/services/api';
+import { queryKeys } from '@/lib/query-keys';
+import { toast, errorToastMessage } from '@/lib/feedback';
+import { useApp } from '@/store/AppContext';
+
+// docs/REMEDIATION.md §8.12: this screen was pure local useState — a
+// hardcoded ₹15,000 budget and five hardcoded expense rows that reset the
+// moment it unmounted. It is now backed by the real TripExpense model:
+// expenses are shared across everyone on a chosen trip and split equally,
+// with the split derived server-side at read time so it never drifts.
 
 const C = {
   bg: '#070913',
@@ -40,329 +58,371 @@ const C = {
   rose: '#FF2D55',
 };
 
-interface Expense {
-  id: string;
-  title: string;
-  amount: number;
-  category: 'TRANSPORT' | 'LODGING' | 'FOOD' | 'OTHER';
-  date: string;
-  time: string;
+const CATEGORIES = [
+  { key: 'TRANSPORT', label: 'Transport', color: C.blue, Icon: Car },
+  { key: 'LODGING', label: 'Lodging', color: C.purple, Icon: Hotel },
+  { key: 'FOOD', label: 'Food', color: C.amber, Icon: Utensils },
+  { key: 'ACTIVITY', label: 'Activity', color: C.green, Icon: Ticket },
+  { key: 'OTHER', label: 'Other', color: C.rose, Icon: ShoppingBag },
+] as const;
+
+type CategoryKey = (typeof CATEGORIES)[number]['key'];
+
+function catMeta(key: string) {
+  return CATEGORIES.find((c) => c.key === key) ?? CATEGORIES[4];
 }
 
-const CATEGORY_META = {
-  TRANSPORT: { label: 'Transport', color: C.blue, Icon: Car, bg: 'rgba(0,102,255,0.1)' },
-  LODGING: { label: 'Lodging', color: C.purple, Icon: Hotel, bg: 'rgba(139,92,246,0.1)' },
-  FOOD: { label: 'Food & Meals', color: C.amber, Icon: Utensils, bg: 'rgba(245,158,11,0.1)' },
-  OTHER: { label: 'Shopping & Other', color: C.rose, Icon: ShoppingBag, bg: 'rgba(255,45,85,0.1)' },
-};
+interface ExpenseItem {
+  id: string;
+  description: string;
+  amount: string;
+  category: string;
+  createdAt: string;
+  paidById: string;
+  paidByName: string;
+  canDelete: boolean;
+}
+
+interface ExpensesResponse {
+  tripId: string;
+  headCount: number;
+  total: string;
+  yourShare: string;
+  yourNet: string;
+  expenses: ExpenseItem[];
+  balances: { userId: string; name: string; avatar: string; isOrganizer: boolean; paid: string; share: string; net: string }[];
+}
+
+const inr = (v: string | number) => `₹${Math.round(Number(v)).toLocaleString('en-IN')}`;
 
 export default function BudgetTrackerScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
+  const { isLoggedIn } = useApp();
 
-  // Budget states
-  const [totalBudget] = useState<number>(15000);
-  const [expenses, setExpenses] = useState<Expense[]>([
-    { id: '1', title: 'Hotel Booking Vrindavan', amount: 4000, category: 'LODGING', date: '2026-07-20', time: '11:30 AM' },
-    { id: '2', title: 'Train ticket to Mathura', amount: 1800, category: 'TRANSPORT', date: '2026-07-20', time: '09:15 AM' },
-    { id: '3', title: 'Lunch at Mathura Highway', amount: 750, category: 'FOOD', date: '2026-07-21', time: '02:00 PM' },
-    { id: '4', title: 'Local Auto Fare', amount: 350, category: 'TRANSPORT', date: '2026-07-21', time: '05:30 PM' },
-    { id: '5', title: 'Pooja Thali & Souvenirs', amount: 800, category: 'OTHER', date: '2026-07-22', time: '10:00 AM' },
-  ]);
+  const [tripId, setTripId] = useState<string | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [desc, setDesc] = useState('');
+  const [amount, setAmount] = useState('');
+  const [category, setCategory] = useState<CategoryKey>('TRANSPORT');
 
-  // Modal form states
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
-  const [newAmount, setNewAmount] = useState('');
-  const [newCategory, setNewCategory] = useState<keyof typeof CATEGORY_META>('TRANSPORT');
+  const {
+    data: myTrips = [],
+    isLoading: tripsLoading,
+    isError: tripsError,
+  } = useQuery({
+    queryKey: queryKeys.myTrips(),
+    queryFn: async () => (await apiService.getMyTrips()) ?? [],
+    enabled: isLoggedIn,
+  });
 
-  // Derived metrics
-  const totalSpent = expenses.reduce((acc, curr) => acc + curr.amount, 0);
-  const remaining = totalBudget - totalSpent;
-  const spentPercentage = Math.min((totalSpent / totalBudget) * 100, 100);
+  const activeTripId = tripId ?? myTrips[0]?.id ?? null;
+  const activeTrip = myTrips.find((t) => t.id === activeTripId) ?? null;
 
-  // Category totals
-  const categoryTotals = expenses.reduce((acc, curr) => {
-    acc[curr.category] = (acc[curr.category] || 0) + curr.amount;
-    return acc;
-  }, {} as Record<keyof typeof CATEGORY_META, number>);
+  const {
+    data: budget,
+    isLoading: budgetLoading,
+    isError: budgetError,
+    error,
+    refetch,
+    isRefetching,
+  } = useQuery({
+    queryKey: activeTripId ? queryKeys.tripExpenses(activeTripId) : ['trips', 'none', 'expenses'],
+    queryFn: async (): Promise<ExpensesResponse> =>
+      (await apiService.getTripExpenses(activeTripId as string)) as ExpensesResponse,
+    enabled: !!activeTripId,
+  });
 
-  const handleAddExpense = () => {
-    if (!newTitle.trim() || !newAmount.trim() || isNaN(parseFloat(newAmount))) {
-      return;
-    }
+  const addMutation = useMutation({
+    mutationFn: () =>
+      apiService.addTripExpense(activeTripId as string, {
+        description: desc.trim(),
+        amount: Number(amount),
+        category,
+      }),
+    onSuccess: () => {
+      toast('Expense added', 'success');
+      setShowAdd(false);
+      setDesc('');
+      setAmount('');
+      setCategory('TRANSPORT');
+      if (activeTripId) void queryClient.invalidateQueries({ queryKey: queryKeys.tripExpenses(activeTripId) });
+    },
+    onError: (e) => toast(errorToastMessage(e, 'Could not add the expense.'), 'error'),
+  });
 
-    const newExpense: Expense = {
-      id: Date.now().toString(),
-      title: newTitle.trim(),
-      amount: parseFloat(newAmount),
-      category: newCategory,
-      date: new Date().toISOString().split('T')[0],
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    };
+  const deleteMutation = useMutation({
+    mutationFn: (expenseId: string) => apiService.deleteTripExpense(activeTripId as string, expenseId),
+    onSuccess: () => {
+      toast('Expense removed', 'success');
+      if (activeTripId) void queryClient.invalidateQueries({ queryKey: queryKeys.tripExpenses(activeTripId) });
+    },
+    onError: (e) => toast(errorToastMessage(e, 'Could not remove the expense.'), 'error'),
+  });
 
-    setExpenses([newExpense, ...expenses]);
-    setNewTitle('');
-    setNewAmount('');
-    setNewCategory('TRANSPORT');
-    setShowAddModal(false);
-  };
+  const canSubmit = desc.trim().length > 0 && Number(amount) > 0 && !addMutation.isPending;
+
+  // ── Not signed in / no trips ──────────────────────────────────────
+  if (!isLoggedIn) {
+    return (
+      <Shell title="Budget Tracker" onBack={() => router.back()}>
+        <View style={styles.stateWrap}>
+          <MapPin size={52} color={C.textMuted} strokeWidth={1.3} />
+          <Text style={styles.stateText}>Sign in to track a trip budget.</Text>
+          <TouchableOpacity style={styles.primaryBtn} onPress={() => router.navigate('/auth')}>
+            <Text style={styles.primaryBtnText}>Sign In</Text>
+          </TouchableOpacity>
+        </View>
+      </Shell>
+    );
+  }
+
+  if (tripsLoading) {
+    return (
+      <Shell title="Budget Tracker" onBack={() => router.back()}>
+        <View style={styles.stateWrap}>
+          <ActivityIndicator size="large" color={C.blue} />
+          <Text style={styles.stateText}>Loading your trips…</Text>
+        </View>
+      </Shell>
+    );
+  }
+
+  if (tripsError || myTrips.length === 0) {
+    return (
+      <Shell title="Budget Tracker" onBack={() => router.back()}>
+        <View style={styles.stateWrap}>
+          <MapPin size={52} color={C.textMuted} strokeWidth={1.3} />
+          <Text style={styles.stateText}>
+            {tripsError ? 'Could not load your trips.' : 'Join or create a trip to start tracking a shared budget.'}
+          </Text>
+          <TouchableOpacity style={styles.primaryBtn} onPress={() => router.navigate('/search')}>
+            <Text style={styles.primaryBtnText}>Browse trips</Text>
+          </TouchableOpacity>
+        </View>
+      </Shell>
+    );
+  }
 
   return (
-    <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={C.bg} />
-
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          activeOpacity={0.7}
-          onPress={() => router.back()}
-          style={styles.backBtn}
-        >
-          <ArrowLeft size={18} color={C.white} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Budget Tracker</Text>
-        <TouchableOpacity
-          activeOpacity={0.8}
-          style={styles.addFloatBtnHeader}
-          onPress={() => setShowAddModal(true)}
-        >
-          <Plus size={20} color={C.blue} />
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        
-        {/* Main Budget Dashboard Card */}
-        <View style={styles.dashboardCard}>
-          <View style={styles.tripContextRow}>
-            <Text style={styles.tripContextLabel}>ACTIVE TRIP BUDGET</Text>
-            <View style={styles.liveIndicator}>
-              <View style={styles.liveDot} />
-              <Text style={styles.liveLabel}>Ranchi → Vrindavan</Text>
-            </View>
-          </View>
-
-          <Text style={styles.remainingBudgetAmount}>
-            ₹{remaining.toLocaleString('en-IN')}
-          </Text>
-          <Text style={styles.remainingBudgetSub}>Remaining Balance</Text>
-
-          {/* Progress Bar */}
-          <View style={styles.progressTrack}>
-            <LinearGradient
-              colors={['#00F2FE', '#0066FF']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={[styles.progressBar, { width: `${spentPercentage}%` }]}
-            />
-          </View>
-
-          <View style={styles.progressMetaRow}>
-            <Text style={styles.progressPercentText}>
-              {spentPercentage.toFixed(0)}% Used
-            </Text>
-            <Text style={styles.progressBudgetTotal}>
-              of ₹{totalBudget.toLocaleString('en-IN')}
-            </Text>
-          </View>
-        </View>
-
-        {/* Dashboard Grid (Budget vs Spent) */}
-        <View style={styles.statsGrid}>
-          <View style={styles.statsCard}>
-            <Text style={styles.statsLabel}>Total Budget</Text>
-            <View style={styles.statsValueRow}>
-              <Text style={[styles.statsValue, { color: C.blue }]}>
-                ₹{totalBudget.toLocaleString('en-IN')}
+    <Shell title="Budget Tracker" onBack={() => router.back()}>
+      {/* Trip selector */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tripChips}>
+        {myTrips.map((t) => {
+          const active = t.id === activeTripId;
+          return (
+            <TouchableOpacity
+              key={t.id}
+              style={[styles.tripChip, active && styles.tripChipActive]}
+              onPress={() => setTripId(t.id)}
+            >
+              <Text style={[styles.tripChipText, active && styles.tripChipTextActive]} numberOfLines={1}>
+                {t.name}
               </Text>
-            </View>
-          </View>
-
-          <View style={styles.statsCard}>
-            <Text style={styles.statsLabel}>Total Spent</Text>
-            <View style={styles.statsValueRow}>
-              <Text style={[styles.statsValue, { color: C.rose }]}>
-                ₹{totalSpent.toLocaleString('en-IN')}
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Category breakdown section */}
-        <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Category Breakdown</Text>
-          <View style={styles.breakdownCard}>
-            {(Object.keys(CATEGORY_META) as (keyof typeof CATEGORY_META)[]).map((key) => {
-              const meta = CATEGORY_META[key];
-              const amount = categoryTotals[key] || 0;
-              const percent = totalSpent > 0 ? (amount / totalSpent) * 100 : 0;
-              const Icon = meta.Icon;
-
-              return (
-                <View key={key} style={styles.categoryRow}>
-                  <View style={[styles.categoryIconWrap, { backgroundColor: meta.bg }]}>
-                    <Icon size={16} color={meta.color} />
-                  </View>
-                  <View style={styles.categoryInfo}>
-                    <View style={styles.categoryMeta}>
-                      <Text style={styles.categoryLabel}>{meta.label}</Text>
-                      <Text style={styles.categoryAmount}>
-                        ₹{amount.toLocaleString('en-IN')}
-                      </Text>
-                    </View>
-                    <View style={styles.categoryTrack}>
-                      <View
-                        style={[
-                          styles.categoryBar,
-                          { width: `${percent}%`, backgroundColor: meta.color },
-                        ]}
-                      />
-                    </View>
-                  </View>
-                  <Text style={styles.categoryPercent}>{percent.toFixed(0)}%</Text>
-                </View>
-              );
-            })}
-          </View>
-        </View>
-
-        {/* Recent Ledger */}
-        <View style={styles.sectionContainer}>
-          <View style={styles.ledgerHeader}>
-            <Text style={styles.sectionTitle}>Recent Expenses</Text>
-            <TouchableOpacity style={styles.addTextBtn} onPress={() => setShowAddModal(true)}>
-              <Text style={styles.addTextBtnLabel}>+ Add Expense</Text>
             </TouchableOpacity>
-          </View>
-
-          <View style={styles.ledgerContainer}>
-            {expenses.map((expense) => {
-              const meta = CATEGORY_META[expense.category];
-              const Icon = meta.Icon;
-
-              return (
-                <View key={expense.id} style={styles.expenseItem}>
-                  <View style={[styles.expenseIconWrap, { backgroundColor: meta.bg }]}>
-                    <Icon size={18} color={meta.color} />
-                  </View>
-                  <View style={styles.expenseMainInfo}>
-                    <Text style={styles.expenseTitle} numberOfLines={1}>{expense.title}</Text>
-                    <View style={styles.expenseTimeRow}>
-                      <Calendar size={10} color={C.textMuted} style={{ marginRight: 4 }} />
-                      <Text style={styles.expenseTimeText}>{expense.date}</Text>
-                      <Clock size={10} color={C.textMuted} style={{ marginLeft: 8, marginRight: 4 }} />
-                      <Text style={styles.expenseTimeText}>{expense.time}</Text>
-                    </View>
-                  </View>
-                  <View style={styles.expenseAmountRow}>
-                    <TrendingDown size={12} color={C.rose} style={{ marginRight: 2 }} />
-                    <Text style={styles.expenseAmount}>
-                      ₹{expense.amount.toLocaleString('en-IN')}
-                    </Text>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-        </View>
-
+          );
+        })}
       </ScrollView>
 
-      {/* Add Expense Modal */}
-      <Modal
-        visible={showAddModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowAddModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            {/* Header */}
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add Expense</Text>
-              <TouchableOpacity
-                style={styles.closeBtn}
-                onPress={() => setShowAddModal(false)}
-              >
-                <X size={20} color={C.white} />
-              </TouchableOpacity>
-            </View>
-
-            {/* Inputs */}
-            <View style={styles.modalBody}>
-              <Text style={styles.inputLabel}>EXPENSE NAME</Text>
-              <TextInput
-                placeholder="e.g. Taxi to Temple"
-                placeholderTextColor={C.textMuted}
-                value={newTitle}
-                onChangeText={setNewTitle}
-                style={styles.textInput}
-              />
-
-              <Text style={styles.inputLabel}>AMOUNT (₹)</Text>
-              <TextInput
-                placeholder="0.00"
-                placeholderTextColor={C.textMuted}
-                value={newAmount}
-                onChangeText={setNewAmount}
-                keyboardType="numeric"
-                style={styles.textInput}
-              />
-
-              <Text style={styles.inputLabel}>CATEGORY</Text>
-              <View style={styles.categorySelectorGrid}>
-                {(Object.keys(CATEGORY_META) as (keyof typeof CATEGORY_META)[]).map((key) => {
-                  const meta = CATEGORY_META[key];
-                  const isSelected = newCategory === key;
-                  const Icon = meta.Icon;
-
-                  return (
-                    <TouchableOpacity
-                      key={key}
-                      activeOpacity={0.8}
-                      onPress={() => setNewCategory(key)}
-                      style={[
-                        styles.catOptionBtn,
-                        isSelected && { borderColor: meta.color, backgroundColor: meta.bg },
-                      ]}
-                    >
-                      <Icon size={16} color={isSelected ? meta.color : C.textSec} />
-                      <Text style={[styles.catOptionLabel, isSelected && { color: C.white, fontWeight: '700' }]}>
-                        {meta.label.split(' ')[0]}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
+      {budgetLoading ? (
+        <View style={styles.stateWrap}>
+          <ActivityIndicator size="large" color={C.blue} />
+          <Text style={styles.stateText}>Loading expenses…</Text>
+        </View>
+      ) : budgetError || !budget ? (
+        <View style={styles.stateWrap}>
+          <AlertCircle size={48} color={C.rose} strokeWidth={1.4} />
+          <Text style={styles.stateText}>{error instanceof Error ? error.message : 'Could not load this trip budget.'}</Text>
+          <TouchableOpacity style={styles.primaryBtn} onPress={() => refetch()}>
+            <Text style={styles.primaryBtnText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={C.blue} />}
+        >
+          {/* Summary */}
+          <LinearGradient colors={['#12203D', '#0C1526']} style={styles.summaryCard}>
+            <Text style={styles.summaryLabel}>TOTAL TRIP SPEND</Text>
+            <Text style={styles.summaryValue}>{inr(budget.total)}</Text>
+            <View style={styles.summaryRow}>
+              <View style={styles.summaryCol}>
+                <Text style={styles.summaryColLabel}>Split {budget.headCount} ways</Text>
+                <Text style={styles.summaryColValue}>{inr(budget.yourShare)} / person</Text>
               </View>
-
-              <TouchableOpacity
-                activeOpacity={0.85}
-                style={styles.saveExpenseBtn}
-                onPress={handleAddExpense}
-              >
-                <LinearGradient
-                  colors={['#00F2FE', '#0066FF']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.saveExpenseBtnGradient}
+              <View style={styles.summaryCol}>
+                <Text style={styles.summaryColLabel}>Your balance</Text>
+                <Text
+                  style={[
+                    styles.summaryColValue,
+                    { color: Number(budget.yourNet) >= 0 ? C.green : C.rose },
+                  ]}
                 >
-                  <Text style={styles.saveExpenseBtnText}>Add Expense</Text>
-                </LinearGradient>
+                  {Number(budget.yourNet) >= 0 ? 'you are owed ' : 'you owe '}
+                  {inr(Math.abs(Number(budget.yourNet)))}
+                </Text>
+              </View>
+            </View>
+          </LinearGradient>
+
+          {/* Per-member balances */}
+          {budget.balances.length > 1 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Who owes what</Text>
+              {budget.balances.map((b) => (
+                <View key={b.userId} style={styles.balanceRow}>
+                  <Image source={{ uri: b.avatar }} style={styles.balanceAvatar} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.balanceName}>
+                      {b.name}
+                      {b.isOrganizer ? ' · organizer' : ''}
+                    </Text>
+                    <Text style={styles.balanceSub}>paid {inr(b.paid)} of {inr(b.share)} share</Text>
+                  </View>
+                  <Text style={[styles.balanceNet, { color: Number(b.net) >= 0 ? C.green : C.rose }]}>
+                    {Number(b.net) >= 0 ? '+' : '−'}
+                    {inr(Math.abs(Number(b.net)))}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* Expense list */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Expenses</Text>
+            {budget.expenses.length === 0 ? (
+              <Text style={styles.emptyExpenses}>No expenses logged for this trip yet.</Text>
+            ) : (
+              budget.expenses.map((e) => {
+                const meta = catMeta(e.category);
+                return (
+                  <View key={e.id} style={styles.expenseRow}>
+                    <View style={[styles.expenseIcon, { backgroundColor: meta.color + '22' }]}>
+                      <meta.Icon size={16} color={meta.color} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.expenseTitle}>{e.description}</Text>
+                      <Text style={styles.expenseSub}>
+                        {meta.label} · paid by {e.paidByName} · {new Date(e.createdAt).toLocaleDateString('en-IN')}
+                      </Text>
+                    </View>
+                    <Text style={styles.expenseAmount}>{inr(e.amount)}</Text>
+                    {e.canDelete && (
+                      <TouchableOpacity
+                        style={styles.deleteBtn}
+                        onPress={() => deleteMutation.mutate(e.id)}
+                        disabled={deleteMutation.isPending}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Delete ${e.description}`}
+                      >
+                        <Trash2 size={15} color={C.textMuted} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })
+            )}
+          </View>
+
+          <View style={{ height: 100 }} />
+        </ScrollView>
+      )}
+
+      {/* Add button */}
+      {budget && (
+        <TouchableOpacity style={styles.fab} onPress={() => setShowAdd(true)} accessibilityRole="button" accessibilityLabel="Add expense">
+          <Plus size={22} color={C.white} />
+        </TouchableOpacity>
+      )}
+
+      {/* Add expense modal */}
+      <Modal visible={showAdd} transparent animationType="slide" onRequestClose={() => setShowAdd(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Add expense{activeTrip ? ` · ${activeTrip.name}` : ''}</Text>
+              <TouchableOpacity onPress={() => setShowAdd(false)} accessibilityRole="button" accessibilityLabel="Close">
+                <X size={20} color={C.textSec} />
               </TouchableOpacity>
             </View>
+
+            <TextInput
+              style={styles.modalInput}
+              placeholder="What was it for?"
+              placeholderTextColor={C.textMuted}
+              value={desc}
+              onChangeText={setDesc}
+              accessibilityLabel="Expense description"
+            />
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Amount (₹)"
+              placeholderTextColor={C.textMuted}
+              keyboardType="numeric"
+              value={amount}
+              onChangeText={setAmount}
+              accessibilityLabel="Expense amount"
+            />
+
+            <View style={styles.catRow}>
+              {CATEGORIES.map((c) => {
+                const active = category === c.key;
+                return (
+                  <TouchableOpacity
+                    key={c.key}
+                    style={[styles.catPill, active && { backgroundColor: c.color + '22', borderColor: c.color }]}
+                    onPress={() => setCategory(c.key)}
+                  >
+                    <c.Icon size={13} color={active ? c.color : C.textMuted} />
+                    <Text style={[styles.catPillText, active && { color: c.color }]}>{c.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <TouchableOpacity
+              style={[styles.submitBtn, !canSubmit && { opacity: 0.5 }]}
+              disabled={!canSubmit}
+              onPress={() => addMutation.mutate()}
+            >
+              {addMutation.isPending ? (
+                <ActivityIndicator color={C.white} />
+              ) : (
+                <>
+                  <Check size={16} color={C.white} />
+                  <Text style={styles.submitBtnText}>Add expense</Text>
+                  <ChevronRight size={16} color={C.white} />
+                </>
+              )}
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
+    </Shell>
+  );
+}
 
+function Shell({ title, onBack, children }: { title: string; onBack: () => void; children: React.ReactNode }) {
+  return (
+    <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+      <View style={styles.header}>
+        <TouchableOpacity activeOpacity={0.7} onPress={onBack} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Go back">
+          <ArrowLeft size={18} color={C.white} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>{title}</Text>
+        <View style={{ width: 40 }} />
+      </View>
+      {children}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: C.bg,
-  },
+  container: { flex: 1, backgroundColor: C.bg },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -374,352 +434,125 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: C.white,
-  },
-  addFloatBtnHeader: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0, 102, 255, 0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 102, 255, 0.35)',
-  },
-  scrollContent: {
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 40,
-  },
-  dashboardCard: {
-    backgroundColor: C.card,
-    borderRadius: 24,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: C.border,
-    marginBottom: 16,
-  },
-  tripContextRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  tripContextLabel: {
-    fontSize: 9.5,
-    fontWeight: '800',
-    color: C.textMuted,
-    letterSpacing: 0.8,
-  },
-  liveIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  liveDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    backgroundColor: C.green,
-    marginRight: 5,
-  },
-  liveLabel: {
-    fontSize: 9,
-    color: C.green,
-    fontWeight: '700',
-  },
-  remainingBudgetAmount: {
-    fontSize: 34,
-    fontWeight: '800',
-    color: C.white,
-  },
-  remainingBudgetSub: {
-    fontSize: 12,
-    color: C.textSec,
-    marginTop: 2,
-    marginBottom: 16,
-  },
-  progressTrack: {
-    height: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderRadius: 3,
-    overflow: 'hidden',
-    marginBottom: 8,
-  },
-  progressBar: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  progressMetaRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  progressPercentText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: C.white,
-  },
-  progressBudgetTotal: {
-    fontSize: 11,
-    color: C.textMuted,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 20,
-  },
-  statsCard: {
-    flex: 1,
-    backgroundColor: C.card,
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: C.border,
-  },
-  statsLabel: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: C.textMuted,
-    marginBottom: 6,
-  },
-  statsValueRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  statsValue: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  sectionContainer: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: C.white,
-    marginBottom: 12,
-  },
-  breakdownCard: {
-    backgroundColor: C.card,
-    borderRadius: 20,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: C.border,
-    gap: 16,
-  },
-  categoryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  categoryIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  categoryInfo: {
-    flex: 1,
-    gap: 6,
-  },
-  categoryMeta: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  categoryLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: C.white,
-  },
-  categoryAmount: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: C.textSec,
-  },
-  categoryTrack: {
-    height: 4,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  categoryBar: {
-    height: '100%',
-    borderRadius: 2,
-  },
-  categoryPercent: {
-    fontSize: 11,
-    color: C.textMuted,
-    fontWeight: '600',
-    width: 28,
-    textAlign: 'right',
-  },
-  ledgerHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  addTextBtn: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-  },
-  addTextBtnLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: C.blue,
-  },
-  ledgerContainer: {
-    backgroundColor: C.card,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: C.border,
-    paddingVertical: 8,
-  },
-  expenseItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.03)',
-  },
-  expenseIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  expenseMainInfo: {
-    flex: 1,
-    gap: 3,
-  },
-  expenseTitle: {
-    fontSize: 13.5,
-    fontWeight: '600',
-    color: C.white,
-  },
-  expenseTimeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  expenseTimeText: {
-    fontSize: 10,
-    color: C.textMuted,
-  },
-  expenseAmountRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  expenseAmount: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: C.white,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#0E1020',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
-    paddingBottom: 40,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 18,
-    borderBottomWidth: 1,
-    borderBottomColor: C.border,
-  },
-  modalTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: C.white,
-  },
-  closeBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
     backgroundColor: 'rgba(255,255,255,0.05)',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
-  modalBody: {
-    padding: 20,
+  headerTitle: { fontSize: 18, fontWeight: '700', color: C.white },
+  stateWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, paddingHorizontal: 40 },
+  stateText: { color: C.textSec, fontSize: 13.5, fontWeight: '600', textAlign: 'center', lineHeight: 19 },
+  primaryBtn: { backgroundColor: C.blue, paddingHorizontal: 22, paddingVertical: 10, borderRadius: 12 },
+  primaryBtnText: { color: C.white, fontSize: 13, fontWeight: '700' },
+  tripChips: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingBottom: 12 },
+  tripChip: {
+    maxWidth: 200,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: C.card,
+    borderWidth: 1,
+    borderColor: C.border,
   },
-  inputLabel: {
-    fontSize: 9.5,
-    fontWeight: '800',
-    color: C.textMuted,
-    letterSpacing: 0.8,
+  tripChipActive: { backgroundColor: C.blue, borderColor: C.blue },
+  tripChipText: { fontSize: 12, fontWeight: '700', color: C.textSec },
+  tripChipTextActive: { color: C.white },
+  scrollContent: { paddingHorizontal: 16, paddingTop: 4 },
+  summaryCard: { borderRadius: 20, padding: 18, gap: 6, marginBottom: 16 },
+  summaryLabel: { fontSize: 10, fontWeight: '800', color: C.textSec, letterSpacing: 1 },
+  summaryValue: { fontSize: 30, fontWeight: '900', color: C.white },
+  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
+  summaryCol: { gap: 3 },
+  summaryColLabel: { fontSize: 10, color: C.textMuted, fontWeight: '600' },
+  summaryColValue: { fontSize: 13, fontWeight: '800', color: C.white },
+  section: { marginBottom: 20 },
+  sectionTitle: { fontSize: 14, fontWeight: '800', color: C.white, marginBottom: 10 },
+  balanceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 8,
+  },
+  balanceAvatar: { width: 34, height: 34, borderRadius: 17 },
+  balanceName: { fontSize: 12.5, fontWeight: '700', color: C.white },
+  balanceSub: { fontSize: 10.5, color: C.textMuted },
+  balanceNet: { fontSize: 13, fontWeight: '800' },
+  emptyExpenses: { fontSize: 12, color: C.textMuted, fontStyle: 'italic' },
+  expenseRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: C.card,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 12,
     marginBottom: 8,
   },
-  textInput: {
-    backgroundColor: C.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: C.border,
-    height: 48,
-    color: C.white,
-    paddingHorizontal: 16,
-    fontSize: 14,
-    marginBottom: 18,
-  },
-  categorySelectorGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 24,
-  },
-  catOptionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    height: 38,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: C.border,
-    paddingHorizontal: 12,
-  },
-  catOptionLabel: {
-    fontSize: 11.5,
-    color: C.textSec,
-  },
-  saveExpenseBtn: {
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  saveExpenseBtnGradient: {
-    height: 48,
+  expenseIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  expenseTitle: { fontSize: 13, fontWeight: '700', color: C.white },
+  expenseSub: { fontSize: 10, color: C.textMuted, marginTop: 2 },
+  expenseAmount: { fontSize: 13.5, fontWeight: '800', color: C.white },
+  deleteBtn: { padding: 6 },
+  fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 28,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: C.blue,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: C.blue,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 8,
   },
-  saveExpenseBtnText: {
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'flex-end' },
+  modalCard: {
+    backgroundColor: C.card,
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    padding: 20,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  modalTitle: { fontSize: 15, fontWeight: '800', color: C.white, flex: 1, marginRight: 10 },
+  modalInput: {
+    backgroundColor: C.cardAlt,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 46,
     color: C.white,
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: 13.5,
   },
+  catRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  catPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 10,
+    backgroundColor: C.cardAlt,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  catPillText: { fontSize: 11, fontWeight: '700', color: C.textMuted },
+  submitBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: C.blue,
+    height: 48,
+    borderRadius: 14,
+    marginTop: 4,
+  },
+  submitBtnText: { color: C.white, fontSize: 14, fontWeight: '800' },
 });

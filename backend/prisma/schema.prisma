@@ -170,6 +170,7 @@ model User {
   groupComments    GroupComment[]
   votes            PollVote[]
   expensesPaid     Expense[]      @relation("ExpensePaidBy")
+  tripExpensesPaid TripExpense[]  @relation("TripExpensePaidBy")
 
   // Payments & Wallet
   wallet       Wallet?
@@ -367,6 +368,7 @@ model Trip {
   requests JoinRequest[]
   bookings Booking[]
   likes    TripLike[]
+  expenses TripExpense[]
 
   @@index([creatorId])
   @@index([createdAt])
@@ -517,6 +519,28 @@ model Expense {
   updatedAt   DateTime @updatedAt
 
   @@index([groupId])
+}
+
+// Shared trip expenses (docs/REMEDIATION.md §8.12). Separate from the
+// Group-scoped Expense model above: budget-tracker.tsx is trip-scoped, and
+// the two features don't overlap. Each expense is paid by one trip member
+// and split equally across everyone on the trip (organizer + confirmed
+// members) at read time — the split is derived, never stored, so it can't
+// drift when membership changes.
+model TripExpense {
+  id          String   @id @default(uuid())
+  tripId      String
+  trip        Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  description String
+  amount      Decimal  @db.Decimal(12, 2)
+  category    String   @default("OTHER") // TRANSPORT | LODGING | FOOD | ACTIVITY | OTHER
+  paidById    String
+  paidBy      User     @relation("TripExpensePaidBy", fields: [paidById], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tripId])
+  @@index([paidById])
 }
 
 model Attendance {

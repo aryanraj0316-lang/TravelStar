@@ -1346,6 +1346,25 @@ partial, exactly what's blocking full completion.
       real derived fields (nights from start/end dates, inclusions from the
       real guide/hotel/food/cab booleans, place count from cities.length),
       loading/error/empty states, join modal only ever gets a real trip.
+      §8.12 done (core) — budget-tracker.tsx was pure local useState (a
+      hardcoded ₹15,000 budget + 5 hardcoded expense rows that reset on
+      unmount). New TripExpense model (migration 000000000005) + routes
+      GET/POST/DELETE /trips/:tripId/expenses: participant-only, expenses
+      paid by one member and split equally across the trip's participant
+      set, the split derived server-side at read time so it never drifts.
+      Returns per-member paid/share/net balances. Client rewritten on
+      useQuery/useMutation with a trip picker (from GET /trips/mine),
+      real add/delete with success/error toasts, loading/error/empty
+      states, delete gated to the payer or organizer. 3 new tests
+      (trip-expenses.test.ts, all green in isolation). Deferred: settlement
+      "mark as paid" tracking, CSV/PDF export, non-equal split shares,
+      wiring the abandoned /payments/split-expense (payments were removed
+      in §5.5).
+      NOTE on test infra (for Phase 13): the backend suites share one
+      remote Neon database and now intermittently fail under `jest`'s
+      default parallel run (connection-pool/rate-limit contention) —
+      every suite passes in isolation and under --runInBand. Phase 13.2's
+      Testcontainers throwaway-Postgres is the real fix.
 - [ ] Phase 9 — Design system, i18n, accessibility (not started)
 - [ ] Phase 10 — Performance (not started)
 - [ ] Phase 11 — Observability and operations (not started)

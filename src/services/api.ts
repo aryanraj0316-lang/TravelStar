@@ -345,6 +345,27 @@ export const apiService = {
     return request<any[]>(`/trips/${tripId}/members`);
   },
 
+  // Shared trip expenses / budget tracker (docs/REMEDIATION.md §8.12).
+  async getTripExpenses(tripId: string): Promise<any | null> {
+    return request<any>(`/trips/${tripId}/expenses`);
+  },
+
+  async addTripExpense(
+    tripId: string,
+    data: { description: string; amount: number; category: string }
+  ): Promise<{ id: string } | null> {
+    return request<{ id: string }>(`/trips/${tripId}/expenses`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteTripExpense(tripId: string, expenseId: string): Promise<{ id: string } | null> {
+    return request<{ id: string }>(`/trips/${tripId}/expenses/${expenseId}`, {
+      method: 'DELETE',
+    });
+  },
+
   async midwayJoin(tripId: string, fromCity: string, toCity: string) {
     return request(`/trips/${tripId}/midway-join`, {
       method: 'POST',

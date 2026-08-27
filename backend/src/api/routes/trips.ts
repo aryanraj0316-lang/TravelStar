@@ -568,4 +568,182 @@ router.get('/:id/members', async (req, res) => {
   }
 });
 
+// ─── Shared trip expenses / budget tracker (docs/REMEDIATION.md §8.12) ───
+// Every route here requires the caller to be a participant of the trip
+// (its creator or a confirmed TripMember). The equal split is computed
+// from the current participant set at read time and never stored.
+
+type TripParticipant = { userId: string; name: string; avatar: string; isOrganizer: boolean };
+
+async function loadTripParticipants(tripId: string): Promise<TripParticipant[] | null> {
+  const trip = await prisma.trip.findUnique({
+    where: { id: tripId },
+    include: {
+      creator: { include: { profile: true } },
+      members: { include: { user: { include: { profile: true } } } },
+    },
+  });
+  if (!trip) return null;
+
+  const nameOf = (u: { email: string | null; profile: { firstName: string; lastName: string } | null }) =>
+    u.profile ? `${u.profile.firstName} ${u.profile.lastName}`.trim() : (u.email?.split('@')[0] ?? 'Traveler');
+  const avatarOf = (u: { profile: { avatarUrl: string | null } | null }) =>
+    u.profile?.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150';
+
+  const list: TripParticipant[] = [
+    { userId: trip.creatorId, name: nameOf(trip.creator), avatar: avatarOf(trip.creator), isOrganizer: true },
+  ];
+  for (const m of trip.members) {
+    if (m.userId === trip.creatorId) continue;
+    list.push({ userId: m.userId, name: nameOf(m.user), avatar: avatarOf(m.user), isOrganizer: false });
+  }
+  return list;
+}
+
+const EXPENSE_CATEGORIES = ['TRANSPORT', 'LODGING', 'FOOD', 'ACTIVITY', 'OTHER'] as const;
+
+const createExpenseSchema = z.object({
+  description: z.string().trim().min(1).max(200),
+  amount: z.coerce.number().positive().max(10_000_000),
+  category: z.enum(EXPENSE_CATEGORIES).default('OTHER'),
+});
+
+// List a trip's shared expenses with the derived per-member split.
+router.get('/:tripId/expenses', async (req, res) => {
+  const userId = requireUserId(req);
+  const { tripId } = req.params;
+  try {
+    const participants = await loadTripParticipants(tripId);
+    if (!participants) {
+      return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found' } });
+    }
+    if (!participants.some((p) => p.userId === userId)) {
+      return res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'You are not on this trip.' } });
+    }
+
+    const expenses = await prisma.tripExpense.findMany({
+      where: { tripId },
+      orderBy: { createdAt: 'desc' },
+      include: { paidBy: { include: { profile: true } } },
+    });
+
+    const headCount = participants.length;
+    const total = expenses.reduce((acc, e) => acc + Number(e.amount), 0);
+    const equalShare = headCount > 0 ? total / headCount : 0;
+
+    // Per-member: what they paid, what they owe (equal share), net balance.
+    const paidByUser = new Map<string, number>();
+    for (const e of expenses) {
+      paidByUser.set(e.paidById, (paidByUser.get(e.paidById) ?? 0) + Number(e.amount));
+    }
+    const balances = participants.map((p) => {
+      const paid = paidByUser.get(p.userId) ?? 0;
+      return {
+        userId: p.userId,
+        name: p.name,
+        avatar: p.avatar,
+        isOrganizer: p.isOrganizer,
+        paid: paid.toFixed(2),
+        share: equalShare.toFixed(2),
+        net: (paid - equalShare).toFixed(2), // positive => is owed; negative => owes
+      };
+    });
+
+    const items = expenses.map((e) => ({
+      id: e.id,
+      description: e.description,
+      amount: Number(e.amount).toFixed(2),
+      category: e.category,
+      createdAt: e.createdAt.toISOString(),
+      paidById: e.paidById,
+      paidByName: e.paidBy.profile
+        ? `${e.paidBy.profile.firstName} ${e.paidBy.profile.lastName}`.trim()
+        : (e.paidBy.email?.split('@')[0] ?? 'Traveler'),
+      canDelete: e.paidById === userId || participants.find((p) => p.userId === userId)?.isOrganizer === true,
+    }));
+
+    return res.status(200).json({
+      ok: true,
+      data: {
+        tripId,
+        headCount,
+        total: total.toFixed(2),
+        yourShare: equalShare.toFixed(2),
+        yourNet: (() => {
+          const me = balances.find((b) => b.userId === userId);
+          return me ? me.net : '0.00';
+        })(),
+        expenses: items,
+        balances,
+      },
+    });
+  } catch (err) {
+    logger.error('[Trips] List expenses error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to load expenses' } });
+  }
+});
+
+// Add a shared expense — paid by the caller, who must be on the trip.
+router.post('/:tripId/expenses', async (req, res) => {
+  const userId = requireUserId(req);
+  const { tripId } = req.params;
+  const parsed = createExpenseSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Please check the expense details.', details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })) } });
+  }
+  try {
+    const participants = await loadTripParticipants(tripId);
+    if (!participants) {
+      return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found' } });
+    }
+    if (!participants.some((p) => p.userId === userId)) {
+      return res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'You are not on this trip.' } });
+    }
+
+    const expense = await prisma.tripExpense.create({
+      data: {
+        tripId,
+        description: parsed.data.description,
+        amount: parsed.data.amount,
+        category: parsed.data.category,
+        paidById: userId,
+      },
+    });
+    return res.status(201).json({ ok: true, data: { id: expense.id } });
+  } catch (err) {
+    logger.error('[Trips] Create expense error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to add expense' } });
+  }
+});
+
+// Delete a shared expense — only the payer or the trip organizer.
+router.delete('/:tripId/expenses/:expenseId', async (req, res) => {
+  const userId = requireUserId(req);
+  const { tripId, expenseId } = req.params;
+  try {
+    const participants = await loadTripParticipants(tripId);
+    if (!participants) {
+      return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found' } });
+    }
+    const me = participants.find((p) => p.userId === userId);
+    if (!me) {
+      return res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'You are not on this trip.' } });
+    }
+
+    const expense = await prisma.tripExpense.findUnique({ where: { id: expenseId } });
+    if (!expense || expense.tripId !== tripId) {
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Expense not found' } });
+    }
+    if (expense.paidById !== userId && !me.isOrganizer) {
+      return res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'Only the person who paid or the organizer can remove this.' } });
+    }
+
+    await prisma.tripExpense.delete({ where: { id: expenseId } });
+    return res.status(200).json({ ok: true, data: { id: expenseId } });
+  } catch (err) {
+    logger.error('[Trips] Delete expense error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to remove expense' } });
+  }
+});
+
 export default router;
