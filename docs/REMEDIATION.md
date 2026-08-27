@@ -1221,6 +1221,26 @@ partial, exactly what's blocking full completion.
       (safety/legal risk first) rather than sequentially §8.1→§8.21, and
       taking the doc's own "remove it" option where it's offered instead
       of building fake infrastructure. Progress:
+      §8.1 done (partial — the forgot/reset-password gap only; role-
+      escalation was already closed by §2.6) — apiService.forgotPassword/
+      resetPassword existed and the backend routes were fully built (token
+      hashing, expiry, session revocation on reset, account-enumeration-
+      safe generic responses) but nothing in the UI ever called them —
+      there was no "Forgot password?" link anywhere. Added
+      src/app/forgot-password.tsx (renders the server's own message
+      verbatim, not a second copy of it) and src/app/reset-password.tsx
+      (a travelstar://reset-password?token=... deep-link target, reusing
+      the useLocalSearchParams pattern from destination-details.tsx/
+      stories.tsx), plus a "Forgot password?" link on auth.tsx's LOGIN
+      form. Honest limitation, flagged not fixed: the backend has no email
+      provider wired up (documented TODO on that route — the reset token
+      is logged server-side, not emailed), so this closes the missing UI
+      half but a real user still has no channel to receive the token
+      until Phase 11/12 email infra exists. Login/register/logout/session
+      restore were already real from Phase 2; role selection is admin-only
+      by design (§2.6) so there is no "self-service role change" flow to
+      build. Not done: email/phone verification (no verification-code
+      flow exists at all, front or back end).
       §8.5 done — AppContext.cancelJoinRequest wired up (was fake:
       local-state-only + Alert.alert, never called the API).
       §8.6 done — all three documented Family Connect breaks fixed

@@ -15,17 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import {
-  ArrowLeft,
-  Mail,
-  Lock,
-  User,
-  Eye,
-  EyeOff,
-  ShieldCheck,
-  Sparkles,
-  Compass,
-} from 'lucide-react-native';
+import { ArrowLeft, Mail, Lock, User, Eye, EyeOff, ShieldCheck, Sparkles, Compass } from 'lucide-react-native';
 
 import GlassCard from '@/components/ui/GlassCard';
 import { useApp, UserRole } from '@/store/AppContext';
@@ -83,7 +73,7 @@ export default function AuthScreen() {
               } else {
                 router.replace('/');
               }
-            }
+            },
           },
         ]);
       } catch (err: any) {
@@ -139,9 +129,9 @@ export default function AuthScreen() {
                 } else {
                   router.replace('/');
                 }
-              }
+              },
             },
-          ]
+          ],
         );
       } catch (err: any) {
         Alert.alert('Signup Failed ❌', err?.message || 'An error occurred during registration.');
@@ -153,21 +143,11 @@ export default function AuthScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           {/* Top Header Navigation */}
           <View style={styles.headerRow}>
-            <TouchableOpacity
-              onPress={() => router.back()}
-              style={styles.backBtn}
-              activeOpacity={0.8}
-            >
+            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.8}>
               <ArrowLeft size={20} color="#FFFFFF" />
             </TouchableOpacity>
 
@@ -189,9 +169,7 @@ export default function AuthScreen() {
             >
               <Sparkles size={24} color="#FFFFFF" />
             </LinearGradient>
-            <Text style={styles.heroHeading}>
-              {mode === 'LOGIN' ? 'Welcome Back' : 'Create Account'}
-            </Text>
+            <Text style={styles.heroHeading}>{mode === 'LOGIN' ? 'Welcome Back' : 'Create Account'}</Text>
             <Text style={styles.heroSub}>
               {mode === 'LOGIN'
                 ? 'Log in to access your trips, wallet & live chats'
@@ -206,9 +184,7 @@ export default function AuthScreen() {
               onPress={() => setMode('LOGIN')}
               activeOpacity={0.85}
             >
-              <Text style={[styles.modeText, mode === 'LOGIN' && styles.modeTextActive]}>
-                Log In
-              </Text>
+              <Text style={[styles.modeText, mode === 'LOGIN' && styles.modeTextActive]}>Log In</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -216,9 +192,7 @@ export default function AuthScreen() {
               onPress={() => setMode('SIGNUP')}
               activeOpacity={0.85}
             >
-              <Text style={[styles.modeText, mode === 'SIGNUP' && styles.modeTextActive]}>
-                Create Account
-              </Text>
+              <Text style={[styles.modeText, mode === 'SIGNUP' && styles.modeTextActive]}>Create Account</Text>
             </TouchableOpacity>
           </View>
 
@@ -236,9 +210,7 @@ export default function AuthScreen() {
                     style={[styles.roleCard, isSelected && styles.roleCardActive]}
                   >
                     <Text style={{ fontSize: 24, marginBottom: 4 }}>{item.icon}</Text>
-                    <Text style={[styles.roleTitle, isSelected && styles.roleTitleActive]}>
-                      {item.title}
-                    </Text>
+                    <Text style={[styles.roleTitle, isSelected && styles.roleTitleActive]}>{item.title}</Text>
                     <Text style={styles.roleSub}>{item.subtitle}</Text>
                   </TouchableOpacity>
                 );
@@ -296,13 +268,19 @@ export default function AuthScreen() {
                   onPress={() => setShowPassword(!showPassword)}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                  {showPassword ? (
-                    <EyeOff size={18} color="#94A3B8" />
-                  ) : (
-                    <Eye size={18} color="#94A3B8" />
-                  )}
+                  {showPassword ? <EyeOff size={18} color="#94A3B8" /> : <Eye size={18} color="#94A3B8" />}
                 </TouchableOpacity>
               </View>
+              {mode === 'LOGIN' && (
+                <TouchableOpacity
+                  onPress={() => router.push('/forgot-password')}
+                  style={styles.forgotPasswordLink}
+                  accessibilityRole="button"
+                  accessibilityLabel="Forgot password"
+                >
+                  <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+                </TouchableOpacity>
+              )}
             </View>
 
             {/* Primary Submit Button */}
@@ -323,9 +301,7 @@ export default function AuthScreen() {
                 ) : (
                   <>
                     <ShieldCheck size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-                    <Text style={styles.submitBtnText}>
-                      {mode === 'LOGIN' ? 'Log In' : 'Create Account'}
-                    </Text>
+                    <Text style={styles.submitBtnText}>{mode === 'LOGIN' ? 'Log In' : 'Create Account'}</Text>
                   </>
                 )}
               </LinearGradient>
@@ -336,12 +312,8 @@ export default function AuthScreen() {
               <Text style={styles.footerText}>
                 {mode === 'LOGIN' ? "Don't have an account? " : 'Already registered? '}
               </Text>
-              <TouchableOpacity
-                onPress={() => setMode(mode === 'LOGIN' ? 'SIGNUP' : 'LOGIN')}
-              >
-                <Text style={styles.footerLink}>
-                  {mode === 'LOGIN' ? 'Create one now' : 'Log In'}
-                </Text>
+              <TouchableOpacity onPress={() => setMode(mode === 'LOGIN' ? 'SIGNUP' : 'LOGIN')}>
+                <Text style={styles.footerLink}>{mode === 'LOGIN' ? 'Create one now' : 'Log In'}</Text>
               </TouchableOpacity>
             </View>
           </GlassCard>
@@ -491,6 +463,15 @@ const styles = StyleSheet.create({
   },
   inputWrap: {
     marginBottom: 14,
+  },
+  forgotPasswordLink: {
+    alignSelf: 'flex-end',
+    marginTop: 8,
+  },
+  forgotPasswordText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#60A5FA',
   },
   inputLabel: {
     fontSize: 12,

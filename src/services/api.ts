@@ -41,7 +41,7 @@ function resolveApiBaseUrl(): string {
   // a runtime condition to silently paper over — every request would
   // otherwise go to whatever the dev fallback resolves to.
   throw new Error(
-    'EXPO_PUBLIC_API_URL is not set. This build was not configured with an API endpoint — see eas.json build profiles.'
+    'EXPO_PUBLIC_API_URL is not set. This build was not configured with an API endpoint — see eas.json build profiles.',
   );
 }
 
@@ -196,13 +196,18 @@ async function request<T>(endpoint: string, options?: RequestOptions, isAuthRetr
         return request<T>(endpoint, options, isAuthRetry, attempt + 1);
       }
       const timedOut = err instanceof DOMException && err.name === 'AbortError';
-      logger.warn(`[API] ${timedOut ? 'Timed out' : 'Network error'} for ${method} ${endpoint} (request ${requestId}):`, err);
+      logger.warn(
+        `[API] ${timedOut ? 'Timed out' : 'Network error'} for ${method} ${endpoint} (request ${requestId}):`,
+        err,
+      );
       throw new ApiError(
         timedOut ? 'TIMEOUT' : 'NETWORK_ERROR',
-        timedOut ? 'The request took too long. Please check your connection and try again.' : 'Could not reach the server. Please check your connection.',
+        timedOut
+          ? 'The request took too long. Please check your connection and try again.'
+          : 'Could not reach the server. Please check your connection.',
         null,
         undefined,
-        requestId
+        requestId,
       );
     }
 
@@ -283,14 +288,18 @@ export const apiService = {
   },
 
   async forgotPassword(email: string) {
-    return request('/auth/forgot-password', {
+    // The server always replies with the same generic message regardless of
+    // whether the email is registered — revealing that would be an account-
+    // enumeration leak (backend/src/api/routes/auth.ts). Render its message
+    // verbatim rather than writing a second copy of it here.
+    return request<{ message: string }>('/auth/forgot-password', {
       method: 'POST',
       body: JSON.stringify({ email }),
     });
   },
 
   async resetPassword(token: string, password: string) {
-    return request('/auth/reset-password', {
+    return request<{ message: string }>('/auth/reset-password', {
       method: 'POST',
       body: JSON.stringify({ token, password }),
     });
@@ -367,7 +376,7 @@ export const apiService = {
 
   async addTripExpense(
     tripId: string,
-    data: { description: string; amount: number; category: string }
+    data: { description: string; amount: number; category: string },
   ): Promise<{ id: string } | null> {
     return request<{ id: string }>(`/trips/${tripId}/expenses`, {
       method: 'POST',
@@ -509,7 +518,10 @@ export const apiService = {
 
   // adjustedPrice is never a param here — the server computes it
   // authoritatively from the trip's route (docs/REMEDIATION.md §8.6).
-  async createJoinRequest(tripId: string, opts?: { midway?: boolean; fromCity?: string; toCity?: string }): Promise<any> {
+  async createJoinRequest(
+    tripId: string,
+    opts?: { midway?: boolean; fromCity?: string; toCity?: string },
+  ): Promise<any> {
     return request('/interactions/join-request', {
       method: 'POST',
       body: JSON.stringify({ tripId, ...opts }),
