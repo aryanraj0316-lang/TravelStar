@@ -1337,6 +1337,15 @@ partial, exactly what's blocking full completion.
       modal on a real trip. 3 new backend tests (trips-nearby.test.ts),
       suite now 54/54. Deferred: real drive-time/routing distances,
       PostGIS/earthdistance, per-place cost estimates.
+      §8.15 done — budget-trips.tsx rewritten. Was: real DB trips mapped
+      onto a hardcoded BUDGET_TRIPS_DATA array by id (trip-1->bt-3 etc.),
+      duration hardcoded "5 Nights / 6 Days" for every trip, transport
+      inferred from whether the title contained "bike", require()s of
+      3 missing image assets. Now: useQuery on GET /trips?maxBudget=&limit=
+      (budget filter server-side, apiService.getTrips takes a query string),
+      real derived fields (nights from start/end dates, inclusions from the
+      real guide/hotel/food/cab booleans, place count from cities.length),
+      loading/error/empty states, join modal only ever gets a real trip.
 - [ ] Phase 9 — Design system, i18n, accessibility (not started)
 - [ ] Phase 10 — Performance (not started)
 - [ ] Phase 11 — Observability and operations (not started)

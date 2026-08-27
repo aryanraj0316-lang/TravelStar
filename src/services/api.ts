@@ -315,8 +315,10 @@ export const apiService = {
   },
 
   // Trips
-  async getTrips(): Promise<Trip[] | null> {
-    return request<Trip[]>('/trips');
+  // `query` is an optional pre-built query string, e.g.
+  // "?maxBudget=15000&limit=50" or "?category=Nature&search=kerala".
+  async getTrips(query = ''): Promise<Trip[] | null> {
+    return request<Trip[]>(`/trips${query}`);
   },
 
   // Trips the current user is a confirmed member of — real data backing
