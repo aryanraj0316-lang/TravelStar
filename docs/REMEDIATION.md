@@ -1278,10 +1278,16 @@ partial, exactly what's blocking full completion.
       pagination reaches the whole set with no gap/overlap, guideRequired,
       verifiedOnly, search-field parity, invalid-query rejection), full
       suite 67/67. Not done: §8.4 (create-trip validation/geocoding/
-      draft-publish), infinite scroll for any other list screen, and a real
-      full-text/substring index (`cities`'s `has` filter is still an
-      exact-element match, not a substring one — pre-existing, not
-      introduced here).
+      draft-publish), infinite scroll for any other list screen.
+      Follow-up (same session): `cities`'s search match was flagged above
+      as still `has` (exact-element), worse parity than the client-side
+      `.includes()` it replaced — fixed with a `$queryRaw` substring scan
+      (`unnest(cities) ... ILIKE`, the search term bound as a tagged-
+      template parameter, not interpolated) feeding an `id IN (...)`
+      branch into the same OR clause. Fine at this table's size; a real
+      full-text index is the scale-up version if it's ever needed. 1 new
+      test (a city-name-substring match that `has` would have missed),
+      full suite 86/86.
       §8.2 done (partial — avatar upload only; location-sharing/push
       toggles and account deletion were already real) — profile.tsx's
       photo picker (gallery + camera, both already wired to

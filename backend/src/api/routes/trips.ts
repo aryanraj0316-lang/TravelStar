@@ -113,9 +113,9 @@ const MAX_PAGE_SIZE = 50;
 // feed.ts) makes the full result set reachable via infinite scroll, and
 // `guideRequired`/`verifiedOnly` join the filters that were already
 // server-side (category/search/maxBudget) so the client no longer needs to
-// re-derive them from a possibly-truncated page. `search`/`cities` still
-// need a real full-text index to substring-match a city name rather than
-// `has`'s exact-element match — not addressed here.
+// re-derive them from a possibly-truncated page. `search`'s city match is a
+// $queryRaw substring scan (see below), not a real full-text index — fine
+// at this table's size, worth revisiting if it grows.
 const listTripsQuerySchema = z.object({
   category: z.string().trim().min(1).optional(),
   search: z.string().trim().min(1).max(200).optional(),
@@ -148,10 +148,21 @@ router.get('/', async (req, res) => {
     if (search) {
       // Matches every field search.tsx's old client-side filter checked
       // (name, cities, creator, meetingPoint) so moving this server-side
-      // doesn't quietly narrow what search can find.
+      // doesn't quietly narrow what search can find. Prisma's `has` on a
+      // Postgres text[] column is an exact-element match — "jai" would not
+      // find a trip whose cities include "Jaipur" — which is worse parity
+      // than the client-side filter it replaced (a real .includes()
+      // substring check). $queryRaw is the only way to substring-match
+      // inside an array column; `search` is passed as a bound parameter
+      // (tagged template), not interpolated, so this isn't injectable.
+      const cityMatches = await prisma.$queryRaw<{ id: string }[]>`
+        SELECT id FROM "Trip" WHERE EXISTS (
+          SELECT 1 FROM unnest(cities) AS city WHERE city ILIKE ${`%${search}%`}
+        )
+      `;
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
-        { cities: { has: search } },
+        { id: { in: cityMatches.map((t) => t.id) } },
         { meetingPoint: { contains: search, mode: 'insensitive' } },
         { creator: { profile: { firstName: { contains: search, mode: 'insensitive' } } } },
         { creator: { profile: { lastName: { contains: search, mode: 'insensitive' } } } },
@@ -482,12 +493,10 @@ const coverUploadUrlSchema = z.object({
 router.post('/cover-upload-url', async (req, res) => {
   const parsed = coverUploadUrlSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res
-      .status(400)
-      .json({
-        ok: false,
-        error: { code: 'VALIDATION_FAILED', message: 'contentType must be image/jpeg, image/png, or image/webp.' },
-      });
+    return res.status(400).json({
+      ok: false,
+      error: { code: 'VALIDATION_FAILED', message: 'contentType must be image/jpeg, image/png, or image/webp.' },
+    });
   }
 
   try {
@@ -496,12 +505,10 @@ router.post('/cover-upload-url', async (req, res) => {
     return res.status(200).json({ ok: true, data: { uploadUrl, publicUrl } });
   } catch (err) {
     if (err instanceof ObjectStorageNotConfiguredError) {
-      return res
-        .status(503)
-        .json({
-          ok: false,
-          error: { code: 'STORAGE_UNAVAILABLE', message: 'Photo upload is not available right now.' },
-        });
+      return res.status(503).json({
+        ok: false,
+        error: { code: 'STORAGE_UNAVAILABLE', message: 'Photo upload is not available right now.' },
+      });
     }
     logger.error('[Trips] Cover upload URL failed:', err);
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not start the upload.' } });

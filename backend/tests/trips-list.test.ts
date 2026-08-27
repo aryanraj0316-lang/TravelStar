@@ -31,7 +31,7 @@ async function registerAndLogin(label: string): Promise<{ userId: string; token:
 
 async function createTrip(
   token: string,
-  overrides: Partial<{ name: string; guideIncluded: boolean; meetingPoint: string }> = {},
+  overrides: Partial<{ name: string; guideIncluded: boolean; meetingPoint: string; cities: string[] }> = {},
 ): Promise<string> {
   const startDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
   const endDate = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString();
@@ -40,7 +40,7 @@ async function createTrip(
     .set('Authorization', `Bearer ${token}`)
     .send({
       name: overrides.name ?? `Trips List Test ${runId}`,
-      cities: ['Jaipur', 'Agra'],
+      cities: overrides.cities ?? ['Jaipur', 'Agra'],
       startDate,
       endDate,
       budget: 5000,
@@ -144,5 +144,19 @@ describe('GET /api/v1/trips', () => {
     expect(res.status).toBe(200);
     const ids = res.body.data.map((t: { id: string }) => t.id);
     expect(ids).toContain(byMeetingPoint);
+  });
+
+  it('search matches a substring of a city name, not just an exact element (Prisma `has` regression guard)', async () => {
+    const organizer = await registerAndLogin('city-substring');
+    const cityMarker = `Zubaipur${runId}`;
+    const withCity = await createTrip(organizer.token, { cities: [cityMarker, 'Agra'] });
+
+    // A prefix, not the full city string — `cities: { has: search } }`
+    // (Postgres array exact-element match) would find nothing here.
+    const substring = cityMarker.slice(0, 8);
+    const res = await request(app).get(`/api/v1/trips?search=${substring}`);
+    expect(res.status).toBe(200);
+    const ids = res.body.data.map((t: { id: string }) => t.id);
+    expect(ids).toContain(withCity);
   });
 });
