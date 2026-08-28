@@ -7,11 +7,12 @@ import { useApp } from '@/store/AppContext';
 import { eventBus } from '@/services/event-bus';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter, type ErrorBoundaryProps } from 'expo-router';
+import { useQuery } from '@tanstack/react-query';
+import { apiService } from '@/services/api';
 import { RouteErrorFallback } from '@/components/route-error-fallback';
 import {
   AlertCircle,
   ArrowLeft,
-  ArrowRight,
   Car,
   ChevronDown,
   ChevronUp,
@@ -19,7 +20,6 @@ import {
   Compass,
   EyeOff,
   Locate,
-  MapPin,
   Minus,
   Navigation,
   Phone,
@@ -41,199 +41,59 @@ import {
   TouchableOpacity,
   useColorScheme,
   View,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 // Coordinates registry for dynamic routes mapping
-const CITY_COORDS: Record<string, { latitude: number; longitude: number }> = {
-  // Northern India
-  'Delhi': { latitude: 28.6139, longitude: 77.2090 },
-  'New Delhi': { latitude: 28.6139, longitude: 77.2090 },
-  'Noida': { latitude: 28.5355, longitude: 77.3910 },
-  'Gurugram': { latitude: 28.4595, longitude: 77.0266 },
-  'Gurgaon': { latitude: 28.4595, longitude: 77.0266 },
-  'Faridabad': { latitude: 28.4089, longitude: 77.3178 },
-  'Ghaziabad': { latitude: 28.6692, longitude: 77.4538 },
-  'Agra': { latitude: 27.1767, longitude: 78.0081 },
-  'Mathura': { latitude: 27.4924, longitude: 77.6737 },
-  'Vrindavan': { latitude: 27.5650, longitude: 77.7008 },
-  'Varanasi': { latitude: 25.3176, longitude: 82.9739 },
-  'Sarnath': { latitude: 25.3762, longitude: 83.0227 },
-  'Lucknow': { latitude: 26.8467, longitude: 80.9462 },
-  'Kanpur': { latitude: 26.4499, longitude: 80.3319 },
-  'Ayodhya': { latitude: 26.7922, longitude: 82.1998 },
-  'Allahabad': { latitude: 25.4358, longitude: 81.8463 },
-  'Prayagraj': { latitude: 25.4358, longitude: 81.8463 },
-  'Haridwar': { latitude: 29.9457, longitude: 78.1642 },
-  'Rishikesh': { latitude: 30.0869, longitude: 78.2676 },
-  'Dehradun': { latitude: 30.3165, longitude: 78.0322 },
-  'Shimla': { latitude: 31.1048, longitude: 77.1734 },
-  'Manali': { latitude: 32.2396, longitude: 77.1887 },
-  'Srinagar': { latitude: 34.0837, longitude: 74.7973 },
-  'Gulmarg': { latitude: 34.0484, longitude: 74.3805 },
-  'Pahalgam': { latitude: 34.0161, longitude: 75.1950 },
-  'Leh': { latitude: 34.1526, longitude: 77.5771 },
-  'Ladakh': { latitude: 34.1526, longitude: 77.5771 },
-  'Amritsar': { latitude: 31.6340, longitude: 74.8723 },
-  'Chandigarh': { latitude: 30.7333, longitude: 76.7794 },
-
-  // Western India
-  'Jaipur': { latitude: 26.9124, longitude: 75.7873 },
-  'Udaipur': { latitude: 24.5854, longitude: 73.7125 },
-  'Jodhpur': { latitude: 26.2389, longitude: 73.0243 },
-  'Jaisalmer': { latitude: 26.9157, longitude: 70.9083 },
-  'Mumbai': { latitude: 19.0760, longitude: 72.8777 },
-  'Pune': { latitude: 18.5204, longitude: 73.8567 },
-  'Nagpur': { latitude: 21.1458, longitude: 79.0882 },
-  'Ahmedabad': { latitude: 23.0225, longitude: 72.5714 },
-  'Surat': { latitude: 21.1702, longitude: 72.8311 },
-  'Vadodara': { latitude: 22.3072, longitude: 73.1812 },
-  'Goa': { latitude: 15.2993, longitude: 74.1240 },
-  'North Goa': { latitude: 15.5898, longitude: 73.8278 },
-  'South Goa': { latitude: 15.0644, longitude: 74.0229 },
-  'Dudhsagar': { latitude: 15.3185, longitude: 74.3142 },
-
-  // Eastern India
-  'Patna': { latitude: 25.5941, longitude: 85.1376 },
-  'Gaya': { latitude: 24.7955, longitude: 85.0002 },
-  'Ranchi': { latitude: 23.3441, longitude: 85.3090 },
-  'Jamshedpur': { latitude: 22.8046, longitude: 86.2029 },
-  'Kolkata': { latitude: 22.5726, longitude: 88.3639 },
-  'Bhubaneswar': { latitude: 20.2961, longitude: 85.8245 },
-  'Puri': { latitude: 19.8135, longitude: 85.8312 },
-  'Darjeeling': { latitude: 27.0410, longitude: 88.2627 },
-  'Gangtok': { latitude: 27.3314, longitude: 88.6138 },
-  'Guwahati': { latitude: 26.1445, longitude: 91.7362 },
-  'Shillong': { latitude: 25.5788, longitude: 91.8833 },
-
-  // Southern India
-  'Bengaluru': { latitude: 12.9716, longitude: 77.5946 },
-  'Bangalore': { latitude: 12.9716, longitude: 77.5946 },
-  'Mysore': { latitude: 12.2958, longitude: 76.6394 },
-  'Mysuru': { latitude: 12.2958, longitude: 76.6394 },
-  'Ooty': { latitude: 11.4102, longitude: 76.6950 },
-  'Chennai': { latitude: 13.0827, longitude: 80.2707 },
-  'Madurai': { latitude: 9.9252, longitude: 78.1198 },
-  'Hyderabad': { latitude: 17.3850, longitude: 78.4867 },
-  'Secunderabad': { latitude: 17.4399, longitude: 78.5000 },
-  'Visakhapatnam': { latitude: 17.6868, longitude: 83.2185 },
-  'Kochi': { latitude: 9.9312, longitude: 76.2673 },
-  'Munnar': { latitude: 10.0889, longitude: 77.0595 },
-  'Alleppey': { latitude: 9.4981, longitude: 76.3388 },
-  'Trivandrum': { latitude: 8.5241, longitude: 76.9366 },
-  'Thiruvananthapuram': { latitude: 8.5241, longitude: 76.9366 },
-
-  // Central India
-  'Bhopal': { latitude: 23.2599, longitude: 77.4126 },
-  'Indore': { latitude: 22.7196, longitude: 75.8577 },
-  'Raipur': { latitude: 21.2514, longitude: 81.6296 },
-};
+// docs/REMEDIATION.md §8.8: a local city coordinate table used to live
+// here, feeding a client-side route builder that hashed unknown city names
+// into invented coordinates. Routes and pin positions are now resolved
+// server-side (GET /map/trips/:id/route, GET /map/pins).
+type RoutePoint = { latitude: number; longitude: number; name: string };
 
 // Ranchi to Vrindavan Route Cities Coordinates
-const ROUTE_COORDS = [
-  { latitude: 23.3441, longitude: 85.3090, name: 'Ranchi' },
-  { latitude: 28.6139, longitude: 77.2090, name: 'Delhi' },
-  { latitude: 27.4924, longitude: 77.6737, name: 'Mathura' },
-  { latitude: 27.5650, longitude: 77.7008, name: 'Vrindavan' },
-];
+// docs/REMEDIATION.md §8.8: a hardcoded Ranchi→Delhi→Mathura→Vrindavan
+// route and four hardcoded pins ("Rajesh Kumar (Guide)", a
+// "Ranchi-Vrindavan Group", solo tourist "Neha Mehta", Prem Mandir) used
+// to live here — identical on every user's map, with nothing behind them.
+// Both now come from the API.
 
-const MAP_PINS = [
-  {
-    id: 'pin-1',
-    type: 'GUIDE',
-    name: 'Rajesh Kumar (Guide)',
-    latitude: 27.5650,
-    longitude: 77.7008,
-    detail: 'Expert in Heritage walks, Rating 4.9',
-  },
-  {
-    id: 'pin-2',
-    type: 'GROUP',
-    name: 'Ranchi-Vrindavan Group',
-    latitude: 27.4924,
-    longitude: 77.6737,
-    detail: 'Next Segment: Delhi → Vrindavan',
-  },
-  {
-    id: 'pin-3',
-    type: 'TOURIST',
-    name: 'Neha Mehta (Solo)',
-    latitude: 28.6139,
-    longitude: 77.2090,
-    detail: 'Looking for a tour group to join',
-  },
-  {
-    id: 'pin-4',
-    type: 'ATTRACTION',
-    name: 'Prem Mandir Temple',
-    latitude: 27.5670,
-    longitude: 77.7015,
-    detail: 'Popular Landmark, Open till 10 PM',
-  },
-];
-
-// Haversine distance calculator
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
   const R = 6371; // km
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return Math.round(R * c);
 }
 
-// Generate leg details
 const getLegDetails = (startIndex: number, coords: any[]) => {
   const start = coords[startIndex];
   const end = coords[startIndex + 1];
   if (!start || !end) return null;
 
+  // docs/REMEDIATION.md §8.8: this used to invent a road-condition string,
+  // a duration from a made-up ×1.25 road factor at an assumed 70 km/h, and
+  // two named pit stops per leg — none of it from any routing service.
+  // Straight-line distance between two real coordinates is the one thing
+  // genuinely derivable here, and the UI labels it as such.
   const distance = calculateDistance(start.latitude, start.longitude, end.latitude, end.longitude);
-  const routeDistance = Math.round(distance * 1.25); // estimate road path distance
-  const hours = Math.floor(routeDistance / 70);
-  const minutes = Math.round((routeDistance % 70) * 60 / 70);
-  const durationText = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
-
-  const conditions = [
-    'Excellent 4-lane Highway',
-    'Double-lane State Highway',
-    'Expressway (Smooth condition)',
-    'Scenic Mountain Road (Caution on bends)',
-  ];
-  const condition = conditions[startIndex % conditions.length];
-
-  const pitStopsList = [
-    ['HP Fuel Station & EV Charger (km 45)', 'Highway Oasis Food Plaza (km 110)'],
-    ['Scenic Viewpoint Cafe (km 30)', 'Local Dhaba & Tea Stall (km 75)'],
-    ['Expressway Rest Stop (km 65)', 'Rest Area with Clean Restrooms (km 130)'],
-  ];
-  const pitStops = pitStopsList[startIndex % pitStopsList.length];
 
   return {
     title: `Leg ${startIndex + 1}: ${start.name} ➔ ${end.name}`,
-    distance: `${routeDistance} km`,
-    duration: durationText,
-    condition,
-    pitStops,
+    distance: `${Math.round(distance)} km`,
+    start,
+    end,
   };
 };
 
-const getNavigationSteps = (startIndex: number, coords: any[]) => {
-  const start = coords[startIndex];
-  const end = coords[startIndex + 1];
-  if (!start || !end) return [];
-
-  return [
-    { instruction: `Depart from ${start.name} city center.`, distance: '1.0 km', icon: 'start' },
-    { instruction: `Merge onto Highway NH road heading toward ${end.name}.`, distance: '3.5 km', icon: 'straight' },
-    { instruction: `Keep straight, watch out for speed limit signs.`, distance: '45.0 km', icon: 'straight' },
-    { instruction: `Toll plaza ahead, prepare FASTag payment.`, distance: '2.0 km', icon: 'info' },
-    { instruction: `Take exit ramp toward ${end.name} central bypass.`, distance: '1.5 km', icon: 'right' },
-    { instruction: `Turn left at roundabout and arrive in ${end.name}.`, distance: '0.8 km', icon: 'end' },
-  ];
-};
+// docs/REMEDIATION.md §8.8: a getNavigationSteps() used to live here,
+// returning six invented turns per leg ("Toll plaza ahead, prepare FASTag
+// payment") for any pair of cities, with no routing service behind it.
+// Removed — the overlay hands the leg to a real maps app instead.
 
 function WebMapScreen() {
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
@@ -252,6 +112,13 @@ function WebMapScreen() {
   const [mapFilter, setMapFilter] = useState<'ALL' | 'GUIDES' | 'GROUPS' | 'TOURISTS' | 'ATTRACTIONS' | 'NONE'>('ALL');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [sosTriggered, setSosTriggered] = useState(false);
+  // docs/REMEDIATION.md §8.8: the confirmation card used to state a
+  // hardcoded "28.6139° N, 77.2090° E" — New Delhi — as the coordinates
+  // that had been sent, whatever the user's real position was, and claimed
+  // "police authorities and 3 nearby guides" had been notified. No police
+  // force is integrated with this app. These are the coordinates actually
+  // sent.
+  const [sosCoords, setSosCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [selectedLegIndex, setSelectedLegIndex] = useState<number | null>(null);
   const [isItineraryOpen, setIsItineraryOpen] = useState(false);
   const [showNavigationOverlay, setShowNavigationOverlay] = useState(false);
@@ -317,6 +184,7 @@ function WebMapScreen() {
       return;
     }
     triggerSOS(location.latitude, location.longitude);
+    setSosCoords({ latitude: location.latitude, longitude: location.longitude });
     setSosTriggered(true);
   };
 
@@ -340,54 +208,36 @@ function WebMapScreen() {
     postMapMessage({ type: 'LOCATE_SELF' });
   };
 
-  if (tripId && (tripId.startsWith('place-') || tripId.startsWith('nearby-'))) {
-    const names: Record<string, string> = {
-      'place-1': 'Sultanpur',
-      'place-2': 'Surajkund',
-      'place-3': 'Agra',
-      'place-4': 'Neemrana',
-      'place-5': 'Rishikesh',
-    };
-    const placeName = names[tripId] || 'Sultanpur';
-    activeTrip = {
-      id: tripId,
-      name: `Delhi to ${placeName} Exploration`,
-      creator: 'Local Guide',
-      cities: ['Delhi', placeName],
-      startDate: '2026-08-10',
-      endDate: '2026-08-11',
-      budget: 1500,
-      availableSeats: 4,
-      totalSeats: 10,
-      meetingPoint: 'Delhi Assembly Gate',
-      guideIncluded: true,
-      foodIncluded: true,
-      privacy: 'PUBLIC',
-      membersCount: 4,
-    } as any;
-  }
+  // docs/REMEDIATION.md §8.8: a `place-`/`nearby-` id used to make this
+  // screen invent a whole trip — fake creator, budget, seats, dates and a
+  // "Delhi Assembly Gate" meeting point — and render it as real. §8.13
+  // rewrote nearby-trips.tsx to only ever hand over real trip ids, so
+  // nothing produces those ids any more.
 
-  const activeRouteCoords = useMemo(() => {
-    if (!activeTrip) return ROUTE_COORDS;
-    return activeTrip.coordinates || activeTrip.cities
-      .map((city) => {
-        const clean = city.trim();
-        const found = CITY_COORDS[clean] || Object.entries(CITY_COORDS).find(([k]) => clean.toLowerCase().includes(k.toLowerCase()))?.[1];
-        if (found) {
-          return { latitude: found.latitude, longitude: found.longitude, name: clean };
-        } else {
-          // Deterministic fallback based on name hash
-          let hash = 0;
-          for (let i = 0; i < clean.length; i++) {
-            hash = clean.charCodeAt(i) + ((hash << 5) - hash);
-          }
-          const lat = 18.0 + (Math.abs(hash % 100) / 100) * 8.0;
-          const lon = 74.0 + (Math.abs((hash >> 8) % 100) / 100) * 10.0;
-          return { latitude: lat, longitude: lon, name: clean };
-        }
-      });
-  }, [activeTrip]);
+  // The server resolves the route from the trip's real cities and omits
+  // the ones it cannot place, rather than the old client-side builder that
+  // hashed an unknown city name into coordinates and drew them as fact.
+  const { data: tripRoute } = useQuery({
+    queryKey: ['map', 'route', activeTrip?.id],
+    queryFn: () => apiService.getTripRoute(activeTrip!.id),
+    enabled: !!activeTrip?.id,
+    staleTime: 5 * 60 * 1000,
+  });
 
+  const activeRouteCoords: RoutePoint[] = useMemo(() => tripRoute?.points ?? [], [tripRoute]);
+
+  // Real map pins and hazard overlays (docs/REMEDIATION.md §8.8).
+  const { data: mapPins } = useQuery({
+    queryKey: ['map', 'pins'],
+    queryFn: () => apiService.getMapPins(),
+    staleTime: 60 * 1000,
+  });
+
+  const { data: mapHazards } = useQuery({
+    queryKey: ['map', 'hazards'],
+    queryFn: () => apiService.getMapHazards(),
+    staleTime: 5 * 60 * 1000,
+  });
 
   const legs = [];
   if (activeRouteCoords && activeRouteCoords.length > 1) {
@@ -400,7 +250,8 @@ function WebMapScreen() {
   }
 
   const getLeafletHtml = () => {
-    const pinsJson = JSON.stringify(MAP_PINS);
+    const pinsJson = JSON.stringify(mapPins ?? []);
+    const hazardsJson = JSON.stringify(mapHazards ?? []);
     const routeJson = JSON.stringify(activeRouteCoords);
 
     return `
@@ -702,6 +553,24 @@ function WebMapScreen() {
               .bindPopup(popupHTML, { closeButton: false, minWidth: 120 });
 
             markerInstances.push({ marker: marker, type: pin.type });
+          });
+
+          // Hazard alerts from the real /alerts data (§8.8/§8.10), drawn as
+          // severity-coloured circles. An alert whose free-text location the
+          // server could not resolve arrives with null coordinates and is
+          // skipped rather than dropped somewhere arbitrary.
+          const hazards = ${hazardsJson};
+          var HAZARD_COLOR = { CRITICAL: '#EF4444', WARNING: '#F59E0B', ADVISORY: '#38BDF8' };
+          hazards.forEach(function(h) {
+            if (h.latitude === null || h.longitude === null) return;
+            var color = HAZARD_COLOR[h.severity] || HAZARD_COLOR.ADVISORY;
+            L.circle([h.latitude, h.longitude], {
+              radius: 25000, color: color, weight: 1.5, fillColor: color, fillOpacity: 0.16,
+            }).addTo(map).bindPopup(
+              '<div class="popup-card"><div class="popup-badge">' + h.severity + '</div>' +
+              '<h4>' + h.title + '</h4><p>' + h.location + '</p></div>',
+              { closeButton: false, minWidth: 120 }
+            );
           });
 
           function applyFilter(filter) {
@@ -1183,7 +1052,7 @@ function WebMapScreen() {
                     {/* Segment Info Row: Leg name & Road condition */}
                     <View style={styles.segmentInfoRow}>
                       <Text style={styles.segmentLegTitle}>{legDetails?.title}</Text>
-                      <Text style={styles.segmentRoadText}>Road: {legDetails?.condition}</Text>
+                      <Text style={styles.segmentRoadText}>Straight-line distance</Text>
                     </View>
 
                     {!isBottomPanelCollapsed && (
@@ -1195,11 +1064,6 @@ function WebMapScreen() {
                       >
                         {/* Stats Grid: Duration, Distance, Transit Mode, Seats */}
                         <View style={styles.statsGridRow}>
-                          <View style={styles.statsGridCol}>
-                            <Clock size={11} color="#10B981" />
-                            <Text style={styles.statsGridVal}>{legDetails?.duration}</Text>
-                          </View>
-                          <View style={styles.statsGridDivider} />
                           <View style={styles.statsGridCol}>
                             <Compass size={11} color="#0066FF" />
                             <Text style={styles.statsGridVal}>{legDetails?.distance}</Text>
@@ -1213,27 +1077,29 @@ function WebMapScreen() {
                           <View style={styles.statsGridCol}>
                             <Users size={11} color="#A78BFA" />
                             <Text style={styles.statsGridVal}>
-                              {activeTrip ? `${activeTrip.availableSeats}/${activeTrip.totalSeats} Seats` : '4/10 Seats'}
+                              {activeTrip ? `${activeTrip.availableSeats}/${activeTrip.totalSeats} Seats` : '—'}
                             </Text>
                           </View>
                         </View>
 
-                        {/* Detailed Metadata fields from DB */}
+                        {/* Real trip metadata. docs/REMEDIATION.md §8.8: these
+                        used to fall back to a hardcoded "Delhi Metro Station
+                        Gate 1" and ₹1500 with no trip selected, and listed
+                        two invented pit stops per leg. */}
                         <View style={styles.dbDetailsContainer}>
-                          <Text style={styles.dbDetailsText}>
-                            <Text style={styles.dbDetailsLabel}>Meeting Point: </Text>
-                            {activeTrip ? activeTrip.meetingPoint : 'Delhi Metro Station Gate 1'}
-                          </Text>
+                          {activeTrip && (
+                            <>
+                              <Text style={styles.dbDetailsText}>
+                                <Text style={styles.dbDetailsLabel}>Meeting Point: </Text>
+                                {activeTrip.meetingPoint}
+                              </Text>
 
-                          <Text style={styles.dbDetailsText}>
-                            <Text style={styles.dbDetailsLabel}>Budget: </Text>
-                            ₹{activeTrip ? activeTrip.budget : '1500'} per person
-                          </Text>
-
-                          <Text style={styles.dbDetailsText}>
-                            <Text style={styles.dbDetailsLabel}>Pit Stops: </Text>
-                            {legDetails?.pitStops.join(', ') || 'None'}
-                          </Text>
+                              <Text style={styles.dbDetailsText}>
+                                <Text style={styles.dbDetailsLabel}>Budget: </Text>
+                                ₹{activeTrip.budget} per person
+                              </Text>
+                            </>
+                          )}
 
                           <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 2 }}>
                             <Text style={styles.dbDetailsLabel}>Service Inclusion: </Text>
@@ -1257,14 +1123,19 @@ function WebMapScreen() {
 
 
 
-        {/* TURN-BY-TURN NAVIGATION OVERLAY */}
+        {/* Route handoff (docs/REMEDIATION.md §8.8). This was a
+        "Turn-by-Turn Guide" listing six invented instructions per leg with
+        a "Start Navigation Guide" button that popped "GPS simulation
+        active" — there was never any navigation. Real turn-by-turn needs a
+        routing provider this project has no credentials for, so the leg
+        goes to a real maps app instead. */}
         {showNavigationOverlay && selectedLegIndex !== null && (
           <View style={styles.navOverlayContainer}>
             <GlassCard style={styles.navOverlayCard}>
               <View style={styles.navOverlayHeader}>
                 <Compass size={18} color="#10B981" />
                 <View style={{ flex: 1, marginLeft: 10 }}>
-                  <ThemedText style={styles.navOverlayTitle}>Turn-by-Turn Guide</ThemedText>
+                  <ThemedText style={styles.navOverlayTitle}>Directions</ThemedText>
                   <ThemedText style={styles.navOverlaySub} numberOfLines={1}>
                     {getLegDetails(selectedLegIndex, activeRouteCoords)?.title}
                   </ThemedText>
@@ -1278,50 +1149,29 @@ function WebMapScreen() {
                 </TouchableOpacity>
               </View>
 
-              <ScrollView style={styles.stepsScroll} contentContainerStyle={styles.stepsScrollContent}>
-                {getNavigationSteps(selectedLegIndex, activeRouteCoords).map((step, sIdx) => {
-                  let IconComponent = Navigation;
-                  let iconColor = '#8B949E';
-                  if (step.icon === 'start') {
-                    IconComponent = Compass;
-                    iconColor = '#10B981';
-                  } else if (step.icon === 'end') {
-                    IconComponent = MapPin;
-                    iconColor = '#EF4444';
-                  } else if (step.icon === 'info') {
-                    IconComponent = AlertCircle;
-                    iconColor = '#F59E0B';
-                  } else if (step.icon === 'left') {
-                    IconComponent = ArrowLeft;
-                    iconColor = '#0066FF';
-                  } else if (step.icon === 'right') {
-                    IconComponent = ArrowRight;
-                    iconColor = '#0066FF';
-                  }
-
-                  return (
-                    <View key={sIdx} style={styles.stepItemRow}>
-                      <View style={[styles.stepIconWrap, { borderColor: iconColor }]}>
-                        <IconComponent size={14} color={iconColor} />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <ThemedText style={styles.stepInstruction}>{step.instruction}</ThemedText>
-                        <Text style={styles.stepDistance}>{step.distance}</Text>
-                      </View>
-                    </View>
-                  );
-                })}
-              </ScrollView>
+              <ThemedText style={styles.navHandoffNote}>
+                TravelStar plots this leg as a straight line between the two stops. Open it in your maps app
+                for real road directions.
+              </ThemedText>
 
               <TouchableOpacity
                 style={styles.startDrivingBtn}
                 onPress={() => {
-                  Alert.alert("Navigation Started", "GPS simulation active. Head to the highlighted route.");
+                  const leg = getLegDetails(selectedLegIndex, activeRouteCoords);
+                  if (!leg) return;
+                  const origin = `${leg.start.latitude},${leg.start.longitude}`;
+                  const destination = `${leg.end.latitude},${leg.end.longitude}`;
+                  Linking.openURL(
+                    `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`
+                  ).catch((e: unknown) => {
+                    logger.warn('[Map] Could not open directions:', e);
+                    Alert.alert('Error', 'Could not open a maps app.');
+                  });
                   setShowNavigationOverlay(false);
                 }}
                 activeOpacity={0.8}
               >
-                <Text style={styles.startDrivingBtnText}>Start Navigation Guide</Text>
+                <Text style={styles.startDrivingBtnText}>Open in Maps</Text>
               </TouchableOpacity>
             </GlassCard>
           </View>
@@ -1338,7 +1188,9 @@ function WebMapScreen() {
                 EMERGENCY ALERT TRIGGERED
               </ThemedText>
               <ThemedText style={styles.sosAlertSub}>
-                Your coordinates (28.6139° N, 77.2090° E) have been broadcasted to emergency contacts, police authorities, and 3 nearby guides.
+                {sosCoords
+                  ? `Your location (${sosCoords.latitude.toFixed(4)}, ${sosCoords.longitude.toFixed(4)}) was sent to your emergency contacts on TravelStar, your trip members, and our safety team.`
+                  : 'Your location was sent to your emergency contacts on TravelStar, your trip members, and our safety team.'}
               </ThemedText>
 
               <View style={styles.emergencyActions}>
@@ -1864,6 +1716,13 @@ const styles = StyleSheet.create({
     fontSize: 9.5,
     fontWeight: '700',
     marginTop: 1,
+  },
+  navHandoffNote: {
+    color: '#8B949E',
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 12,
+    marginBottom: 14,
   },
   startDrivingBtn: {
     height: 48,

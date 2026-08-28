@@ -86,7 +86,14 @@ router.post('/sos', async (req, res) => {
       data: {
         ...alertPayload,
         alertId: newAlert.id,
-        message: 'SOS trigger received. Nearby local assistance, police, and emergency support notified.',
+        // docs/REMEDIATION.md §8.8/§8.9: this used to claim "police, and
+        // emergency support notified". No police force is integrated with
+        // this app and none is contacted — the real audience is exactly
+        // getSosAudienceUserIds: emergency contacts who are app users,
+        // fellow trip members, and admins. Telling someone in danger that
+        // police are coming when they are not is the worst kind of fake
+        // message this codebase can carry.
+        message: 'SOS sent to your emergency contacts on TravelStar, your trip members, and our safety team. For police, fire, or ambulance, call 112.',
       },
     });
   } catch (err) {

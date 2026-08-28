@@ -1213,14 +1213,19 @@ partial, exactly what's blocking full completion.
       (expo-logo.png/logo-glow.png) — §1.2 called for real branded
       assets and Phase 1's tracker claims this is done; it isn't. Needs
       actual brand assets from the user, not a guessed placeholder.)
-- [ ] Phase 8 — Feature completion (in progress — this phase has 21
-      sub-sections (§8.1-§8.21), several of which are genuinely large
-      standalone builds (real push notifications, PostGIS geospatial
-      search, a bookings/e-ticket system, media upload pipelines) rather
-      than bug fixes; working through them roughly in severity order
-      (safety/legal risk first) rather than sequentially §8.1→§8.21, and
-      taking the doc's own "remove it" option where it's offered instead
-      of building fake infrastructure. Progress:
+- [x] Phase 8 — Feature completion. All 21 sub-sections (§8.1-§8.21) have
+      been through, in rough severity order (safety/legal risk first)
+      rather than sequentially, taking the doc's own "remove it" option
+      where it was offered instead of building fake infrastructure.
+      Several were genuinely large standalone builds (real push
+      notifications, media upload pipelines, a real map data layer, a
+      bookings screen) rather than bug fixes. Several are marked "partial"
+      or "honest v1" below and say exactly what was left and why — the
+      recurring reasons are missing external credentials (object storage,
+      EAS push, geocoding/routing) and features whose honest version needs
+      a schema and moderation story of its own. The Definition of Done
+      grep (`MOCK_|SEED_|_DATABASE\s*=|hardcoded` over src/) now returns
+      only comments describing what was removed. Progress:
       §8.1 done (partial — the forgot/reset-password gap only; role-
       escalation was already closed by §2.6) — apiService.forgotPassword/
       resetPassword existed and the backend routes were fully built (token
@@ -1718,6 +1723,89 @@ partial, exactly what's blocking full completion.
       Expo Go on Android since SDK 53). Also not done: push receipts (the
       15-minutes-later getReceipts poll, which needs a job runner —
       Phase 11), and per-message collapse/threading.
+      §8.8 done (honest v1) — the map was the last unstarted Phase 8
+      subsection and the worst remaining case of fabricated data being
+      rendered as fact, in two near-duplicate files (map.tsx, 2.4k lines,
+      and map.web.tsx, 2.1k). Both drew the same four hardcoded pins for
+      every user forever — a guide "Rajesh Kumar", a "Ranchi-Vrindavan
+      Group", solo tourist "Neha Mehta", and Prem Mandir — plus a
+      hardcoded Ranchi→Delhi→Mathura→Vrindavan route. Worse than static
+      fakes: when a trip's city was missing from the client's local
+      coordinate table, the client **hashed the city name into a
+      latitude/longitude** in central India and drew that as the trip's
+      real route — invented geodata presented as a real place. And a
+      `place-`/`nearby-` route param made the screen fabricate an entire
+      trip (a "Local Guide" creator, ₹1500 budget, 4/10 seats, a "Delhi
+      Assembly Gate" meeting point) and render it as real; §8.13 had
+      already removed the only screen that produced those ids, so this was
+      dead fabrication waiting for a caller.
+      Backend: new routes/map.ts — GET /map/pins (real GROUP pins from
+      upcoming public trips positioned at their meeting point or first
+      city; GUIDE/TOURIST pins from real LiveLocation rows, gated on the
+      same `locationSharing` consent the socket layer applies at emission
+      (§3.4), excluding the caller, and dropped once older than 30 minutes
+      rather than showing someone where they no longer are; ATTRACTION
+      pins from real Destination rows), GET /map/hazards (active alerts
+      from the real /alerts data), and GET /map/trips/:tripId/route (the
+      route from the trip's real `cities`, in order). Positions resolve
+      against the backend's existing India city table, the same honest-v1
+      terms as §8.13: this project has no geocoding credential and Trip
+      rows carry no coordinates, so anything unresolvable is **omitted**
+      and counted (`unplacedCities`) rather than guessed, and the response
+      says `approximate: true` because these are straight lines between
+      city centres, never a road route.
+      Also removed as fabricated: the "Turn-by-Turn Guide" overlay, which
+      generated six invented instructions per leg for any pair of cities
+      ("Merge onto Highway NH road", "Toll plaza ahead, prepare FASTag
+      payment"), each with a made-up distance, behind a "Start Navigation
+      Guide" button that popped "GPS simulation active" — there was never
+      any navigation. Real turn-by-turn needs a routing provider this
+      project has no credentials for, so the leg is now handed to the
+      device's own maps app, which has real data. The leg card's invented
+      road condition ("Excellent 4-lane Highway"), its duration (a ×1.25
+      road-distance guess at an assumed 70 km/h), and its two named pit
+      stops per leg ("HP Fuel Station & EV Charger (km 45)") are gone;
+      straight-line distance between two real coordinates is the one thing
+      genuinely derivable and the UI now labels it as straight-line. The
+      "4/10 Seats", "Delhi Metro Station Gate 1" and ₹1500 fallbacks
+      shown when no trip is selected are gone too.
+      Safety fix found on the way, and the most serious thing in this
+      pass: the SOS confirmation card stated "Your coordinates (28.6139°
+      N, 77.2090° E) have been broadcasted to emergency contacts, police
+      authorities, and 3 nearby guides" — hardcoded New Delhi coordinates
+      regardless of where the user actually was, and a claim about police
+      that is simply false. The backend's own response message said the
+      same ("Nearby local assistance, police, and emergency support
+      notified"). No police force is integrated with this app; the real
+      audience is exactly getSosAudienceUserIds — emergency contacts who
+      are app users, fellow trip members, and admins. Both now say that,
+      show the coordinates actually sent, and point at 112 for real
+      emergency services. Telling someone in danger that police are on the
+      way when they are not is the worst kind of fake message this
+      codebase carried.
+      The doc's stated blocker for this section — `react-native-maps`
+      needs `android.config.googleMaps.apiKey` or Android release builds
+      render a blank grey map — turned out to be moot: the app has never
+      imported react-native-maps anywhere. Both map screens are Leaflet in
+      a WebView with OSM/Carto tiles. Removed the unused dependency
+      (regenerating licenses.json), which removes the Google Maps key
+      requirement from the release path entirely rather than leaving a
+      documented blocker for a library nothing uses.
+      11 new tests (map.test.ts: auth; an explicit assertion that none of
+      the four invented pin names comes back; a real trip placed at
+      Jaipur's real coordinates; an unplaceable trip omitted rather than
+      guessed; the caller excluded from the live pins; a
+      locationSharing-off user excluded; a two-hour-old position excluded;
+      route ordering; the unplaced-city count; a 404; hazard coordinate
+      shape). Both typechecks clean, backend lint clean, and both map
+      files' frontend lint errors down (map.tsx 14→12, map.web.tsx 7→4).
+      Deferred, with reasons: marker clustering (a rendering optimisation,
+      and these pin counts do not need it yet — Phase 10 if they do) and
+      an offline tile fallback (needs a bundled or downloadable tile pack
+      and a storage budget decision, not a code fix). Live *moving* guide
+      and member positions are point-in-time here: the pins come from a
+      60-second-stale query rather than the socket stream, so a member
+      walking around does not slide across the map until the next refetch.
       NOTE on test infra (for Phase 13): the backend suites share one
       remote Neon database and now intermittently fail under `jest`'s
       default parallel run (connection-pool/rate-limit contention) —

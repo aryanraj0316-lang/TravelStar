@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-26T20:09:55.168Z",
+  "generatedAt": "2026-08-28T10:25:36.167Z",
   "entries": [
     {
       "name": "@babel/code-frame",
@@ -1143,13 +1143,6 @@
       "publisher": "tannerlinsley"
     },
     {
-      "name": "@types/geojson",
-      "version": "7946.0.16",
-      "license": "MIT",
-      "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
-      "publisher": null
-    },
-    {
       "name": "@types/hammerjs",
       "version": "2.0.46",
       "license": "MIT",
@@ -1407,6 +1400,13 @@
       "license": "MIT",
       "repository": "https://github.com/expo/expo",
       "publisher": "Expo"
+    },
+    {
+      "name": "badgin",
+      "version": "1.2.3",
+      "license": "MIT",
+      "repository": "https://github.com/jaulz/badgin",
+      "publisher": "Julian Hundeloh"
     },
     {
       "name": "balanced-match",
@@ -1962,6 +1962,13 @@
       "publisher": "Expo"
     },
     {
+      "name": "expo-application",
+      "version": "57.0.2",
+      "license": "MIT",
+      "repository": "https://github.com/expo/expo",
+      "publisher": "650 Industries, Inc."
+    },
+    {
       "name": "expo-asset",
       "version": "57.0.14",
       "license": "MIT",
@@ -1977,7 +1984,7 @@
     },
     {
       "name": "expo-constants",
-      "version": "57.0.14",
+      "version": "57.0.15",
       "license": "MIT",
       "repository": "https://github.com/expo/expo",
       "publisher": "650 Industries, Inc."
@@ -2076,6 +2083,13 @@
     {
       "name": "expo-modules-jsi",
       "version": "57.0.5",
+      "license": "MIT",
+      "repository": "https://github.com/expo/expo",
+      "publisher": "650 Industries, Inc."
+    },
+    {
+      "name": "expo-notifications",
+      "version": "57.0.15",
       "license": "MIT",
       "repository": "https://github.com/expo/expo",
       "publisher": "650 Industries, Inc."
@@ -3339,13 +3353,6 @@
       "license": "MIT",
       "repository": "https://github.com/zoontek/react-native-edge-to-edge",
       "publisher": "Mathieu Acthernoene"
-    },
-    {
-      "name": "react-native-maps",
-      "version": "1.27.2",
-      "license": "MIT",
-      "repository": "https://github.com/react-native-maps/react-native-maps",
-      "publisher": "Leland Richardson"
     },
     {
       "name": "react-native-reanimated",

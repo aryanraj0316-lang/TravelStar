@@ -133,6 +133,40 @@ async function refreshAccessToken(): Promise<string | null> {
   }
 }
 
+// Real map data (docs/REMEDIATION.md §8.8).
+export interface MapPin {
+  id: string;
+  type: 'GUIDE' | 'GROUP' | 'TOURIST' | 'ATTRACTION';
+  name: string;
+  latitude: number;
+  longitude: number;
+  detail: string;
+  tripId?: string;
+}
+
+export interface MapHazard {
+  id: string;
+  title: string;
+  severity: 'CRITICAL' | 'WARNING' | 'ADVISORY';
+  category: string;
+  location: string;
+  affectedRoute: string;
+  /** Null when the alert's free-text location could not be placed. */
+  latitude: number | null;
+  longitude: number | null;
+}
+
+export interface TripRoute {
+  tripId: string;
+  name: string;
+  meetingPoint: string;
+  /** Straight lines between city centres — never a real road route. */
+  approximate: boolean;
+  /** Cities the server could not place, so the UI can say so. */
+  unplacedCities: number;
+  points: { name: string; latitude: number; longitude: number }[];
+}
+
 // Per-category push opt-outs plus the master switch
 // (docs/REMEDIATION.md §8.18). The categories mirror the backend's
 // NotificationType.
@@ -603,6 +637,21 @@ export const apiService = {
     return request(`/notifications/${id}/read`, {
       method: 'POST',
     });
+  },
+
+  // Map data (docs/REMEDIATION.md §8.8). map.tsx / map.web.tsx used to
+  // render four hardcoded pins and a hardcoded Ranchi→Vrindavan route for
+  // every user; these are the real rows behind them.
+  async getMapPins(): Promise<MapPin[]> {
+    return request('/map/pins');
+  },
+
+  async getMapHazards(): Promise<MapHazard[]> {
+    return request('/map/hazards');
+  },
+
+  async getTripRoute(tripId: string): Promise<TripRoute> {
+    return request(`/map/trips/${tripId}/route`);
   },
 
   // Push notifications (docs/REMEDIATION.md §8.18). Before this the

@@ -5,12 +5,13 @@ import { getCurrentDeviceLocation } from '@/lib/device-location';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import { useIsFocused, useLocalSearchParams, useNavigation, useRouter, type ErrorBoundaryProps } from 'expo-router';
+import { useQuery } from '@tanstack/react-query';
+import { apiService } from '@/services/api';
 import { RouteErrorFallback } from '@/components/route-error-fallback';
 import { eventBus } from '@/services/event-bus';
 import {
   AlertCircle,
   ArrowLeft,
-  ArrowRight,
   Car,
   ChevronDown,
   ChevronUp,
@@ -19,7 +20,6 @@ import {
   EyeOff,
   Layers,
   Locate,
-  MapPin,
   Minus,
   Navigation,
   Phone,
@@ -44,137 +44,26 @@ import {
   View,
   StatusBar,
   LayoutAnimation,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 
 // Coordinates registry for dynamic routes mapping
-const CITY_COORDS: Record<string, { latitude: number; longitude: number }> = {
-  // Northern India
-  'Delhi': { latitude: 28.6139, longitude: 77.2090 },
-  'New Delhi': { latitude: 28.6139, longitude: 77.2090 },
-  'Noida': { latitude: 28.5355, longitude: 77.3910 },
-  'Gurugram': { latitude: 28.4595, longitude: 77.0266 },
-  'Gurgaon': { latitude: 28.4595, longitude: 77.0266 },
-  'Faridabad': { latitude: 28.4089, longitude: 77.3178 },
-  'Ghaziabad': { latitude: 28.6692, longitude: 77.4538 },
-  'Agra': { latitude: 27.1767, longitude: 78.0081 },
-  'Mathura': { latitude: 27.4924, longitude: 77.6737 },
-  'Vrindavan': { latitude: 27.5650, longitude: 77.7008 },
-  'Varanasi': { latitude: 25.3176, longitude: 82.9739 },
-  'Sarnath': { latitude: 25.3762, longitude: 83.0227 },
-  'Lucknow': { latitude: 26.8467, longitude: 80.9462 },
-  'Kanpur': { latitude: 26.4499, longitude: 80.3319 },
-  'Ayodhya': { latitude: 26.7922, longitude: 82.1998 },
-  'Allahabad': { latitude: 25.4358, longitude: 81.8463 },
-  'Prayagraj': { latitude: 25.4358, longitude: 81.8463 },
-  'Haridwar': { latitude: 29.9457, longitude: 78.1642 },
-  'Rishikesh': { latitude: 30.0869, longitude: 78.2676 },
-  'Dehradun': { latitude: 30.3165, longitude: 78.0322 },
-  'Shimla': { latitude: 31.1048, longitude: 77.1734 },
-  'Manali': { latitude: 32.2396, longitude: 77.1887 },
-  'Srinagar': { latitude: 34.0837, longitude: 74.7973 },
-  'Gulmarg': { latitude: 34.0484, longitude: 74.3805 },
-  'Pahalgam': { latitude: 34.0161, longitude: 75.1950 },
-  'Leh': { latitude: 34.1526, longitude: 77.5771 },
-  'Ladakh': { latitude: 34.1526, longitude: 77.5771 },
-  'Amritsar': { latitude: 31.6340, longitude: 74.8723 },
-  'Chandigarh': { latitude: 30.7333, longitude: 76.7794 },
+// docs/REMEDIATION.md §8.8: a ~70-entry local city coordinate table used
+// to live here, feeding a client-side route builder that hashed unknown
+// city names into invented coordinates. Routes and pin positions are now
+// resolved server-side (GET /map/trips/:id/route, GET /map/pins) against
+// the backend's own reference table, so there is nothing left for a
+// second copy in the client to do.
 
-  // Western India
-  'Jaipur': { latitude: 26.9124, longitude: 75.7873 },
-  'Udaipur': { latitude: 24.5854, longitude: 73.7125 },
-  'Jodhpur': { latitude: 26.2389, longitude: 73.0243 },
-  'Jaisalmer': { latitude: 26.9157, longitude: 70.9083 },
-  'Mumbai': { latitude: 19.0760, longitude: 72.8777 },
-  'Pune': { latitude: 18.5204, longitude: 73.8567 },
-  'Nagpur': { latitude: 21.1458, longitude: 79.0882 },
-  'Ahmedabad': { latitude: 23.0225, longitude: 72.5714 },
-  'Surat': { latitude: 21.1702, longitude: 72.8311 },
-  'Vadodara': { latitude: 22.3072, longitude: 73.1812 },
-  'Goa': { latitude: 15.2993, longitude: 74.1240 },
-  'North Goa': { latitude: 15.5898, longitude: 73.8278 },
-  'South Goa': { latitude: 15.0644, longitude: 74.0229 },
-  'Dudhsagar': { latitude: 15.3185, longitude: 74.3142 },
-
-  // Eastern India
-  'Patna': { latitude: 25.5941, longitude: 85.1376 },
-  'Gaya': { latitude: 24.7955, longitude: 85.0002 },
-  'Ranchi': { latitude: 23.3441, longitude: 85.3090 },
-  'Jamshedpur': { latitude: 22.8046, longitude: 86.2029 },
-  'Kolkata': { latitude: 22.5726, longitude: 88.3639 },
-  'Bhubaneswar': { latitude: 20.2961, longitude: 85.8245 },
-  'Puri': { latitude: 19.8135, longitude: 85.8312 },
-  'Darjeeling': { latitude: 27.0410, longitude: 88.2627 },
-  'Gangtok': { latitude: 27.3314, longitude: 88.6138 },
-  'Guwahati': { latitude: 26.1445, longitude: 91.7362 },
-  'Shillong': { latitude: 25.5788, longitude: 91.8833 },
-
-  // Southern India
-  'Bengaluru': { latitude: 12.9716, longitude: 77.5946 },
-  'Bangalore': { latitude: 12.9716, longitude: 77.5946 },
-  'Mysore': { latitude: 12.2958, longitude: 76.6394 },
-  'Mysuru': { latitude: 12.2958, longitude: 76.6394 },
-  'Ooty': { latitude: 11.4102, longitude: 76.6950 },
-  'Chennai': { latitude: 13.0827, longitude: 80.2707 },
-  'Madurai': { latitude: 9.9252, longitude: 78.1198 },
-  'Hyderabad': { latitude: 17.3850, longitude: 78.4867 },
-  'Secunderabad': { latitude: 17.4399, longitude: 78.5000 },
-  'Visakhapatnam': { latitude: 17.6868, longitude: 83.2185 },
-  'Kochi': { latitude: 9.9312, longitude: 76.2673 },
-  'Munnar': { latitude: 10.0889, longitude: 77.0595 },
-  'Alleppey': { latitude: 9.4981, longitude: 76.3388 },
-  'Trivandrum': { latitude: 8.5241, longitude: 76.9366 },
-  'Thiruvananthapuram': { latitude: 8.5241, longitude: 76.9366 },
-
-  // Central India
-  'Bhopal': { latitude: 23.2599, longitude: 77.4126 },
-  'Indore': { latitude: 22.7196, longitude: 75.8577 },
-  'Raipur': { latitude: 21.2514, longitude: 81.6296 },
-};
-
-// Ranchi to Vrindavan Route Cities Coordinates
-const ROUTE_COORDS = [
-  { latitude: 23.3441, longitude: 85.3090, name: 'Ranchi' },
-  { latitude: 28.6139, longitude: 77.2090, name: 'Delhi' },
-  { latitude: 27.4924, longitude: 77.6737, name: 'Mathura' },
-  { latitude: 27.5650, longitude: 77.7008, name: 'Vrindavan' },
-];
-
-const MAP_PINS = [
-  {
-    id: 'pin-1',
-    type: 'GUIDE',
-    name: 'Rajesh Kumar (Guide)',
-    latitude: 27.5650,
-    longitude: 77.7008,
-    detail: 'Expert in Heritage walks, Rating 4.9',
-  },
-  {
-    id: 'pin-2',
-    type: 'GROUP',
-    name: 'Ranchi-Vrindavan Group',
-    latitude: 27.4924,
-    longitude: 77.6737,
-    detail: 'Next Segment: Delhi → Vrindavan',
-  },
-  {
-    id: 'pin-3',
-    type: 'TOURIST',
-    name: 'Neha Mehta (Solo)',
-    latitude: 28.6139,
-    longitude: 77.2090,
-    detail: 'Looking for a tour group to join',
-  },
-  {
-    id: 'pin-4',
-    type: 'ATTRACTION',
-    name: 'Prem Mandir Temple',
-    latitude: 27.5670,
-    longitude: 77.7015,
-    detail: 'Popular Landmark, Open till 10 PM',
-  },
-];
+// docs/REMEDIATION.md §8.8: a hardcoded Ranchi→Delhi→Mathura→Vrindavan
+// route and four hardcoded pins ("Rajesh Kumar (Guide)", a
+// "Ranchi-Vrindavan Group", solo tourist "Neha Mehta", Prem Mandir) used
+// to live here — the same four places on every user's map, forever, with
+// nothing behind them. Both now come from the API (GET /map/pins,
+// GET /map/trips/:id/route) and are injected into Leaflet at runtime.
+type RoutePoint = { latitude: number; longitude: number; name: string };
 
 const TILE_LAYERS: Record<string, { url: string; subdomains: string }> = {
   roadmap: {
@@ -196,7 +85,7 @@ const TILE_LAYERS: Record<string, { url: string; subdomains: string }> = {
 };
 
 // Build Leaflet HTML with premium markers
-function buildMapHTML(tileKey: string, routeCoords: typeof ROUTE_COORDS) {
+function buildMapHTML(tileKey: string, routeCoords: RoutePoint[]) {
   const tile = TILE_LAYERS[tileKey] || TILE_LAYERS.roadmap;
 
   return `
@@ -572,22 +461,26 @@ function buildMapHTML(tileKey: string, routeCoords: typeof ROUTE_COORDS) {
         });
       });
 
-      // Current location (non-interactive so it doesn't block checkpoint clicks)
-      var locIcon = L.divIcon({
-        html: '<div class="current-loc-outer"><div class="current-loc-inner"></div></div>',
-        className: '', iconSize: [28, 28], iconAnchor: [14, 14],
-      });
-      if (pathPoints.length > 0) {
-        L.marker(pathPoints[0], { icon: locIcon, interactive: false }).addTo(map);
-      } else {
-        L.marker([28.6139, 77.2090], { icon: locIcon, interactive: false }).addTo(map);
+      // docs/REMEDIATION.md §8.8: a "Current location" pulse marker used to
+      // be dropped here at the *route's first city* — or, with no route, at
+      // a hardcoded New Delhi — and styled exactly like the real GPS
+      // marker. It never had anything to do with where the user was. The
+      // real one is the selfMarker below, placed from actual geolocation
+      // when the locate button is pressed.
+
+      // Map pins — pushed in from React once GET /map/pins resolves
+      // (docs/REMEDIATION.md §8.8), rather than baked into this HTML.
+      var markerInstances = [];
+      var currentFilter = 'ALL';
+
+      function renderPins(pins) {
+        markerInstances.forEach(function(item) { map.removeLayer(item.marker); });
+        markerInstances = [];
+        pins.forEach(addPin);
+        applyFilter(currentFilter, true);
       }
 
-      // Map pins
-      var pins = ${JSON.stringify(MAP_PINS)};
-      var markerInstances = [];
-
-      pins.forEach(function(pin) {
+      function addPin(pin) {
         var icon = L.divIcon({
           html: '<div class="marker-pin ' + MARKER_CLASS[pin.type] + '">' + ICONS[pin.type] + '</div>',
           className: '', iconSize: [32, 37], iconAnchor: [16, 37], popupAnchor: [0, -40],
@@ -604,11 +497,37 @@ function buildMapHTML(tileKey: string, routeCoords: typeof ROUTE_COORDS) {
           .bindPopup(popupHTML, { closeButton: false, minWidth: 125 });
 
         markerInstances.push({ marker: marker, type: pin.type });
-      });
+      }
+
+      // Hazard alerts from the real /alerts data (§8.8/§8.10), drawn as
+      // severity-coloured circles. Alerts whose free-text location the
+      // server could not resolve arrive with null coordinates and are
+      // skipped rather than dropped somewhere arbitrary.
+      var hazardLayers = [];
+      var HAZARD_COLOR = { CRITICAL: '#EF4444', WARNING: '#F59E0B', ADVISORY: '#38BDF8' };
+
+      function renderHazards(hazards) {
+        hazardLayers.forEach(function(layer) { map.removeLayer(layer); });
+        hazardLayers = [];
+        hazards.forEach(function(h) {
+          if (h.latitude === null || h.longitude === null) return;
+          var color = HAZARD_COLOR[h.severity] || HAZARD_COLOR.ADVISORY;
+          var circle = L.circle([h.latitude, h.longitude], {
+            radius: 25000, color: color, weight: 1.5, fillColor: color, fillOpacity: 0.16,
+          }).addTo(map).bindPopup(
+            '<div class="popup-card"><div class="popup-badge">' + h.severity + '</div>' +
+            '<p class="popup-name">' + h.title + '</p>' +
+            '<p class="popup-detail">' + h.location + '</p></div>',
+            { closeButton: false, minWidth: 125 }
+          );
+          hazardLayers.push(circle);
+        });
+      }
 
       var activeLegPolyline = null;
 
-      function applyFilter(filter) {
+      function applyFilter(filter, skipFly) {
+        currentFilter = filter;
         var bounds = [];
         markerInstances.forEach(function(item) {
           if (filter === 'ALL' ||
@@ -622,7 +541,7 @@ function buildMapHTML(tileKey: string, routeCoords: typeof ROUTE_COORDS) {
             map.removeLayer(item.marker);
           }
         });
-        if (bounds.length > 0) {
+        if (bounds.length > 0 && !skipFly) {
           var targetBounds = L.latLngBounds(bounds);
           var targetCenter = targetBounds.getCenter();
           var targetZoom = Math.min(map.getBoundsZoom(targetBounds) || 14, 15);
@@ -702,6 +621,8 @@ function buildMapHTML(tileKey: string, routeCoords: typeof ROUTE_COORDS) {
         try {
           var data = JSON.parse(event.data);
           if (data.type === 'FILTER') applyFilter(data.filter);
+          if (data.type === 'SET_PINS') renderPins(data.pins || []);
+          if (data.type === 'SET_HAZARDS') renderHazards(data.hazards || []);
           if (data.type === 'LOCATE_SELF') locateUser();
           if (data.type === 'ZOOM_IN') map.zoomIn();
           if (data.type === 'ZOOM_OUT') map.zoomOut();
@@ -758,50 +679,29 @@ const getLegDetails = (startIndex: number, coords: any[]) => {
   const end = coords[startIndex + 1];
   if (!start || !end) return null;
 
+  // docs/REMEDIATION.md §8.8: this used to invent a road-condition string
+  // ("Excellent 4-lane Highway"), a duration from a made-up ×1.25 road
+  // factor at an assumed 70 km/h, and two named pit stops per leg ("HP
+  // Fuel Station & EV Charger (km 45)") — none of it from any routing
+  // service, all of it rendered as fact. Straight-line distance between
+  // two real city coordinates is the one thing genuinely derivable here,
+  // and the UI labels it as straight-line rather than implying road km.
   const distance = calculateDistance(start.latitude, start.longitude, end.latitude, end.longitude);
-  const routeDistance = Math.round(distance * 1.25); // estimate road path distance
-  const hours = Math.floor(routeDistance / 70);
-  const minutes = Math.round((routeDistance % 70) * 60 / 70);
-  const durationText = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
-
-  const conditions = [
-    'Excellent 4-lane Highway',
-    'Double-lane State Highway',
-    'Expressway (Smooth condition)',
-    'Scenic Mountain Road (Caution on bends)',
-  ];
-  const condition = conditions[startIndex % conditions.length];
-
-  const pitStopsList = [
-    ['HP Fuel Station & EV Charger (km 45)', 'Highway Oasis Food Plaza (km 110)'],
-    ['Scenic Viewpoint Cafe (km 30)', 'Local Dhaba & Tea Stall (km 75)'],
-    ['Expressway Rest Stop (km 65)', 'Rest Area with Clean Restrooms (km 130)'],
-  ];
-  const pitStops = pitStopsList[startIndex % pitStopsList.length];
 
   return {
     title: `Leg ${startIndex + 1}: ${start.name} ➔ ${end.name}`,
-    distance: `${routeDistance} km`,
-    duration: durationText,
-    condition,
-    pitStops,
+    distance: `${Math.round(distance)} km`,
+    start,
+    end,
   };
 };
 
-const getNavigationSteps = (startIndex: number, coords: any[]) => {
-  const start = coords[startIndex];
-  const end = coords[startIndex + 1];
-  if (!start || !end) return [];
-
-  return [
-    { instruction: `Depart from ${start.name} city center.`, distance: '1.0 km', icon: 'start' },
-    { instruction: `Merge onto Highway NH road heading toward ${end.name}.`, distance: '3.5 km', icon: 'straight' },
-    { instruction: `Keep straight, watch out for speed limit signs.`, distance: '45.0 km', icon: 'straight' },
-    { instruction: `Toll plaza ahead, prepare FASTag payment.`, distance: '2.0 km', icon: 'info' },
-    { instruction: `Take exit ramp toward ${end.name} central bypass.`, distance: '1.5 km', icon: 'right' },
-    { instruction: `Turn left at roundabout and arrive in ${end.name}.`, distance: '0.8 km', icon: 'end' },
-  ];
-};
+// docs/REMEDIATION.md §8.8: a getNavigationSteps() used to live here,
+// returning six invented turns per leg — "Merge onto Highway NH road",
+// "Toll plaza ahead, prepare FASTag payment", each with a fabricated
+// distance — for any pair of cities, with no routing service behind it.
+// Removed. The overlay now hands the leg to the device's own maps app,
+// which does have real turn-by-turn data.
 
 function MapScreen() {
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
@@ -836,6 +736,13 @@ function MapScreen() {
   const [mapFilter, setMapFilter] = useState<'ALL' | 'GUIDES' | 'GROUPS' | 'TOURISTS' | 'ATTRACTIONS' | 'NONE'>('ALL');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [sosTriggered, setSosTriggered] = useState(false);
+  // docs/REMEDIATION.md §8.8: the confirmation card used to state a
+  // hardcoded "28.6139° N, 77.2090° E" — New Delhi — as the coordinates
+  // that had been sent, whatever the user's real position was, and claimed
+  // "police authorities and 3 nearby guides" had been notified. No police
+  // force is integrated with this app. These are the coordinates actually
+  // sent.
+  const [sosCoords, setSosCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [tileLayer, setTileLayer] = useState<'roadmap' | 'satellite' | 'terrain' | 'dark'>('roadmap');
   const [showLayerPicker, setShowLayerPicker] = useState(false);
   const [selectedLegIndex, setSelectedLegIndex] = useState<number | null>(null);
@@ -904,53 +811,31 @@ function MapScreen() {
     postMapMessage({ type: 'LOCATE_SELF' });
   };
 
-  if (tripId && (tripId.startsWith('place-') || tripId.startsWith('nearby-'))) {
-    const names: Record<string, string> = {
-      'place-1': 'Sultanpur',
-      'place-2': 'Surajkund',
-      'place-3': 'Agra',
-      'place-4': 'Neemrana',
-      'place-5': 'Rishikesh',
-    };
-    const placeName = names[tripId] || 'Sultanpur';
-    activeTrip = {
-      id: tripId,
-      name: `Delhi to ${placeName} Exploration`,
-      creator: 'Local Guide',
-      cities: ['Delhi', placeName],
-      startDate: '2026-08-10',
-      endDate: '2026-08-11',
-      budget: 1500,
-      availableSeats: 4,
-      totalSeats: 10,
-      meetingPoint: 'Delhi Assembly Gate',
-      guideIncluded: true,
-      foodIncluded: true,
-      privacy: 'PUBLIC',
-      membersCount: 4,
-    } as any;
-  }
+  // docs/REMEDIATION.md §8.8: a `place-`/`nearby-` id used to make this
+  // screen invent a whole trip — a fake creator ("Local Guide"), fake
+  // budget, seats, dates and a "Delhi Assembly Gate" meeting point — and
+  // render it as real. §8.13 rewrote nearby-trips.tsx to only ever hand
+  // over real trip ids, so nothing produces those ids any more; the
+  // fabrication is gone rather than left waiting for a caller.
 
-  const activeRouteCoords = useMemo(() => {
-    if (!activeTrip) return ROUTE_COORDS;
-    return activeTrip.coordinates || activeTrip.cities
-      .map((city) => {
-        const clean = city.trim();
-        const found = CITY_COORDS[clean] || Object.entries(CITY_COORDS).find(([k]) => clean.toLowerCase().includes(k.toLowerCase()))?.[1];
-        if (found) {
-          return { latitude: found.latitude, longitude: found.longitude, name: clean };
-        } else {
-          // Deterministic fallback based on name hash
-          let hash = 0;
-          for (let i = 0; i < clean.length; i++) {
-            hash = clean.charCodeAt(i) + ((hash << 5) - hash);
-          }
-          const lat = 18.0 + (Math.abs(hash % 100) / 100) * 8.0;
-          const lon = 74.0 + (Math.abs((hash >> 8) % 100) / 100) * 10.0;
-          return { latitude: lat, longitude: lon, name: clean };
-        }
-      });
-  }, [activeTrip]);
+  // docs/REMEDIATION.md §8.8: this used to fall back to the hardcoded
+  // Ranchi→Vrindavan route with no trip selected, and — worse — when a
+  // city was missing from the local table it *hashed the city name* into a
+  // latitude/longitude somewhere in central India and drew that as the
+  // trip's real route. Fabricated geodata rendered as fact. The server now
+  // resolves the route from the trip's real cities and simply omits the
+  // ones it cannot place, reporting how many it dropped.
+  const { data: tripRoute } = useQuery({
+    queryKey: ['map', 'route', activeTrip?.id],
+    queryFn: () => apiService.getTripRoute(activeTrip!.id),
+    enabled: !!activeTrip?.id,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const activeRouteCoords: RoutePoint[] = useMemo(
+    () => tripRoute?.points ?? [],
+    [tripRoute]
+  );
 
   // SOS pulse animation
   useEffect(() => {
@@ -975,8 +860,33 @@ function MapScreen() {
       return;
     }
     triggerSOS(location.latitude, location.longitude);
+    setSosCoords({ latitude: location.latitude, longitude: location.longitude });
     setSosTriggered(true);
   };
+
+  // Real map pins and hazard overlays (docs/REMEDIATION.md §8.8),
+  // replacing the four hardcoded pins this screen used to show everyone.
+  const { data: mapPins } = useQuery({
+    queryKey: ['map', 'pins'],
+    queryFn: () => apiService.getMapPins(),
+    staleTime: 60 * 1000,
+  });
+
+  const { data: mapHazards } = useQuery({
+    queryKey: ['map', 'hazards'],
+    queryFn: () => apiService.getMapHazards(),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  useEffect(() => {
+    if (!mapPins) return;
+    webViewRef.current?.postMessage(JSON.stringify({ type: 'SET_PINS', pins: mapPins }));
+  }, [mapPins]);
+
+  useEffect(() => {
+    if (!mapHazards) return;
+    webViewRef.current?.postMessage(JSON.stringify({ type: 'SET_HAZARDS', hazards: mapHazards }));
+  }, [mapHazards]);
 
   // Post filter updates to Leaflet
   useEffect(() => {
@@ -1450,7 +1360,7 @@ function MapScreen() {
                     {/* Segment Info Row: Leg name & Road condition */}
                     <View style={styles.segmentInfoRow}>
                       <Text style={styles.segmentLegTitle}>{legDetails?.title}</Text>
-                      <Text style={styles.segmentRoadText}>Road: {legDetails?.condition}</Text>
+                      <Text style={styles.segmentRoadText}>Straight-line distance</Text>
                     </View>
 
                     {!isBottomPanelCollapsed && (
@@ -1462,11 +1372,6 @@ function MapScreen() {
                       >
                         {/* Stats Grid: Duration, Distance, Transit Mode, Seats */}
                         <View style={styles.statsGridRow}>
-                          <View style={styles.statsGridCol}>
-                            <Clock size={11} color="#10B981" />
-                            <Text style={styles.statsGridVal}>{legDetails?.duration}</Text>
-                          </View>
-                          <View style={styles.statsGridDivider} />
                           <View style={styles.statsGridCol}>
                             <Compass size={11} color="#0066FF" />
                             <Text style={styles.statsGridVal}>{legDetails?.distance}</Text>
@@ -1480,27 +1385,29 @@ function MapScreen() {
                           <View style={styles.statsGridCol}>
                             <Users size={11} color="#A78BFA" />
                             <Text style={styles.statsGridVal}>
-                              {activeTrip ? `${activeTrip.availableSeats}/${activeTrip.totalSeats} Seats` : '4/10 Seats'}
+                              {activeTrip ? `${activeTrip.availableSeats}/${activeTrip.totalSeats} Seats` : '—'}
                             </Text>
                           </View>
                         </View>
 
-                        {/* Detailed Metadata fields from DB */}
+                        {/* Real trip metadata. docs/REMEDIATION.md §8.8: these
+                        used to fall back to a hardcoded "Delhi Metro Station
+                        Gate 1" and ₹1500 with no trip selected, and listed
+                        two invented pit stops per leg. */}
                         <View style={styles.dbDetailsContainer}>
-                          <Text style={styles.dbDetailsText}>
-                            <Text style={styles.dbDetailsLabel}>Meeting Point: </Text>
-                            {activeTrip ? activeTrip.meetingPoint : 'Delhi Metro Station Gate 1'}
-                          </Text>
+                          {activeTrip && (
+                            <>
+                              <Text style={styles.dbDetailsText}>
+                                <Text style={styles.dbDetailsLabel}>Meeting Point: </Text>
+                                {activeTrip.meetingPoint}
+                              </Text>
 
-                          <Text style={styles.dbDetailsText}>
-                            <Text style={styles.dbDetailsLabel}>Budget: </Text>
-                            ₹{activeTrip ? activeTrip.budget : '1500'} per person
-                          </Text>
-
-                          <Text style={styles.dbDetailsText}>
-                            <Text style={styles.dbDetailsLabel}>Pit Stops: </Text>
-                            {legDetails?.pitStops.join(', ') || 'None'}
-                          </Text>
+                              <Text style={styles.dbDetailsText}>
+                                <Text style={styles.dbDetailsLabel}>Budget: </Text>
+                                ₹{activeTrip.budget} per person
+                              </Text>
+                            </>
+                          )}
 
                           <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 2 }}>
                             <Text style={styles.dbDetailsLabel}>Service Inclusion: </Text>
@@ -1524,7 +1431,13 @@ function MapScreen() {
 
 
 
-        {/* TURN-BY-TURN NAVIGATION OVERLAY */}
+        {/* Route handoff (docs/REMEDIATION.md §8.8). This was a
+        "Turn-by-Turn Guide" listing six invented instructions per leg
+        ("Toll plaza ahead, prepare FASTag payment") with a "Start
+        Navigation Guide" button that popped "GPS simulation active" —
+        there was never any navigation. Real turn-by-turn needs a routing
+        provider this project has no credentials for, so the leg is handed
+        to the device's own maps app, which does. */}
         {showNavigationOverlay && selectedLegIndex !== null && (
           <View style={styles.navOverlayContainer}>
             <View style={styles.navOverlayCard}>
@@ -1535,7 +1448,7 @@ function MapScreen() {
                 <View style={styles.navOverlayHeader}>
                   <Compass size={18} color="#10B981" />
                   <View style={{ flex: 1, marginLeft: 10 }}>
-                    <Text style={styles.navOverlayTitle}>Turn-by-Turn Guide</Text>
+                    <Text style={styles.navOverlayTitle}>Directions</Text>
                     <Text style={styles.navOverlaySub} numberOfLines={1}>
                       {getLegDetails(selectedLegIndex, activeRouteCoords)?.title}
                     </Text>
@@ -1549,50 +1462,28 @@ function MapScreen() {
                   </TouchableOpacity>
                 </View>
 
-                <ScrollView style={styles.stepsScroll} contentContainerStyle={styles.stepsScrollContent}>
-                  {getNavigationSteps(selectedLegIndex, activeRouteCoords).map((step, sIdx) => {
-                    let IconComponent = Navigation;
-                    let iconColor = '#8B949E';
-                    if (step.icon === 'start') {
-                      IconComponent = Compass;
-                      iconColor = '#10B981';
-                    } else if (step.icon === 'end') {
-                      IconComponent = MapPin;
-                      iconColor = '#EF4444';
-                    } else if (step.icon === 'info') {
-                      IconComponent = AlertCircle;
-                      iconColor = '#F59E0B';
-                    } else if (step.icon === 'left') {
-                      IconComponent = ArrowLeft;
-                      iconColor = '#0066FF';
-                    } else if (step.icon === 'right') {
-                      IconComponent = ArrowRight;
-                      iconColor = '#0066FF';
-                    }
-
-                    return (
-                      <View key={sIdx} style={styles.stepItemRow}>
-                        <View style={[styles.stepIconWrap, { borderColor: iconColor }]}>
-                          <IconComponent size={14} color={iconColor} />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.stepInstruction}>{step.instruction}</Text>
-                          <Text style={styles.stepDistance}>{step.distance}</Text>
-                        </View>
-                      </View>
-                    );
-                  })}
-                </ScrollView>
+                <Text style={styles.navHandoffNote}>
+                  TravelStar plots this leg as a straight line between the two stops. Open it in your maps
+                  app for real road directions.
+                </Text>
 
                 <TouchableOpacity
                   style={styles.startDrivingBtn}
                   onPress={() => {
-                    Alert.alert("Navigation Started", "GPS simulation active. Head to the highlighted route.");
+                    const leg = getLegDetails(selectedLegIndex, activeRouteCoords);
+                    if (!leg) return;
+                    const origin = `${leg.start.latitude},${leg.start.longitude}`;
+                    const destination = `${leg.end.latitude},${leg.end.longitude}`;
+                    const url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
+                    Linking.openURL(url).catch((e: unknown) => {
+                      logger.warn('[Map] Could not open directions:', e);
+                      Alert.alert('Error', 'Could not open a maps app on this device.');
+                    });
                     setShowNavigationOverlay(false);
                   }}
                   activeOpacity={0.8}
                 >
-                  <Text style={styles.startDrivingBtnText}>Start Navigation Guide</Text>
+                  <Text style={styles.startDrivingBtnText}>Open in Maps</Text>
                 </TouchableOpacity>
               </LinearGradient>
             </View>
@@ -1612,7 +1503,9 @@ function MapScreen() {
                 <AlertCircle size={44} color="#EF4444" />
                 <Text style={styles.sosModalTitle}>EMERGENCY ALERT TRIGGERED</Text>
                 <Text style={styles.sosModalSub}>
-                  Your coordinates (28.6139° N, 77.2090° E) have been broadcasted to emergency contacts, police authorities, and 3 nearby guides.
+                  {sosCoords
+                    ? `Your location (${sosCoords.latitude.toFixed(4)}, ${sosCoords.longitude.toFixed(4)}) was sent to your emergency contacts on TravelStar, your trip members, and our safety team.`
+                    : 'Your location was sent to your emergency contacts on TravelStar, your trip members, and our safety team.'}
                 </Text>
 
                 <TouchableOpacity
@@ -2233,6 +2126,13 @@ const styles = StyleSheet.create({
     fontSize: 9.5,
     fontWeight: '700',
     marginTop: 1,
+  },
+  navHandoffNote: {
+    color: '#8B949E',
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 12,
+    marginBottom: 14,
   },
   startDrivingBtn: {
     height: 48,
