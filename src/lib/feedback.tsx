@@ -9,6 +9,7 @@
 import React, { createContext, useCallback, useContext, useRef, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { ApiError } from '@/services/api';
+import { C } from '@/theme/tokens';
 
 /** Prefer the server/network's own message over a generic fallback when the
  * caught value is an ApiError — every other thrown value falls back. */
@@ -154,7 +155,7 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   toastText: {
-    color: '#FFFFFF',
+    color: C.white,
     fontSize: 14,
   },
   overlay: {
@@ -172,7 +173,7 @@ const styles = StyleSheet.create({
     maxWidth: 400,
   },
   dialogTitle: {
-    color: '#FFFFFF',
+    color: C.white,
     fontSize: 17,
     fontWeight: '700',
     marginBottom: 8,

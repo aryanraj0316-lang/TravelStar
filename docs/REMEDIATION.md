@@ -1811,7 +1811,61 @@ partial, exactly what's blocking full completion.
       default parallel run (connection-pool/rate-limit contention) —
       every suite passes in isolation and under --runInBand. Phase 13.2's
       Testcontainers throwaway-Postgres is the real fix.
-- [ ] Phase 9 — Design system, i18n, accessibility (not started)
+- [ ] Phase 9 — Design system, i18n, accessibility (in progress):
+      §9.1 done (tokens; the component library is the remaining half) —
+      there were nineteen local `const C = { ... }` palette objects, one
+      per screen, and they disagreed: `#060814`, `#070913`, `#080A12`,
+      `#0A0C16`, `#04060f` and `#000000` were all "the background", five
+      hexes were all "the border", four were all "secondary text". Beyond
+      those, another ~220 raw hex literals sat directly in StyleSheet
+      blocks on the screens that never had a palette object at all
+      (create.tsx, profile.tsx, search.tsx, auth.tsx). New
+      src/theme/tokens.ts is the single source: colour, spacing (a 4pt
+      grid), radii, a type scale, font stacks, elevation, motion, and the
+      44pt minimum touch target §9.3 asks for. All 18 palette objects are
+      gone (`grep -rn "^const C = {" src/` returns nothing) and the ~220
+      loose hexes inside StyleSheet blocks now resolve through tokens too
+      — 217 replacements across 19 files. The two map screens keep their
+      literals on purpose: they are mostly Leaflet HTML/CSS inside
+      template strings, where a token reference would be a literal
+      `C.blue` string in a stylesheet, not a colour.
+      Contrast, from §9.3's list: the two most-used muted greys both fail
+      WCAG AA for body text — 6A7182 is 4.08:1 on the background and
+      3.77:1 on a card, 64748B is 4.19/3.87 — and between them they
+      appeared 50 times. Both are replaced app-wide with #7E8494
+      (5.33:1 / 4.93:1), the dimmest value that still passes, and the
+      token comments carry the measured ratio for every text colour so the
+      next person does not have to re-derive them. Accents now come in two
+      forms, because the brand blue #0066FF is 4.13:1 and fails as text
+      while being perfectly fine as a fill: `blue` for fills, borders and
+      large glyphs (3:1 threshold), `blueText` (#3B82F6, 5.42/5.01) for
+      words and small icons, and the same split for purple/red/green/pink.
+      Migration was deliberately mechanical — the token module re-exports
+      every key name the old palettes used (`orange`, `rose`, `yellow`,
+      `divider`, `accent`, …) as aliases, so a screen migrated by swapping
+      its local object for an import rather than by rewriting every style
+      rule, which is where a change this wide would otherwise introduce
+      bugs. Rendered output is identical everywhere except the deliberate
+      contrast fixes.
+      Bug found and fixed on the way: ThemedText coloured itself from
+      `useTheme()`, which returns the *light* palette whenever the OS
+      colour scheme is 'unspecified' — black text on this app's dark
+      background, invisible, on any device that has never set a scheme.
+      The app is dark-only by design (§1.3), so it reads the token set
+      like everything else now. That was the only consumer of
+      src/constants/theme.ts (a full light/dark palette nothing else ever
+      imported) and of hooks/use-theme.ts; both are deleted, with the one
+      thing still used (the web font stacks) folded into tokens.ts and
+      global.css imported from the root layout instead of from a module
+      every screen pulls in.
+      Frontend lint 344 → 335 problems; typecheck clean.
+      Not done in this pass: the component library §9.1 also asks for
+      (Button/Card/Input/Select/Chip/Badge/Avatar/Sheet/Dialog/Toast/
+      Skeleton/EmptyState/ErrorState) and the screen migration onto it —
+      that is the next commit, and §9.2's Alert.alert removal depends on
+      the Dialog primitive existing. §9.3 (labels/roles/hints, 44×44
+      targets, the fontSize 8.5/9 floor, OS font scaling), §9.4 (i18n) and
+      §9.5 (hotlinked Unsplash images) are untouched.
 - [ ] Phase 10 — Performance (in progress — the list-virtualization and
       backend caching/pooling items done; bundle analysis, code-splitting,
       and a measured TTI budget not started):

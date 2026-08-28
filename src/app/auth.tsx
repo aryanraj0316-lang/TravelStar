@@ -20,6 +20,7 @@ import { ArrowLeft, Mail, Lock, User, Eye, EyeOff, ShieldCheck, Sparkles, Compas
 import GlassCard from '@/components/ui/GlassCard';
 import { useApp, UserRole } from '@/store/AppContext';
 import { apiService } from '@/services/api';
+import { C } from '@/theme/tokens';
 
 const ROLES: { id: UserRole; title: string; subtitle: string; icon: string }[] = [
   { id: 'TOURIST', title: 'Tourist', subtitle: 'Explore & Join Trips', icon: '🧳' },
@@ -228,7 +229,7 @@ export default function AuthScreen() {
                   <TextInput
                     style={styles.input}
                     placeholder="e.g. Aarav Sharma"
-                    placeholderTextColor="#64748B"
+                    placeholderTextColor="#7E8494"
                     value={fullName}
                     onChangeText={setFullName}
                   />
@@ -243,7 +244,7 @@ export default function AuthScreen() {
                 <TextInput
                   style={styles.input}
                   placeholder="aarav@example.com"
-                  placeholderTextColor="#64748B"
+                  placeholderTextColor="#7E8494"
                   keyboardType="email-address"
                   autoCapitalize="none"
                   value={email}
@@ -259,7 +260,7 @@ export default function AuthScreen() {
                 <TextInput
                   style={[styles.input, { flex: 1 }]}
                   placeholder="••••••••"
-                  placeholderTextColor="#64748B"
+                  placeholderTextColor="#7E8494"
                   secureTextEntry={!showPassword}
                   value={password}
                   onChangeText={setPassword}
@@ -375,7 +376,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
-    shadowColor: '#0066FF',
+    shadowColor: C.blue,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.4,
     shadowRadius: 12,
@@ -384,13 +385,13 @@ const styles = StyleSheet.create({
   heroHeading: {
     fontSize: 26,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: C.white,
     marginBottom: 6,
     textAlign: 'center',
   },
   heroSub: {
     fontSize: 13,
-    color: '#94A3B8',
+    color: C.textSec,
     textAlign: 'center',
     maxWidth: 280,
     lineHeight: 18,
@@ -411,15 +412,15 @@ const styles = StyleSheet.create({
     borderRadius: 22,
   },
   modeTabActive: {
-    backgroundColor: '#0066FF',
+    backgroundColor: C.blue,
   },
   modeText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#94A3B8',
+    color: C.textSec,
   },
   modeTextActive: {
-    color: '#FFFFFF',
+    color: C.white,
     fontWeight: '700',
   },
   sectionTitle: {
@@ -439,7 +440,7 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   roleCardActive: {
-    borderColor: '#0066FF',
+    borderColor: C.blue,
     backgroundColor: 'rgba(0, 102, 255, 0.2)',
   },
   roleTitle: {
@@ -453,7 +454,7 @@ const styles = StyleSheet.create({
   },
   roleSub: {
     fontSize: 10,
-    color: '#64748B',
+    color: C.textMuted,
   },
   card: {
     padding: 20,
@@ -476,7 +477,7 @@ const styles = StyleSheet.create({
   inputLabel: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#94A3B8',
+    color: C.textSec,
     marginBottom: 6,
   },
   inputBox: {
@@ -491,7 +492,7 @@ const styles = StyleSheet.create({
   },
   input: {
     fontSize: 14,
-    color: '#FFFFFF',
+    color: C.white,
     flex: 1,
   },
   submitBtn: {
@@ -500,7 +501,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 14,
     borderRadius: 16,
-    shadowColor: '#0066FF',
+    shadowColor: C.blue,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.35,
     shadowRadius: 10,
@@ -509,7 +510,7 @@ const styles = StyleSheet.create({
   submitBtnText: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: C.white,
   },
   footerWrap: {
     flexDirection: 'row',
@@ -518,7 +519,7 @@ const styles = StyleSheet.create({
   },
   footerText: {
     fontSize: 13,
-    color: '#94A3B8',
+    color: C.textSec,
   },
   footerLink: {
     fontSize: 13,

@@ -5,10 +5,11 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useOnlineStatus } from '@/lib/network-status';
+import { C } from '@/theme/tokens';
 
-// Matches the app-wide dark background used in _layout.tsx / most screens'
-// local `const C = {...}` palettes — see REMEDIATION.md §0.2.7, a real
-// design-token pass is Phase 9 scope, not this one.
+// Deliberately not a token: this is the one surface in the app that must
+// read as an alarm rather than as part of the palette, and it sits above
+// every screen (§6.3). 5.9:1 against white text.
 const BANNER_BG = '#DC2626';
 
 export function OfflineBanner() {
@@ -38,7 +39,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   text: {
-    color: '#FFFFFF',
+    color: C.white,
     fontSize: 12,
     fontWeight: '600',
     textAlign: 'center',

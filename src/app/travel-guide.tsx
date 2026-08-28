@@ -58,30 +58,10 @@ import {
   AlertTriangle,
   CheckCircle,
 } from 'lucide-react-native';
+import { C } from '@/theme/tokens';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-const C = {
-  bg: '#04060f',
-  card: '#0c0f1d',
-  cardAlt: '#14182f',
-  border: '#22294c',
-  borderGlow: '#323f7c',
-  white: '#ffffff',
-  textSec: '#a2a9c3',
-  textMuted: '#677196',
-  blue: '#0066FF',
-  blueGlow: '#3385ff',
-  purple: '#8B5CF6',
-  purpleGlow: '#a78bfa',
-  green: '#10B981',
-  greenGlow: '#34d399',
-  amber: '#F59E0B',
-  amberGlow: '#fbbf24',
-  rose: '#EF4444',
-  roseGlow: '#f87171',
-  cyan: '#06B6D4',
-};
 
 // ─── Interfaces ───
 interface CustomerLead {
@@ -1017,7 +997,7 @@ export default function TravelGuideScreen() {
               </View>
             ) : filteredLeads.length === 0 ? (
               <View style={{ paddingVertical: 40, alignItems: 'center' }}>
-                <Users size={32} color="#64748B" style={{ marginBottom: 12 }} />
+                <Users size={32} color="#7E8494" style={{ marginBottom: 12 }} />
                 <Text style={{ color: C.white, fontSize: 15, fontWeight: '800', marginBottom: 6 }}>
                   No Matching Leads
                 </Text>
@@ -1402,7 +1382,7 @@ export default function TravelGuideScreen() {
 
                 {packages.length === 0 ? (
                   <View style={[styles.emptyCreations, { paddingVertical: 40 }]}>
-                    <Compass size={32} color="#64748B" style={{ marginBottom: 12, alignSelf: 'center' }} />
+                    <Compass size={32} color="#7E8494" style={{ marginBottom: 12, alignSelf: 'center' }} />
                     <Text style={[styles.emptyCreationsTitle, { textAlign: 'center' }]}>No Packages Listed</Text>
                     <Text style={[styles.emptyCreationsSub, { textAlign: 'center' }]}>
                       Create a package to display your services and pricing guides.
@@ -3724,7 +3704,7 @@ const styles = StyleSheet.create({
   },
   emptyCreationsSub: {
     fontSize: 12,
-    color: '#64748B',
+    color: C.textMuted,
     textAlign: 'center',
     lineHeight: 18,
     paddingHorizontal: 32,

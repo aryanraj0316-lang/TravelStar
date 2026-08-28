@@ -19,17 +19,8 @@ import {
 } from 'lucide-react-native';
 import { logger } from '@/lib/logger';
 import { toast } from '@/lib/feedback';
+import { C } from '@/theme/tokens';
 
-const C = {
-  bg: '#070913',
-  card: '#121524',
-  border: '#1D2138',
-  white: '#FFFFFF',
-  textSec: '#8A92A6',
-  textMuted: '#6A7182',
-  blue: '#0066FF',
-  rose: '#FF2D55',
-};
 
 export default function SupportScreen() {
   const router = useRouter();

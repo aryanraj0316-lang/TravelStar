@@ -1,3 +1,5 @@
+import '@/global.css';
+
 import { DarkTheme, ThemeProvider, Stack, type ErrorBoundaryProps } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { enableScreens } from 'react-native-screens';
@@ -13,6 +15,7 @@ import { queryClient } from '@/lib/query-client';
 import { queryPersister, QUERY_CACHE_MAX_AGE_MS } from '@/lib/query-persister';
 import { startMutationQueueAutoFlush } from '@/lib/offline-mutation-queue';
 import { useNotificationRouter } from '@/lib/use-notification-router';
+import { C } from '@/theme/tokens';
 
 // Root error boundary (REMEDIATION.md §7.5) — expo-router auto-wraps the
 // whole app in this when a named `ErrorBoundary` export exists on the root
@@ -33,8 +36,8 @@ const AppTheme = {
   ...DarkTheme,
   colors: {
     ...DarkTheme.colors,
-    background: '#060814',
-    card: '#111322',
+    background: C.bg,
+    card: C.card,
   },
 };
 

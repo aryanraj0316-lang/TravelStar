@@ -27,6 +27,7 @@ import { useApp } from '@/store/AppContext';
 import { eventBus } from '@/services/event-bus';
 import { useRouter } from 'expo-router';
 import { toast } from '@/lib/feedback';
+import { C } from '@/theme/tokens';
 
 export interface TripDetailModalProps {
   visible: boolean;
@@ -36,17 +37,6 @@ export interface TripDetailModalProps {
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-const C = {
-  bg: '#080A12',
-  card: '#111322',
-  cardBorder: '#1E2340',
-  text: '#F8FAFC',
-  textSecondary: '#94A3B8',
-  divider: '#1E2340',
-  accent: '#3B82F6',
-  accentLight: 'rgba(59, 130, 246, 0.12)',
-  amber: '#F59E0B',
-};
 
 export default function TripDetailModal({
   visible,
@@ -422,7 +412,7 @@ const styles = StyleSheet.create({
   modalContent: {
     width: '100%',
     flex: 0.9,
-    backgroundColor: '#111322',
+    backgroundColor: C.card,
     borderColor: '#1E2340',
     borderTopWidth: 1,
     borderLeftWidth: 1,
@@ -452,7 +442,7 @@ const styles = StyleSheet.create({
   },
   successSub: {
     fontSize: 12,
-    color: '#94A3B8',
+    color: C.textSec,
     textAlign: 'center',
     marginTop: 8,
     paddingHorizontal: 24,
@@ -469,13 +459,13 @@ const styles = StyleSheet.create({
   },
   modalOrganizerText: {
     fontSize: 12,
-    color: '#94A3B8',
+    color: C.textSec,
     marginTop: 2,
   },
   viewOnMapHeaderBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0066FF',
+    backgroundColor: C.blue,
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 6,
@@ -496,7 +486,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: '#1A1D30',
+    backgroundColor: C.border,
     padding: 12,
     borderRadius: 14,
     marginBottom: 16,
@@ -518,7 +508,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     letterSpacing: 1,
     fontWeight: '700',
-    color: '#94A3B8',
+    color: C.textSec,
     marginBottom: 10,
   },
   detailRowCard: {
@@ -647,13 +637,13 @@ const styles = StyleSheet.create({
   midwaySectionTitle: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#3B82F6',
+    color: C.blueText,
     letterSpacing: 1,
     marginBottom: 10,
   },
   fieldLabel: {
     fontSize: 10,
-    color: '#94A3B8',
+    color: C.textSec,
     marginBottom: 4,
   },
   citySelectScroll: {
@@ -664,10 +654,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 18,
     borderWidth: 1,
-    backgroundColor: '#111322',
+    backgroundColor: C.card,
   },
   citySelectChipActive: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: C.blueText,
   },
   citySelectChipText: {
     fontSize: 11,
@@ -694,7 +684,7 @@ const styles = StyleSheet.create({
   },
   pricingBarLabel: {
     fontSize: 10,
-    color: '#94A3B8',
+    color: C.textSec,
   },
   pricingBarAmountRow: {
     flexDirection: 'row',
@@ -730,7 +720,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   modalSubmitBtn: {
-    backgroundColor: '#0066FF',
+    backgroundColor: C.blue,
     height: 50,
     borderRadius: 25,
     justifyContent: 'center',
@@ -766,7 +756,7 @@ const styles = StyleSheet.create({
   requestedStatusTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#10B981',
+    color: C.green,
   },
   requestedStatusSub: {
     fontSize: 10,
@@ -781,7 +771,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cancelRequestBtnText: {
-    color: '#EF4444',
+    color: C.red,
     fontSize: 13,
     fontWeight: '700',
   },

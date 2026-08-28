@@ -19,6 +19,7 @@ import GlassCard from '@/components/ui/GlassCard';
 import { apiService } from '@/services/api';
 import { logger } from '@/lib/logger';
 import { errorToastMessage, toast } from '@/lib/feedback';
+import { C } from '@/theme/tokens';
 
 // docs/REMEDIATION.md §8.1: apiService.forgotPassword/resetPassword existed
 // on the client and the backend routes were fully built (token hashing,
@@ -109,7 +110,7 @@ export default function ForgotPasswordScreen() {
                     <TextInput
                       style={styles.input}
                       placeholder="aarav@example.com"
-                      placeholderTextColor="#64748B"
+                      placeholderTextColor="#7E8494"
                       keyboardType="email-address"
                       autoCapitalize="none"
                       value={email}
@@ -177,17 +178,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
-    shadowColor: '#0066FF',
+    shadowColor: C.blue,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.4,
     shadowRadius: 12,
     elevation: 8,
   },
-  heroHeading: { fontSize: 24, fontWeight: '800', color: '#FFFFFF', marginBottom: 6, textAlign: 'center' },
-  heroSub: { fontSize: 13, color: '#94A3B8', textAlign: 'center', maxWidth: 280, lineHeight: 18 },
+  heroHeading: { fontSize: 24, fontWeight: '800', color: C.white, marginBottom: 6, textAlign: 'center' },
+  heroSub: { fontSize: 13, color: C.textSec, textAlign: 'center', maxWidth: 280, lineHeight: 18 },
   card: { padding: 20, borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.12)' },
   inputWrap: { marginBottom: 14 },
-  inputLabel: { fontSize: 12, fontWeight: '600', color: '#94A3B8', marginBottom: 6 },
+  inputLabel: { fontSize: 12, fontWeight: '600', color: C.textSec, marginBottom: 6 },
   inputBox: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -198,23 +199,23 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
   },
-  input: { fontSize: 14, color: '#FFFFFF', flex: 1 },
+  input: { fontSize: 14, color: C.white, flex: 1 },
   submitBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 14,
     borderRadius: 16,
-    shadowColor: '#0066FF',
+    shadowColor: C.blue,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.35,
     shadowRadius: 10,
     elevation: 6,
   },
-  submitBtnText: { fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
+  submitBtnText: { fontSize: 15, fontWeight: '700', color: C.white },
   confirmWrap: { alignItems: 'center', paddingVertical: 10 },
   confirmText: { fontSize: 14, color: '#E2E8F0', textAlign: 'center', lineHeight: 20 },
   footerWrap: { flexDirection: 'row', justifyContent: 'center', marginTop: 16 },
-  footerText: { fontSize: 13, color: '#94A3B8' },
+  footerText: { fontSize: 13, color: C.textSec },
   footerLink: { fontSize: 13, fontWeight: '700', color: '#60A5FA' },
 });

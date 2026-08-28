@@ -16,17 +16,8 @@ import {
   Shield,
   Info,
 } from 'lucide-react-native';
+import { C } from '@/theme/tokens';
 
-const C = {
-  bg: '#070913',
-  card: '#121524',
-  border: '#1D2138',
-  white: '#FFFFFF',
-  textSec: '#8A92A6',
-  textMuted: '#6A7182',
-  blue: '#0066FF',
-  cyan: '#00D1FF',
-};
 
 export default function AboutScreen() {
   const router = useRouter();

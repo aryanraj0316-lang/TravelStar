@@ -47,6 +47,7 @@ import { apiService, type NotificationPreferences } from '@/services/api';
 import { registerForPushNotifications, unregisterPushNotifications } from '@/lib/push';
 import { toast, errorToastMessage } from '@/lib/feedback';
 import { uploadFileToUrl } from '@/lib/upload';
+import { C } from '@/theme/tokens';
 
 // Safe dynamic import to prevent native app crash if module is unlinked in old APK
 let ImagePicker: any = null;
@@ -787,7 +788,7 @@ function ProfileScreen() {
               <TextInput
                 style={styles.deleteInput}
                 placeholder="Current password"
-                placeholderTextColor="#6A7182"
+                placeholderTextColor="#7E8494"
                 secureTextEntry
                 value={deletePassword}
                 onChangeText={setDeletePassword}
@@ -886,7 +887,7 @@ function ProfileScreen() {
 
                 {/* Preset Avatars Row */}
                 <Text
-                  style={{ fontSize: 11, color: '#64748B', marginTop: 12, marginBottom: 8, alignSelf: 'flex-start' }}
+                  style={{ fontSize: 11, color: '#7E8494', marginTop: 12, marginBottom: 8, alignSelf: 'flex-start' }}
                 >
                   Or Choose from Preset Avatars:
                 </Text>
@@ -1316,14 +1317,14 @@ const styles = StyleSheet.create({
   sectionHeader: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#6A7182',
+    color: C.textMuted,
     marginTop: 22,
     marginBottom: 8,
     letterSpacing: 1.5,
     fontStyle: 'italic',
   },
   menuCard: {
-    backgroundColor: '#111322',
+    backgroundColor: C.card,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#1D2138',
@@ -1406,7 +1407,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 10,
-    shadowColor: '#00F2FE',
+    shadowColor: C.blueGlow,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.5,
     shadowRadius: 14,
@@ -1452,7 +1453,7 @@ const styles = StyleSheet.create({
   userName: {
     fontSize: 21,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: C.white,
     textAlign: 'center',
   },
   userHandle: {
@@ -1506,7 +1507,7 @@ const styles = StyleSheet.create({
   },
   statLabel: {
     fontSize: 10,
-    color: '#64748B',
+    color: C.textMuted,
     marginTop: 2,
   },
   statDivider: {
@@ -1530,7 +1531,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   tabButtonActive: {
-    backgroundColor: '#0066FF',
+    backgroundColor: C.blue,
   },
   tabText: {
     fontSize: 12,
@@ -1565,13 +1566,13 @@ const styles = StyleSheet.create({
   },
   completionSub: {
     fontSize: 11,
-    color: '#64748B',
+    color: C.textMuted,
     marginTop: 2,
   },
   completionPercent: {
     fontSize: 18,
     fontWeight: '800',
-    color: '#0066FF',
+    color: C.blue,
   },
   progressTrack: {
     height: 6,
@@ -1583,7 +1584,7 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#0066FF',
+    backgroundColor: C.blue,
     borderRadius: 3,
   },
 
@@ -1597,7 +1598,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   verifiedMsg: {
-    color: '#10B981',
+    color: C.green,
     fontWeight: '700',
     fontSize: 13,
   },
@@ -1616,7 +1617,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   verifyBtn: {
-    backgroundColor: '#0066FF',
+    backgroundColor: C.blue,
     height: 40,
     borderRadius: 10,
     alignItems: 'center',
@@ -1637,7 +1638,7 @@ const styles = StyleSheet.create({
   },
   prefLabel: {
     fontSize: 10,
-    color: '#64748B',
+    color: C.textMuted,
     fontWeight: '600',
   },
   prefVal: {
@@ -1658,12 +1659,12 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   historyFilterChipActive: {
-    backgroundColor: '#0066FF',
+    backgroundColor: C.blue,
   },
   historyFilterText: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#64748B',
+    color: C.textMuted,
   },
   historyFilterTextActive: {
     color: '#FFF',
@@ -1698,7 +1699,7 @@ const styles = StyleSheet.create({
   },
   bookingIdText: {
     fontSize: 10,
-    color: '#64748B',
+    color: C.textMuted,
     fontWeight: '600',
   },
   historyTitle: {
@@ -1708,7 +1709,7 @@ const styles = StyleSheet.create({
   },
   historyDate: {
     fontSize: 10,
-    color: '#64748B',
+    color: C.textMuted,
     marginTop: 2,
   },
   routeDiagramRow: {
@@ -1734,7 +1735,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   viewTicketBtn: {
-    backgroundColor: '#0066FF',
+    backgroundColor: C.blue,
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 6,
@@ -1772,12 +1773,12 @@ const styles = StyleSheet.create({
     borderRadius: 14,
   },
   roleChipActive: {
-    backgroundColor: '#0066FF',
+    backgroundColor: C.blue,
   },
   roleChipText: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#64748B',
+    color: C.textMuted,
   },
   roleChipTextActive: {
     color: '#FFF',
@@ -1807,7 +1808,7 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 10,
-    color: '#64748B',
+    color: C.textMuted,
     marginBottom: 4,
   },
   organizerActions: {
@@ -1815,7 +1816,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   dashboardBtn: {
-    backgroundColor: '#0066FF',
+    backgroundColor: C.blue,
     height: 40,
     borderRadius: 10,
     flexDirection: 'row',
@@ -1892,7 +1893,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   logoutBtn: {
-    backgroundColor: '#EF4444',
+    backgroundColor: C.red,
     height: 48,
     borderRadius: 24,
     flexDirection: 'row',
@@ -1933,7 +1934,7 @@ const styles = StyleSheet.create({
   inputLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#64748B',
+    color: C.textMuted,
     marginTop: 10,
     marginBottom: 4,
   },
@@ -1945,7 +1946,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   saveModalBtn: {
-    backgroundColor: '#0066FF',
+    backgroundColor: C.blue,
     height: 48,
     borderRadius: 24,
     alignItems: 'center',
@@ -1975,7 +1976,7 @@ const styles = StyleSheet.create({
   ticketBadge: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#0066FF',
+    color: C.blue,
     backgroundColor: 'rgba(0,102,255,0.12)',
     paddingVertical: 4,
     paddingHorizontal: 10,
@@ -2014,7 +2015,7 @@ const styles = StyleSheet.create({
   },
   metaLabel: {
     fontSize: 9,
-    color: '#64748B',
+    color: C.textMuted,
     fontWeight: '600',
   },
   metaVal: {
@@ -2023,7 +2024,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   downloadTicketBtn: {
-    backgroundColor: '#0066FF',
+    backgroundColor: C.blue,
     height: 44,
     borderRadius: 22,
     flexDirection: 'row',
@@ -2059,8 +2060,8 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   genderChipSelected: {
-    backgroundColor: '#0066FF',
-    borderColor: '#0066FF',
+    backgroundColor: C.blue,
+    borderColor: C.blue,
   },
   genderChipText: {
     fontSize: 12,
@@ -2079,7 +2080,7 @@ const styles = StyleSheet.create({
     height: 80,
     borderRadius: 40,
     borderWidth: 2.5,
-    borderColor: '#0066FF',
+    borderColor: C.blue,
   },
   cameraIconBadge: {
     position: 'absolute',
@@ -2088,7 +2089,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#0066FF',
+    backgroundColor: C.blue,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1.5,
@@ -2122,7 +2123,7 @@ const styles = StyleSheet.create({
   devicePickBtnText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#0066FF',
+    color: C.blue,
   },
   presetAvatarTile: {
     width: 48,
@@ -2134,8 +2135,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   presetAvatarTileSelected: {
-    borderColor: '#0066FF',
-    shadowColor: '#0066FF',
+    borderColor: C.blue,
+    shadowColor: C.blue,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.5,
     shadowRadius: 4,
@@ -2153,7 +2154,7 @@ const styles = StyleSheet.create({
     width: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: '#0066FF',
+    backgroundColor: C.blue,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2288,7 +2289,7 @@ const styles = StyleSheet.create({
   deleteTitle: {
     fontSize: 17,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: C.white,
   },
   deleteBodyText: {
     fontSize: 12.5,
@@ -2296,11 +2297,11 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   deleteInput: {
-    backgroundColor: '#1A1D30',
+    backgroundColor: C.border,
     borderRadius: 12,
     paddingHorizontal: 14,
     height: 46,
-    color: '#FFFFFF',
+    color: C.white,
     fontSize: 13.5,
   },
   deleteBtnRow: {
@@ -2317,7 +2318,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.06)',
   },
   deleteCancelText: {
-    color: '#FFFFFF',
+    color: C.white,
     fontSize: 13,
     fontWeight: '700',
   },
@@ -2330,7 +2331,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FF453A',
   },
   deleteConfirmText: {
-    color: '#FFFFFF',
+    color: C.white,
     fontSize: 13,
     fontWeight: '800',
   },

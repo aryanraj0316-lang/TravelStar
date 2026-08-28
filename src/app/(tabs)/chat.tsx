@@ -61,6 +61,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { apiService } from '@/services/api';
 import { eventBus } from '@/services/event-bus';
 import { useApp } from '@/store/AppContext';
+import { C } from '@/theme/tokens';
 
 let ImagePicker: any = null;
 try {
@@ -70,23 +71,6 @@ try {
 }
 
 // Color Palette matching search theme exactly
-const C = {
-  bg: '#000000',
-  card: '#111322',
-  cardAlt: '#181C2E',
-  border: '#1A1D30',
-  white: '#FFFFFF',
-  textSec: '#7E8494',
-  textMuted: '#64748B',
-  blue: '#0066FF',
-  blueGlow: '#00F2FE',
-  green: '#10B981',
-  orange: '#F59E0B',
-  red: '#EF4444',
-  purple: '#8B5CF6',
-  pink: '#EC4899',
-  yellow: '#FBBF24',
-};
 
 // Custom Type for Rich Messages
 interface CustomMessage {
@@ -3618,12 +3602,12 @@ const styles = StyleSheet.create({
   dmMemberBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0066FF',
+    backgroundColor: C.blue,
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 14,
     marginLeft: 8,
-    shadowColor: '#0066FF',
+    shadowColor: C.blue,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
@@ -4362,7 +4346,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 2,
     borderBottomLeftRadius: 16,
     borderBottomRightRadius: 16,
-    shadowColor: '#00F2FE',
+    shadowColor: C.blueGlow,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.25,
     shadowRadius: 6,
@@ -5228,7 +5212,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   memberRoleText: {
-    color: '#64748B',
+    color: C.textMuted,
     fontSize: 11,
     marginTop: 1,
   },
@@ -5269,7 +5253,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   telemetryTitle: {
-    color: '#8B5CF6',
+    color: C.purple,
     fontSize: 10.5,
     fontWeight: '800',
     letterSpacing: 1,
@@ -5283,7 +5267,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(139, 92, 246, 0.45)',
   },
   telemetryStatusText: {
-    color: '#8B5CF6',
+    color: C.purple,
     fontSize: 9,
     fontWeight: '800',
     letterSpacing: 0.5,
@@ -5319,7 +5303,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   telemetryMetaLbl: {
-    color: '#64748B',
+    color: C.textMuted,
     fontSize: 9.5,
     fontWeight: '600',
     marginTop: 2,
@@ -5335,7 +5319,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   telemetryFooterText: {
-    color: '#8B5CF6',
+    color: C.purple,
     fontSize: 11,
     fontWeight: '600',
   },
@@ -5359,7 +5343,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   settingsExitBtnText: {
-    color: '#EF4444',
+    color: C.red,
     fontSize: 13.5,
     fontWeight: '700',
   },
@@ -5378,7 +5362,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 12,
     marginVertical: 10,
     elevation: 4,
-    shadowColor: '#0066FF',
+    shadowColor: C.blue,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 10,
@@ -5396,7 +5380,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(139, 92, 246, 0.1)',
   },
   tabItemLabel: {
-    color: '#7E8494',
+    color: C.textMuted,
     fontSize: 12.5,
     fontWeight: '600',
   },
@@ -5440,7 +5424,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   groupUpdateDescText: {
-    color: '#94A3B8',
+    color: C.textSec,
     fontSize: 11,
     lineHeight: 15,
   },
@@ -5505,7 +5489,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   statsStatusText: {
-    color: '#34D399',
+    color: C.greenText,
     fontSize: 8.5,
     fontWeight: '800',
     letterSpacing: 0.5,
@@ -5520,7 +5504,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   statsValLabel: {
-    color: '#7E8494',
+    color: C.textMuted,
     fontSize: 10.5,
     fontWeight: '600',
     marginBottom: 3,
@@ -5582,14 +5566,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1.5,
-    borderColor: '#0066FF',
+    borderColor: C.blue,
     zIndex: 10,
   },
   verticalTimelineInnerDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#0066FF',
+    backgroundColor: C.blue,
   },
   verticalTimelineLine: {
     width: 2,
@@ -5612,7 +5596,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   verticalTimelineDayText: {
-    color: '#0066FF',
+    color: C.blue,
     fontSize: 11,
     fontWeight: '800',
     backgroundColor: 'rgba(0, 102, 255, 0.1)',
@@ -5627,7 +5611,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   verticalTimelineDesc: {
-    color: '#7E8494',
+    color: C.textMuted,
     fontSize: 11.5,
     lineHeight: 16,
   },
@@ -5644,7 +5628,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   docsHeaderDescText: {
-    color: '#7E8494',
+    color: C.textMuted,
     fontSize: 12.5,
     lineHeight: 17,
   },
@@ -5668,7 +5652,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   noDocsText: {
-    color: '#64748B',
+    color: C.textMuted,
     fontSize: 13,
     textAlign: 'center',
     paddingVertical: 30,
@@ -5708,12 +5692,12 @@ const styles = StyleSheet.create({
     marginBottom: 1,
   },
   docSubText: {
-    color: '#7E8494',
+    color: C.textMuted,
     fontSize: 11,
     marginBottom: 2,
   },
   docDateText: {
-    color: '#64748B',
+    color: C.textMuted,
     fontSize: 9,
   },
   docItemRight: {
@@ -5772,7 +5756,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   memberTabRoleText: {
-    color: '#7E8494',
+    color: C.textMuted,
     fontSize: 10.5,
     marginTop: 1,
   },
@@ -5810,7 +5794,7 @@ const styles = StyleSheet.create({
     maxWidth: '85%',
   },
   systemMessageText: {
-    color: '#94A3B8',
+    color: C.textSec,
     fontSize: 12,
     textAlign: 'center',
     fontWeight: '500',

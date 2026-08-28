@@ -27,6 +27,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { C } from '@/theme/tokens';
 
 interface HazardAlert {
   id: string;
@@ -52,20 +53,6 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-const C = {
-  bg: '#060814',
-  card: '#111322',
-  cardAlt: '#181C2E',
-  border: '#1A1D30',
-  white: '#FFFFFF',
-  textSec: '#7E8494',
-  textMuted: '#64748B',
-  blue: '#0066FF',
-  green: '#10B981',
-  orange: '#F59E0B',
-  red: '#EF4444',
-  cyan: '#06B6D4',
-};
 
 type SeverityFilter = 'ALL' | 'CRITICAL' | 'WARNING' | 'ADVISORY';
 
@@ -519,7 +506,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   routeWrap: {
-    backgroundColor: '#181C2E',
+    backgroundColor: C.cardAlt,
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 10,

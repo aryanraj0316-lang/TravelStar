@@ -26,6 +26,7 @@ import Animated, {
 
 import { eventBus } from '@/services/event-bus';
 import { useApp } from '@/store/AppContext';
+import { C } from '@/theme/tokens';
 
 // Derived from <Tabs>'s own declared `tabBar` prop rather than importing
 // BottomTabBarProps from an internal expo-router path — expo-router vendors
@@ -97,10 +98,10 @@ const AnimatedTabButton = React.memo(function AnimatedTabButton({
         ) : (
           <View style={styles.inactiveTabBox}>
             <View style={{ position: 'relative' }}>
-              <Icon size={20} color={isDark ? '#94A3B8' : '#64748B'} strokeWidth={1.8} />
+              <Icon size={20} color={isDark ? '#94A3B8' : '#7E8494'} strokeWidth={1.8} />
               {showDot && <View style={styles.tabDot} />}
             </View>
-            <Text style={[styles.inactiveTabLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+            <Text style={[styles.inactiveTabLabel, { color: isDark ? '#94A3B8' : '#7E8494' }]}>
               {label}
             </Text>
           </View>
@@ -229,7 +230,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     borderRadius: 30,
     borderWidth: 1.5,
-    shadowColor: '#0066FF',
+    shadowColor: C.blue,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.15,
     shadowRadius: 18,
@@ -245,7 +246,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    shadowColor: '#0066FF',
+    shadowColor: C.blue,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -270,7 +271,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#EF4444',
+    backgroundColor: C.red,
     borderWidth: 1.5,
     borderColor: '#0C1020',
   },

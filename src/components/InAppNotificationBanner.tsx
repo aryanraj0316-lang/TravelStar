@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { C } from '@/theme/tokens';
 
 interface InAppNotif {
   id: string;
@@ -129,7 +130,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 14,
     gap: 12,
-    shadowColor: '#10B981',
+    shadowColor: C.green,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 12,
@@ -139,7 +140,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: '#10B981',
+    backgroundColor: C.green,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
@@ -148,7 +149,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   title: {
-    color: '#FFFFFF',
+    color: C.white,
     fontSize: 14,
     fontWeight: '700',
     letterSpacing: 0.1,
@@ -166,7 +167,7 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   tapHint: {
-    color: '#10B981',
+    color: C.green,
     fontSize: 11,
     fontWeight: '700',
   },

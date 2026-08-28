@@ -37,6 +37,7 @@ import { apiService } from '@/services/api';
 import { queryKeys } from '@/lib/query-keys';
 import { toast, errorToastMessage } from '@/lib/feedback';
 import { useApp } from '@/store/AppContext';
+import { C } from '@/theme/tokens';
 
 // docs/REMEDIATION.md §8.12: this screen was pure local useState — a
 // hardcoded ₹15,000 budget and five hardcoded expense rows that reset the
@@ -44,20 +45,6 @@ import { useApp } from '@/store/AppContext';
 // expenses are shared across everyone on a chosen trip and split equally,
 // with the split derived server-side at read time so it never drifts.
 
-const C = {
-  bg: '#070913',
-  card: '#121524',
-  cardAlt: '#1A1D30',
-  border: '#1D2138',
-  white: '#FFFFFF',
-  textSec: '#8A92A6',
-  textMuted: '#6A7182',
-  blue: '#0066FF',
-  purple: '#8B5CF6',
-  green: '#10B981',
-  amber: '#F59E0B',
-  rose: '#FF2D55',
-};
 
 const CATEGORIES = [
   { key: 'TRANSPORT', label: 'Transport', color: C.blue, Icon: Car },

@@ -54,6 +54,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import { eventBus } from '@/services/event-bus';
+import { C } from '@/theme/tokens';
 
 // Coordinates registry for Indian cities
 const CITY_COORDS: Record<string, { latitude: number; longitude: number }> = {
@@ -245,19 +246,6 @@ function buildPreviewMapHTML(routeCoords: { latitude: number; longitude: number;
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-const C = {
-  bg: '#080A12',
-  card: '#111422',
-  cardAlt: '#181C2E',
-  border: '#1E243B',
-  white: '#F8FAFC',
-  textSec: '#94A3B8',
-  textMuted: '#64748B',
-  blue: '#3B82F6',
-  purple: '#8B5CF6',
-  green: '#10B981',
-  amber: '#F59E0B',
-};
 
 const PRESET_COVERS = [
   { label: 'Taj Mahal', url: 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1000&q=80' },
@@ -1618,7 +1606,7 @@ function CreateTripScreen() {
                 if (myTrips.length === 0) {
                   return (
                     <View style={styles.emptyCreations}>
-                      <Sparkles size={36} color="#64748B" style={{ marginBottom: 12 }} />
+                      <Sparkles size={36} color="#7E8494" style={{ marginBottom: 12 }} />
                       <Text style={styles.emptyCreationsTitle}>No Creations Yet</Text>
                       <Text style={styles.emptyCreationsSub}>
                         Use the Plan tab to publish your first group tour route itinerary.
@@ -1835,11 +1823,11 @@ function CreateTripScreen() {
                   <Text style={styles.detailSectionTitle}>SERVICES INCLUDED</Text>
                   <View style={styles.detailInclusionsRow}>
                     <View style={[styles.detailInclusionCell, { opacity: selectedCreation.guideIncluded ? 1 : 0.4 }]}>
-                      <Compass size={12} color={selectedCreation.guideIncluded ? '#10B981' : '#64748B'} />
+                      <Compass size={12} color={selectedCreation.guideIncluded ? '#10B981' : '#7E8494'} />
                       <Text style={styles.detailInclusionText}>Local Guide</Text>
                     </View>
                     <View style={[styles.detailInclusionCell, { opacity: selectedCreation.foodIncluded ? 1 : 0.4 }]}>
-                      <Utensils size={12} color={selectedCreation.foodIncluded ? '#10B981' : '#64748B'} />
+                      <Utensils size={12} color={selectedCreation.foodIncluded ? '#10B981' : '#7E8494'} />
                       <Text style={styles.detailInclusionText}>Meals / Food</Text>
                     </View>
                     <View
@@ -1848,7 +1836,7 @@ function CreateTripScreen() {
                         { opacity: selectedCreation.hotelIncluded !== false ? 1 : 0.4 },
                       ]}
                     >
-                      <Hotel size={12} color={selectedCreation.hotelIncluded !== false ? '#10B981' : '#64748B'} />
+                      <Hotel size={12} color={selectedCreation.hotelIncluded !== false ? '#10B981' : '#7E8494'} />
                       <Text style={styles.detailInclusionText}>Hotel Stay</Text>
                     </View>
                   </View>
@@ -2042,7 +2030,7 @@ const styles = StyleSheet.create({
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#181C2E',
+    backgroundColor: C.cardAlt,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
@@ -2098,7 +2086,7 @@ const styles = StyleSheet.create({
   },
 
   routeFlowCard: {
-    backgroundColor: '#181C2E',
+    backgroundColor: C.cardAlt,
     borderRadius: 14,
     padding: 12,
     marginTop: 10,
@@ -2150,7 +2138,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: '#181C2E',
+    backgroundColor: C.cardAlt,
     padding: 12,
     borderRadius: 16,
     borderWidth: 1,
@@ -2203,7 +2191,7 @@ const styles = StyleSheet.create({
   },
   privacyCard: {
     flex: 1,
-    backgroundColor: '#181C2E',
+    backgroundColor: C.cardAlt,
     padding: 14,
     borderRadius: 16,
     borderWidth: 1,
@@ -2234,7 +2222,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     borderRadius: 20,
     overflow: 'hidden',
-    shadowColor: '#3B82F6',
+    shadowColor: C.blueText,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.45,
     shadowRadius: 16,
@@ -2334,7 +2322,7 @@ const styles = StyleSheet.create({
   },
   dayCellTextSelected: {
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: C.white,
   },
   calendarConfirmBtn: {
     backgroundColor: C.blue,
@@ -2484,7 +2472,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#181C2E',
+    backgroundColor: C.cardAlt,
     borderWidth: 1,
     borderColor: '#252D4A',
     borderRadius: 10,
@@ -2500,7 +2488,7 @@ const styles = StyleSheet.create({
   },
   categoryChipText: {
     fontSize: 11,
-    color: '#94A3B8',
+    color: C.textSec,
     fontWeight: '600',
   },
   categoryChipTextActive: {
@@ -2521,7 +2509,7 @@ const styles = StyleSheet.create({
   },
   secondaryDraftBtn: {
     flex: 1,
-    backgroundColor: '#181C2E',
+    backgroundColor: C.cardAlt,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#252D4A',
@@ -2554,7 +2542,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   tabItemActive: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: C.blueText,
   },
   tabText: {
     fontSize: 11.5,
@@ -2603,7 +2591,7 @@ const styles = StyleSheet.create({
   },
   timelineContentCard: {
     flex: 1,
-    backgroundColor: '#181C2E',
+    backgroundColor: C.cardAlt,
     borderRadius: 16,
     padding: 12,
     borderWidth: 1,
@@ -2613,7 +2601,7 @@ const styles = StyleSheet.create({
   dayBadge: {
     fontSize: 8.5,
     fontWeight: '800',
-    color: '#3B82F6',
+    color: C.blueText,
     letterSpacing: 0.5,
     marginBottom: 4,
   },
@@ -2630,7 +2618,7 @@ const styles = StyleSheet.create({
   },
   timelineDesc: {
     fontSize: 11,
-    color: '#94A3B8',
+    color: C.textSec,
     lineHeight: 15,
   },
   emptyTimelineCard: {
@@ -2661,7 +2649,7 @@ const styles = StyleSheet.create({
     borderColor: '#1E243B',
   },
   capacityBox: {
-    backgroundColor: '#181C2E',
+    backgroundColor: C.cardAlt,
     borderRadius: 16,
     padding: 14,
     borderWidth: 1,
@@ -2707,7 +2695,7 @@ const styles = StyleSheet.create({
   },
   counterSubText: {
     fontSize: 9,
-    color: '#64748B',
+    color: C.textMuted,
     fontWeight: '700',
     marginTop: 2,
   },
@@ -2718,7 +2706,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   categoryPill: {
-    backgroundColor: '#181C2E',
+    backgroundColor: C.cardAlt,
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 10,
@@ -2727,11 +2715,11 @@ const styles = StyleSheet.create({
   },
   categoryPillActive: {
     backgroundColor: 'rgba(59,130,246,0.15)',
-    borderColor: '#3B82F6',
+    borderColor: C.blueText,
   },
   categoryPillText: {
     fontSize: 11,
-    color: '#94A3B8',
+    color: C.textSec,
     fontWeight: '600',
   },
   categoryPillTextActive: {
@@ -2745,7 +2733,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: '#181C2E',
+    backgroundColor: C.cardAlt,
     padding: 10,
     borderRadius: 12,
     borderWidth: 1,
@@ -2755,7 +2743,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#3B82F6',
+    backgroundColor: C.blueText,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2776,7 +2764,7 @@ const styles = StyleSheet.create({
   creatorBadgeText: {
     fontSize: 8,
     fontWeight: '800',
-    color: '#F59E0B',
+    color: C.amber,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -2789,7 +2777,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: '#181C2E',
+    backgroundColor: C.cardAlt,
     padding: 12,
     borderRadius: 14,
     borderWidth: 1,
@@ -2800,7 +2788,7 @@ const styles = StyleSheet.create({
     width: 30,
     height: 30,
     borderRadius: 15,
-    backgroundColor: '#F59E0B',
+    backgroundColor: C.amber,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2811,14 +2799,14 @@ const styles = StyleSheet.create({
   },
   reqSub: {
     fontSize: 10,
-    color: '#64748B',
+    color: C.textMuted,
     marginTop: 1,
   },
   acceptBtn: {
     width: 32,
     height: 32,
     borderRadius: 10,
-    backgroundColor: '#10B981',
+    backgroundColor: C.green,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2849,7 +2837,7 @@ const styles = StyleSheet.create({
   },
   checklistSub: {
     fontSize: 11,
-    color: '#64748B',
+    color: C.textMuted,
     lineHeight: 15,
     marginBottom: 20,
   },
@@ -2857,7 +2845,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: '#181C2E',
+    backgroundColor: C.cardAlt,
     padding: 12,
     borderRadius: 12,
     marginBottom: 10,
@@ -2870,12 +2858,12 @@ const styles = StyleSheet.create({
   },
   checkItemText: {
     fontSize: 11.5,
-    color: '#94A3B8',
+    color: C.textSec,
     fontWeight: '500',
     flex: 1,
   },
   checkItemTextChecked: {
-    color: '#10B981',
+    color: C.green,
     fontWeight: '600',
   },
 
@@ -2931,7 +2919,7 @@ const styles = StyleSheet.create({
     width: 7,
     height: 7,
     borderRadius: 3.5,
-    backgroundColor: '#EF4444',
+    backgroundColor: C.red,
   },
   notificationTextColumn: {
     flex: 1,
@@ -2945,12 +2933,12 @@ const styles = StyleSheet.create({
   notificationAppName: {
     fontSize: 8.5,
     fontWeight: '800',
-    color: '#64748B',
+    color: C.textMuted,
     letterSpacing: 0.8,
   },
   notificationTime: {
     fontSize: 9,
-    color: '#64748B',
+    color: C.textMuted,
     fontWeight: '500',
     marginRight: 6,
   },
@@ -2962,7 +2950,7 @@ const styles = StyleSheet.create({
   },
   notificationDescText: {
     fontSize: 10.5,
-    color: '#94A3B8',
+    color: C.textSec,
     lineHeight: 14,
   },
   notificationAlertPill: {
@@ -2976,7 +2964,7 @@ const styles = StyleSheet.create({
   notificationAlertPillText: {
     fontSize: 9.5,
     fontWeight: '800',
-    color: '#F59E0B',
+    color: C.amber,
     letterSpacing: 0.2,
   },
   sectionDividerWrap: {
@@ -2987,13 +2975,13 @@ const styles = StyleSheet.create({
   sectionDividerTitle: {
     fontSize: 10.5,
     fontWeight: '800',
-    color: '#94A3B8',
+    color: C.textSec,
     letterSpacing: 1.2,
     marginBottom: 4,
   },
   sectionDividerSub: {
     fontSize: 10,
-    color: '#64748B',
+    color: C.textMuted,
     lineHeight: 14,
   },
 
@@ -3029,7 +3017,7 @@ const styles = StyleSheet.create({
   },
   creationsHeaderSub: {
     fontSize: 11,
-    color: '#64748B',
+    color: C.textMuted,
     marginTop: 2,
   },
   creationsCloseBtn: {
@@ -3054,7 +3042,7 @@ const styles = StyleSheet.create({
   },
   emptyCreationsSub: {
     fontSize: 12,
-    color: '#64748B',
+    color: C.textMuted,
     textAlign: 'center',
     lineHeight: 18,
     paddingHorizontal: 32,
@@ -3065,7 +3053,7 @@ const styles = StyleSheet.create({
   },
   creationCard: {
     flexDirection: 'row',
-    backgroundColor: '#181C2E',
+    backgroundColor: C.cardAlt,
     borderRadius: 18,
     overflow: 'hidden',
     borderWidth: 1,
@@ -3104,7 +3092,7 @@ const styles = StyleSheet.create({
   requestNotifyText: {
     fontSize: 9,
     fontWeight: '800',
-    color: '#EF4444',
+    color: C.red,
   },
   creationCategoryBadge: {
     backgroundColor: 'rgba(59,130,246,0.12)',
@@ -3115,7 +3103,7 @@ const styles = StyleSheet.create({
   creationCategoryText: {
     fontSize: 9,
     fontWeight: '800',
-    color: '#3B82F6',
+    color: C.blueText,
   },
   creationRouteRow: {
     flexDirection: 'row',
@@ -3124,7 +3112,7 @@ const styles = StyleSheet.create({
   },
   creationRouteText: {
     fontSize: 10.5,
-    color: '#94A3B8',
+    color: C.textSec,
     flex: 1,
   },
   creationStatsRow: {
@@ -3139,7 +3127,7 @@ const styles = StyleSheet.create({
   creationStatLabel: {
     fontSize: 8.5,
     fontWeight: '800',
-    color: '#64748B',
+    color: C.textMuted,
     letterSpacing: 0.3,
   },
   creationStatVal: {
@@ -3223,13 +3211,13 @@ const styles = StyleSheet.create({
   },
   detailOrganizerText: {
     fontSize: 11.5,
-    color: '#64748B',
+    color: C.textMuted,
     marginBottom: 18,
   },
   detailSectionTitle: {
     fontSize: 9,
     fontWeight: '800',
-    color: '#F59E0B',
+    color: C.amber,
     letterSpacing: 0.8,
     marginTop: 18,
     marginBottom: 10,
@@ -3239,7 +3227,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexWrap: 'wrap',
     gap: 6,
-    backgroundColor: '#181C2E',
+    backgroundColor: C.cardAlt,
     borderRadius: 14,
     padding: 12,
     borderWidth: 1,
@@ -3261,7 +3249,7 @@ const styles = StyleSheet.create({
   },
   detailArrow: {
     fontSize: 11,
-    color: '#64748B',
+    color: C.textMuted,
   },
   detailStatsGrid: {
     flexDirection: 'row',
@@ -3270,7 +3258,7 @@ const styles = StyleSheet.create({
   },
   detailStatCell: {
     width: (SCREEN_WIDTH - 48) / 2,
-    backgroundColor: '#181C2E',
+    backgroundColor: C.cardAlt,
     borderRadius: 14,
     padding: 12,
     borderWidth: 1,
@@ -3279,7 +3267,7 @@ const styles = StyleSheet.create({
   detailStatLabel: {
     fontSize: 8.5,
     fontWeight: '800',
-    color: '#64748B',
+    color: C.textMuted,
     letterSpacing: 0.4,
     marginBottom: 4,
   },
@@ -3306,7 +3294,7 @@ const styles = StyleSheet.create({
   },
   detailMeetingSub: {
     fontSize: 9.5,
-    color: '#64748B',
+    color: C.textMuted,
     marginTop: 2,
   },
   detailInclusionsRow: {
@@ -3319,7 +3307,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    backgroundColor: '#181C2E',
+    backgroundColor: C.cardAlt,
     borderRadius: 12,
     paddingVertical: 10,
     borderWidth: 1,
@@ -3328,13 +3316,13 @@ const styles = StyleSheet.create({
   detailInclusionText: {
     fontSize: 10.5,
     fontWeight: '600',
-    color: '#94A3B8',
+    color: C.textSec,
   },
   detailRequestItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: '#181C2E',
+    backgroundColor: C.cardAlt,
     padding: 12,
     borderRadius: 14,
     borderWidth: 1,
@@ -3345,7 +3333,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#F59E0B',
+    backgroundColor: C.amber,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -3356,7 +3344,7 @@ const styles = StyleSheet.create({
   },
   detailReqSub: {
     fontSize: 10,
-    color: '#64748B',
+    color: C.textMuted,
     marginTop: 1,
   },
   detailReqActionRow: {
@@ -3364,7 +3352,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   detailAcceptBtn: {
-    backgroundColor: '#10B981',
+    backgroundColor: C.green,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
@@ -3372,7 +3360,7 @@ const styles = StyleSheet.create({
   detailAcceptText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: C.white,
   },
   detailRejectBtn: {
     backgroundColor: 'transparent',
@@ -3385,7 +3373,7 @@ const styles = StyleSheet.create({
   detailRejectText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#EF4444',
+    color: C.red,
   },
   mapPreviewWrap: {
     height: 160,
@@ -3398,7 +3386,7 @@ const styles = StyleSheet.create({
   viewOnMapHeaderBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0066FF',
+    backgroundColor: C.blue,
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 8,

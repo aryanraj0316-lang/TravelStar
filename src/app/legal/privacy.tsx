@@ -3,15 +3,8 @@ import { ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ArrowLeft } from 'lucide-react-native';
+import { C } from '@/theme/tokens';
 
-const C = {
-  bg: '#070913',
-  card: '#121524',
-  border: '#1D2138',
-  white: '#FFFFFF',
-  textSec: '#8A92A6',
-  textMuted: '#6A7182',
-};
 
 // See src/app/legal/terms.tsx's header comment — same situation. Privacy
 // Policy content (including DPDP Act compliance, called out separately in

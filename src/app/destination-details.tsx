@@ -34,24 +34,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { queryKeys } from '@/lib/query-keys';
 import { apiService } from '@/services/api';
+import { C } from '@/theme/tokens';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-const C = {
-  bg: '#060814',
-  card: '#111322',
-  cardAlt: '#181C2E',
-  border: '#1A1D30',
-  white: '#FFFFFF',
-  textSec: '#7E8494',
-  textMuted: '#64748B',
-  blue: '#0066FF',
-  green: '#10B981',
-  orange: '#F59E0B',
-  red: '#EF4444',
-  cyan: '#06B6D4',
-  star: '#FBBF24',
-};
 
 // This screen used to render a hardcoded client-side DESTINATIONS_DATABASE
 // constant keyed by a fabricated numeric id, plus a fake "simulated video

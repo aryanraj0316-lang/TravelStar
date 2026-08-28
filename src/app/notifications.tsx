@@ -36,26 +36,9 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { C } from '@/theme/tokens';
 
 
-const C = {
-  bg: '#0A0C16',
-  card: '#131627',
-  cardAlt: '#1A1D33',
-  border: '#232742',
-  white: '#FFFFFF',
-  textSec: '#94A3B8',
-  textMuted: '#64748B',
-  indigo: '#6366F1',
-  blue: '#3B82F6',
-  cyan: '#06B6D4',
-  green: '#10B981',
-  orange: '#F59E0B',
-  red: '#EF4444',
-  star: '#FBBF24',
-  purple: '#8B5CF6',
-  pink: '#EC4899',
-};
 
 type TabType = 'ALL' | 'TRIPS' | 'SEASONAL' | 'HAZARDS';
 

@@ -31,6 +31,7 @@ import {
   User,
   Users,
 } from 'lucide-react-native';
+import { C } from '@/theme/tokens';
 
 // docs/REMEDIATION.md §8.15: this screen used to map real DB trips onto a
 // hardcoded BUDGET_TRIPS_DATA array by id (trip-1 -> bt-3, ...), hardcode
@@ -39,18 +40,6 @@ import {
 // only, filters by budget server-side (GET /trips?maxBudget=), and derives
 // every field from real trip data.
 
-const C = {
-  bg: '#060814',
-  card: '#111322',
-  border: '#1E243B',
-  white: '#F8FAFC',
-  textSec: '#94A3B8',
-  textMuted: '#64748B',
-  blue: '#3B82F6',
-  green: '#10B981',
-  amber: '#F59E0B',
-  rose: '#EC4899',
-};
 
 const PRESET_BUDGETS = [5000, 10000, 15000, 25000, 50000];
 
@@ -380,7 +369,7 @@ const styles = StyleSheet.create({
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#181C2E',
+    backgroundColor: C.cardAlt,
     borderRadius: 12,
     paddingHorizontal: 12,
     height: 44,
@@ -391,7 +380,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 10,
-    backgroundColor: '#181C2E',
+    backgroundColor: C.cardAlt,
     borderWidth: 1,
     borderColor: C.border,
   },

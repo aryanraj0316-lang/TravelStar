@@ -19,6 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { AlertCircle, ArrowLeft, Compass, MapPin, Navigation, Users } from 'lucide-react-native';
+import { C } from '@/theme/tokens';
 
 // docs/REMEDIATION.md §8.13: this screen previously rendered a hardcoded
 // list of Delhi-area "places" with a fake "CURRENT GPS LOCATION" banner and
@@ -28,18 +29,6 @@ import { AlertCircle, ArrowLeft, Compass, MapPin, Navigation, Users } from 'luci
 // upcoming public trips from GET /trips/nearby sorted by straight-line
 // distance, and only ever opens the join modal on a real trip.
 
-const C = {
-  bg: '#060814',
-  card: '#111322',
-  border: '#1E243B',
-  white: '#F8FAFC',
-  textSec: '#94A3B8',
-  textMuted: '#64748B',
-  blue: '#3B82F6',
-  green: '#10B981',
-  amber: '#F59E0B',
-  rose: '#EC4899',
-};
 
 type NearbyTrip = {
   id: string;

@@ -28,21 +28,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiService } from '@/services/api';
 import { queryKeys } from '@/lib/query-keys';
 import { MyTripBooking, useApp } from '@/store/AppContext';
+import { C } from '@/theme/tokens';
 
-const C = {
-  bg: '#070913',
-  card: '#121524',
-  cardAlt: '#1A1D30',
-  border: '#1D2138',
-  white: '#FFFFFF',
-  textSec: '#8A92A6',
-  textMuted: '#6A7182',
-  blue: '#0066FF',
-  purple: '#8B5CF6',
-  green: '#10B981',
-  amber: '#F59E0B',
-  rose: '#EC4899',
-};
 
 type BookingFilter = 'ALL' | 'ONGOING' | 'UPCOMING' | 'COMPLETED';
 

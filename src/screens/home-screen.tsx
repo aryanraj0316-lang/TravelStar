@@ -43,28 +43,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { eventBus } from '@/services/event-bus';
+import { C } from '@/theme/tokens';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const TRENDING_CARD_WIDTH = SCREEN_WIDTH * 0.52;
 
 // ─── Color Palette synchronized with search page theme ───────────────
-const C = {
-  bg: '#060814',
-  card: '#111322',
-  cardAlt: '#181C2E',
-  border: '#1A1D30',
-  white: '#FFFFFF',
-  textSec: '#7E8494',
-  textMuted: '#64748B',
-  purple: '#0066FF',
-  blue: '#0066FF',
-  green: '#10B981',
-  orange: '#F59E0B',
-  red: '#EF4444',
-  cyan: '#06B6D4',
-  star: '#FBBF24',
-  pink: '#EC4899',
-};
 
 // ─── Data ───────────────────────────────────────────────────────────
 const roles: { value: UserRole; label: string; sub: string; Icon: typeof Globe; borderColors: [string, string] }[] = [
@@ -1056,8 +1040,8 @@ const styles = StyleSheet.create({
   },
   tripCard: {
     flexDirection: 'row',
-    backgroundColor: '#111322',
-    borderColor: '#1A1D30',
+    backgroundColor: C.card,
+    borderColor: C.border,
     borderWidth: 1,
     borderRadius: 16,
     overflow: 'hidden',
@@ -1123,7 +1107,7 @@ const styles = StyleSheet.create({
   verifiedText: {
     fontSize: 8,
     fontWeight: '700',
-    color: '#0066FF',
+    color: C.blue,
   },
   routeCities: {
     flexDirection: 'row',
@@ -1133,11 +1117,11 @@ const styles = StyleSheet.create({
   cityText: {
     fontSize: 10.5,
     fontWeight: '700',
-    color: '#0066FF',
+    color: C.blue,
   },
   routeArrow: {
     fontSize: 9,
-    color: '#7E8494',
+    color: C.textMuted,
     marginHorizontal: 2,
   },
   capsulesRow: {
@@ -1158,7 +1142,7 @@ const styles = StyleSheet.create({
   capsuleText: {
     fontSize: 8,
     fontWeight: '600',
-    color: '#7E8494',
+    color: C.textMuted,
     flex: 1,
   },
   priceRow: {
@@ -1166,23 +1150,23 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     borderTopWidth: 0.5,
-    borderTopColor: '#1A1D30',
+    borderTopColor: C.border,
     paddingTop: 6,
     marginTop: 4,
   },
   priceLabel: {
     fontSize: 8,
     fontWeight: '600',
-    color: '#7E8494',
+    color: C.textMuted,
   },
   priceAmount: {
     fontSize: 16,
     fontWeight: '900',
-    color: '#0066FF',
+    color: C.blue,
     marginTop: -2,
   },
   joinBtn: {
-    backgroundColor: '#0066FF',
+    backgroundColor: C.blue,
     paddingVertical: 5,
     borderRadius: 6,
     alignItems: 'center',
@@ -1243,7 +1227,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#F59E0B',
+    shadowColor: C.amber,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.35,
     shadowRadius: 6,
@@ -1256,7 +1240,7 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#EF4444',
+    backgroundColor: C.red,
     borderWidth: 1.5,
     borderColor: C.bg,
   },
@@ -1296,7 +1280,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 14.5,
-    backgroundColor: '#111322',
+    backgroundColor: C.card,
     minWidth: 140,
   },
   roleLabel: {
@@ -1337,8 +1321,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: '#1A1D30',
-    shadowColor: '#0066FF',
+    borderColor: C.border,
+    shadowColor: C.blue,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.12,
     shadowRadius: 8,
@@ -1368,7 +1352,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -5,
     right: -10,
-    backgroundColor: '#F59E0B',
+    backgroundColor: C.amber,
     paddingHorizontal: 4,
     paddingVertical: 1,
     borderRadius: 5,
@@ -1460,12 +1444,12 @@ const styles = StyleSheet.create({
     width: 5,
     height: 5,
     borderRadius: 2.5,
-    backgroundColor: '#EF4444',
+    backgroundColor: C.red,
   },
   liveText: {
     fontSize: 8,
     fontWeight: '800',
-    color: '#EF4444',
+    color: C.red,
     letterSpacing: 0.5,
   },
 
@@ -1565,7 +1549,7 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#3B82F6',
+    backgroundColor: C.blueText,
   },
   routeLinePath: {
     flex: 1,

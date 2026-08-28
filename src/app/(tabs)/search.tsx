@@ -54,6 +54,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { eventBus } from '@/services/event-bus';
+import { C } from '@/theme/tokens';
 
 // Category definitions matching the screenshot
 const CATEGORIES = [
@@ -1561,7 +1562,7 @@ const styles = StyleSheet.create({
   joinBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0066FF',
+    backgroundColor: C.blue,
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 8,
@@ -1809,7 +1810,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   modalSubmitBtn: {
-    backgroundColor: '#0066FF',
+    backgroundColor: C.blue,
     height: 50,
     borderRadius: 25,
     justifyContent: 'center',
@@ -1834,7 +1835,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -4,
     right: -4,
-    backgroundColor: '#0066FF',
+    backgroundColor: C.blue,
     width: 16,
     height: 16,
     borderRadius: 8,
@@ -1901,7 +1902,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   resetEmptyBtn: {
-    backgroundColor: '#0066FF',
+    backgroundColor: C.blue,
     paddingVertical: 10,
     paddingHorizontal: 20,
     borderRadius: 20,
@@ -1948,7 +1949,7 @@ const styles = StyleSheet.create({
   activeFilterCountText: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#0066FF',
+    color: C.blue,
   },
   closeIconBtn: {
     width: 32,
@@ -2031,8 +2032,8 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   citySelectChipActive: {
-    backgroundColor: '#0066FF',
-    borderColor: '#0066FF',
+    backgroundColor: C.blue,
+    borderColor: C.blue,
   },
   citySelectChipText: {
     fontSize: 11,
@@ -2143,7 +2144,7 @@ const styles = StyleSheet.create({
   requestedStatusTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#10B981',
+    color: C.green,
     marginBottom: 2,
   },
   requestedStatusSub: {
@@ -2161,7 +2162,7 @@ const styles = StyleSheet.create({
   cancelRequestBtnText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#EF4444',
+    color: C.red,
     letterSpacing: 0.2,
   },
 

@@ -37,30 +37,10 @@ import {
   Check,
   Send,
 } from 'lucide-react-native';
+import { C } from '@/theme/tokens';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-const C = {
-  bg: '#04060f',
-  card: '#0c0f1d',
-  cardAlt: '#14182f',
-  border: '#22294c',
-  borderGlow: '#323f7c',
-  white: '#ffffff',
-  textSec: '#a2a9c3',
-  textMuted: '#677196',
-  blue: '#0066FF',
-  blueGlow: '#3385ff',
-  purple: '#8B5CF6',
-  purpleGlow: '#a78bfa',
-  green: '#10B981',
-  greenGlow: '#34d399',
-  amber: '#F59E0B',
-  amberGlow: '#fbbf24',
-  rose: '#EF4444',
-  roseGlow: '#f87171',
-  cyan: '#06B6D4',
-};
 
 // â”€â”€â”€ Data Interfaces â”€â”€â”€
 interface ActiveTour {
@@ -1404,7 +1384,7 @@ const styles = StyleSheet.create({
   cityText: {
     fontSize: 10.5,
     fontWeight: '700',
-    color: '#0066FF',
+    color: C.blue,
   },
   capsulesRow: {
     flexDirection: 'row',
@@ -1439,16 +1419,16 @@ const styles = StyleSheet.create({
   priceLabel: {
     fontSize: 8,
     fontWeight: '600',
-    color: '#677196',
+    color: C.textMuted,
   },
   priceAmount: {
     fontSize: 17,
     fontWeight: '900',
-    color: '#0066FF',
+    color: C.blue,
     marginTop: -2,
   },
   joinBtn: {
-    backgroundColor: '#0066FF',
+    backgroundColor: C.blue,
     paddingVertical: 5,
     borderRadius: 6,
     alignItems: 'center',

@@ -14,6 +14,7 @@ import React, { useEffect } from 'react';
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { logger } from '@/lib/logger';
+import { C } from '@/theme/tokens';
 
 export function RouteErrorFallback({ error, retry, label }: ErrorBoundaryProps & { label?: string }) {
   useEffect(() => {
@@ -49,22 +50,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 32,
     gap: 12,
-    backgroundColor: '#060814',
+    backgroundColor: C.bg,
   },
   title: {
     fontSize: 18,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: C.white,
     textAlign: 'center',
   },
   message: {
     fontSize: 13,
-    color: '#94A3B8',
+    color: C.textSec,
     textAlign: 'center',
     marginBottom: 8,
   },
   button: {
-    backgroundColor: '#0066FF',
+    backgroundColor: C.blue,
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 12,
@@ -76,6 +77,6 @@ const styles = StyleSheet.create({
   buttonText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: C.white,
   },
 });

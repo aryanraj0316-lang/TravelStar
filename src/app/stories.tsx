@@ -15,6 +15,7 @@ import {
   Animated,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { C } from '@/theme/tokens';
 
 // docs/REMEDIATION.md §8.16: this screen previously fell back to a
 // hardcoded STORIES_DATABASE of fabricated creators/captions whenever the
@@ -321,7 +322,7 @@ const styles = StyleSheet.create({
     height: 38,
     borderRadius: 19,
     borderWidth: 1.5,
-    borderColor: '#00F2FE',
+    borderColor: C.blueGlow,
   },
   creatorName: {
     color: '#FFF',
