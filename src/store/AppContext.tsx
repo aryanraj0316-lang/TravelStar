@@ -1,5 +1,6 @@
 import { safeStorage } from '@/services/storage';
 import { logger } from '@/lib/logger';
+import { registerForPushNotifications, unregisterPushNotifications } from '@/lib/push';
 import { toast, errorToastMessage } from '@/lib/feedback';
 import { enqueueMutation, registerMutationHandler } from '@/lib/offline-mutation-queue';
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
@@ -249,6 +250,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const login = useCallback(() => {
     setIsLoggedIn(true);
     safeStorage.setItem('isLoggedIn', 'true').catch((e) => logger.warn('[Auth] Failed to persist login state:', e));
+    // Register this device for push (docs/REMEDIATION.md §8.18). Fire and
+    // forget: registration handles its own errors and returns a status
+    // rather than throwing, and a push problem must never block a login.
+    void registerForPushNotifications().then((result) => {
+      if (result.status !== 'registered') {
+        logger.log('[Push] Not registered for push notifications:', result.status);
+      }
+    });
   }, []);
 
   // Logout clears every trace of the previous session: revokes it server-side,
@@ -259,6 +268,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // disk after "logging out".
   const logout = useCallback(() => {
     setIsLoggedIn(false);
+    // Drop this device's push token first — otherwise a signed-out phone
+    // keeps receiving the previous account's notifications (§8.18).
+    void unregisterPushNotifications();
     setRequestedTrips(new Set());
     setPendingRequestsCount(0);
     setActiveRoomId(null);

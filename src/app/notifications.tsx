@@ -23,6 +23,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiService } from '../services/api';
 import { useApp } from '../store/AppContext';
 import { logger } from '@/lib/logger';
+import { syncBadgeCount } from '@/lib/push';
 import { toast, errorToastMessage } from '@/lib/feedback';
 import { queryKeys } from '@/lib/query-keys';
 import {
@@ -225,6 +226,9 @@ export default function NotificationsScreen() {
         prev.map((n) => ({ ...n, unread: false }))
       );
       await refetchNotifications();
+      // Keep the app-icon badge honest (docs/REMEDIATION.md §8.18) — it
+      // otherwise only resyncs on the next foreground.
+      await syncBadgeCount();
     } catch (e) {
       logger.warn('[Notifications] Mark-all-read failed:', e);
       toast(errorToastMessage(e, 'Could not mark notifications as read.'), 'error');
@@ -415,6 +419,7 @@ export default function NotificationsScreen() {
                   }
                   await refetchNotifications();
                   checkUnreadNotifications();
+                  void syncBadgeCount();
                   if (notif.chatRoomId) {
                     setActiveRoomId(notif.chatRoomId);
                     // Navigating to a tab route that's already an ancestor

@@ -43,7 +43,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { eventBus } from '@/services/event-bus';
-import { apiService } from '@/services/api';
+import { apiService, type NotificationPreferences } from '@/services/api';
+import { registerForPushNotifications, unregisterPushNotifications } from '@/lib/push';
 import { toast, errorToastMessage } from '@/lib/feedback';
 import { uploadFileToUrl } from '@/lib/upload';
 
@@ -94,6 +95,17 @@ function ProfileScreen() {
   const [selectedLanguage, setSelectedLanguage] = useState('English');
   const [pushNotifications, setPushNotifications] = useState(true);
   const [locationSharing, setLocationSharing] = useState(true);
+  // Per-category push opt-outs (docs/REMEDIATION.md §8.18). The master
+  // switch above used to be the whole story, and it did nothing: no
+  // device token was ever registered, so it gated a delivery that could
+  // never happen.
+  const [pushPrefs, setPushPrefs] = useState<NotificationPreferences>({
+    pushNotifications: true,
+    pushTripUpdates: true,
+    pushHazardAlerts: true,
+    pushSeasonal: true,
+  });
+  const [pushBusy, setPushBusy] = useState(false);
 
   // Edit Profile Modal states
   const [showEditModal, setShowEditModal] = useState(false);
@@ -189,6 +201,78 @@ function ProfileScreen() {
       }
     }
   }, [profile]);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiService
+      .getNotificationPreferences()
+      .then((prefs) => {
+        if (cancelled || !prefs) return;
+        setPushPrefs(prefs);
+        setPushNotifications(prefs.pushNotifications);
+      })
+      .catch((e) => logger.warn('[Profile] Failed to load notification settings:', e));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // The master switch now does the real thing: turning it on asks for OS
+  // permission and registers this device's push token, turning it off
+  // drops the token so the server stops trying. Rolls back on failure
+  // rather than leaving the UI claiming a state the server rejected.
+  const handleTogglePush = async () => {
+    const next = !pushNotifications;
+    setPushBusy(true);
+    setPushNotifications(next);
+    try {
+      if (next) {
+        const result = await registerForPushNotifications();
+        if (result.status === 'denied') {
+          setPushNotifications(false);
+          Alert.alert(
+            'Notifications Blocked',
+            'Turn notifications on for TravelStar in your device settings to receive trip and safety alerts.',
+          );
+          return;
+        }
+        if (result.status === 'not-configured' || result.status === 'unsupported') {
+          setPushNotifications(false);
+          Alert.alert(
+            'Push Not Available',
+            result.status === 'unsupported'
+              ? 'Push notifications need a real device — a simulator cannot receive them.'
+              : 'This build has no push project configured, so notifications cannot be delivered to it yet.',
+          );
+          return;
+        }
+      } else {
+        await unregisterPushNotifications();
+      }
+      const saved = await apiService.updateNotificationPreferences({ pushNotifications: next });
+      setPushPrefs(saved);
+    } catch (e) {
+      logger.warn('[Profile] Failed to update push setting:', e);
+      setPushNotifications(!next);
+      Alert.alert('Error', 'Could not save that setting.');
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const handleToggleCategory = async (key: keyof NotificationPreferences) => {
+    const next = !pushPrefs[key];
+    const previous = pushPrefs;
+    setPushPrefs({ ...pushPrefs, [key]: next });
+    try {
+      const saved = await apiService.updateNotificationPreferences({ [key]: next });
+      setPushPrefs(saved);
+    } catch (e) {
+      logger.warn('[Profile] Failed to update notification category:', e);
+      setPushPrefs(previous);
+      Alert.alert('Error', 'Could not save that setting.');
+    }
+  };
 
   // Device image pickers
   // docs/REMEDIATION.md §8.2: the picker result's `uri` is a local
@@ -552,16 +636,46 @@ function ProfileScreen() {
               </View>
               <TouchableOpacity
                 activeOpacity={0.8}
-                onPress={() => {
-                  const newValue = !pushNotifications;
-                  setPushNotifications(newValue);
-                  updateProfile({ pushNotifications: newValue });
-                }}
-                style={[styles.switchTrack, { backgroundColor: pushNotifications ? '#0066FF' : '#2C2F48' }]}
+                disabled={pushBusy}
+                onPress={handleTogglePush}
+                style={[
+                  styles.switchTrack,
+                  { backgroundColor: pushNotifications ? '#0066FF' : '#2C2F48', opacity: pushBusy ? 0.6 : 1 },
+                ]}
               >
                 <View style={[styles.switchThumb, pushNotifications ? styles.switchThumbOn : styles.switchThumbOff]} />
               </TouchableOpacity>
             </View>
+
+            {/* Per-category opt-outs (docs/REMEDIATION.md §8.18), shown
+            only while push is on — they have nothing to gate otherwise. */}
+            {pushNotifications && (
+              <View style={styles.pushCategoryGroup}>
+                {(
+                  [
+                    { key: 'pushTripUpdates' as const, label: 'Trip updates' },
+                    { key: 'pushHazardAlerts' as const, label: 'Hazard & safety alerts' },
+                    { key: 'pushSeasonal' as const, label: 'Seasonal suggestions' },
+                  ]
+                ).map((row) => (
+                  <View key={row.key} style={styles.pushCategoryRow}>
+                    <Text style={styles.pushCategoryLabel}>{row.label}</Text>
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={() => handleToggleCategory(row.key)}
+                      style={[
+                        styles.switchTrack,
+                        { backgroundColor: pushPrefs[row.key] ? '#0066FF' : '#2C2F48', transform: [{ scale: 0.85 }] },
+                      ]}
+                    >
+                      <View
+                        style={[styles.switchThumb, pushPrefs[row.key] ? styles.switchThumbOn : styles.switchThumbOff]}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            )}
 
             <View style={styles.menuDivider} />
 
@@ -1232,6 +1346,22 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#E1E4EC',
     letterSpacing: 0.2,
+  },
+  pushCategoryGroup: {
+    paddingLeft: 34,
+    paddingRight: 4,
+    paddingBottom: 6,
+    gap: 2,
+  },
+  pushCategoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+  },
+  pushCategoryLabel: {
+    color: '#8B949E',
+    fontSize: 13,
   },
   menuDivider: {
     height: 1,

@@ -395,7 +395,7 @@ function SearchScreen() {
   // screen focus to match the previous behaviour exactly.
   const { data: unreadNotifCount = 0, refetch: refetchUnreadNotifs } = useQuery({
     queryKey: queryKeys.unreadNotificationCount(),
-    queryFn: async () => (await apiService.getUnreadNotificationCount())?.count ?? 0,
+    queryFn: async () => (await apiService.getUnreadNotificationCount()).count,
   });
   const hasUnreadNotifs = unreadNotifCount > 0;
 

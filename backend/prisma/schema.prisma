@@ -185,6 +185,7 @@ model User {
   // Notifications
   notifications      Notification[]
   notificationReads  NotificationRead[]
+  deviceTokens       DeviceToken[]
 
   // Social Relations
   followers Follow[]  @relation("Following")
@@ -271,7 +272,15 @@ model Profile {
   // must go through a KYC provider that returns only a pass/fail + a
   // reference — never the document or the number.
 
+  // Master switch, then per-category opt-outs (docs/REMEDIATION.md §8.18).
+  // The categories mirror NotificationType; a push is sent only when the
+  // master switch and the matching category are both on. Defaulting the
+  // categories to true keeps existing users' behaviour unchanged — the
+  // master switch is the one they have actually seen and set.
   pushNotifications Boolean  @default(true)
+  pushTripUpdates   Boolean  @default(true)
+  pushHazardAlerts  Boolean  @default(true)
+  pushSeasonal      Boolean  @default(true)
   locationSharing   Boolean  @default(true)
   selectedLanguage  String   @default("English")
   updatedAt         DateTime @updatedAt
@@ -881,6 +890,24 @@ model Notification {
 
   @@index([userId])
   @@index([unread])
+}
+
+// A device's Expo push token (docs/REMEDIATION.md §8.18 — the
+// `pushNotifications` profile toggle used to do nothing at all: no token
+// was ever registered, so no push could ever be delivered). One row per
+// device, keyed by the token itself so re-registering the same device is
+// an upsert rather than a duplicate. Rows are deleted on logout and when
+// the Expo push service reports DeviceNotRegistered.
+model DeviceToken {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token      String   @unique
+  platform   String // 'ios' | 'android' | 'web'
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 // Per-user read state for broadcast notifications (userId: null on

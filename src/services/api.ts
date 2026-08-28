@@ -133,6 +133,16 @@ async function refreshAccessToken(): Promise<string | null> {
   }
 }
 
+// Per-category push opt-outs plus the master switch
+// (docs/REMEDIATION.md §8.18). The categories mirror the backend's
+// NotificationType.
+export interface NotificationPreferences {
+  pushNotifications: boolean;
+  pushTripUpdates: boolean;
+  pushHazardAlerts: boolean;
+  pushSeasonal: boolean;
+}
+
 interface RequestOptions extends RequestInit {
   /** Override the default 10s timeout for a slow endpoint (e.g. an upload). */
   timeoutMs?: number;
@@ -595,6 +605,40 @@ export const apiService = {
     });
   },
 
+  // Push notifications (docs/REMEDIATION.md §8.18). Before this the
+  // `pushNotifications` profile toggle wrote a boolean nobody read —
+  // there was no device-token endpoint to call at all.
+  async registerDeviceToken(token: string, platform: 'ios' | 'android' | 'web'): Promise<{ registered: boolean }> {
+    return request('/notifications/device-token', {
+      method: 'POST',
+      body: JSON.stringify({ token, platform }),
+    });
+  },
+
+  async unregisterDeviceToken(token: string): Promise<{ registered: boolean }> {
+    return request('/notifications/device-token', {
+      method: 'DELETE',
+      body: JSON.stringify({ token }),
+    });
+  },
+
+  async getNotificationPreferences(): Promise<NotificationPreferences> {
+    return request('/notifications/preferences');
+  },
+
+  async updateNotificationPreferences(
+    updates: Partial<NotificationPreferences>
+  ): Promise<NotificationPreferences> {
+    return request('/notifications/preferences', {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  },
+
+  async getUnreadNotificationCount(): Promise<{ count: number }> {
+    return request('/notifications/unread-count');
+  },
+
   // Homepage — Destinations
   async getDestinations(): Promise<any[] | null> {
     return request<any[]>('/destinations');
@@ -673,10 +717,6 @@ export const apiService = {
       method: 'POST',
       body: JSON.stringify({ status }),
     });
-  },
-
-  async getUnreadNotificationCount(): Promise<{ count: number } | null> {
-    return request<{ count: number }>('/interactions/unread-count');
   },
 
   async getMyGuideProfile(): Promise<any | null> {

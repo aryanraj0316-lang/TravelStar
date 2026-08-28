@@ -8,6 +8,7 @@ import { claimSeatAndJoin } from '../../services/trip-membership';
 import { calculateMidwayPrice } from '../../services/midway-pricing';
 import { coordsForCity, haversineKm } from '../../lib/india-city-coords';
 import { createTripCoverUploadUrl, ObjectStorageNotConfiguredError } from '../../lib/object-storage';
+import { sendPushToUsers } from '../../lib/push';
 
 const router = Router();
 
@@ -844,9 +845,21 @@ router.post('/:id/announcements', async (req, res) => {
       });
     }
 
-    return res
-      .status(201)
-      .json({ ok: true, data: { message: 'Announcement sent to trip members.', recipientCount: recipientIds.length } });
+    // Real push on top of the feed rows (docs/REMEDIATION.md §8.18).
+    // `pushed` is what actually reached a device — reported separately
+    // from recipientCount rather than conflated with it, because a member
+    // with no registered device or push switched off still gets the
+    // in-app notification and is a genuine recipient.
+    const { sent: pushed } = await sendPushToUsers(recipientIds, 'TRIP', {
+      title: parsed.data.title,
+      body: parsed.data.content,
+      data: { screen: 'trip', tripId },
+    });
+
+    return res.status(201).json({
+      ok: true,
+      data: { message: 'Announcement sent to trip members.', recipientCount: recipientIds.length, pushed },
+    });
   } catch (err) {
     logger.error('[Trips] Create announcement error:', err);
     return res

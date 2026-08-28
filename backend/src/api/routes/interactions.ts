@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
+import { sendPushToUsers, unreadCountFor } from '../../lib/push';
 import { requireUserId } from '../../lib/auth-context';
 import { claimSeatAndJoin, releaseSeatAndLeave } from '../../services/trip-membership';
 import { calculateMidwayPrice } from '../../services/midway-pricing';
@@ -193,11 +194,14 @@ router.delete('/join-request/:tripId', async (req, res) => {
 });
 
 // Get unread notification count
+// Kept for older client builds; GET /notifications/unread-count is the
+// current path. Both delegate to unreadCountFor, which counts personal
+// unread rows *plus* broadcasts this user has no NotificationRead for —
+// the raw count here used to miss broadcasts entirely, so a hazard alert
+// never bumped the bell badge (§5.8 fixed the list, not this counter).
 router.get('/unread-count', async (req, res) => {
   try {
-    const count = await prisma.notification.count({
-      where: { unread: true, userId: requireUserId(req) },
-    });
+    const count = await unreadCountFor(requireUserId(req));
 
     return res.status(200).json({ ok: true, data: { count } });
   } catch (err) {
@@ -402,6 +406,19 @@ const handleStatusChange = async (req: Request, res: Response) => {
         chatRoomId: targetChatRoomId,
         tripId: request.tripId,
       },
+    });
+
+    // Real push on top of the two feed rows above (docs/REMEDIATION.md
+    // §8.18 — these used to be in-app-only, so an approved traveller
+    // learned about it whenever they next happened to open the app).
+    // Awaited but never throwing: sendPushToUsers swallows its own
+    // failures, since a push problem must not fail an approval that has
+    // already been committed.
+    await sendPushToUsers([request.userId], 'TRIP', {
+      title: 'Join Request Accepted 🎉',
+      body: `Your request to join ${request.trip.name} has been accepted!`,
+      data: { screen: 'trip', tripId: request.tripId, chatRoomId: targetChatRoomId ?? '' },
+      badge: await unreadCountFor(request.userId),
     });
 
     const updated = await prisma.joinRequest.findUnique({ where: { id: claim.joinRequestId } });

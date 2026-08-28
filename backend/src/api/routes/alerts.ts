@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
+import { sendPushToUsers } from '../../lib/push';
 import { requireRole } from '../../middleware/auth';
 
 const router = Router();
@@ -44,7 +45,31 @@ router.post('/', requireRole(['ADMIN']), async (req, res) => {
 
   try {
     const alert = await prisma.alert.create({ data: parsed.data });
-    res.status(201).json({ ok: true, data: alert });
+
+    // A hazard alert is the one case where a push genuinely matters: it is
+    // safety information, and before §8.18 an admin publishing one reached
+    // nobody who wasn't already looking at the app. Recorded as a
+    // broadcast Notification (userId: null — per-user read state lives in
+    // NotificationRead, §5.8) and pushed to every device whose owner has
+    // hazard alerts switched on.
+    await prisma.notification.create({
+      data: {
+        userId: null,
+        type: 'HAZARD',
+        title: alert.title,
+        content: alert.desc,
+        time: 'Just now',
+      },
+    });
+
+    const recipients = await prisma.user.findMany({ select: { id: true } });
+    const { sent: pushed } = await sendPushToUsers(
+      recipients.map((u) => u.id),
+      'HAZARD',
+      { title: alert.title, body: alert.desc, data: { screen: 'alerts', alertId: alert.id } }
+    );
+
+    res.status(201).json({ ok: true, data: { ...alert, pushed } });
   } catch (err) {
     logger.error('[Alerts] Create error:', err);
     res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to create alert' } });

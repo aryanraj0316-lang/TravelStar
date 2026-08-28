@@ -3,6 +3,7 @@ import { z } from 'zod';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 import { requireUserId } from '../../lib/auth-context';
+import { unreadCountFor } from '../../lib/push';
 
 const router = Router();
 
@@ -57,6 +58,175 @@ router.get('/', async (req, res) => {
   } catch (err) {
     logger.warn('[Postgres DB Warn] Get notifications failed:', err);
     res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve notifications' } });
+  }
+});
+
+// ─── Push device registration and preferences (docs/REMEDIATION.md §8.18) ───
+// The `pushNotifications` profile toggle used to do nothing at all: no
+// device token was ever registered anywhere, so no push could ever be
+// delivered no matter how the switch was set. These are the missing half.
+
+// Expo push tokens look like ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx] (or
+// the older ExpoPushToken[...] form). Validating the shape here stops a
+// junk value from sitting in the table forever, being retried on every
+// notification and always failing.
+const EXPO_PUSH_TOKEN_RE = /^Expo(nent)?PushToken\[[^\]\s]+\]$/;
+
+const deviceTokenSchema = z.object({
+  token: z.string().trim().regex(EXPO_PUSH_TOKEN_RE, 'Not a valid Expo push token.'),
+  platform: z.enum(['ios', 'android', 'web']),
+});
+
+// Register (or refresh) this device's push token. Keyed on the token
+// itself: the same device re-registering is an upsert, and a token that
+// moves to a different account is reassigned rather than duplicated, so a
+// shared device never keeps pushing the previous user's notifications.
+router.post('/device-token', async (req, res) => {
+  const userId = requireUserId(req);
+  const parsed = deviceTokenSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      ok: false,
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'Invalid device token.',
+        details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+      },
+    });
+  }
+  try {
+    const { token, platform } = parsed.data;
+    await prisma.deviceToken.upsert({
+      where: { token },
+      create: { token, platform, userId },
+      update: { userId, platform, lastSeenAt: new Date() },
+    });
+    return res.status(200).json({ ok: true, data: { registered: true } });
+  } catch (err) {
+    logger.warn('[Notifications] Device token registration failed:', err);
+    return res
+      .status(500)
+      .json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to register this device.' } });
+  }
+});
+
+// Unregister on logout / when the user switches the master toggle off, so
+// a signed-out device stops receiving the account's notifications.
+router.delete('/device-token', async (req, res) => {
+  const userId = requireUserId(req);
+  const parsed = z.object({ token: z.string().trim().min(1) }).safeParse(req.body);
+  if (!parsed.success) {
+    return res
+      .status(400)
+      .json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'A token is required.' } });
+  }
+  try {
+    // Scoped to the caller: one account cannot unregister another's device.
+    await prisma.deviceToken.deleteMany({ where: { token: parsed.data.token, userId } });
+    return res.status(200).json({ ok: true, data: { registered: false } });
+  } catch (err) {
+    logger.warn('[Notifications] Device token removal failed:', err);
+    return res
+      .status(500)
+      .json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to unregister this device.' } });
+  }
+});
+
+const preferencesSchema = z
+  .object({
+    pushNotifications: z.boolean().optional(),
+    pushTripUpdates: z.boolean().optional(),
+    pushHazardAlerts: z.boolean().optional(),
+    pushSeasonal: z.boolean().optional(),
+  })
+  .refine((d) => Object.keys(d).length > 0, { message: 'At least one preference is required.' });
+
+// The master switch plus the per-category opt-outs, in one place. The
+// master switch also lives on PUT /profile (it predates this); both write
+// the same column.
+router.get('/preferences', async (req, res) => {
+  const userId = requireUserId(req);
+  try {
+    const profile = await prisma.profile.findUnique({
+      where: { userId },
+      select: { pushNotifications: true, pushTripUpdates: true, pushHazardAlerts: true, pushSeasonal: true },
+    });
+    // No Profile row means the user has never opened settings — report the
+    // schema defaults rather than 404ing on a preferences read.
+    return res.status(200).json({
+      ok: true,
+      data: profile ?? {
+        pushNotifications: true,
+        pushTripUpdates: true,
+        pushHazardAlerts: true,
+        pushSeasonal: true,
+      },
+    });
+  } catch (err) {
+    logger.warn('[Notifications] Get preferences failed:', err);
+    return res
+      .status(500)
+      .json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to load notification settings.' } });
+  }
+});
+
+router.put('/preferences', async (req, res) => {
+  const userId = requireUserId(req);
+  const parsed = preferencesSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      ok: false,
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'Invalid notification settings.',
+        details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+      },
+    });
+  }
+  try {
+    // Built key-by-key: under exactOptionalPropertyTypes an explicit
+    // `undefined` is not the same as an absent key to Prisma's update input.
+    const data: {
+      pushNotifications?: boolean;
+      pushTripUpdates?: boolean;
+      pushHazardAlerts?: boolean;
+      pushSeasonal?: boolean;
+    } = {};
+    if (parsed.data.pushNotifications !== undefined) data.pushNotifications = parsed.data.pushNotifications;
+    if (parsed.data.pushTripUpdates !== undefined) data.pushTripUpdates = parsed.data.pushTripUpdates;
+    if (parsed.data.pushHazardAlerts !== undefined) data.pushHazardAlerts = parsed.data.pushHazardAlerts;
+    if (parsed.data.pushSeasonal !== undefined) data.pushSeasonal = parsed.data.pushSeasonal;
+
+    const updated = await prisma.profile.update({
+      where: { userId },
+      data,
+      select: { pushNotifications: true, pushTripUpdates: true, pushHazardAlerts: true, pushSeasonal: true },
+    });
+    return res.status(200).json({ ok: true, data: updated });
+  } catch (err) {
+    if ((err as { code?: string })?.code === 'P2025') {
+      return res
+        .status(404)
+        .json({ ok: false, error: { code: 'NOT_FOUND', message: 'Complete your profile first.' } });
+    }
+    logger.warn('[Notifications] Update preferences failed:', err);
+    return res
+      .status(500)
+      .json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to save notification settings.' } });
+  }
+});
+
+// The app-icon badge count, so a cold start can resync a badge that drifted
+// while the app was closed (§8.18).
+router.get('/unread-count', async (req, res) => {
+  const userId = requireUserId(req);
+  try {
+    return res.status(200).json({ ok: true, data: { count: await unreadCountFor(userId) } });
+  } catch (err) {
+    logger.warn('[Notifications] Unread count failed:', err);
+    return res
+      .status(500)
+      .json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to load the unread count.' } });
   }
 });
 

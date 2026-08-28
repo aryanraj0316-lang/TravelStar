@@ -55,6 +55,12 @@ const envSchema = z.object({
   // The base URL a client reads uploaded files back from (the bucket's own
   // public URL, or a CDN in front of it). Required alongside the above.
   OBJECT_STORAGE_PUBLIC_URL_BASE: z.string().url().optional(),
+
+  // Push notifications (docs/REMEDIATION.md §8.18). The Expo push service
+  // needs no server credential by default — this is only required once a
+  // project enables push security in its Expo dashboard, so it stays
+  // optional and push works without it.
+  EXPO_ACCESS_TOKEN: z.string().min(1).optional(),
 });
 
 function loadEnv() {

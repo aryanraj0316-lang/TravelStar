@@ -1651,6 +1651,73 @@ partial, exactly what's blocking full completion.
       is the organizer's session-only log of what they sent, not fetched
       history: a Notification is stored per recipient, so there is no
       single row to list back without deduping N near-identical copies.
+      §8.18 done (everything except live delivery, which needs an EAS
+      project) — the `pushNotifications` toggle on profile.tsx did nothing
+      whatsoever: `expo-notifications` was not a dependency, no device
+      token was ever minted or sent anywhere, the backend had no table to
+      store one in and no code that had ever attempted a push. The switch
+      wrote a boolean nobody read, and every "notification" this app
+      produced was an in-app feed row that a user only saw if they
+      happened to open the app. Built the whole path per the 2026-08-27
+      credential decision (code it for real, read config from env, fail
+      loudly rather than fake it). Backend (migration 000000000009): new
+      DeviceToken model keyed on the token itself, so a device
+      re-registering upserts and a device that signs in as someone else is
+      reassigned rather than duplicated — otherwise a shared phone keeps
+      pushing the previous user's notifications. New lib/push.ts talks to
+      the Expo push service (batches of 100, EXPO_ACCESS_TOKEN optional
+      since Expo accepts unauthenticated sends until a project turns push
+      security on), and prunes any token the service reports
+      DeviceNotRegistered for instead of retrying it forever. It never
+      throws: the feed row is the durable record, the push is the
+      best-effort nudge, and a push failure must not fail the request that
+      triggered it. New routes: POST/DELETE /notifications/device-token
+      (Expo-token shape validated, delete scoped to the caller so one
+      account cannot unregister another's device), GET/PUT
+      /notifications/preferences, GET /notifications/unread-count. Three
+      new Profile columns give per-category opt-outs
+      (pushTripUpdates/pushHazardAlerts/pushSeasonal) under the existing
+      master switch; a push goes out only when both are on. Wired into the
+      three places that actually produce notifications: join-request
+      approval, trip announcements (§8.6), and — the one that matters
+      most — admin hazard alerts, which previously reached nobody who
+      wasn't already looking at the app, and now also record a real
+      broadcast Notification (they only ever wrote an Alert row).
+      Client: added expo-notifications + its config plugin; new
+      src/lib/push.ts (Android channel created before the permission
+      request, since Android 8+ drops notifications on an unknown channel
+      and 13+ needs it for the prompt to mean anything; token minted
+      against the EAS project ID read from app config), registration on
+      login and unregistration on logout, and new
+      src/lib/use-notification-router.ts mounted at the root layout for
+      tap deep-links — both entry points, since
+      getLastNotificationResponseAsync is the only one that catches a tap
+      that cold-started the app — plus badge resync on mount, on
+      foreground, and after marking anything read. profile.tsx's toggle
+      now really asks for OS permission and registers/drops the token,
+      rolls back if the server rejects it, and distinguishes "you blocked
+      notifications" from "this build has no push project" instead of
+      silently doing nothing; the three category switches sit under it.
+      Fixed in passing: GET /interactions/unread-count (the bell badge on
+      search.tsx) counted only rows with the caller's userId, so a hazard
+      broadcast never moved it — §5.8 fixed the *list* but not this
+      counter. Both it and the new endpoint now share unreadCountFor.
+      9 new tests (push-notifications.test.ts: auth, token-shape
+      rejection, upsert-not-duplicate, device handover between accounts,
+      cross-account delete refusal, preference defaults and per-category
+      persistence, and a badge count that counts unread broadcasts and
+      decrements per-user when one is read).
+      Deferred, and the reason: nothing here can be verified end-to-end in
+      this environment. Minting a push token needs an EAS project ID
+      (expo.extra.eas.projectId) that this app has none of, and this is
+      exactly the case the credential decision covers — the code reads it
+      from config and reports `not-configured` rather than inventing one,
+      so on this build the toggle honestly tells the user push cannot be
+      delivered. An operator with an Expo account wires it up by creating
+      the project and running a development build (push has not worked in
+      Expo Go on Android since SDK 53). Also not done: push receipts (the
+      15-minutes-later getReceipts poll, which needs a job runner —
+      Phase 11), and per-message collapse/threading.
       NOTE on test infra (for Phase 13): the backend suites share one
       remote Neon database and now intermittently fail under `jest`'s
       default parallel run (connection-pool/rate-limit contention) —

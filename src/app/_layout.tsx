@@ -12,6 +12,7 @@ import { FeedbackProvider } from '@/lib/feedback';
 import { queryClient } from '@/lib/query-client';
 import { queryPersister, QUERY_CACHE_MAX_AGE_MS } from '@/lib/query-persister';
 import { startMutationQueueAutoFlush } from '@/lib/offline-mutation-queue';
+import { useNotificationRouter } from '@/lib/use-notification-router';
 
 // Root error boundary (REMEDIATION.md §7.5) — expo-router auto-wraps the
 // whole app in this when a named `ErrorBoundary` export exists on the root
@@ -46,6 +47,10 @@ export default function RootLayout() {
   useEffect(() => {
     startMutationQueueAutoFlush();
   }, []);
+
+  // Notification taps deep-link into the app, and the badge resyncs on
+  // foreground (docs/REMEDIATION.md §8.18).
+  useNotificationRouter();
 
   return (
     <PersistQueryClientProvider
