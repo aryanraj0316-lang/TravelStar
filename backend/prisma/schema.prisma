@@ -363,11 +363,12 @@ model Trip {
   updatedAt      DateTime       @updatedAt
   chatRoom       ChatRoom?
 
-  members  TripMember[]
-  requests JoinRequest[]
-  bookings Booking[]
-  likes    TripLike[]
-  expenses TripExpense[]
+  members   TripMember[]
+  requests  JoinRequest[]
+  bookings  Booking[]
+  likes     TripLike[]
+  expenses  TripExpense[]
+  itinerary TripItineraryDay[]
 
   @@index([creatorId])
   @@index([createdAt])
@@ -381,6 +382,12 @@ model TripMember {
   user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   joinedAt DateTime       @default(now())
   role     TripMemberRole @default(MEMBER)
+  // Organizer roster tools (docs/REMEDIATION.md §8.6 — group-organizer.tsx).
+  // These three used to be pure client-side useState, silently discarded
+  // the next time the member list was refetched from the server.
+  checkedInAt   DateTime?
+  roomAllocated String?
+  seatAllocated String?
 
   @@unique([tripId, userId])
   @@index([userId])
@@ -540,6 +547,25 @@ model TripExpense {
 
   @@index([tripId])
   @@index([paidById])
+}
+
+// Day-by-day plan for a trip, authored by its organiser
+// (docs/REMEDIATION.md §8.6 — group-organizer.tsx's "Day Schedule" tab).
+// That tab used to render two hardcoded days for every trip, and its
+// "Insert Itinerary Day" button only pushed onto local useState, so the
+// day vanished on unmount and no member ever saw it.
+model TripItineraryDay {
+  id        String   @id @default(uuid())
+  tripId    String
+  trip      Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  day       Int
+  title     String
+  plan      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tripId, day])
+  @@index([tripId])
 }
 
 model Attendance {

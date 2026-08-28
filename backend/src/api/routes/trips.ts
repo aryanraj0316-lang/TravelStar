@@ -672,6 +672,11 @@ router.get('/:id/members', async (req, res) => {
       name: `${creatorName} (Creator)`,
       avatar: creatorAvatar,
       isCreator: true,
+      // The organizer has no TripMember row (they're the trip itself, not a
+      // joiner) — these roster tools don't apply to them.
+      checkedIn: null,
+      roomAllocated: null,
+      seatAllocated: null,
     };
 
     const memberItems = trip.members.map((m) => {
@@ -688,6 +693,11 @@ router.get('/:id/members', async (req, res) => {
         name,
         avatar,
         isCreator: false,
+        // docs/REMEDIATION.md §8.6 — real roster state, replacing what used
+        // to be client-only useState reset on every refetch.
+        checkedIn: m.checkedInAt !== null,
+        roomAllocated: m.roomAllocated,
+        seatAllocated: m.seatAllocated,
       };
     });
 
@@ -696,6 +706,291 @@ router.get('/:id/members', async (req, res) => {
   } catch (err) {
     logger.error('[Trips] Get trip members error:', err);
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to fetch trip members' } });
+  }
+});
+
+// docs/REMEDIATION.md §8.6 — organizer roster tools (check-in, room/seat
+// allocation) used to be pure client-side useState on group-organizer.tsx,
+// silently discarded the next time the member list was refetched. This is
+// the real, persisted version: organizer-only (the trip's creator), any
+// subset of the three fields, applied to one member's TripMember row.
+const updateRosterSchema = z
+  .object({
+    checkedIn: z.boolean().optional(),
+    roomAllocated: z.string().trim().max(100).nullable().optional(),
+    seatAllocated: z.string().trim().max(100).nullable().optional(),
+  })
+  .refine(
+    (data) => data.checkedIn !== undefined || data.roomAllocated !== undefined || data.seatAllocated !== undefined,
+    {
+      message: 'At least one of checkedIn, roomAllocated, seatAllocated is required.',
+    },
+  );
+
+router.patch('/:id/members/:userId', async (req, res) => {
+  const { id: tripId, userId: memberUserId } = req.params;
+  const parsed = updateRosterSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      ok: false,
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'Invalid roster update.',
+        details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+      },
+    });
+  }
+
+  try {
+    const callerId = requireUserId(req);
+    const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { creatorId: true } });
+    if (!trip) {
+      return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found' } });
+    }
+    if (trip.creatorId !== callerId) {
+      return res
+        .status(403)
+        .json({ ok: false, error: { code: 'FORBIDDEN', message: 'Only the trip organizer can edit the roster.' } });
+    }
+
+    const member = await prisma.tripMember.findUnique({
+      where: { tripId_userId: { tripId, userId: memberUserId! } },
+    });
+    if (!member) {
+      return res
+        .status(404)
+        .json({ ok: false, error: { code: 'NOT_FOUND', message: 'That user is not a member of this trip.' } });
+    }
+
+    const data: { checkedInAt?: Date | null; roomAllocated?: string | null; seatAllocated?: string | null } = {};
+    if (parsed.data.checkedIn !== undefined) {
+      data.checkedInAt = parsed.data.checkedIn ? new Date() : null;
+    }
+    if (parsed.data.roomAllocated !== undefined) {
+      data.roomAllocated = parsed.data.roomAllocated;
+    }
+    if (parsed.data.seatAllocated !== undefined) {
+      data.seatAllocated = parsed.data.seatAllocated;
+    }
+
+    const updated = await prisma.tripMember.update({ where: { id: member.id }, data });
+    return res.status(200).json({
+      ok: true,
+      data: {
+        userId: updated.userId,
+        checkedIn: updated.checkedInAt !== null,
+        roomAllocated: updated.roomAllocated,
+        seatAllocated: updated.seatAllocated,
+      },
+    });
+  } catch (err) {
+    logger.error('[Trips] Update roster error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not update the roster.' } });
+  }
+});
+
+// docs/REMEDIATION.md §8.6 — "Group Announcements" used to be pure
+// client-side useState with a Alert.alert claiming "broadcasted to all
+// participants via Push Notification" — nothing was sent to anyone.
+// Organizer-only; fans a real Notification out to every TripMember (not
+// the organizer, who wrote it). Real push delivery is still gated on
+// §8.18 (no EAS project in this environment) — this lands the
+// notification in each member's in-app feed, which is real today.
+const createAnnouncementSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  content: z.string().trim().min(1).max(2000),
+});
+
+router.post('/:id/announcements', async (req, res) => {
+  const { id: tripId } = req.params;
+  const parsed = createAnnouncementSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      ok: false,
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'Please provide a title and message.',
+        details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+      },
+    });
+  }
+
+  try {
+    const callerId = requireUserId(req);
+    const trip = await prisma.trip.findUnique({
+      where: { id: tripId },
+      include: { members: { select: { userId: true } } },
+    });
+    if (!trip) {
+      return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found' } });
+    }
+    if (trip.creatorId !== callerId) {
+      return res
+        .status(403)
+        .json({ ok: false, error: { code: 'FORBIDDEN', message: 'Only the trip organizer can post announcements.' } });
+    }
+
+    const recipientIds = trip.members.map((m) => m.userId).filter((uid) => uid !== callerId);
+    if (recipientIds.length > 0) {
+      await prisma.notification.createMany({
+        data: recipientIds.map((userId) => ({
+          userId,
+          type: 'TRIP' as const,
+          title: parsed.data.title,
+          content: parsed.data.content,
+          time: 'Just now',
+          tripId,
+        })),
+      });
+    }
+
+    return res
+      .status(201)
+      .json({ ok: true, data: { message: 'Announcement sent to trip members.', recipientCount: recipientIds.length } });
+  } catch (err) {
+    logger.error('[Trips] Create announcement error:', err);
+    return res
+      .status(500)
+      .json({ ok: false, error: { code: 'INTERNAL', message: 'Could not send the announcement.' } });
+  }
+});
+
+// ─── Trip itinerary / day schedule (docs/REMEDIATION.md §8.6) ───
+// group-organizer.tsx's "Day Schedule" tab rendered the same two hardcoded
+// days ("Arrival & Welcoming Dinner", "Trekking & Sightseeing") for every
+// trip, and "Insert Itinerary Day" only pushed onto local useState — the
+// day was gone on unmount and no trip member ever saw it. Reading is open
+// to every participant; writing is the organizer's alone. Day numbers are
+// assigned server-side from the current maximum, never taken from the
+// client, so two organizer devices cannot both claim "Day 3".
+
+const createItineraryDaySchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  plan: z.string().trim().min(1).max(2000),
+});
+
+router.get('/:tripId/itinerary', async (req, res) => {
+  const userId = requireUserId(req);
+  const { tripId } = req.params;
+  try {
+    const participants = await loadTripParticipants(tripId);
+    if (!participants) {
+      return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found' } });
+    }
+    if (!participants.some((p) => p.userId === userId)) {
+      return res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'You are not on this trip.' } });
+    }
+
+    const days = await prisma.tripItineraryDay.findMany({ where: { tripId }, orderBy: { day: 'asc' } });
+    const isOrganizer = participants.some((p) => p.userId === userId && p.isOrganizer);
+    return res.status(200).json({
+      ok: true,
+      data: {
+        tripId,
+        canEdit: isOrganizer,
+        days: days.map((d) => ({ id: d.id, day: d.day, title: d.title, plan: d.plan })),
+      },
+    });
+  } catch (err) {
+    logger.error('[Trips] List itinerary error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to load the itinerary' } });
+  }
+});
+
+router.post('/:tripId/itinerary', async (req, res) => {
+  const userId = requireUserId(req);
+  const { tripId } = req.params;
+  const parsed = createItineraryDaySchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      ok: false,
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'Please provide a day heading and plan.',
+        details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+      },
+    });
+  }
+  try {
+    const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { creatorId: true } });
+    if (!trip) {
+      return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found' } });
+    }
+    if (trip.creatorId !== userId) {
+      return res
+        .status(403)
+        .json({ ok: false, error: { code: 'FORBIDDEN', message: 'Only the trip organizer can edit the itinerary.' } });
+    }
+
+    // Appending is a read-then-write on the day number, so two concurrent
+    // adds could pick the same one — the (tripId, day) unique index turns
+    // that into a P2002 the loser retries rather than a duplicate Day 3.
+    let created: { id: string; day: number } | null = null;
+    for (let attempt = 0; attempt < 3 && created === null; attempt += 1) {
+      const last = await prisma.tripItineraryDay.findFirst({
+        where: { tripId },
+        orderBy: { day: 'desc' },
+        select: { day: true },
+      });
+      try {
+        created = await prisma.tripItineraryDay.create({
+          data: { tripId, day: (last?.day ?? 0) + 1, title: parsed.data.title, plan: parsed.data.plan },
+          select: { id: true, day: true },
+        });
+      } catch (e) {
+        if ((e as { code?: string })?.code !== 'P2002') throw e;
+      }
+    }
+    if (created === null) {
+      return res
+        .status(409)
+        .json({ ok: false, error: { code: 'CONFLICT', message: 'The itinerary changed — please try again.' } });
+    }
+
+    return res.status(201).json({ ok: true, data: { id: created.id, day: created.day } });
+  } catch (err) {
+    logger.error('[Trips] Create itinerary day error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to add the day' } });
+  }
+});
+
+router.delete('/:tripId/itinerary/:dayId', async (req, res) => {
+  const userId = requireUserId(req);
+  const { tripId, dayId } = req.params;
+  try {
+    const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { creatorId: true } });
+    if (!trip) {
+      return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found' } });
+    }
+    if (trip.creatorId !== userId) {
+      return res
+        .status(403)
+        .json({ ok: false, error: { code: 'FORBIDDEN', message: 'Only the trip organizer can edit the itinerary.' } });
+    }
+
+    const day = await prisma.tripItineraryDay.findUnique({ where: { id: dayId } });
+    if (!day || day.tripId !== tripId) {
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'That itinerary day is gone.' } });
+    }
+
+    // Deleting Day 2 of 4 must not leave 1, 3, 4 — the remaining days are
+    // renumbered so "Day N" keeps meaning the Nth day of the trip. Done in
+    // one transaction, descending, so the unique (tripId, day) index never
+    // sees a collision mid-shift.
+    const later = await prisma.tripItineraryDay.findMany({
+      where: { tripId, day: { gt: day.day } },
+      orderBy: { day: 'asc' },
+      select: { id: true, day: true },
+    });
+    await prisma.$transaction([
+      prisma.tripItineraryDay.delete({ where: { id: day.id } }),
+      ...later.map((d) => prisma.tripItineraryDay.update({ where: { id: d.id }, data: { day: d.day - 1 } })),
+    ]);
+
+    return res.status(200).json({ ok: true, data: { id: day.id } });
+  } catch (err) {
+    logger.error('[Trips] Delete itinerary day error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to delete the day' } });
   }
 });
 

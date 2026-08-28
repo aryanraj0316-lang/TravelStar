@@ -446,6 +446,55 @@ export const apiService = {
     return request<any[]>(`/trips/${tripId}/members`);
   },
 
+  // docs/REMEDIATION.md §8.6 — organizer roster tools (check-in, room/seat
+  // allocation). Organizer-only server-side; any subset of the three
+  // fields.
+  async updateTripRoster(
+    tripId: string,
+    userId: string,
+    updates: { checkedIn?: boolean; roomAllocated?: string | null; seatAllocated?: string | null }
+  ): Promise<{ userId: string; checkedIn: boolean; roomAllocated: string | null; seatAllocated: string | null }> {
+    return request(`/trips/${tripId}/members/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+  },
+
+  // docs/REMEDIATION.md §8.6 — real announcement fan-out to trip members
+  // (was a local-only Alert.alert claiming a push notification had been
+  // sent).
+  async postTripAnnouncement(
+    tripId: string,
+    announcement: { title: string; content: string }
+  ): Promise<{ message: string; recipientCount: number }> {
+    return request(`/trips/${tripId}/announcements`, {
+      method: 'POST',
+      body: JSON.stringify(announcement),
+    });
+  },
+
+  // Trip itinerary / day schedule (docs/REMEDIATION.md §8.6). Readable by
+  // any trip participant; only the organizer can add or delete a day.
+  async getTripItinerary(
+    tripId: string
+  ): Promise<{ tripId: string; canEdit: boolean; days: { id: string; day: number; title: string; plan: string }[] }> {
+    return request(`/trips/${tripId}/itinerary`);
+  },
+
+  async addTripItineraryDay(
+    tripId: string,
+    day: { title: string; plan: string }
+  ): Promise<{ id: string; day: number }> {
+    return request(`/trips/${tripId}/itinerary`, {
+      method: 'POST',
+      body: JSON.stringify(day),
+    });
+  },
+
+  async deleteTripItineraryDay(tripId: string, dayId: string): Promise<{ id: string }> {
+    return request(`/trips/${tripId}/itinerary/${dayId}`, { method: 'DELETE' });
+  },
+
   // Shared trip expenses / budget tracker (docs/REMEDIATION.md §8.12).
   async getTripExpenses(tripId: string): Promise<any | null> {
     return request<any>(`/trips/${tripId}/expenses`);

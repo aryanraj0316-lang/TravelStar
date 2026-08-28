@@ -1585,6 +1585,72 @@ partial, exactly what's blocking full completion.
       "mark as paid" tracking, CSV/PDF export, non-equal split shares,
       wiring the abandoned /payments/split-expense (payments were removed
       in §5.5).
+      §8.6 follow-up done — group-organizer.tsx, the organizer console,
+      was the largest remaining block of fabricated UI in the app: ~1800
+      lines of it. It opened on a hardcoded "Sikkim Highlanders Club"
+      tour that an organizer with zero real trips saw forever, with every
+      tab operating on it. Fixed in three ways, per the doc's own "take
+      the remove-it option rather than build fake infrastructure" rule:
+      • Made real (new backend, migrations 000000000007 + 000000000008):
+        check-in, hotel-room and transport-seat allocation were pure
+        client-side setMembers() — three new nullable TripMember columns
+        (checkedInAt/roomAllocated/seatAllocated) plus organizer-only
+        PATCH /trips/:id/members/:userId now persist them, and
+        GET /:id/members returns them instead of the same hardcoded
+        false/'Room TBD'/'Seat TBD' for every member on every fetch.
+        "Group Announcements" was local useState plus an Alert.alert
+        claiming the message had been "broadcasted to all participants
+        via Push Notification" when nothing was sent to anyone — now
+        POST /trips/:id/announcements, organizer-only, fanning a real
+        Notification row out to every member but the author (real push
+        delivery is still §8.18/no EAS project; the in-app feed is real
+        today). The "Day Schedule" tab rendered the same two hardcoded
+        days ("Arrival & Welcoming Dinner", "Trekking & Sightseeing") for
+        every trip and its "Insert Itinerary Day" button only pushed onto
+        local useState — new TripItineraryDay model with GET (any trip
+        participant, so members finally see the plan at all)/POST/DELETE
+        (organizer-only). Day numbers are assigned server-side from the
+        current max, never taken from the client, guarded by a unique
+        (tripId, day) index with a retry on P2002; deleting a middle day
+        renumbers the rest in one transaction so "Day N" keeps meaning
+        the Nth day.
+      • Removed as unbackable: the fake driver card (a hardcoded
+        "Jaspreet Singh" and phone number for every tour), the Billing &
+        Permit tab (hardcoded balances + a "Generate Invoice" that
+        alerted a PDF had been compiled and emailed — payments were
+        already removed for v1, §5.5/§5.6), the documents list (three
+        fake filenames, no storage), group consensus polls (fully local
+        and unauthenticated — nothing stopped one person clicking an
+        option 100 times), a per-member diet field hardcoded to 'VEG'
+        with no edit affordance, fabricated "Customer Satisfaction 96%"
+        / "Cancellation Rate 4.5%" stats and a simulated revenue chart,
+        the AI Trip Generator (a setTimeout the code's own comment
+        called "Simulate AI generation lag", filling a template string),
+        and the QR check-in scanner (a fake scan animation with a
+        "Simulate Scanned Participant" picker).
+      • Removed as dangerous: a group-map "Broadcast Safety Alert"
+        button that alerted a real emergency warning had gone to every
+        participant's device when nothing was sent. An organizer could
+        have believed they had raised a real alarm. The real SOS system
+        is §3.4/§8.9 on /map.
+      Also swept 118 now-dead style definitions left behind by those
+      removals. 16 new backend tests (trip-roster.test.ts: auth, non-
+      organizer, empty body, persistence round-trip through GET
+      /:id/members, non-member 404, announcement fan-out reaching each
+      member's real feed and not the author's; trip-itinerary.test.ts:
+      participant-gated read, organizer-gated write with canEdit, empty
+      start rather than a hardcoded plan, server-side day numbering,
+      renumber-on-delete, cross-trip 404). Full backend suite 102/102
+      under --runInBand, both typechecks clean, backend lint clean, and
+      this screen's frontend lint errors down 20 → 14 (the remainder
+      pre-existing categories shared with the rest of src/).
+      Not done: Alert.prompt (used by the room/seat allocators and the
+      group-rename flow) is iOS-only — pre-existing in this screen, but
+      it means those two organizer actions do nothing on Android until a
+      cross-platform prompt modal exists. The announcement list on screen
+      is the organizer's session-only log of what they sent, not fetched
+      history: a Notification is stored per recipient, so there is no
+      single row to list back without deduping N near-identical copies.
       NOTE on test infra (for Phase 13): the backend suites share one
       remote Neon database and now intermittently fail under `jest`'s
       default parallel run (connection-pool/rate-limit contention) —
