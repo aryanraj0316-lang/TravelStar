@@ -12,10 +12,10 @@ import {
   Modal,
   Image,
   Dimensions,
-  Alert,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { errorToastMessage, toast } from '@/lib/feedback';
+import { errorToastMessage, toast, useConfirm } from '@/lib/feedback';
 import { uploadFileToUrl } from '@/lib/upload';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -106,6 +106,7 @@ interface WeatherData {
 export default function TravelGuideScreen() {
   const router = useRouter();
   const { profile } = useApp();
+  const confirm = useConfirm();
 
   const [activeTab, setActiveTab] = useState<'leads' | 'upload' | 'planning' | 'weather' | 'safety'>('leads');
   const [guideProfile, setGuideProfile] = useState<any>(null);
@@ -279,7 +280,7 @@ export default function TravelGuideScreen() {
 
   const handleSavePackage = async () => {
     if (!pkgTitle || !pkgPrice || !pkgDuration) {
-      Alert.alert('Missing Fields', 'Title, Price, and Duration are required fields.');
+      toast('Title, Price, and Duration are required fields.', 'error');
       return;
     }
     if (!guideProfile) return;
@@ -298,35 +299,38 @@ export default function TravelGuideScreen() {
     try {
       if (editingPackage) {
         await apiService.updateGuidePackage(guideProfile.id, editingPackage.id, payload);
-        Alert.alert('Success', 'Package updated successfully!');
+        toast('Package updated successfully!', 'success');
       } else {
         await apiService.createGuidePackage(guideProfile.id, payload);
-        Alert.alert('Success', 'Package created successfully!');
+        toast('Package created successfully!', 'success');
       }
       setPkgModalVisible(false);
       fetchPackages(guideProfile.id);
     } catch {
-      Alert.alert('Error', 'Failed to save package details.');
+      toast('Failed to save package details.', 'error');
     }
   };
 
   const handleDeletePackage = async (pkgId: string) => {
     if (!guideProfile) return;
-    Alert.alert('Delete Package', 'Are you sure you want to delete this package permanently?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await apiService.deleteGuidePackage(guideProfile.id, pkgId);
-            fetchPackages(guideProfile.id);
-          } catch {
-            Alert.alert('Error', 'Failed to delete package.');
-          }
-        },
-      },
-    ]);
+    const ok = await confirm({
+      title: 'Delete Package',
+      message: 'Delete this package permanently? This cannot be undone.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await apiService.deleteGuidePackage(guideProfile.id, pkgId);
+      fetchPackages(guideProfile.id);
+      toast('Package deleted.', 'success');
+    } catch (e) {
+      // Previously `catch {}` around an Alert — the underlying error was
+      // discarded entirely, so a 403 and a network drop looked identical
+      // (docs/REMEDIATION.md §0.3).
+      logger.warn('[TravelGuide] Delete package failed:', e);
+      toast(errorToastMessage(e, 'Could not delete that package.'), 'error');
+    }
   };
 
   // docs/REMEDIATION.md §8.17: this used to set the picked video's local
@@ -337,7 +341,7 @@ export default function TravelGuideScreen() {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Permission Required', 'Please allow photo library access to upload reels.');
+        toast('Permission Required — Please allow photo library access to upload reels.', 'error');
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -386,15 +390,12 @@ export default function TravelGuideScreen() {
   const handleSendQuote = (leadId: string) => {
     const quoteVal = quoteInputs[leadId] || '';
     if (!quoteVal.trim() || isNaN(parseFloat(quoteVal))) {
-      Alert.alert('Invalid Quote', 'Please enter a valid numeric quote amount in ₹.');
+      toast('Invalid Quote — Please enter a valid numeric quote amount in ₹.', 'error');
       return;
     }
 
     setLeads((prev) => prev.map((l) => (l.id === leadId ? { ...l, status: 'QUOTE_SENT' } : l)));
-    Alert.alert(
-      'Quote Sent Successfully!',
-      `Your bid of ₹${quoteVal} has been sent to the traveler. They will be notified immediately.`,
-    );
+    toast(`Quote Sent Successfully! — Your bid of ₹${quoteVal} has been sent to the traveler. They will be notified immediately.`, 'success');
     setQuoteInputs((prev) => ({ ...prev, [leadId]: '' }));
     setSelectedLeadId(null);
   };
@@ -433,7 +434,7 @@ export default function TravelGuideScreen() {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Permission Required', 'Please allow photo library access to pick a photo.');
+        toast('Permission Required — Please allow photo library access to pick a photo.', 'error');
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -468,15 +469,15 @@ export default function TravelGuideScreen() {
 
   const handlePublishMedia = async () => {
     if (!mediaTitle.trim() || !mediaLocation.trim()) {
-      Alert.alert('Empty Fields', 'Please fill in the title and location tags.');
+      toast('Please fill in the title and location tags.', 'error');
       return;
     }
     if (uploadCategory === 'REEL' && !selectedVideoUri) {
-      Alert.alert('No Video Selected', 'Pick a video to publish a reel.');
+      toast('No Video Selected — Pick a video to publish a reel.', 'error');
       return;
     }
     if (uploadCategory === 'STORY' && !selectedCoverImage) {
-      Alert.alert('No Photo Selected', 'Pick a cover photo to publish a story.');
+      toast('No Photo Selected — Pick a cover photo to publish a story.', 'error');
       return;
     }
     if (!guideProfile) return;
@@ -527,10 +528,7 @@ export default function TravelGuideScreen() {
       setSelectedCoverImage(null);
       setSelectedThumbnailUri(null);
       setSelectedVideoUri(null);
-      Alert.alert(
-        'Published!',
-        `Your ${uploadCategory.toLowerCase()} has been uploaded and is now visible to all tourists in their feed.`,
-      );
+      toast(`Published! — Your ${uploadCategory.toLowerCase()} has been uploaded and is now visible to all tourists in their feed.`, 'success');
     } catch (e) {
       logger.warn('[TravelGuide] Publish media failed:', e);
       toast(errorToastMessage(e, 'Could not publish your content. Please try again.'), 'error');
@@ -564,7 +562,7 @@ export default function TravelGuideScreen() {
 
   const handleAddDay = () => {
     if (!newDayTitle.trim() || !newDayDesc.trim()) {
-      Alert.alert('Empty Fields', 'Please add both a Day Title and Activities.');
+      toast('Please add both a Day Title and Activities.', 'error');
       return;
     }
     const nextDayNum = itineraryDays.length + 1;
@@ -578,7 +576,7 @@ export default function TravelGuideScreen() {
     setItineraryDays([...itineraryDays, newDay]);
     setNewDayTitle('');
     setNewDayDesc('');
-    Alert.alert('Success', `Day ${nextDayNum} added to itinerary.`);
+    toast(`Day ${nextDayNum} added to itinerary.`, 'success');
   };
 
   // Time Estimator
@@ -591,7 +589,7 @@ export default function TravelGuideScreen() {
   const calculateEstimation = () => {
     const distanceVal = parseFloat(estDist);
     if (!estFrom.trim() || !estTo.trim() || isNaN(distanceVal) || distanceVal <= 0) {
-      Alert.alert('Invalid Inputs', 'Please provide valid starting location, destination and distance.');
+      toast('Please provide valid starting location, destination and distance.', 'error');
       return;
     }
 
@@ -637,7 +635,7 @@ export default function TravelGuideScreen() {
 
     const total = tr + fd + ld + gd + ms;
     if (total === 0) {
-      Alert.alert('Zero Cost', 'Please enter some amounts to calculate budget.');
+      toast('Zero Cost — Please enter some amounts to calculate budget.', 'error');
       return;
     }
 
@@ -723,10 +721,7 @@ export default function TravelGuideScreen() {
   };
 
   const handleBookingRedirect = (accomName: string) => {
-    Alert.alert(
-      'Partner Redirection',
-      `Redirecting you to our external booking partner dashboard to confirm reservation for "${accomName}"...`,
-    );
+    toast(`Partner Redirection — Redirecting you to our external booking partner dashboard to confirm reservation for "${accomName}"...`, 'info');
   };
 
   // ────────────────────────────────────────────────────────
@@ -772,8 +767,15 @@ export default function TravelGuideScreen() {
   // ────────────────────────────────────────────────────────
   // TABS 5: SAFETY HUB & EMERGENCY CONTACTS
   // ────────────────────────────────────────────────────────
+  // Places a real call. This used to pop an Alert reading "Initiating
+  // cellular call to ..." and dial nothing — a helpline button on a safety
+  // screen that did not work, which is the §8.9 hazard again.
   const handleEmergencyCall = (name: string, phone: string) => {
-    Alert.alert('Emergency Speed Dial', `Initiating cellular call to ${name} (${phone})...`);
+    const dialable = phone.replace(/[^\d+]/g, '');
+    Linking.openURL(`tel:${dialable}`).catch((e: unknown) => {
+      logger.warn('[TravelGuide] Failed to open the phone dialer:', e);
+      toast(`Could not open the dialer. Please dial ${phone} for ${name}.`, 'error');
+    });
   };
 
   // Static helpline contacts (always shown)
@@ -2088,43 +2090,19 @@ export default function TravelGuideScreen() {
               </View>
             ))}
 
-            {/* Hospitals & Police Stations Locator */}
-            <Text style={styles.sectionLabelInline}>Nearby Emergency Facilities</Text>
-            <View style={styles.facilitiesRow}>
-              <View style={styles.facilityBox}>
-                <View style={styles.facilityHeader}>
-                  <HeartPulse size={15} color={C.greenGlow} />
-                  <Text style={styles.facilityTitle}>Apex Hospital</Text>
-                </View>
-                <Text style={styles.facilityName}>Apex Trauma Care</Text>
-                <Text style={styles.facilityDist}>1.4 km • Open 24/7</Text>
-                <Text style={styles.facilityLoc}>Sector 5 Main Marg</Text>
-                <TouchableOpacity
-                  style={styles.facilityNavBtn}
-                  onPress={() => Alert.alert('GPS Navigator', 'Launching Google Maps route to Apex Trauma Center...')}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.facilityNavBtnText}>Navigate</Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.facilityBox}>
-                <View style={styles.facilityHeader}>
-                  <Shield size={15} color={C.blueGlow} />
-                  <Text style={styles.facilityTitle}>Police HQ</Text>
-                </View>
-                <Text style={styles.facilityName}>District Police HQ</Text>
-                <Text style={styles.facilityDist}>2.8 km • Open 24/7</Text>
-                <Text style={styles.facilityLoc}>Kutchery Circle Rd</Text>
-                <TouchableOpacity
-                  style={styles.facilityNavBtn}
-                  onPress={() => Alert.alert('GPS Navigator', 'Launching Google Maps route to District Police HQ...')}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.facilityNavBtnText}>Navigate</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+            {/* The "Nearby Emergency Facilities" block was removed, not
+                rebuilt (docs/REMEDIATION.md §8.9 / §0.2 rule 4). It listed
+                two hardcoded places — "Apex Trauma Care, 1.4 km, Sector 5
+                Main Marg" and "District Police HQ, 2.8 km, Kutchery Circle
+                Rd" — with invented distances, shown identically to every
+                user no matter where they were, on a safety screen whose
+                whole purpose is telling someone in trouble where to go.
+                Their "Navigate" buttons launched nothing; they popped an
+                Alert reading "Launching Google Maps route to...". Real
+                nearby-facility search needs a places/routing provider this
+                project has no credentials for (the same constraint recorded
+                at §8.13 and §8.8). The real, dialable helplines above are
+                what this screen can honestly offer. */}
           </View>
         )}
 

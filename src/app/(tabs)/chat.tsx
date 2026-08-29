@@ -1,6 +1,6 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { logger } from '@/lib/logger';
-import { errorToastMessage, showAlert, toast } from '@/lib/feedback';
+import { errorToastMessage, showAlert, toast, useConfirm } from '@/lib/feedback';
 import { getCurrentDeviceLocation } from '@/lib/device-location';
 import { uploadFileToUrl } from '@/lib/upload';
 import { formatINR } from '@/lib/money';
@@ -46,7 +46,6 @@ import {
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   Image,
   Keyboard,
@@ -721,90 +720,12 @@ function ChatScreen() {
   const [isTripDetailsExpanded, setIsTripDetailsExpanded] = useState(false);
 
   // Tab Selection & Group Updates
-  const [activeTab, setActiveTab] = useState<'chat' | 'itinerary' | 'docs' | 'members'>('chat');
+  const confirm = useConfirm();
+  const [activeTab, setActiveTab] = useState<'chat' | 'itinerary' | 'members'>('chat');
   const [showGroupUpdate, setShowGroupUpdate] = useState(true);
 
-  // Initial Documents per Trip
-  const [tripDocs, setTripDocs] = useState<
-    Record<string, { id: string; title: string; subtitle: string; status: string; date: string }[]>
-  >({
-    'trip-1': [
-      {
-        id: 'doc-1-1',
-        title: 'Train Tickets (Ranchi - Mathura)',
-        subtitle: 'IRCTC PNR #2847395837',
-        status: 'Confirmed',
-        date: '2026-07-21',
-      },
-      {
-        id: 'doc-1-2',
-        title: 'Temple Special Darshan Passes',
-        subtitle: 'Banke Bihari Temple Entry Pass',
-        status: 'Booked',
-        date: '2026-07-22',
-      },
-      {
-        id: 'doc-1-3',
-        title: 'Aadhaar ID Verification',
-        subtitle: 'All participants verified',
-        status: 'Completed',
-        date: '2026-07-18',
-      },
-    ],
-    'trip-2': [
-      {
-        id: 'doc-2-1',
-        title: 'Inner Line Permits (ILP)',
-        subtitle: 'Approved & Managed by Lobsang Yeshi',
-        status: 'Approved',
-        date: '2026-07-22',
-      },
-      {
-        id: 'doc-2-2',
-        title: 'Bike Rental Agreement',
-        subtitle: 'Royal Enfield Himalayan 411cc',
-        status: 'Signed',
-        date: '2026-07-20',
-      },
-      {
-        id: 'doc-2-3',
-        title: 'Aadhaar / ID Verification',
-        subtitle: 'Aditya, Priya, Vikram verified',
-        status: 'Completed',
-        date: '2026-07-18',
-      },
-      {
-        id: 'doc-2-4',
-        title: 'Travel Insurance Policy',
-        subtitle: 'Digit Policy #DG-2026-9938',
-        status: 'Valid',
-        date: '2026-07-15',
-      },
-    ],
-    'trip-3': [
-      {
-        id: 'doc-3-1',
-        title: 'Alleppey Houseboat Booking Voucher',
-        subtitle: 'Voucher #LH-938592',
-        status: 'Confirmed',
-        date: '2026-07-21',
-      },
-      {
-        id: 'doc-3-2',
-        title: 'Munnar Resort Stay Confirmation',
-        subtitle: 'Standard Rooms x 4',
-        status: 'Confirmed',
-        date: '2026-07-20',
-      },
-    ],
-  });
 
   // Document Upload form states
-  const [isDocModalOpen, setIsDocModalOpen] = useState(false);
-  const [docTitle, setDocTitle] = useState('');
-  const [docSubtitle, setDocSubtitle] = useState('');
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [isUploading, setIsUploading] = useState(false);
 
   async function loadInboxRooms() {
     try {
@@ -1551,7 +1472,7 @@ function ChatScreen() {
     } catch {
       // Fallback if Clipboard module is unlinked or not bundled in Expo client
     }
-    Alert.alert('Success', 'Message text copied to clipboard.');
+    toast('Message text copied to clipboard.', 'success');
     setSelectedMessageForOptions(null);
   };
 
@@ -1566,64 +1487,6 @@ function ChatScreen() {
       };
     });
     setSelectedMessageForOptions(null);
-  };
-
-  // Delete document from vault
-  const handleDeleteDoc = (docId: string) => {
-    Alert.alert('Delete Document', 'Are you sure you want to delete this document?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => {
-          setTripDocs((prev) => ({
-            ...prev,
-            [selectedTripId]: (prev[selectedTripId] || []).filter((d) => d.id !== docId),
-          }));
-        },
-      },
-    ]);
-  };
-
-  // Simulated upload and submission of document
-  const handleDocSubmit = () => {
-    if (docTitle.trim() === '') {
-      Alert.alert('Error', 'Please enter a document title.');
-      return;
-    }
-
-    setIsUploading(true);
-    setUploadProgress(0);
-
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += 10;
-      setUploadProgress(progress);
-      if (progress >= 100) {
-        clearInterval(interval);
-
-        const newDoc = {
-          id: 'doc-uploaded-' + Date.now(),
-          title: docTitle.trim(),
-          subtitle: docSubtitle.trim() || 'Uploaded certificate file',
-          status: 'Approved',
-          date: new Date().toISOString().split('T')[0],
-        };
-
-        setTripDocs((prev) => ({
-          ...prev,
-          [selectedTripId]: [...(prev[selectedTripId] || []), newDoc],
-        }));
-
-        setIsUploading(false);
-        setIsDocModalOpen(false);
-        setDocTitle('');
-        setDocSubtitle('');
-        setUploadProgress(0);
-
-        Alert.alert('Success', 'Document uploaded and verified successfully.');
-      }
-    }, 120);
   };
 
   // Start Direct Message with sender
@@ -2187,15 +2050,15 @@ function ChatScreen() {
                 style={styles.optionsRowBtn}
                 onPress={() => {
                   const roomId = selectedRoomForOptions.id;
-                  Alert.alert(
-                    'Clear Chat',
-                    'Are you sure you want to clear all message history for this chat? This action cannot be undone.',
-                    [
-                      { text: 'Cancel', style: 'cancel' },
-                      {
-                        text: 'Clear',
-                        style: 'destructive',
-                        onPress: () => {
+                  void (async () => {
+                    const ok = await confirm({
+                      title: 'Clear Chat',
+                      message:
+                        'Clear all message history for this chat? This cannot be undone.',
+                      confirmLabel: 'Clear',
+                      destructive: true,
+                    });
+                    if (ok) {
                           setTripMessages((prev) => ({
                             ...prev,
                             [roomId]: [],
@@ -2209,10 +2072,8 @@ function ChatScreen() {
                               return r;
                             }),
                           );
-                        },
-                      },
-                    ],
-                  );
+                    }
+                  })();
                   setSelectedRoomForOptions(null);
                 }}
               >
@@ -2227,22 +2088,17 @@ function ChatScreen() {
                   const roomId = selectedRoomForOptions.id;
                   const roomName = selectedRoomForOptions.name;
                   const isGroup = selectedRoomForOptions.type === 'GROUP';
-                  Alert.alert(
-                    isGroup ? 'Leave Group' : 'Delete Chat',
-                    isGroup
-                      ? `Are you sure you want to leave ${roomName}? You will no longer receive updates.`
-                      : `Are you sure you want to delete the chat with ${roomName}?`,
-                    [
-                      { text: 'Cancel', style: 'cancel' },
-                      {
-                        text: isGroup ? 'Leave' : 'Delete',
-                        style: 'destructive',
-                        onPress: () => {
-                          void handleLeaveRoom(roomId);
-                        },
-                      },
-                    ],
-                  );
+                  void (async () => {
+                    const ok = await confirm({
+                      title: isGroup ? 'Leave Group' : 'Delete Chat',
+                      message: isGroup
+                        ? `Leave ${roomName}? You will no longer receive updates.`
+                        : `Delete the chat with ${roomName}?`,
+                      confirmLabel: isGroup ? 'Leave' : 'Delete',
+                      destructive: true,
+                    });
+                    if (ok) await handleLeaveRoom(roomId);
+                  })();
                   setSelectedRoomForOptions(null);
                 }}
               >
@@ -2334,15 +2190,6 @@ function ChatScreen() {
           >
             <Calendar size={17} color={activeTab === 'itinerary' ? '#C084FC' : '#7E8494'} />
             <Text style={[styles.tabItemLabel, activeTab === 'itinerary' && styles.tabItemLabelActive]}>Itinerary</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tabItemTouch, activeTab === 'docs' && styles.tabItemTouchActive]}
-            onPress={() => setActiveTab('docs')}
-            activeOpacity={0.8}
-          >
-            <FileText size={17} color={activeTab === 'docs' ? '#C084FC' : '#7E8494'} />
-            <Text style={[styles.tabItemLabel, activeTab === 'docs' && styles.tabItemLabelActive]}>Docs</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -2730,94 +2577,27 @@ function ChatScreen() {
             </View>
           </View>
         </ScrollView>
-      ) : activeTab === 'docs' ? (
-        <ScrollView
-          style={styles.tabScrollView}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.tabScrollViewContent}
-        >
-          {/* Docs Info */}
-          <View style={styles.docsHeaderBlock}>
-            <Text style={styles.docsHeaderTitleText}>Trip Documents Vault</Text>
-            <Text style={styles.docsHeaderDescText}>
-              Manage, upload, and view mandatory permits, flight tickets, and rental agreements for the group.
-            </Text>
-          </View>
-
-          {/* Upload Button */}
-          <TouchableOpacity
-            style={styles.uploadDocBtn}
-            onPress={() => {
-              setDocTitle('');
-              setDocSubtitle('');
-              setUploadProgress(0);
-              setIsUploading(false);
-              setIsDocModalOpen(true);
-            }}
-            activeOpacity={0.85}
-          >
-            <LinearGradient
-              colors={['#0044CC', '#0066FF']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.uploadDocGradient}
-            >
-              <Plus size={16} color="#FFF" style={{ marginRight: 6 }} />
-              <Text style={styles.uploadDocBtnText}>Upload New Document</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-
-          {/* Documents list */}
-          <View style={styles.docsListContainer}>
-            {(tripDocs[selectedTripId] || []).length === 0 ? (
-              <Text style={styles.noDocsText}>No documents uploaded yet for this trip.</Text>
-            ) : (
-              (tripDocs[selectedTripId] || []).map((doc) => {
-                const getStatusColor = (status: string) => {
-                  const s = status.toLowerCase();
-                  if (s === 'approved' || s === 'confirmed' || s === 'completed' || s === 'valid') return C.green;
-                  if (s === 'signed') return C.blue;
-                  return C.orange;
-                };
-
-                return (
-                  <View key={doc.id} style={styles.docItemRow}>
-                    <View style={styles.docItemLeft}>
-                      <View style={styles.docIconBox}>
-                        <FileText size={18} color="#0066FF" />
-                      </View>
-                      <View style={styles.docItemMeta}>
-                        <Text style={styles.docTitleText} numberOfLines={1}>
-                          {doc.title}
-                        </Text>
-                        <Text style={styles.docSubText} numberOfLines={1}>
-                          {doc.subtitle}
-                        </Text>
-                        <Text style={styles.docDateText}>Added: {doc.date}</Text>
-                      </View>
-                    </View>
-                    <View style={styles.docItemRight}>
-                      <View style={[styles.docStatusBadge, { borderColor: getStatusColor(doc.status) }]}>
-                        <Text style={[styles.docStatusText, { color: getStatusColor(doc.status) }]}>
-                          {doc.status.toUpperCase()}
-                        </Text>
-                      </View>
-                      <TouchableOpacity style={styles.docDeleteBtn} onPress={() => handleDeleteDoc(doc.id)}>
-                        <Trash2 size={13} color="#EF4444" />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                );
-              })
-            )}
-          </View>
-        </ScrollView>
       ) : (
         <ScrollView
           style={styles.tabScrollView}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.tabScrollViewContent}
         >
+          {/* The "Docs" tab and its Trip Documents Vault were removed, not
+              rebuilt (docs/REMEDIATION.md §8.7 / §0.2 rule 4). Nothing about
+              the vault was real: it was seeded with hardcoded documents keyed
+              by the old seed trip ids — including a fabricated IRCTC PNR
+              number — it had no file picker, no object storage and no backend
+              model, and "uploading" was a setInterval that advanced a
+              progress bar to 100% before adding a local row with status
+              'Approved' and toasting "Document uploaded and verified
+              successfully". Nothing was uploaded and nothing was verified.
+              group-organizer.tsx's identical documents list (three fake
+              filenames, no storage) was already removed for the same reason
+              in the §8.6 follow-up; this is that call applied consistently.
+              A real version is the §8.2/§8.4/§8.7 upload pipeline plus a
+              TripDocument model, which is a feature rather than a fix. */}
+
           {/* Members Title Info */}
           <View style={styles.docsHeaderBlock}>
             <Text style={styles.docsHeaderTitleText}>Group Directory</Text>
@@ -3268,22 +3048,18 @@ function ChatScreen() {
                 <TouchableOpacity
                   style={styles.settingsExitBtn}
                   onPress={() => {
-                    Alert.alert(
-                      'Exit Group',
-                      `Are you sure you want to leave ${activeRoom?.name}? You will no longer receive messages or updates.`,
-                      [
-                        { text: 'Cancel', style: 'cancel' },
-                        {
-                          text: 'Exit',
-                          style: 'destructive',
-                          onPress: () => {
-                            setIsSettingsOpen(false);
-                            setSelectedRoomId(null);
-                            if (activeRoom?.id) void handleLeaveRoom(activeRoom.id);
-                          },
-                        },
-                      ],
-                    );
+                    void (async () => {
+                      const ok = await confirm({
+                        title: 'Exit Group',
+                        message: `Leave ${activeRoom?.name}? You will no longer receive messages or updates.`,
+                        confirmLabel: 'Exit',
+                        destructive: true,
+                      });
+                      if (!ok) return;
+                      setIsSettingsOpen(false);
+                      setSelectedRoomId(null);
+                      if (activeRoom?.id) await handleLeaveRoom(activeRoom.id);
+                    })();
                   }}
                   activeOpacity={0.8}
                 >
@@ -3381,63 +3157,6 @@ function ChatScreen() {
         </View>
       )}
 
-      {/* ─── DOCUMENT UPLOAD MODAL OVERLAY ────────────────── */}
-      {isDocModalOpen && (
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContentCard}>
-            <Text style={styles.modalHeading}>Upload Document</Text>
-
-            {isUploading ? (
-              <View style={{ paddingVertical: 20, alignItems: 'center' }}>
-                <Text style={[styles.modalSubLabel, { marginBottom: 12, color: C.textSec }]}>
-                  Uploading document to vault...
-                </Text>
-                <View style={styles.progressBarBg}>
-                  <View style={[styles.progressBarFill, { width: `${uploadProgress}%`, backgroundColor: '#0066FF' }]} />
-                </View>
-                <Text style={{ color: '#FFF', fontSize: 13, marginTop: 8, fontWeight: '600' }}>
-                  {uploadProgress}% Complete
-                </Text>
-              </View>
-            ) : (
-              <View>
-                <Text style={styles.modalSubLabel}>Document Title / Name</Text>
-                <TextInput
-                  placeholder="e.g. Driving License, Aadhaar, Insurance..."
-                  placeholderTextColor={C.textMuted}
-                  value={docTitle}
-                  onChangeText={setDocTitle}
-                  style={styles.modalInput}
-                />
-
-                <Text style={styles.modalSubLabel}>Details / Subtitle</Text>
-                <TextInput
-                  placeholder="e.g. DL #DL-03-2026194, PNR, Policy ID..."
-                  placeholderTextColor={C.textMuted}
-                  value={docSubtitle}
-                  onChangeText={setDocSubtitle}
-                  style={styles.modalInput}
-                />
-
-                <View style={styles.modalActionButtons}>
-                  <TouchableOpacity
-                    style={[styles.modalBtn, styles.modalBtnCancel]}
-                    onPress={() => setIsDocModalOpen(false)}
-                  >
-                    <Text style={styles.modalBtnCancelText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.modalBtn, styles.modalBtnSubmit, { backgroundColor: C.blue }]}
-                    onPress={handleDocSubmit}
-                  >
-                    <Text style={styles.modalBtnSubmitText}>Upload File</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-          </View>
-        </View>
-      )}
     </SafeAreaView>
   );
 }

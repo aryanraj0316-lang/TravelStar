@@ -34,7 +34,6 @@ import {
 } from 'lucide-react-native';
 import React, { useCallback, useEffect, useRef, useState, memo, useMemo } from 'react';
 import {
-  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -165,6 +164,20 @@ function WebMapScreen() {
   useEffect(() => {
     postMapMessage({ type: 'FILTER', filter: mapFilter });
   }, [mapFilter, postMapMessage]);
+
+
+  // Dials India's real national emergency number. The button that calls this
+  // used to pop an Alert reading "Dialing Police... Calling 112 emergency
+  // response" and place no call at all — shown on the SOS confirmation
+  // screen, to someone who has just declared an emergency. That is the same
+  // class of fake as the "24/7 Safety SOS Hotline" §8.9 replaced, in a worse
+  // place. No confirmation step: an emergency control should not add a tap.
+  const handleCallEmergencyServices = () => {
+    Linking.openURL('tel:112').catch((e: unknown) => {
+      logger.warn('[Map] Failed to open the phone dialer:', e);
+      toast('Could not open the dialer. Please dial 112 directly.', 'error');
+    });
+  };
 
   const handleRecenter = () => {
     selectLegFromReact(null);
@@ -1165,7 +1178,7 @@ function WebMapScreen() {
                     `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`
                   ).catch((e: unknown) => {
                     logger.warn('[Map] Could not open directions:', e);
-                    Alert.alert('Error', 'Could not open a maps app.');
+                    toast('Could not open a maps app.', 'error');
                   });
                   setShowNavigationOverlay(false);
                 }}
@@ -1196,7 +1209,7 @@ function WebMapScreen() {
               <View style={styles.emergencyActions}>
                 <TouchableOpacity
                   style={styles.callAuthorityBtn}
-                  onPress={() => Alert.alert('Dialing Police...', 'Calling 112 emergency response.')}
+                  onPress={handleCallEmergencyServices}
                 >
                   <Phone size={16} color="#FFF" />
                   <Text style={styles.callAuthorityText}>Call 112 Police</Text>

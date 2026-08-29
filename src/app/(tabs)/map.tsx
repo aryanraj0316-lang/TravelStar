@@ -35,7 +35,6 @@ import {
 } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
 import {
-  Alert,
   Animated,
   ScrollView,
   StyleSheet,
@@ -798,11 +797,25 @@ function MapScreen() {
   ];
   const activeOption = filterOptions.find((o) => o.value === mapFilter) || filterOptions[0];
 
+
+  // Dials India's real national emergency number. The button that calls this
+  // used to pop an Alert reading "Dialing Police... Calling 112 emergency
+  // response" and place no call at all — shown on the SOS confirmation
+  // screen, to someone who has just declared an emergency. That is the same
+  // class of fake as the "24/7 Safety SOS Hotline" §8.9 replaced, in a worse
+  // place. No confirmation step: an emergency control should not add a tap.
+  const handleCallEmergencyServices = () => {
+    Linking.openURL('tel:112').catch((e: unknown) => {
+      logger.warn('[Map] Failed to open the phone dialer:', e);
+      toast('Could not open the dialer. Please dial 112 directly.', 'error');
+    });
+  };
+
   const handleLocateSelf = async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission Denied', 'Location permission is required to show your current position on the map. Please enable it in your device settings.');
+        toast('Permission Denied — Location permission is required to show your current position on the map. Please enable it in your device settings.', 'error');
         return;
       }
     } catch (e) {
@@ -953,7 +966,7 @@ function MapScreen() {
                 if (data.type === 'CHECKPOINT_CLICKED') {
                   setSelectedLegIndex(data.index);
                 } else if (data.type === 'GEOLOCATION_ERROR') {
-                  Alert.alert('Location Error', data.message);
+                  toast(typeof data.message === 'string' ? data.message : 'Could not read your location.', 'error');
                 }
               } catch (e) {
                 logger.warn('[Map] Failed to parse WebView message:', e);
@@ -1264,11 +1277,11 @@ function MapScreen() {
                         activeOpacity={0.8}
                         onPress={() => {
                           if (activeTrip.availableSeats <= 0) {
-                            Alert.alert('⚠️ No Seats Available', 'Sorry, this trip has no seats left.');
+                            toast('⚠️ No Seats Available — Sorry, this trip has no seats left.', 'error');
                             return;
                           }
                           joinTrip(activeTrip.id);
-                          Alert.alert('🎉 Seat Requested!', `You have requested to join "${activeTrip.name}". Status synced to database.`);
+                          toast(`🎉 Seat Requested! — You have requested to join "${activeTrip.name}". Status synced to database.`, 'info');
                         }}
                       >
                         <Text style={styles.joinTripBtnText}>Request to Join Trip</Text>
@@ -1477,7 +1490,7 @@ function MapScreen() {
                     const url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
                     Linking.openURL(url).catch((e: unknown) => {
                       logger.warn('[Map] Could not open directions:', e);
-                      Alert.alert('Error', 'Could not open a maps app on this device.');
+                      toast('Could not open a maps app on this device.', 'error');
                     });
                     setShowNavigationOverlay(false);
                   }}
@@ -1510,7 +1523,7 @@ function MapScreen() {
 
                 <TouchableOpacity
                   style={styles.callBtn}
-                  onPress={() => Alert.alert('Dialing Police...', 'Calling 112 emergency response.')}
+                  onPress={handleCallEmergencyServices}
                 >
                   <Phone size={16} color="#FFF" />
                   <Text style={styles.callBtnText}>Call 112 Police</Text>

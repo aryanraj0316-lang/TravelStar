@@ -23,14 +23,12 @@ import {
   Maximize2,
   Pencil,
   QrCode,
-  Share2,
   Trash2,
   X,
 } from 'lucide-react-native';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Modal,
   ScrollView,
@@ -45,7 +43,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { eventBus } from '@/services/event-bus';
 import { apiService, type NotificationPreferences } from '@/services/api';
 import { registerForPushNotifications, unregisterPushNotifications } from '@/lib/push';
-import { toast, errorToastMessage } from '@/lib/feedback';
+import { toast, errorToastMessage, showAlert, useConfirm } from '@/lib/feedback';
 import { uploadFileToUrl } from '@/lib/upload';
 import { C } from '@/theme/tokens';
 
@@ -109,6 +107,7 @@ function ProfileScreen() {
   const [pushBusy, setPushBusy] = useState(false);
 
   // Edit Profile Modal states
+  const confirm = useConfirm();
   const [showEditModal, setShowEditModal] = useState(false);
   const [editAvatar, setEditAvatar] = useState(profile.avatar || AVATAR_PRESETS[0]);
   // docs/REMEDIATION.md §8.2 — true while a picked photo is being uploaded
@@ -231,15 +230,12 @@ function ProfileScreen() {
         const result = await registerForPushNotifications();
         if (result.status === 'denied') {
           setPushNotifications(false);
-          Alert.alert(
-            'Notifications Blocked',
-            'Turn notifications on for TravelStar in your device settings to receive trip and safety alerts.',
-          );
+          toast('Notifications Blocked — Turn notifications on for TravelStar in your device settings to receive trip and safety alerts.', 'info');
           return;
         }
         if (result.status === 'not-configured' || result.status === 'unsupported') {
           setPushNotifications(false);
-          Alert.alert(
+          await showAlert(
             'Push Not Available',
             result.status === 'unsupported'
               ? 'Push notifications need a real device — a simulator cannot receive them.'
@@ -255,7 +251,7 @@ function ProfileScreen() {
     } catch (e) {
       logger.warn('[Profile] Failed to update push setting:', e);
       setPushNotifications(!next);
-      Alert.alert('Error', 'Could not save that setting.');
+      toast('Could not save that setting.', 'error');
     } finally {
       setPushBusy(false);
     }
@@ -271,7 +267,7 @@ function ProfileScreen() {
     } catch (e) {
       logger.warn('[Profile] Failed to update notification category:', e);
       setPushPrefs(previous);
-      Alert.alert('Error', 'Could not save that setting.');
+      toast('Could not save that setting.', 'error');
     }
   };
 
@@ -307,15 +303,12 @@ function ProfileScreen() {
   const pickImageFromDevice = async () => {
     try {
       if (!ImagePicker || typeof ImagePicker.requestMediaLibraryPermissionsAsync !== 'function') {
-        Alert.alert('Notice', 'Photo gallery module is initializing or requires restarting Expo dev client.');
+        toast('Photo gallery module is initializing or requires restarting Expo dev client.', 'info');
         return;
       }
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permissionResult?.granted) {
-        Alert.alert(
-          'Permission Required',
-          'Permission to access photo gallery is required to select photos from your device.',
-        );
+        toast('Permission Required — Permission to access photo gallery is required to select photos from your device.', 'error');
         return;
       }
 
@@ -330,19 +323,19 @@ function ProfileScreen() {
         await uploadPickedAvatar(result.assets[0]);
       }
     } catch (err: any) {
-      Alert.alert('Notice', 'Photo gallery selection error: ' + (err?.message || 'Please try again.'));
+      toast(errorToastMessage(err, 'Could not open the photo gallery. Please try again.'), 'error');
     }
   };
 
   const takePhotoWithCamera = async () => {
     try {
       if (!ImagePicker || typeof ImagePicker.requestCameraPermissionsAsync !== 'function') {
-        Alert.alert('Notice', 'Camera module is initializing or requires restarting Expo dev client.');
+        toast('Camera module is initializing or requires restarting Expo dev client.', 'info');
         return;
       }
       const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
       if (!permissionResult?.granted) {
-        Alert.alert('Permission Required', 'Camera permission is required to capture a photo.');
+        toast('Permission Required — Camera permission is required to capture a photo.', 'error');
         return;
       }
 
@@ -356,7 +349,7 @@ function ProfileScreen() {
         await uploadPickedAvatar(result.assets[0]);
       }
     } catch (err: any) {
-      Alert.alert('Notice', 'Camera selection error: ' + (err?.message || 'Please try again.'));
+      toast(errorToastMessage(err, 'Could not open the camera. Please try again.'), 'error');
     }
   };
 
@@ -367,7 +360,7 @@ function ProfileScreen() {
   // Handlers
   const handleSaveProfile = () => {
     if (!editName.trim()) {
-      Alert.alert('Required Field', 'Profile Name cannot be empty.');
+      toast('Profile Name cannot be empty.', 'error');
       return;
     }
     updateProfile({
@@ -381,25 +374,28 @@ function ProfileScreen() {
       travelStyles: editStyles,
     });
     setShowEditModal(false);
-    Alert.alert('✨ Profile Saved', 'Your profile details, gender, bio & photo have been updated successfully.');
+    toast('Profile saved.', 'success');
   };
 
-  const handleShareProfile = () => {
-    Alert.alert('🔗 Share Profile', 'Profile link copied to clipboard! (https://travelstar.app/u/aarav_sharma)');
-  };
+  // "Share Profile" was removed rather than kept (docs/REMEDIATION.md §0.2
+  // rule 4). It copied nothing to any clipboard, and the link it claimed to
+  // have copied was a hardcoded https://travelstar.app/u/aarav_sharma — a
+  // fixed username belonging to nobody, shown to every user. This product
+  // has no public profile URLs, so there is nothing truthful for the button
+  // to do yet.
 
   const handleLogout = () => {
-    Alert.alert('Sign Out of Account', 'Are you sure you want to sign out of TravelStar?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign Out',
-        style: 'destructive',
-        onPress: () => {
-          logout();
-          setShowAuthModal(true);
-        },
-      },
-    ]);
+    void (async () => {
+      const ok = await confirm({
+        title: 'Sign out of TravelStar?',
+        message: 'You will need to sign in again to see your trips and messages.',
+        confirmLabel: 'Sign Out',
+        destructive: true,
+      });
+      if (!ok) return;
+      logout();
+      setShowAuthModal(true);
+    })();
   };
 
   // ── Privacy & data (docs/REMEDIATION.md §12.4) ────────────────────
@@ -501,9 +497,6 @@ function ProfileScreen() {
               {hasUnreadNotification && <View style={styles.topNotifDot} />}
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.topActionBtn} activeOpacity={0.7} onPress={handleShareProfile}>
-              <Share2 size={16} color="#FFF" />
-            </TouchableOpacity>
           </View>
 
           <View style={styles.profileHeaderContent}>
@@ -1099,7 +1092,7 @@ function ProfileScreen() {
               <TouchableOpacity
                 style={styles.downloadTicketBtn}
                 onPress={() => {
-                  Alert.alert('📥 Ticket Downloaded', 'Digital Pass saved to phone gallery!');
+                  toast('📥 Ticket Downloaded — Digital Pass saved to phone gallery!', 'success');
                   setShowTicketModal(false);
                 }}
               >

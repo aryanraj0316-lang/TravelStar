@@ -36,7 +36,6 @@ import {
 import React, { useRef, useState, useEffect, memo } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Dimensions,
   Image,
   Keyboard,
@@ -437,7 +436,7 @@ function CreateTripScreen() {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Permission Required', 'Please allow access to your photo library to pick a cover image.');
+        toast('Permission Required — Please allow access to your photo library to pick a cover image.', 'error');
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -495,12 +494,12 @@ function CreateTripScreen() {
 
   const handleCreate = () => {
     if (!tripName || !citiesInput || !startDate || !budget || !totalSeats) {
-      Alert.alert('Missing Info', 'Please fill in all required fields marked with *');
+      toast('Please fill in all required fields marked with *', 'error');
       return;
     }
 
     if (parsedCities.length < 2) {
-      Alert.alert('Route Error', 'Please enter at least 2 cities separated by commas (e.g. Delhi, Jaipur).');
+      toast('Route Error — Please enter at least 2 cities separated by commas (e.g. Delhi, Jaipur).', 'error');
       return;
     }
 
@@ -530,30 +529,28 @@ function CreateTripScreen() {
     };
 
     addTrip(newTrip);
-    Alert.alert('✨ Trip Route Published!', 'Your group tour itinerary is live for travelers to explore and join.', [
-      {
-        text: 'View Home Feed',
-        onPress: () => {
-          setTripName('');
-          setCitiesInput('');
-          setStartDate('2026-08-01');
-          setEndDate('2026-08-07');
-          setBudget('');
-          setTotalSeats('');
-          setMeetingPoint('');
-          setMeetingDate('2026-08-01');
-          setMeetingTime('10:00 AM');
-          setShortDesc('');
-          setTransportMode('AC Vehicle');
-          router.replace('/');
-        },
-      },
-    ]);
+    // A single-action alert was only ever an "OK" gate in front of the
+    // navigation it performed; a success toast says the same thing without
+    // blocking, per §0.2.6.
+    toast('Trip published — it is now live for travellers to join.', 'success');
+
+    setTripName('');
+    setCitiesInput('');
+    setStartDate('2026-08-01');
+    setEndDate('2026-08-07');
+    setBudget('');
+    setTotalSeats('');
+    setMeetingPoint('');
+    setMeetingDate('2026-08-01');
+    setMeetingTime('10:00 AM');
+    setShortDesc('');
+    setTransportMode('AC Vehicle');
+    router.replace('/');
   };
 
   const handleSaveDraft = () => {
     if (!tripName) {
-      Alert.alert('Missing Name', 'Please enter a Trip Name before saving a draft.');
+      toast('Please enter a Trip Name before saving a draft.', 'error');
       return;
     }
     const newTrip = {

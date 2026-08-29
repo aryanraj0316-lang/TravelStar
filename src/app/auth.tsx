@@ -10,7 +10,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -21,6 +20,7 @@ import GlassCard from '@/components/ui/GlassCard';
 import { useApp, UserRole } from '@/store/AppContext';
 import { apiService } from '@/services/api';
 import { C } from '@/theme/tokens';
+import { errorToastMessage, showAlert, toast } from '@/lib/feedback';
 
 const ROLES: { id: UserRole; title: string; subtitle: string; icon: string }[] = [
   { id: 'TOURIST', title: 'Tourist', subtitle: 'Explore & Join Trips', icon: '🧳' },
@@ -46,14 +46,14 @@ export default function AuthScreen() {
   const handleFormSubmit = async () => {
     if (mode === 'LOGIN') {
       if (!email.trim() || !password.trim()) {
-        Alert.alert('Required', 'Please enter your email and password');
+        toast('Please enter your email and password', 'error');
         return;
       }
       setLoading(true);
       try {
         const response = await apiService.login(email, password);
         if (!response) {
-          Alert.alert('Login Failed ❌', 'Invalid response from server.');
+          toast('Login Failed ❌ — Invalid response from server.', 'error');
           return;
         }
         if (response.token && response.refreshToken) {
@@ -65,27 +65,23 @@ export default function AuthScreen() {
         login();
         // Refresh trips with new token so isMyTrip is correctly computed
         setTimeout(() => refreshTrips(), 300);
-        Alert.alert('Welcome Back! 👋', 'Logged in successfully', [
-          {
-            text: 'Continue',
-            onPress: () => {
-              if (router.canGoBack()) {
-                router.back();
-              } else {
-                router.replace('/');
-              }
-            },
-          },
-        ]);
-      } catch (err: any) {
-        Alert.alert('Login Failed ❌', err?.message || 'An error occurred during login.');
+        // A single-action alert was only an "OK" gate in front of the
+        // navigation below; a toast says the same without blocking (§0.2.6).
+        toast('Welcome back!', 'success');
+        if (router.canGoBack()) {
+          router.back();
+        } else {
+          router.replace('/');
+        }
+      } catch (err) {
+        toast(errorToastMessage(err, 'Could not sign you in. Please try again.'), 'error');
       } finally {
         setLoading(false);
       }
     } else {
       // SIGNUP flow
       if (!fullName.trim() || !email.trim() || !password.trim()) {
-        Alert.alert('Required', 'Please enter your full name, email, and password');
+        toast('Please enter your full name, email, and password', 'error');
         return;
       }
       setLoading(true);
@@ -97,7 +93,7 @@ export default function AuthScreen() {
           role: selectedRole,
         });
         if (!response) {
-          Alert.alert('Signup Failed ❌', 'Invalid response from server.');
+          toast('Signup Failed ❌ — Invalid response from server.', 'error');
           return;
         }
         if (response.token && response.refreshToken) {
@@ -116,26 +112,26 @@ export default function AuthScreen() {
         setTimeout(() => refreshTrips(), 300);
 
         const roleChanged = userObj.role && userObj.role !== selectedRole;
-        Alert.alert(
-          'Account Created 🎉',
-          roleChanged
-            ? `Welcome to TravelStar! Your account starts as a Tourist — Guide and Organizer access is granted after a short verification step, available from your profile.`
-            : 'Welcome to TravelStar!',
-          [
-            {
-              text: 'Start Exploring',
-              onPress: () => {
-                if (router.canGoBack()) {
-                  router.back();
-                } else {
-                  router.replace('/');
-                }
-              },
-            },
-          ],
-        );
-      } catch (err: any) {
-        Alert.alert('Signup Failed ❌', err?.message || 'An error occurred during registration.');
+        // The role note is a real, non-obvious consequence the user needs to
+        // read (their chosen role was not granted — §2.6 makes GUIDE
+        // admin-only), so that case keeps a dismissible dialog. The plain
+        // welcome does not, and is a toast.
+        if (roleChanged) {
+          await showAlert(
+            'Account created',
+            'Your account starts as a Tourist. Guide and Organizer access is granted after a short verification step, available from your profile.',
+            'Start Exploring',
+          );
+        } else {
+          toast('Welcome to TravelStar!', 'success');
+        }
+        if (router.canGoBack()) {
+          router.back();
+        } else {
+          router.replace('/');
+        }
+      } catch (err) {
+        toast(errorToastMessage(err, 'Could not create your account. Please try again.'), 'error');
       } finally {
         setLoading(false);
       }

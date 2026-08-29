@@ -11,7 +11,6 @@ import {
   Modal,
   Image,
   Dimensions,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -38,6 +37,7 @@ import {
   Send,
 } from 'lucide-react-native';
 import { C } from '@/theme/tokens';
+import { showPrompt, toast, useConfirm } from '@/lib/feedback';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -80,6 +80,7 @@ interface JoinRequest {
 export default function GroupOrganizerScreen() {
   const router = useRouter();
   const { profile, addTrip, trips } = useApp();
+  const confirm = useConfirm();
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'trips' | 'logistics' | 'chat'>('dashboard');
 
@@ -216,7 +217,7 @@ export default function GroupOrganizerScreen() {
 
   const handleCreateTour = () => {
     if (!newGroupName.trim() || !newDest.trim() || !newDuration.trim() || !newMaxSize.trim() || !newPrice.trim()) {
-      Alert.alert('Empty Fields', 'Please fill in all the details for the new trip.');
+      toast('Please fill in all the details for the new trip.', 'error');
       return;
     }
 
@@ -258,31 +259,31 @@ export default function GroupOrganizerScreen() {
     setNewMaxSize('');
     setNewPrice('');
     setShowCreateModal(false);
-    Alert.alert('Tour Created!', `"${newTour.groupName}" has been added to your dashboard, with its own group chat.`);
+    toast(`Tour Created! — "${newTour.groupName}" has been added to your dashboard, with its own group chat.`, 'success');
   };
 
   const handleApproveRequest = async (reqId: string, userName: string, avatar: string) => {
     try {
       await apiService.updateJoinRequestStatus(reqId, 'APPROVED');
-      Alert.alert('Approved!', `"${userName}" has been added to ${currentTour.groupName} and the group chat.`);
+      toast(`Approved! — "${userName}" has been added to ${currentTour.groupName} and the group chat.`, 'success');
       fetchIncoming();
       if (currentTour) {
         fetchTourMembers(currentTour.id);
       }
     } catch (e) {
       logger.warn('Approve request failed:', e);
-      Alert.alert('Error', 'Failed to approve join request.');
+      toast('Failed to approve join request.', 'error');
     }
   };
 
   const handleRejectRequest = async (reqId: string, userName: string) => {
     try {
       await apiService.updateJoinRequestStatus(reqId, 'REJECTED');
-      Alert.alert('Rejected', `Declined group chat join request for "${userName}".`);
+      toast(`Rejected — Declined group chat join request for "${userName}".`, 'info');
       fetchIncoming();
     } catch (e) {
       logger.warn('Reject request failed:', e);
-      Alert.alert('Error', 'Failed to reject join request.');
+      toast('Failed to reject join request.', 'error');
     }
   };
 
@@ -316,7 +317,7 @@ export default function GroupOrganizerScreen() {
     } catch (e) {
       logger.warn('[GroupOrganizer] Check-in update failed:', e);
       setMembers((prev) => prev.map((m) => (m.id === member.id ? { ...m, checkedIn: member.checkedIn } : m)));
-      Alert.alert('Error', 'Could not update check-in status.');
+      toast('Could not update check-in status.', 'error');
     }
   };
 
@@ -330,7 +331,7 @@ export default function GroupOrganizerScreen() {
 
   const handleAddItineraryDay = async () => {
     if (!newDayTitle.trim() || !newDayDesc.trim()) {
-      Alert.alert('Empty Fields', 'Please complete day title and schedule details.');
+      toast('Please complete day title and schedule details.', 'error');
       return;
     }
     if (!currentTour) return;
@@ -347,7 +348,7 @@ export default function GroupOrganizerScreen() {
       await fetchItinerary(currentTour.id);
     } catch (e) {
       logger.warn('[GroupOrganizer] Failed to add itinerary day:', e);
-      Alert.alert('Error', 'Could not save that day. Please try again.');
+      toast('Could not save that day. Please try again.', 'error');
     } finally {
       setAddingDay(false);
     }
@@ -355,91 +356,84 @@ export default function GroupOrganizerScreen() {
 
   const handleDeleteItineraryDay = (target: ItineraryDay) => {
     if (!currentTour) return;
-    Alert.alert('Remove Day', `Remove Day ${target.day} — "${target.title}"?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            // The server renumbers the days after this one, so take the
-            // whole list back from it rather than splicing locally.
-            await apiService.deleteTripItineraryDay(currentTour.id, target.id);
-            await fetchItinerary(currentTour.id);
-          } catch (e) {
-            logger.warn('[GroupOrganizer] Failed to delete itinerary day:', e);
-            Alert.alert('Error', 'Could not remove that day.');
-          }
-        },
-      },
-    ]);
+    void (async () => {
+      const ok = await confirm({
+        title: 'Remove Day',
+        message: `Remove Day ${target.day} — "${target.title}"?`,
+        confirmLabel: 'Remove',
+        destructive: true,
+      });
+      if (!ok) return;
+      try {
+        // The server renumbers the days after this one, so take the whole
+        // list back from it rather than splicing locally.
+        await apiService.deleteTripItineraryDay(currentTour.id, target.id);
+        await fetchItinerary(currentTour.id);
+      } catch (e) {
+        logger.warn('[GroupOrganizer] Failed to delete itinerary day:', e);
+        toast('Could not remove that day.', 'error');
+      }
+    })();
   };
 
   // Rooms and Seats allocations states
   // docs/REMEDIATION.md §8.6: both of these used to be pure local
   // setMembers() — discarded the next time fetchTourMembers ran (e.g.
-  // switching tours and back). Now a real PATCH, with a rollback on
-  // failure. Alert.prompt is iOS-only — pre-existing in this screen
-  // (handleEditGroupName used it too), not something introduced here;
-  // building a cross-platform prompt is out of scope for this pass.
+  // switching tours and back). Now a real PATCH, with a rollback on failure.
+  //
+  // These two used Alert.prompt, which exists only on iOS — on Android and
+  // web the allocator buttons did nothing at all, silently. showPrompt is the
+  // cross-platform replacement (docs/REMEDIATION.md §9.2).
   const handleAllocateRoom = (member: GroupMember) => {
     if (!currentTour) return;
-    Alert.prompt(
-      'Allocate Hotel Room',
-      'Set room number assignment (e.g. Room 402):',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Allocate',
-          onPress: async (room?: string) => {
-            if (!room) return;
-            const trimmed = room.trim();
-            setMembers((prev) => prev.map((m) => (m.id === member.id ? { ...m, roomAllocated: trimmed } : m)));
-            try {
-              await apiService.updateTripRoster(currentTour.id, member.userId, { roomAllocated: trimmed });
-            } catch (e) {
-              logger.warn('[GroupOrganizer] Room allocation failed:', e);
-              setMembers((prev) =>
-                prev.map((m) => (m.id === member.id ? { ...m, roomAllocated: member.roomAllocated } : m)),
-              );
-              Alert.alert('Error', 'Could not save the room assignment.');
-            }
-          },
-        },
-      ],
-      'plain-text',
-      member.roomAllocated ?? '',
-    );
+    void (async () => {
+      const room = await showPrompt({
+        title: 'Allocate Hotel Room',
+        message: 'Set the room number for this member.',
+        placeholder: 'e.g. Room 402',
+        defaultValue: member.roomAllocated ?? '',
+        confirmLabel: 'Allocate',
+      });
+      if (room === null) return;
+      const trimmed = room.trim();
+      if (!trimmed) return;
+      setMembers((prev) => prev.map((m) => (m.id === member.id ? { ...m, roomAllocated: trimmed } : m)));
+      try {
+        await apiService.updateTripRoster(currentTour.id, member.userId, { roomAllocated: trimmed });
+      } catch (e) {
+        logger.warn('[GroupOrganizer] Room allocation failed:', e);
+        setMembers((prev) =>
+          prev.map((m) => (m.id === member.id ? { ...m, roomAllocated: member.roomAllocated } : m)),
+        );
+        toast('Could not save the room assignment.', 'error');
+      }
+    })();
   };
 
   const handleAllocateSeat = (member: GroupMember) => {
     if (!currentTour) return;
-    Alert.prompt(
-      'Allocate Transport Seat',
-      'Set seat number assignment (e.g. Seat 12A):',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Allocate',
-          onPress: async (seat?: string) => {
-            if (!seat) return;
-            const trimmed = seat.trim();
-            setMembers((prev) => prev.map((m) => (m.id === member.id ? { ...m, seatAllocated: trimmed } : m)));
-            try {
-              await apiService.updateTripRoster(currentTour.id, member.userId, { seatAllocated: trimmed });
-            } catch (e) {
-              logger.warn('[GroupOrganizer] Seat allocation failed:', e);
-              setMembers((prev) =>
-                prev.map((m) => (m.id === member.id ? { ...m, seatAllocated: member.seatAllocated } : m)),
-              );
-              Alert.alert('Error', 'Could not save the seat assignment.');
-            }
-          },
-        },
-      ],
-      'plain-text',
-      member.seatAllocated ?? '',
-    );
+    void (async () => {
+      const seat = await showPrompt({
+        title: 'Allocate Transport Seat',
+        message: 'Set the seat number for this member.',
+        placeholder: 'e.g. Seat 12A',
+        defaultValue: member.seatAllocated ?? '',
+        confirmLabel: 'Allocate',
+      });
+      if (seat === null) return;
+      const trimmed = seat.trim();
+      if (!trimmed) return;
+      setMembers((prev) => prev.map((m) => (m.id === member.id ? { ...m, seatAllocated: trimmed } : m)));
+      try {
+        await apiService.updateTripRoster(currentTour.id, member.userId, { seatAllocated: trimmed });
+      } catch (e) {
+        logger.warn('[GroupOrganizer] Seat allocation failed:', e);
+        setMembers((prev) =>
+          prev.map((m) => (m.id === member.id ? { ...m, seatAllocated: member.seatAllocated } : m)),
+        );
+        toast('Could not save the seat assignment.', 'error');
+      }
+    })();
   };
 
   // docs/REMEDIATION.md §8.6: removed —
@@ -479,7 +473,7 @@ export default function GroupOrganizerScreen() {
 
   const handlePublishAnnouncement = async () => {
     if (!newAnnounceTitle.trim() || !newAnnounceDesc.trim()) {
-      Alert.alert('Empty Fields', 'Please fill in title and announcement contents.');
+      toast('Please fill in title and announcement contents.', 'error');
       return;
     }
     if (!currentTour) return;
@@ -500,15 +494,15 @@ export default function GroupOrganizerScreen() {
       ]);
       setNewAnnounceTitle('');
       setNewAnnounceDesc('');
-      Alert.alert(
-        'Published',
+      toast(
         result.recipientCount > 0
-          ? `Sent to ${result.recipientCount} trip member${result.recipientCount === 1 ? '' : 's'}' notifications.`
-          : 'No other members have joined this trip yet — nothing to send to.',
+          ? `Published — sent to ${result.recipientCount} trip member${result.recipientCount === 1 ? '' : 's'}.`
+          : 'Published, but no other members have joined this trip yet.',
+        result.recipientCount > 0 ? 'success' : 'info',
       );
     } catch (e) {
       logger.warn('[GroupOrganizer] Publish announcement failed:', e);
-      Alert.alert('Error', 'Could not send the announcement.');
+      toast('Could not send the announcement.', 'error');
     } finally {
       setPublishingAnnouncement(false);
     }
