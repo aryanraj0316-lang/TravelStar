@@ -545,6 +545,17 @@ router.post('/:id/join', async (req, res) => {
       if (result.reason === 'TRIP_NOT_FOUND') {
         return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found.' } });
       }
+      if (result.reason === 'BUSY') {
+        // The database was too contended to start the transaction; nothing
+        // was written. This is explicitly NOT reported as TRIP_FULL — that
+        // would tell a user a trip was sold out when it was not
+        // (docs/REMEDIATION.md §5.4).
+        res.setHeader('Retry-After', '2');
+        return res.status(503).json({
+          ok: false,
+          error: { code: 'SERVICE_BUSY', message: 'Too many people are joining right now. Please try again.' },
+        });
+      }
       return res
         .status(409)
         .json({ ok: false, error: { code: 'TRIP_FULL', message: 'No available seats on this trip.' } });

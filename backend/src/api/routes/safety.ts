@@ -13,10 +13,22 @@ function validationError(res: Response, issues: z.ZodIssue[]) {
 
 // GET /safety/sos — List all active SOS alerts (Prisma-backed, persists across restarts)
 router.get('/sos', async (req, res) => {
+  // Bounded like every other list (docs/REMEDIATION.md §5.9). Keyed on
+  // alertTime rather than createdAt because that is this model's ordering
+  // column; active alerts are few by nature, but "few by nature" is not a
+  // bound.
+  const parsedQuery = z
+    .object({ limit: z.coerce.number().int().min(1).max(100).default(50) })
+    .safeParse(req.query);
+  if (!parsedQuery.success) {
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid limit.' } });
+  }
+
   try {
     const alerts = await prisma.sOSAlert.findMany({
       where: { status: 'ACTIVE' },
       orderBy: { alertTime: 'desc' },
+      take: parsedQuery.data.limit,
       include: {
         user: {
           include: { profile: true },

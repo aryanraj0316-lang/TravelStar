@@ -3,6 +3,7 @@ import { z } from 'zod';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 import { requireUserId } from '../../lib/auth-context';
+import { buildPage, cursorFilter, cursorPageQuerySchema, takeWithLookahead } from '../../lib/pagination';
 
 const router = Router();
 
@@ -10,11 +11,22 @@ const router = Router();
 // (prisma/seed-reference-data.ts), not implicitly on read — see
 // docs/REMEDIATION.md §4.9.
 router.get('/', async (req, res) => {
+  const parsed = cursorPageQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    return res
+      .status(400)
+      .json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid limit or cursor.' } });
+  }
+  const { limit, cursor } = parsed.data;
+
   try {
-    const stories = await prisma.travelStory.findMany({
+    const rows = await prisma.travelStory.findMany({
+      where: cursorFilter(cursor),
       orderBy: { createdAt: 'desc' },
+      take: takeWithLookahead(limit),
     });
-    res.status(200).json({ ok: true, data: stories });
+    const { items, nextCursor } = buildPage(rows, limit);
+    res.status(200).json({ ok: true, data: items, meta: { cursor: nextCursor } });
   } catch (err) {
     logger.error('[Stories] DB error:', err);
     res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve stories' } });

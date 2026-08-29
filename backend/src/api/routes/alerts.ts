@@ -4,6 +4,7 @@ import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 import { sendPushToUsers } from '../../lib/push';
 import { requireRole } from '../../middleware/auth';
+import { buildPage, cursorFilter, cursorPageQuerySchema, takeWithLookahead } from '../../lib/pagination';
 
 const router = Router();
 
@@ -11,12 +12,22 @@ const router = Router();
 // `npm run seed:reference` (prisma/seed-reference-data.ts), not implicitly
 // on read — see docs/REMEDIATION.md §4.9.
 router.get('/', async (req, res) => {
+  const parsed = cursorPageQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    return res
+      .status(400)
+      .json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid limit or cursor.' } });
+  }
+  const { limit, cursor } = parsed.data;
+
   try {
-    const alerts = await prisma.alert.findMany({
-      where: { active: true },
+    const rows = await prisma.alert.findMany({
+      where: { active: true, ...cursorFilter(cursor) },
       orderBy: { createdAt: 'desc' },
+      take: takeWithLookahead(limit),
     });
-    res.status(200).json({ ok: true, data: alerts });
+    const { items, nextCursor } = buildPage(rows, limit);
+    res.status(200).json({ ok: true, data: items, meta: { cursor: nextCursor } });
   } catch (err) {
     logger.error('[Alerts] DB error:', err);
     res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve alerts' } });

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
+import { cursorFilter, cursorPageQuerySchema, takeWithLookahead } from '../../lib/pagination';
 import { requireUserId } from '../../lib/auth-context';
 import { unreadCountFor } from '../../lib/push';
 
@@ -38,11 +39,36 @@ async function queryWithRetry<T>(fn: () => Promise<T>, retries = 3, delay = 500)
 // instead of the shared row (docs/REMEDIATION.md §5.8).
 router.get('/', async (req, res) => {
   const tokenUserId = requireUserId(req);
+  const parsedQuery = cursorPageQuerySchema.safeParse(req.query);
+  if (!parsedQuery.success) {
+    return res
+      .status(400)
+      .json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid limit or cursor.' } });
+  }
+  const { limit, cursor } = parsedQuery.data;
+  const pageFilter = cursorFilter(cursor);
+
   try {
+    // Both streams are filtered by the same `createdAt < cursor` and each
+    // over-fetches limit+1, so the newest `limit` of the union is correct:
+    // anything dropped from a stream's top limit+1 is older than that
+    // stream's (limit+1)-th row, which is in turn older than the merged
+    // page's last row. This is the same merged-keyset shape feed.ts uses,
+    // and it is why the previous unbounded `findMany` could not simply have
+    // a `take` bolted on — the two streams advance independently
+    // (docs/REMEDIATION.md §5.9).
     const [personal, broadcasts, reads] = await queryWithRetry(() =>
       Promise.all([
-        prisma.notification.findMany({ where: { userId: tokenUserId }, orderBy: { createdAt: 'desc' } }),
-        prisma.notification.findMany({ where: { userId: null }, orderBy: { createdAt: 'desc' } }),
+        prisma.notification.findMany({
+          where: { userId: tokenUserId, ...pageFilter },
+          orderBy: { createdAt: 'desc' },
+          take: takeWithLookahead(limit),
+        }),
+        prisma.notification.findMany({
+          where: { userId: null, ...pageFilter },
+          orderBy: { createdAt: 'desc' },
+          take: takeWithLookahead(limit),
+        }),
         prisma.notificationRead.findMany({ where: { userId: tokenUserId }, select: { notificationId: true } }),
       ])
     );
@@ -50,11 +76,18 @@ router.get('/', async (req, res) => {
     const readIds = new Set(reads.map((r) => r.notificationId));
     const mappedBroadcasts = broadcasts.map((n) => ({ ...n, unread: !readIds.has(n.id) }));
 
-    const list = [...personal, ...mappedBroadcasts].sort(
+    const merged = [...personal, ...mappedBroadcasts].sort(
       (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
     );
+    const hasMore = merged.length > limit;
+    const list = merged.slice(0, limit);
+    const last = list[list.length - 1];
 
-    res.status(200).json({ ok: true, data: list });
+    res.status(200).json({
+      ok: true,
+      data: list,
+      meta: { cursor: hasMore && last ? last.createdAt.toISOString() : null },
+    });
   } catch (err) {
     logger.warn('[Postgres DB Warn] Get notifications failed:', err);
     res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve notifications' } });

@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
+import { cursorPageQuerySchema } from '../../lib/pagination';
 import { sendPushToUsers, unreadCountFor } from '../../lib/push';
 import { requireUserId } from '../../lib/auth-context';
 import { claimSeatAndJoin, releaseSeatAndLeave } from '../../services/trip-membership';
@@ -146,6 +147,12 @@ router.post('/join-request', async (req, res) => {
 
 // Get all join requests for a user
 router.get('/join-requests', async (req, res) => {
+  const parsedQuery = cursorPageQuerySchema.safeParse(req.query);
+  if (!parsedQuery.success) {
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid limit.' } });
+  }
+  const { limit } = parsedQuery.data;
+
   try {
     const userId = requireUserId(req);
 
@@ -153,12 +160,20 @@ router.get('/join-requests', async (req, res) => {
       where: { userId },
       select: { tripId: true, status: true, fromCity: true, toCity: true, adjustedPrice: true },
       orderBy: { createdAt: 'desc' },
+      take: limit,
     });
 
     return res.status(200).json({ ok: true, data: requests });
   } catch (err) {
-    logger.warn('[Interactions] Get join requests error:', err);
-    return res.status(200).json({ ok: true, data: [] });
+    // This used to answer a database failure with `200 { data: [] }`, which
+    // told the client "you have no join requests" — indistinguishable from
+    // the truthful empty answer, and enough for a screen to hide a pending
+    // request the user really has (docs/REMEDIATION.md §0.3, no silent
+    // failures).
+    logger.error('[Interactions] Get join requests error:', err);
+    return res
+      .status(500)
+      .json({ ok: false, error: { code: 'INTERNAL', message: 'Could not load your join requests.' } });
   }
 });
 
@@ -212,8 +227,14 @@ router.get('/unread-count', async (req, res) => {
 
 // Get all incoming join requests for trips created by the logged-in user
 router.get('/incoming-requests', async (req, res) => {
+  const parsedQuery = cursorPageQuerySchema.safeParse(req.query);
+  if (!parsedQuery.success) {
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid limit.' } });
+  }
+
   try {
     const requests = await prisma.joinRequest.findMany({
+      take: parsedQuery.data.limit,
       where: {
         trip: {
           creatorId: requireUserId(req),
@@ -312,6 +333,14 @@ const handleStatusChange = async (req: Request, res: Response) => {
     if (!claim.ok) {
       if (claim.reason === 'TRIP_NOT_FOUND') {
         return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found.' } });
+      }
+      if (claim.reason === 'BUSY') {
+        // See the same branch in trips.ts — never reported as TRIP_FULL.
+        res.setHeader('Retry-After', '2');
+        return res.status(503).json({
+          ok: false,
+          error: { code: 'SERVICE_BUSY', message: 'The database is busy. Please approve this request again.' },
+        });
       }
       return res.status(409).json({ ok: false, error: { code: 'TRIP_FULL', message: 'No available seats on this trip.' } });
     }

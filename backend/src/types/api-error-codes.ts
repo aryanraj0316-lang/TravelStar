@@ -22,6 +22,9 @@ export type ApiErrorCode =
   | 'REFRESH_TOKEN_INVALID'
   | 'REFRESH_TOKEN_REUSED'
   | 'RESET_TOKEN_INVALID'
+  // The database was too contended to start a transaction; nothing was
+  // written, so the caller may safely retry (docs/REMEDIATION.md §5.4).
+  | 'SERVICE_BUSY'
   | 'SESSION_REVOKED'
   | 'TRIP_FULL'
   | 'TRIP_NOT_FOUND'

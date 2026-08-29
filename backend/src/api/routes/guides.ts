@@ -5,6 +5,7 @@ import { logger } from '../../lib/logger';
 import { requireUserId, isAdmin } from '../../lib/auth-context';
 import { requireRole } from '../../middleware/auth';
 import { createGuideMediaUploadUrl, ObjectStorageNotConfiguredError } from '../../lib/object-storage';
+import { buildPage, cursorFilter, cursorPageQuerySchema, takeWithLookahead } from '../../lib/pagination';
 
 const router = Router();
 
@@ -77,14 +78,26 @@ async function assertOwnsGuideProfile(
 
 // 0. Get list of all guides for homepage
 router.get('/', async (req, res) => {
+  const parsedQuery = cursorPageQuerySchema.safeParse(req.query);
+  if (!parsedQuery.success) {
+    return res
+      .status(400)
+      .json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid limit or cursor.' } });
+  }
+  const { limit, cursor } = parsedQuery.data;
+
   try {
-    const dbGuides = await prisma.guideProfile.findMany({
+    const rows = await prisma.guideProfile.findMany({
+      where: cursorFilter(cursor),
+      orderBy: { createdAt: 'desc' },
+      take: takeWithLookahead(limit),
       include: {
         user: {
           include: { profile: true },
         },
       },
     });
+    const { items: dbGuides, nextCursor } = buildPage(rows, limit);
 
     // Money crosses the wire as a string (docs/CONVENTIONS.md §3) so the
     // client never has to guess whether it got a Decimal-as-string or a
@@ -111,7 +124,7 @@ router.get('/', async (req, res) => {
       });
     }
 
-    return res.status(200).json({ ok: true, data: mapped });
+    return res.status(200).json({ ok: true, data: mapped, meta: { cursor: nextCursor } });
   } catch (err) {
     logger.error('[Guides] Get guides list error:', err);
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve guides' } });
@@ -537,12 +550,22 @@ router.delete('/:id/packages/:packageId', async (req, res) => {
 // 4. Reels CRUD
 router.get('/:id/reels', async (req, res) => {
   const { id } = req.params;
+  const parsedQuery = cursorPageQuerySchema.safeParse(req.query);
+  if (!parsedQuery.success) {
+    return res
+      .status(400)
+      .json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid limit or cursor.' } });
+  }
+  const { limit, cursor } = parsedQuery.data;
+
   try {
-    const reels = await prisma.guideReel.findMany({
-      where: { guideProfileId: id },
+    const rows = await prisma.guideReel.findMany({
+      where: { guideProfileId: id, ...cursorFilter(cursor) },
       orderBy: { createdAt: 'desc' },
+      take: takeWithLookahead(limit),
     });
-    return res.status(200).json({ ok: true, data: reels });
+    const { items, nextCursor } = buildPage(rows, limit);
+    return res.status(200).json({ ok: true, data: items, meta: { cursor: nextCursor } });
   } catch (err) {
     logger.error('[Guides] Get reels error:', err);
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve reels' } });
