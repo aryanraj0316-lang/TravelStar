@@ -1,15 +1,21 @@
-// Cross-platform replacement for Alert.alert (REMEDIATION.md §0.2.6 /
-// CONVENTIONS.md §7). Alert.alert no-ops on web, and this app ships web, so
-// every confirmation and error dialog built on it silently vanished there.
+// Cross-platform replacement for Alert.alert (REMEDIATION.md §0.2.6 / §9.2 /
+// CONVENTIONS.md §7). Alert.alert no-ops on web, and this app ships web
+// (`web.output: "static"` in app.json), so every confirmation, error, and
+// prompt built on it silently vanished there.
 //
 // Mount <FeedbackProvider> once, at the root (src/app/_layout.tsx). Then:
 //   toast('Trip created', 'success')
-//   const confirm = useConfirm();
-//   const ok = await confirm({ title: 'Leave trip?', message: '...', destructive: true });
-import React, { createContext, useCallback, useContext, useRef, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+//   await showAlert('Permission Required', 'Enable photo access to continue.')
+//   const ok = await confirm({ title: 'Leave trip?', destructive: true })
+//   const room = await showPrompt({ title: 'Allocate Room', defaultValue: '402' })
+//
+// `toast` / `showAlert` / `showPrompt` are module-level so a plain service
+// module can call them without threading a hook through every layer;
+// `useConfirm` stays a hook because its call sites are all in components.
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ApiError } from '@/services/api';
-import { C } from '@/theme/tokens';
+import { C, MIN_TOUCH_TARGET, fontSize, radii, space } from '@/theme/tokens';
 
 /** Prefer the server/network's own message over a generic fallback when the
  * caught value is an ApiError — every other thrown value falls back. */
@@ -33,20 +39,62 @@ interface ConfirmOptions {
   destructive?: boolean;
 }
 
-let pushToast: ((message: string, type: ToastType) => void) | null = null;
+interface AlertOptions {
+  title: string;
+  message?: string;
+  confirmLabel?: string;
+}
 
-// Module-level function so any call site (including outside a component,
-// e.g. a plain service module) can call `toast(...)` without threading a
-// hook through every layer. Registered by the single <FeedbackProvider>
-// instance the app mounts at the root.
+interface PromptOptions {
+  title: string;
+  message?: string;
+  placeholder?: string;
+  defaultValue?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+}
+
+let pushToast: ((message: string, type: ToastType) => void) | null = null;
+let pushAlert: ((options: AlertOptions) => Promise<void>) | null = null;
+let pushPrompt: ((options: PromptOptions) => Promise<string | null>) | null = null;
+
+function warnNoProvider(kind: string, detail: string): void {
+  // No provider mounted yet (e.g. very early boot) — fail loudly in dev
+  // instead of silently dropping the message, which is the exact failure
+  // mode Alert.alert had on web.
+  if (__DEV__) console.warn(`[feedback] ${kind}() called before FeedbackProvider mounted:`, detail);
+}
+
 export function toast(message: string, type: ToastType = 'info'): void {
-  if (!pushToast) {
-    // No provider mounted yet (e.g. very early boot) — fail loudly in dev
-    // instead of silently dropping the message.
-    if (__DEV__) console.warn('[feedback] toast() called before FeedbackProvider mounted:', message);
-    return;
-  }
+  if (!pushToast) return warnNoProvider('toast', message);
   pushToast(message, type);
+}
+
+/**
+ * A single-button modal the user has to dismiss — the direct replacement
+ * for a two-argument `Alert.alert(title, message)`. Awaitable, so a caller
+ * that needs to continue only after acknowledgement can.
+ */
+export function showAlert(title: string, message?: string, confirmLabel?: string): Promise<void> {
+  if (!pushAlert) {
+    warnNoProvider('showAlert', title);
+    return Promise.resolve();
+  }
+  return pushAlert(message !== undefined ? { title, message, ...(confirmLabel ? { confirmLabel } : {}) } : { title });
+}
+
+/**
+ * A text-input modal. Replaces `Alert.prompt`, which exists **only on iOS**
+ * — on Android and web it is not merely unstyled, it does not exist, so
+ * every call site was a no-op for most of the user base. Resolves to the
+ * entered string, or null if cancelled.
+ */
+export function showPrompt(options: PromptOptions): Promise<string | null> {
+  if (!pushPrompt) {
+    warnNoProvider('showPrompt', options.title);
+    return Promise.resolve(null);
+  }
+  return pushPrompt(options);
 }
 
 interface FeedbackContextValue {
@@ -62,72 +110,156 @@ export function useConfirm(): (options: ConfirmOptions) => Promise<boolean> {
 }
 
 const TOAST_COLORS: Record<ToastType, string> = {
-  success: '#1F9D55',
-  error: '#DC2626',
-  info: '#2563EB',
+  success: C.green,
+  error: C.red,
+  info: C.blueText,
 };
+
+type DialogState =
+  | { kind: 'confirm'; options: ConfirmOptions; resolve: (v: boolean) => void }
+  | { kind: 'alert'; options: AlertOptions; resolve: () => void }
+  | { kind: 'prompt'; options: PromptOptions; resolve: (v: string | null) => void };
 
 export const FeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
-  const [confirmState, setConfirmState] = useState<
-    (ConfirmOptions & { resolve: (v: boolean) => void }) | null
-  >(null);
+  const [dialog, setDialog] = useState<DialogState | null>(null);
+  const [promptValue, setPromptValue] = useState('');
   const idRef = useRef(0);
 
-  pushToast = useCallback((message: string, type: ToastType) => {
+  const addToast = useCallback((message: string, type: ToastType) => {
     const id = String(idRef.current++);
     setToasts((prev) => [...prev, { id, message, type }]);
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3500);
   }, []);
 
-  const confirm = useCallback((options: ConfirmOptions) => {
-    return new Promise<boolean>((resolve) => {
-      setConfirmState({ ...options, resolve });
+  const openAlert = useCallback(
+    (options: AlertOptions) => new Promise<void>((resolve) => setDialog({ kind: 'alert', options, resolve })),
+    []
+  );
+
+  const openPrompt = useCallback(
+    (options: PromptOptions) =>
+      new Promise<string | null>((resolve) => {
+        setPromptValue(options.defaultValue ?? '');
+        setDialog({ kind: 'prompt', options, resolve });
+      }),
+    []
+  );
+
+  // Registered in an effect, not during render: assigning a module-level
+  // binding while rendering is a side effect, and React may render a
+  // component without committing it.
+  useEffect(() => {
+    pushToast = addToast;
+    pushAlert = openAlert;
+    pushPrompt = openPrompt;
+    return () => {
+      pushToast = null;
+      pushAlert = null;
+      pushPrompt = null;
+    };
+  }, [addToast, openAlert, openPrompt]);
+
+  const confirm = useCallback(
+    (options: ConfirmOptions) =>
+      new Promise<boolean>((resolve) => setDialog({ kind: 'confirm', options, resolve })),
+    []
+  );
+
+  /** Dismissal path shared by the backdrop, the hardware back button, and
+   *  the cancel button — each dialog kind resolves to its "nothing
+   *  happened" value so an awaiting caller never hangs. */
+  const dismiss = useCallback(() => {
+    setDialog((current) => {
+      if (!current) return null;
+      if (current.kind === 'confirm') current.resolve(false);
+      else if (current.kind === 'prompt') current.resolve(null);
+      else current.resolve();
+      return null;
     });
   }, []);
 
-  const resolveConfirm = (value: boolean) => {
-    confirmState?.resolve(value);
-    setConfirmState(null);
-  };
+  const accept = useCallback(() => {
+    setDialog((current) => {
+      if (!current) return null;
+      if (current.kind === 'confirm') current.resolve(true);
+      else if (current.kind === 'prompt') current.resolve(promptValue);
+      else current.resolve();
+      return null;
+    });
+  }, [promptValue]);
+
+  const options = dialog?.options;
+  const cancelLabel =
+    dialog && dialog.kind !== 'alert' ? ((dialog.options as ConfirmOptions).cancelLabel ?? 'Cancel') : null;
+  const confirmLabel =
+    options && 'confirmLabel' in options && options.confirmLabel
+      ? options.confirmLabel
+      : dialog?.kind === 'alert'
+        ? 'OK'
+        : dialog?.kind === 'prompt'
+          ? 'Save'
+          : 'Confirm';
 
   return (
     <FeedbackContext.Provider value={{ confirm }}>
       {children}
       <View style={styles.toastContainer} pointerEvents="box-none">
         {toasts.map((t) => (
-          <View key={t.id} style={[styles.toast, { borderLeftColor: TOAST_COLORS[t.type] }]}>
+          <View
+            key={t.id}
+            style={[styles.toast, { borderLeftColor: TOAST_COLORS[t.type] }]}
+            accessibilityRole="alert"
+            accessibilityLiveRegion="polite"
+          >
             <Text style={styles.toastText}>{t.message}</Text>
           </View>
         ))}
       </View>
 
-      <Modal visible={!!confirmState} transparent animationType="fade" onRequestClose={() => resolveConfirm(false)}>
-        <View style={styles.overlay}>
-          <View style={styles.dialog}>
-            <Text style={styles.dialogTitle}>{confirmState?.title}</Text>
-            {confirmState?.message ? <Text style={styles.dialogMessage}>{confirmState.message}</Text> : null}
+      <Modal visible={!!dialog} transparent animationType="fade" onRequestClose={dismiss}>
+        <Pressable style={styles.overlay} onPress={dismiss} accessibilityLabel="Dismiss">
+          {/* Stops a tap inside the card from reaching the backdrop. */}
+          <Pressable style={styles.dialog} onPress={() => {}} accessibilityViewIsModal>
+            <Text style={styles.dialogTitle} accessibilityRole="header">
+              {options?.title}
+            </Text>
+            {options?.message ? <Text style={styles.dialogMessage}>{options.message}</Text> : null}
+
+            {dialog?.kind === 'prompt' && (
+              <TextInput
+                style={styles.promptInput}
+                value={promptValue}
+                onChangeText={setPromptValue}
+                placeholder={dialog.options.placeholder ?? ''}
+                placeholderTextColor={C.textMuted}
+                autoFocus
+                onSubmitEditing={accept}
+                returnKeyType="done"
+                accessibilityLabel={dialog.options.title}
+              />
+            )}
+
             <View style={styles.dialogActions}>
-              <Pressable style={styles.dialogButton} onPress={() => resolveConfirm(false)}>
-                <Text style={styles.dialogButtonText}>{confirmState?.cancelLabel ?? 'Cancel'}</Text>
-              </Pressable>
-              <Pressable
-                style={styles.dialogButton}
-                onPress={() => resolveConfirm(true)}
-              >
+              {cancelLabel !== null && (
+                <Pressable style={styles.dialogButton} onPress={dismiss} accessibilityRole="button">
+                  <Text style={styles.dialogButtonText}>{cancelLabel}</Text>
+                </Pressable>
+              )}
+              <Pressable style={styles.dialogButton} onPress={accept} accessibilityRole="button">
                 <Text
                   style={[
                     styles.dialogButtonText,
                     styles.dialogButtonPrimary,
-                    confirmState?.destructive ? styles.dialogButtonDestructive : null,
+                    dialog?.kind === 'confirm' && dialog.options.destructive ? styles.dialogButtonDestructive : null,
                   ]}
                 >
-                  {confirmState?.confirmLabel ?? 'Confirm'}
+                  {confirmLabel}
                 </Text>
               </Pressable>
             </View>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
     </FeedbackContext.Provider>
   );
@@ -137,17 +269,17 @@ const styles = StyleSheet.create({
   toastContainer: {
     position: 'absolute',
     top: 56,
-    left: 16,
-    right: 16,
+    left: space[4],
+    right: space[4],
     zIndex: 9999,
-    gap: 8,
+    gap: space[2],
   },
   toast: {
-    backgroundColor: '#12141C',
+    backgroundColor: C.card,
     borderLeftWidth: 4,
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    borderRadius: radii.sm,
+    paddingVertical: space[3],
+    paddingHorizontal: space[4],
     shadowColor: '#000',
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -156,52 +288,70 @@ const styles = StyleSheet.create({
   },
   toastText: {
     color: C.white,
-    fontSize: 14,
+    fontSize: fontSize.sm,
   },
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.55)',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
+    padding: space[6],
   },
   dialog: {
-    backgroundColor: '#12141C',
-    borderRadius: 16,
-    padding: 20,
+    backgroundColor: C.card,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: space[5],
     width: '100%',
     maxWidth: 400,
   },
   dialogTitle: {
     color: C.white,
-    fontSize: 17,
+    fontSize: fontSize.md,
     fontWeight: '700',
-    marginBottom: 8,
+    marginBottom: space[2],
   },
   dialogMessage: {
-    color: '#B8BCC8',
-    fontSize: 14,
+    color: C.textSec,
+    fontSize: fontSize.sm,
     lineHeight: 20,
-    marginBottom: 20,
+    marginBottom: space[5],
+  },
+  promptInput: {
+    backgroundColor: C.bg,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: radii.sm,
+    color: C.white,
+    fontSize: fontSize.base,
+    paddingHorizontal: space[3],
+    minHeight: MIN_TOUCH_TARGET,
+    marginBottom: space[5],
   },
   dialogActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    gap: 20,
+    alignItems: 'center',
+    gap: space[4],
   },
   dialogButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 4,
+    // §9.3: dialog actions were 8pt-tall text targets.
+    minHeight: MIN_TOUCH_TARGET,
+    minWidth: MIN_TOUCH_TARGET,
+    paddingHorizontal: space[3],
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   dialogButtonText: {
-    color: '#9AA0AE',
-    fontSize: 15,
+    color: C.textSec,
+    fontSize: fontSize.base,
     fontWeight: '600',
   },
   dialogButtonPrimary: {
-    color: '#4F8CFF',
+    color: C.blueText,
   },
   dialogButtonDestructive: {
-    color: '#DC2626',
+    color: C.redText,
   },
 });

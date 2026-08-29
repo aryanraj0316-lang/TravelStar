@@ -2,7 +2,10 @@ import { apiService } from '@/services/api';
 import { logger } from '@/lib/logger';
 import { useQuery } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/query-keys';
-import { useApp, UserRole } from '@/store/AppContext';
+import { useApp, UserRole, type Trip } from '@/store/AppContext';
+import { formatINR } from '@/lib/money';
+import { formatTripDuration, tripCoverImage, tripTransportLabel } from '@/lib/trip-display';
+import { ScreenEmpty, ScreenError, SkeletonCard } from '@/components/ui';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useNavigation } from 'expo-router';
 import {
@@ -382,7 +385,7 @@ function RotatingMonsoonAlertCard({ alerts, isFocused }: { alerts: any[]; isFocu
 }
 
 function FeaturedTripsCarousel({ isFocused }: { isFocused: boolean }) {
-  const { trips, setActiveRoomId } = useApp();
+  const { trips, setActiveRoomId, dataStatus, refreshTrips } = useApp();
   const router = useRouter();
   const carouselRef = useRef<ScrollView>(null);
   const isInteracting = useRef(false);
@@ -411,21 +414,46 @@ function FeaturedTripsCarousel({ isFocused }: { isFocused: boolean }) {
     return () => clearInterval(interval);
   }, [organizerTrips, isFocused]);
 
-  const getTripImage = (id: string, name: string) => {
-    if (id === 'trip-1') return 'https://images.unsplash.com/photo-1548013146-72479768bada?w=600&q=80';
-    if (id === 'trip-2') return 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=600&q=80';
-    if (id === 'trip-3') return 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=600&q=80';
-
-    const lowerName = name.toLowerCase();
-    if (lowerName.includes('sikkim')) return 'https://images.unsplash.com/photo-1548013146-72479768bada?w=600&q=80';
-    if (lowerName.includes('rajasthan') || lowerName.includes('jaipur') || lowerName.includes('heritage')) return 'https://images.unsplash.com/photo-1599661046289-e31897846e41?w=600&q=80';
-    if (lowerName.includes('kerala')) return 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=600&q=80';
-    return 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&q=80';
-  };
-
-  const getRoomId = (trip: any) => {
+  // The trip's own cover image or nothing. This used to look the id up in a
+  // hardcoded table and otherwise match words in the title against stock
+  // Unsplash photos, so a Kerala trip could be illustrated with Rajasthan
+  // (docs/REMEDIATION.md §8.15 / §9.5).
+  const getRoomId = (trip: Trip) => {
     return trip?.chatRoomId || `room-${trip.id}`;
   };
+
+  if (dataStatus.trips === 'loading') {
+    return (
+      <View style={styles.carouselContainer}>
+        <SkeletonCard />
+      </View>
+    );
+  }
+
+  if (dataStatus.trips === 'error') {
+    return (
+      <View style={styles.carouselContainer}>
+        <ScreenError
+          title="Could not load trips"
+          message="We could not reach the server. Check your connection and try again."
+          onRetry={refreshTrips}
+        />
+      </View>
+    );
+  }
+
+  if (organizerTrips.length === 0) {
+    return (
+      <View style={styles.carouselContainer}>
+        <ScreenEmpty
+          title="No trips yet"
+          message="Nobody has published a trip yet. Create one and it will show up here."
+          actionLabel="Create a trip"
+          onAction={() => router.navigate('/create')}
+        />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.carouselContainer}>
@@ -446,11 +474,9 @@ function FeaturedTripsCarousel({ isFocused }: { isFocused: boolean }) {
         contentContainerStyle={{ paddingHorizontal: 20, gap: 10 }}
       >
         {infiniteTrips.map((trip, idx) => {
-          const imageUri = getTripImage(trip.id, trip.name);
-          const durationText = trip.id === 'trip-1' ? '7 Nights / 8 Days' :
-            trip.id === 'trip-2' ? '10 Nights / 11 Days' :
-              trip.id === 'trip-3' ? '5 Nights / 6 Days' : '5 Nights / 6 Days';
-          const transportText = trip.id === 'trip-2' ? 'Bike + Stay' : 'AC Transport';
+          const imageUri = tripCoverImage(trip);
+          const durationText = formatTripDuration(trip);
+          const transportText = tripTransportLabel(trip);
 
           return (
             <TouchableOpacity
@@ -463,7 +489,13 @@ function FeaturedTripsCarousel({ isFocused }: { isFocused: boolean }) {
             >
               {/* Left side: Image */}
               <View style={styles.tripImageContainer}>
-                <Image source={{ uri: imageUri }} style={styles.tripImage} />
+                {imageUri ? (
+                  <Image source={{ uri: imageUri }} style={styles.tripImage} />
+                ) : (
+                  <View style={[styles.tripImage, styles.tripImageFallback]}>
+                    <MapPin size={18} color={C.textMuted} />
+                  </View>
+                )}
                 <LinearGradient
                   colors={['rgba(0, 0, 0, 0.65)', 'rgba(0, 0, 0, 0.1)', 'rgba(0, 0, 0, 0.75)']}
                   locations={[0, 0.45, 1]}
@@ -480,17 +512,23 @@ function FeaturedTripsCarousel({ isFocused }: { isFocused: boolean }) {
                   {trip.name}
                 </Text>
 
+                {/* No star rating and no "Verified Route" badge here: this app
+                    has no review system and no rating column on Trip
+                    (docs/REMEDIATION.md §8.14), so both were fabricated trust
+                    signals shown identically on every trip. Seats and members
+                    are real columns. */}
                 <View style={styles.tripDetailsMetaRow}>
-                  <View style={styles.verifiedBadge}>
-                    <Check size={8} color="#0066FF" strokeWidth={3} />
-                    <Text style={styles.verifiedText}>Verified Route</Text>
-                  </View>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
-                    <Star size={10} color="#FBBF24" fill="#FBBF24" />
-                    <Text style={{ fontSize: 9.5, fontWeight: '700', color: '#FFF' }}>4.8</Text>
-                  </View>
-                  <Text style={{ fontSize: 9.5, color: '#7E8494' }}>•</Text>
-                  <Text style={{ fontSize: 9.5, fontWeight: '600', color: '#10B981' }}>{trip.availableSeats} left</Text>
+                  {trip.guideIncluded ? (
+                    <View style={styles.verifiedBadge}>
+                      <Check size={8} color={C.blue} strokeWidth={3} />
+                      <Text style={styles.verifiedText}>Guide included</Text>
+                    </View>
+                  ) : null}
+                  <Text style={styles.tripMetaText}>
+                    {trip.membersCount} joined
+                  </Text>
+                  <Text style={styles.tripMetaDot}>•</Text>
+                  <Text style={styles.tripMetaSeats}>{trip.availableSeats} left</Text>
                 </View>
 
                 {/* Route cities with arrow */}
@@ -507,21 +545,25 @@ function FeaturedTripsCarousel({ isFocused }: { isFocused: boolean }) {
 
                 {/* Subtitle / capsules */}
                 <View style={styles.capsulesRow}>
-                  <View style={styles.capsule}>
-                    <Clock size={8} color="#7E8494" />
-                    <Text style={styles.capsuleText} numberOfLines={1}>{durationText}</Text>
-                  </View>
-                  <View style={styles.capsule}>
-                    <Plane size={8} color="#7E8494" />
-                    <Text style={styles.capsuleText} numberOfLines={1}>{transportText}</Text>
-                  </View>
+                  {durationText ? (
+                    <View style={styles.capsule}>
+                      <Clock size={8} color={C.textMuted} />
+                      <Text style={styles.capsuleText} numberOfLines={1}>{durationText}</Text>
+                    </View>
+                  ) : null}
+                  {transportText ? (
+                    <View style={styles.capsule}>
+                      <Plane size={8} color={C.textMuted} />
+                      <Text style={styles.capsuleText} numberOfLines={1}>{transportText}</Text>
+                    </View>
+                  ) : null}
                 </View>
 
                 {/* Price and Action Buttons */}
                 <View style={styles.priceRow}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.priceLabel}>Total Package</Text>
-                    <Text style={styles.priceAmount}>₹{trip.budget}</Text>
+                    <Text style={styles.priceAmount}>{formatINR(trip.budget)}</Text>
                   </View>
                   <View style={{ gap: 4, width: 110 }}>
                     <TouchableOpacity
@@ -1028,6 +1070,10 @@ function HomeScreen() {
 
 // ─── Styles ─────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
+  tripImageFallback: { alignItems: 'center', justifyContent: 'center', backgroundColor: C.cardAlt },
+  tripMetaText: { fontSize: 12, fontWeight: '600', color: C.textMuted },
+  tripMetaDot: { fontSize: 12, color: C.textMuted },
+  tripMetaSeats: { fontSize: 12, fontWeight: '600', color: C.greenText },
   container: {
     flex: 1,
     backgroundColor: C.bg,

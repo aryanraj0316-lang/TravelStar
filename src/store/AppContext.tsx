@@ -147,6 +147,20 @@ export interface Story {
   createdAt: string;
 }
 
+/**
+ * Per-collection load state, so a screen can render §0.2.5's four states
+ * instead of an ambiguous empty array. Before this existed, a failed fetch
+ * left the previous (fabricated) seed data on screen and logged a warning —
+ * see docs/REMEDIATION.md §0.2 rule 4.
+ */
+export type LoadStatus = 'loading' | 'ready' | 'error';
+
+export interface DataStatus {
+  trips: LoadStatus;
+  guides: LoadStatus;
+  stories: LoadStatus;
+}
+
 interface AppContextType {
   currentRole: UserRole;
   setCurrentRole: (role: UserRole) => void;
@@ -184,6 +198,7 @@ interface AppContextType {
   clearChatUnread: () => void;
   checkUnreadNotifications: () => void;
   hasUnreadNotification: boolean;
+  dataStatus: DataStatus;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -308,182 +323,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .catch((e) => logger.warn('[Profile] Failed to sync role change:', e));
   }, [currentRole, isLoggedIn]);
 
-  const [trips, setTrips] = useState<Trip[]>([
-    {
-      id: 'trip-1',
-      name: 'Ranchi to Vrindavan Spiritual Journey',
-      creator: 'Vikram Singh (Organizer)',
-      cities: ['Ranchi', 'Delhi', 'Mathura', 'Vrindavan'],
-      startDate: '2026-08-12',
-      endDate: '2026-08-17',
-      budget: 8500,
-      availableSeats: 5,
-      totalSeats: 15,
-      meetingPoint: 'Ranchi Junction Platform 1',
-      guideIncluded: true,
-      foodIncluded: true,
-      privacy: 'PUBLIC',
-      membersCount: 10,
-    },
-    {
-      id: 'trip-2',
-      name: 'Leh Ladakh Bike Expedition',
-      creator: 'Aditya Sen',
-      cities: ['Manali', 'Sarchu', 'Leh', 'Nubra Valley', 'Pangong Tso'],
-      startDate: '2026-09-05',
-      endDate: '2026-09-14',
-      budget: 28000,
-      availableSeats: 4,
-      totalSeats: 8,
-      meetingPoint: 'Manali Mall Road',
-      guideIncluded: true,
-      foodIncluded: false,
-      privacy: 'PUBLIC',
-      membersCount: 4,
-    },
-    {
-      id: 'trip-3',
-      name: 'Kerala Backwaters & Hills',
-      creator: 'Priya Nair',
-      cities: ['Kochi', 'Munnar', 'Alleppey'],
-      startDate: '2026-08-25',
-      endDate: '2026-08-30',
-      budget: 15000,
-      availableSeats: 6,
-      totalSeats: 10,
-      meetingPoint: 'Kochi Airport Terminal 1',
-      guideIncluded: false,
-      foodIncluded: true,
-      privacy: 'PUBLIC',
-      membersCount: 4,
-    },
-    {
-      id: 'creation-1',
-      name: 'Taj Mahal Heritage Getaway',
-      creator: 'Aarav Sharma (Organizer)',
-      cities: ['Delhi', 'Agra', 'Fatehpur Sikri'],
-      startDate: '2026-08-10',
-      endDate: '2026-08-12',
-      budget: 6500,
-      availableSeats: 12,
-      totalSeats: 15,
-      meetingPoint: 'Delhi Aerocity Metro Stn',
-      guideIncluded: true,
-      foodIncluded: true,
-      privacy: 'PUBLIC',
-      membersCount: 3,
-      coverImage: 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1000&q=80',
-      category: 'Heritage',
-    },
-    {
-      id: 'creation-2',
-      name: 'Golden Triangle Scenic Tour',
-      creator: 'Aarav Sharma (Organizer)',
-      cities: ['Delhi', 'Agra', 'Jaipur'],
-      startDate: '2026-08-20',
-      endDate: '2026-08-25',
-      budget: 9800,
-      availableSeats: 8,
-      totalSeats: 12,
-      meetingPoint: 'New Delhi Rly Station PF 1',
-      guideIncluded: true,
-      foodIncluded: true,
-      privacy: 'PUBLIC',
-      membersCount: 4,
-      coverImage: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=800&q=80',
-      category: 'Adventure',
-    },
-    {
-      id: 'bt-2',
-      name: 'Varanasi Spiritual Ghats & Sarnath Heritage Tour',
-      creator: 'Anjali Sharma (Local Guide)',
-      cities: ['Varanasi', 'Sarnath'],
-      startDate: '2026-08-18',
-      endDate: '2026-08-20',
-      budget: 6500,
-      availableSeats: 6,
-      totalSeats: 12,
-      meetingPoint: 'Dashashwamedh Ghat Varanasi',
-      guideIncluded: true,
-      foodIncluded: true,
-      privacy: 'PUBLIC',
-      membersCount: 6,
-      category: 'Religious',
-    },
-    {
-      id: 'bt-4',
-      name: 'Kashmir Backpacking (Srinagar, Gulmarg & Pahalgam)',
-      creator: 'Aarav Sharma (Solo Traveler/User)',
-      cities: ['Srinagar', 'Gulmarg', 'Pahalgam'],
-      startDate: '2026-09-01',
-      endDate: '2026-09-06',
-      budget: 14500,
-      availableSeats: 3,
-      totalSeats: 8,
-      meetingPoint: 'Srinagar Airport Gate 1',
-      guideIncluded: false,
-      foodIncluded: true,
-      privacy: 'PUBLIC',
-      membersCount: 5,
-      category: 'Adventure',
-    },
-    {
-      id: 'bt-5',
-      name: 'Goa Beach Hopping & Dudhsagar Waterfalls Road Trip',
-      creator: 'Priya & Friends (Tourist Group)',
-      cities: ['North Goa', 'South Goa', 'Dudhsagar'],
-      startDate: '2026-08-28',
-      endDate: '2026-09-01',
-      budget: 9800,
-      availableSeats: 2,
-      totalSeats: 8,
-      meetingPoint: 'Mapusa Bus Terminal Goa',
-      guideIncluded: false,
-      foodIncluded: true,
-      privacy: 'PUBLIC',
-      membersCount: 6,
-      category: 'Nature',
-    },
-  ]);
+  // No hardcoded seed (docs/REMEDIATION.md §0.2 rule 4). This used to hold
+  // fabricated trips with invented organizers, prices, seat counts and
+  // meeting points. They were rendered by home-screen, map, and
+  // group-organizer as real, bookable trips whenever GET /trips failed or
+  // returned an empty list — and a join request against `trip-1` targets a
+  // trip id that does not exist in any database.
+  const [trips, setTrips] = useState<Trip[]>([]);
 
-  const [guides, setGuides] = useState<Guide[]>([
-    {
-      id: 'guide-1',
-      name: 'Rajesh Kumar',
-      avatar: 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=150&q=80',
-      rating: 4.9,
-      reviewsCount: 142,
-      expertise: ['Vrindavan Temples', 'Taj Mahal Guide', 'Delhi Red Fort'],
-      languages: ['Hindi', 'English', 'Sanskrit'],
-      hourlyRate: 350,
-      dailyRate: 2200,
-      verified: true,
-    },
-    {
-      id: 'guide-2',
-      name: 'Anjali Sharma',
-      avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150&q=80',
-      rating: 4.8,
-      reviewsCount: 96,
-      expertise: ['Jaipur Forts', 'Jodhpur Heritage Walk', 'Udaipur Lakes'],
-      languages: ['Hindi', 'English', 'Rajasthani'],
-      hourlyRate: 400,
-      dailyRate: 2500,
-      verified: true,
-    },
-    {
-      id: 'guide-3',
-      name: 'Lobsang Yeshi',
-      avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80',
-      rating: 4.95,
-      reviewsCount: 204,
-      expertise: ['Leh Monasteries', 'Nubra Valley Trekking', 'Pangong Ecology'],
-      languages: ['Tibetan', 'English', 'Hindi'],
-      hourlyRate: 500,
-      dailyRate: 3500,
-      verified: true,
-    },
-  ]);
+  // No hardcoded seed (docs/REMEDIATION.md §0.2 rule 4). This used to hold
+  // three fabricated guides — invented names, Unsplash avatars, invented
+  // ratings and rates, and `verified: true` on all three. "Verified Guide"
+  // is the trust signal users pay on (§2.6), so rendering fake verified
+  // guides whenever GET /guides failed was the worst instance of this bug.
+  const [guides, setGuides] = useState<Guide[]>([]);
 
   // No mock seed here on purpose: these used to be three hardcoded messages
   // with no roomId, which meant they rendered in whichever chat room was
@@ -492,30 +345,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [messages, setMessages] = useState<Message[]>([]);
 
   const [sosAlerts, setSosAlerts] = useState<SOSAlert[]>([]);
-  const [storiesList, setStoriesList] = useState<Story[]>([
-    {
-      id: 'story-1',
-      authorName: 'Aarav Sharma',
-      authorAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
-      title: 'Spiritual Peace in Vrindavan',
-      content: 'Experiencing the morning Aarti at Bankey Bihari Temple was truly divine...',
-      coverImg: 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1000&q=80',
-      likesCount: 24,
-      location: 'Vrindavan, UP',
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: 'story-2',
-      authorName: 'Anjali Sharma',
-      authorAvatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150&q=80',
-      title: 'Conquering Khardung La Pass',
-      content: 'Riding through the cold winds of Ladakh with our group was unforgettable.',
-      coverImg: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=800&q=80',
-      likesCount: 58,
-      location: 'Leh Ladakh',
-      createdAt: new Date().toISOString(),
-    },
-  ]);
+  // No hardcoded seed (docs/REMEDIATION.md §0.2 rule 4). This used to hold
+  // two fabricated stories with invented authors, captions and Unsplash
+  // cover images, which stayed on screen — presented as real posts by real
+  // people — whenever GET /stories failed or legitimately returned nothing.
+  const [storiesList, setStoriesList] = useState<Story[]>([]);
+
+  const [dataStatus, setDataStatus] = useState<DataStatus>({
+    trips: 'loading',
+    guides: 'loading',
+    stories: 'loading',
+  });
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const [navbarHidden, setNavbarHidden] = useState(false);
 
@@ -571,29 +411,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     apiService
       .getGuides()
       .then((remoteGuides) => {
-        if (remoteGuides && remoteGuides.length > 0) {
-          setGuides(remoteGuides);
-        }
+        // Set unconditionally: an empty list is a real answer ("no guides
+        // yet") and must render as an empty state, not silently leave
+        // whatever was there before.
+        setGuides(remoteGuides ?? []);
+        setDataStatus((prev) => ({ ...prev, guides: 'ready' }));
       })
-      .catch((e) => logger.warn('[Hydrate] Guides fetch failed:', e));
+      .catch((e) => {
+        logger.warn('[Hydrate] Guides fetch failed:', e);
+        setDataStatus((prev) => ({ ...prev, guides: 'error' }));
+      });
 
     apiService
       .getSOSAlerts()
       .then((alerts) => {
-        if (alerts && alerts.length > 0) {
-          setSosAlerts(alerts);
-        }
+        setSosAlerts(alerts ?? []);
       })
       .catch((e) => logger.warn('[Hydrate] SOS alerts fetch failed:', e));
 
     apiService
       .getStories()
       .then((remoteStories) => {
-        if (remoteStories && remoteStories.length > 0) {
-          setStoriesList(remoteStories);
-        }
+        setStoriesList(remoteStories ?? []);
+        setDataStatus((prev) => ({ ...prev, stories: 'ready' }));
       })
-      .catch((e) => logger.warn('[Hydrate] Stories fetch failed:', e));
+      .catch((e) => {
+        logger.warn('[Hydrate] Stories fetch failed:', e);
+        setDataStatus((prev) => ({ ...prev, stories: 'error' }));
+      });
   }, []);
 
   // ── Reactive: refresh trips, join requests, and socket when login/room changes ──
@@ -696,11 +541,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     apiService
       .getTrips()
       .then((remoteTrips) => {
-        if (remoteTrips && remoteTrips.length > 0) {
-          setTrips(remoteTrips);
-        }
+        setTrips(remoteTrips ?? []);
+        setDataStatus((prev) => ({ ...prev, trips: 'ready' }));
       })
-      .catch((e) => logger.warn('[Trips] Refresh failed:', e));
+      .catch((e) => {
+        logger.warn('[Trips] Refresh failed:', e);
+        setDataStatus((prev) => ({ ...prev, trips: 'error' }));
+      });
   }, []);
 
   const reloadIncomingRequestsCount = useCallback(() => {
@@ -1010,6 +857,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       clearChatUnread,
       checkUnreadNotifications,
       hasUnreadNotification,
+      dataStatus,
     }),
     [
       currentRole,
@@ -1044,6 +892,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       clearChatUnread,
       checkUnreadNotifications,
       hasUnreadNotification,
+      dataStatus,
     ],
   );
 
