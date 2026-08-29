@@ -3,6 +3,7 @@ import { z } from 'zod';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 import { requireUserId } from '../../lib/auth-context';
+import { ObjectStorageNotConfiguredError, createChatMediaUploadUrl } from '../../lib/object-storage';
 
 const router = Router();
 
@@ -334,6 +335,41 @@ router.delete('/:id/members/me', async (req, res) => {
   } catch (err) {
     logger.error('[Chats] Leave room error:', err);
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not leave the chat room.' } });
+  }
+});
+
+// docs/REMEDIATION.md §8.7 — hands back a presigned PUT so the client can
+// upload a chat photo straight to object storage and send the resulting
+// public URL, instead of sending its own device-local file:// URI (which
+// resolved for nobody but the sender). Same contract as the avatar, trip
+// cover and guide media endpoints: a real error when storage is not
+// configured, never a fake success.
+const chatMediaUploadUrlSchema = z.object({
+  contentType: z.enum(['image/jpeg', 'image/png', 'image/webp']),
+});
+
+router.post('/media-upload-url', async (req, res) => {
+  const parsed = chatMediaUploadUrlSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      ok: false,
+      error: { code: 'VALIDATION_FAILED', message: 'contentType must be image/jpeg, image/png or image/webp.' },
+    });
+  }
+
+  try {
+    const userId = requireUserId(req);
+    const { uploadUrl, publicUrl } = await createChatMediaUploadUrl(userId, parsed.data.contentType);
+    return res.status(200).json({ ok: true, data: { uploadUrl, publicUrl } });
+  } catch (err) {
+    if (err instanceof ObjectStorageNotConfiguredError) {
+      return res.status(503).json({
+        ok: false,
+        error: { code: 'STORAGE_UNAVAILABLE', message: 'Photo sharing is not available right now.' },
+      });
+    }
+    logger.error('[Chats] Media upload URL failed:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not start the upload.' } });
   }
 });
 

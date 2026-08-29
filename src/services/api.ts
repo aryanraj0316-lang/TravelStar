@@ -432,6 +432,17 @@ export const apiService = {
     });
   },
 
+  // Same as getAvatarUploadUrl, for chat.tsx's photo attachment
+  // (docs/REMEDIATION.md §8.7). Chat photos used to be sent as the
+  // sender's own device-local file:// URI, which no other member could
+  // load.
+  async getChatMediaUploadUrl(contentType: 'image/jpeg' | 'image/png' | 'image/webp') {
+    return request<{ uploadUrl: string; publicUrl: string }>('/chats/media-upload-url', {
+      method: 'POST',
+      body: JSON.stringify({ contentType }),
+    });
+  },
+
   // Trips
   // `query` is an optional pre-built query string, e.g.
   // "?maxBudget=15000&limit=50" or "?category=Nature&search=kerala".

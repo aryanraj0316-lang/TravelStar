@@ -1,7 +1,10 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { logger } from '@/lib/logger';
-import { errorToastMessage, toast } from '@/lib/feedback';
+import { errorToastMessage, showAlert, toast } from '@/lib/feedback';
 import { getCurrentDeviceLocation } from '@/lib/device-location';
+import { uploadFileToUrl } from '@/lib/upload';
+import { formatINR } from '@/lib/money';
+import { formatDateRange } from '@/lib/datetime';
 import { useRouter, type ErrorBoundaryProps } from 'expo-router';
 import { RouteErrorFallback } from '@/components/route-error-fallback';
 import {
@@ -61,7 +64,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { apiService } from '@/services/api';
 import { eventBus } from '@/services/event-bus';
 import { useApp } from '@/store/AppContext';
-import { C } from '@/theme/tokens';
+import { C, MIN_TOUCH_TARGET, fontSize, radii } from '@/theme/tokens';
 
 let ImagePicker: any = null;
 try {
@@ -239,56 +242,26 @@ const INITIAL_TRIP_MESSAGES: Record<string, CustomMessage[]> = {
   ],
 };
 
-// Initial Polls per Trip
-const INITIAL_TRIP_POLLS: Record<
-  string,
-  { question: string; options: { text: string; votes: number }[]; voted?: number }
-> = {
-  'trip-1': {
-    question: 'Where should we have group dinner in Vrindavan?',
-    options: [
-      { text: "Govinda's Restaurant (ISKCON)", votes: 8 },
-      { text: 'Prem Mandir Local Braj Dhaba', votes: 4 },
-    ],
-  },
-  'trip-2': {
-    question: "Select tomorrow's ride departure time from Sarchu:",
-    options: [
-      { text: '06:00 AM (Avoid water crossings)', votes: 5 },
-      { text: '08:00 AM (Warm sunshine, but water rises)', votes: 2 },
-    ],
-  },
-  'trip-3': {
-    question: 'Lunch preference on the Houseboat trip:',
-    options: [
-      { text: 'Traditional Kerala Sadya (Veg on leaf)', votes: 6 },
-      { text: 'Mixed Seafood Platter & Grill', votes: 3 },
-    ],
-  },
-};
+// Group polls were removed here, not rebuilt (docs/REMEDIATION.md §8.7).
+// This used to be INITIAL_TRIP_POLLS: three hardcoded polls keyed by the
+// old seed trip ids, each with invented vote counts ("Govinda's Restaurant
+// (ISKCON)", votes: 8) that every user saw identically. There is no Poll
+// model, no endpoint, and no per-user vote record, so nothing stopped one
+// person voting a hundred times and no vote survived a reload. The
+// identical "group consensus polls" feature in group-organizer.tsx was
+// already removed as unbackable for exactly these reasons; this is the same
+// call, applied consistently.
 
-// Initial Expenses per Trip
-interface TripExpense {
-  id: string;
-  amount: number;
-  description: string;
-  paidBy: string;
-  splitWith: number;
-}
-const INITIAL_TRIP_EXPENSES: Record<string, TripExpense[]> = {
-  'trip-1': [
-    { id: 'exp-1', amount: 8500, description: 'Train Ticket Booking', paidBy: 'Vikram Singh', splitWith: 12 },
-    { id: 'exp-2', amount: 4500, description: 'Taxi from Delhi to Vrindavan', paidBy: 'Vikram Singh', splitWith: 12 },
-    { id: 'exp-3', amount: 1200, description: 'Breakfast on Day 1', paidBy: 'Suman Gupta', splitWith: 12 },
-  ],
-  'trip-2': [
-    { id: 'exp-1', amount: 25000, description: 'Royal Enfield Rental Deposit', paidBy: 'Aditya Sen', splitWith: 8 },
-    { id: 'exp-2', amount: 10000, description: 'Fuel Backup Canisters', paidBy: 'Aditya Sen', splitWith: 8 },
-  ],
-  'trip-3': [
-    { id: 'exp-1', amount: 9000, description: 'Alleppey Resort Advance', paidBy: 'Priya Nair', splitWith: 10 },
-  ],
-};
+// The in-chat expense ledger was removed here, not rebuilt
+// (docs/REMEDIATION.md §8.7 / §8.12). It was a local useState map seeded
+// with INITIAL_TRIP_EXPENSES — hardcoded rows like "Train Ticket Booking,
+// ₹8,500, paid by Vikram Singh, split 12 ways" — that reset on unmount,
+// invented its own ids (`exp-${Date.now()}`, banned by §0.2.4), and was a
+// second, contradictory expense system competing with the real one: §8.12
+// built a persisted TripExpense model with participant-scoped
+// GET/POST/DELETE /trips/:tripId/expenses and server-derived splits, which
+// budget-tracker.tsx uses. Chat now links there instead of keeping a
+// parallel fake ledger that never agreed with it.
 
 // Swipe to Reply gesture wrapper component
 const SwipeableMessageRow = ({
@@ -1108,10 +1081,10 @@ function ChatScreen() {
   const keyboardOffset = useRef(new Animated.Value(0)).current;
 
   // Custom Modal Forms
-  const [activeModal, setActiveModal] = useState<'NONE' | 'POLL' | 'EXPENSE' | 'LOCATION'>('NONE');
-  const [pollForm, setPollForm] = useState({ question: '', opt1: '', opt2: '' });
-  const [expenseForm, setExpenseForm] = useState({ amount: '', desc: '' });
+  const [activeModal, setActiveModal] = useState<'NONE' | 'LOCATION'>('NONE');
   const [locationForm, setLocationForm] = useState({ label: '', lat: '', lng: '' });
+  const [locatingSelf, setLocatingSelf] = useState(false);
+  const [photoUploading, setPhotoUploading] = useState(false);
 
   // Stateful Chat Data
   const [tripMessages, setTripMessages] = useState<Record<string, CustomMessage[]>>(() => {
@@ -1145,8 +1118,6 @@ function ChatScreen() {
       ],
     };
   });
-  const [tripPolls] = useState<Record<string, (typeof INITIAL_TRIP_POLLS)['trip-1']>>(INITIAL_TRIP_POLLS);
-  const [tripExpenses, setTripExpenses] = useState<Record<string, TripExpense[]>>(INITIAL_TRIP_EXPENSES);
 
   // Inbox Rooms state - updates snippet text in real-time
   const [inboxRooms, setInboxRooms] = useState<ChatRoom[]>([
@@ -1306,24 +1277,19 @@ function ChatScreen() {
   const messageListRef = useRef<FlatList<CustomMessage>>(null);
 
   // Fetch current active trip data
-  const activeTrip = trips.find((t) => t.id === selectedTripId) || {
-    id: 'trip-1',
-    name: 'Ranchi to Vrindavan Spiritual Journey',
-    cities: ['Ranchi', 'Delhi', 'Mathura', 'Vrindavan'],
-    startDate: '2026-08-12',
-    endDate: '2026-08-17',
-    meetingPoint: 'Ranchi Junction Platform 1',
-    budget: 8500,
-    membersCount: 12,
-  };
+  // The real trip for the open room, or null. This used to fall back to a
+  // hardcoded "Ranchi to Vrindavan" trip — invented cities, dates, meeting
+  // point and a ₹8,500 budget — which every panel below then rendered as
+  // this room's actual trip details (docs/REMEDIATION.md §0.2 rule 4).
+  const activeTrip = trips.find((t) => t.id === selectedTripId) ?? null;
 
-  // Find guide details
-  const activeGuide =
-    guides.find((g) => {
-      if (selectedTripId === 'trip-1') return g.id === 'guide-1';
-      if (selectedTripId === 'trip-2') return g.id === 'guide-3';
-      return g.id === 'guide-2';
-    }) || guides[0];
+  // There is no trip -> guide relation on the client Trip type, so the
+  // "Your Travel Guide" card that used to live in the settings panel was
+  // removed rather than kept: it picked a guide by matching the old seed
+  // trip ids and otherwise fell through to `guides[0]`, i.e. an arbitrary
+  // guide with no connection to this trip, who was then also injected into
+  // the room's member list labelled "Guide". The member list now comes only
+  // from real ChatRoomMember rows (dbMembers).
 
   // Active global SOS check
   const activeSOS = sosAlerts.find((sos) => sos.status === 'ACTIVE');
@@ -1334,15 +1300,6 @@ function ChatScreen() {
   // Dynamically extract group members from message history in this room/trip
   const groupMembers = useMemo(() => {
     const membersMap = new Map<string, { name: string; avatar: string; role: string }>();
-
-    // Add the guide
-    if (activeGuide) {
-      membersMap.set(activeGuide.name, {
-        name: activeGuide.name,
-        avatar: activeGuide.avatar,
-        role: 'Guide',
-      });
-    }
 
     // Add database/real-time members
     if (dbMembers && dbMembers.length > 0) {
@@ -1402,14 +1359,14 @@ function ChatScreen() {
         },
       ];
       mockMembers.forEach((m) => {
-        if (m.name !== activeGuide?.name) {
+        {
           membersMap.set(m.name, m);
         }
       });
     }
 
     return Array.from(membersMap.values());
-  }, [currentMessages, activeGuide, dbMembers]);
+  }, [currentMessages, dbMembers]);
 
   // Click a member to direct message
   const handleMemberClick = (member: { name: string; avatar: string }) => {
@@ -1743,97 +1700,90 @@ function ChatScreen() {
   };
 
   // Submit Poll
-  const handleCreatePollSubmit = () => {
-    if (!pollForm.question || !pollForm.opt1 || !pollForm.opt2) return;
-    const pollMessage: Partial<CustomMessage> = {
-      type: 'poll',
-      content: `📊 Group Poll: ${pollForm.question}`,
-      pollQuestion: pollForm.question,
-      pollOptions: [
-        { text: pollForm.opt1, votes: 0 },
-        { text: pollForm.opt2, votes: 0 },
-      ],
-    };
-    sendNewMessage(pollMessage);
-    setPollForm({ question: '', opt1: '', opt2: '' });
-    setActiveModal('NONE');
-    setIsAttachmentOpen(false);
-  };
-
-  // Submit Expense
-  const handleLogExpenseSubmit = () => {
-    const amt = parseFloat(expenseForm.amount);
-    if (isNaN(amt) || amt <= 0 || !expenseForm.desc) return;
-
-    const newExpense: TripExpense = {
-      id: `exp-${Date.now()}`,
-      amount: amt,
-      description: expenseForm.desc,
-      paidBy: profile.name,
-      splitWith: activeTrip.membersCount || 10,
-    };
-
-    setTripExpenses((prev) => ({
-      ...prev,
-      [selectedTripId]: [...(prev[selectedTripId] || []), newExpense],
-    }));
-
-    const expenseMessage: Partial<CustomMessage> = {
-      type: 'expense',
-      content: `💸 Shared Expense: ${expenseForm.desc} - ₹${amt}`,
-      expenseAmount: amt,
-      expenseDesc: expenseForm.desc,
-      expenseSplitWith: activeTrip.membersCount || 10,
-    };
-
-    sendNewMessage(expenseMessage);
-    setExpenseForm({ amount: '', desc: '' });
-    setActiveModal('NONE');
-    setIsAttachmentOpen(false);
-  };
-
   // Submit Location
+  // Shares a place with the room. The coordinates must be real: this used to
+  // fall back to `parseFloat(...) || 27.565 / 77.6593` — hardcoded Vrindavan
+  // — whenever the fields were blank or unparseable, so "share your
+  // location" silently sent everyone a pin in Uttar Pradesh regardless of
+  // where the place actually was. Inventing geodata and presenting it as a
+  // real place is the same fault §8.8 removed from the map.
   const handleShareLocationSubmit = () => {
-    if (!locationForm.label) return;
-    const lat = parseFloat(locationForm.lat) || 27.565;
-    const lng = parseFloat(locationForm.lng) || 77.6593;
+    if (!locationForm.label.trim()) return;
 
-    const locationMessage: Partial<CustomMessage> = {
+    const lat = Number(locationForm.lat);
+    const lng = Number(locationForm.lng);
+    const valid =
+      Number.isFinite(lat) && Number.isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+
+    if (!valid) {
+      toast('Enter a valid latitude and longitude, or use "Use my location".', 'error');
+      return;
+    }
+
+    sendNewMessage({
       type: 'location',
-      content: `📍 Location Shared: ${locationForm.label}`,
+      content: `📍 Location Shared: ${locationForm.label.trim()}`,
       locationCoords: { latitude: lat, longitude: lng },
-    };
-
-    sendNewMessage(locationMessage);
+    });
     setLocationForm({ label: '', lat: '', lng: '' });
     setActiveModal('NONE');
     setIsAttachmentOpen(false);
   };
 
-  // Voice note simulator
-  const handleVoiceNoteSimulate = () => {
-    setIsAttachmentOpen(false);
-    sendNewMessage({
-      content: '🎙️ Audio Recording...',
-      type: 'voice',
-      mediaUrl: 'simulated_voice_note.mp3',
-    });
+  // Fills the coordinate fields from the device's real GPS, so the common
+  // case ("I am here") does not require the user to type coordinates.
+  const handleUseMyLocation = async () => {
+    setLocatingSelf(true);
+    try {
+      const result = await getCurrentDeviceLocation();
+      if (!result.ok) {
+        toast(
+          result.reason === 'PERMISSION_DENIED'
+            ? 'Location permission is off, so we cannot read your position.'
+            : 'Could not read your location right now.',
+          'error',
+        );
+        return;
+      }
+      setLocationForm((p) => ({
+        ...p,
+        lat: String(result.latitude),
+        lng: String(result.longitude),
+        label: p.label || 'My current location',
+      }));
+    } finally {
+      setLocatingSelf(false);
+    }
   };
 
-  // Photo receipt selector using device image library
-  const handlePhotoSimulate = async () => {
+  // Voice note simulator
+  // The "Voice Note" attachment was removed, not rebuilt
+  // (docs/REMEDIATION.md §8.7). It recorded nothing: it sent a message whose
+  // mediaUrl was the literal string 'simulated_voice_note.mp3' and whose
+  // body read "Audio Recording...", so the recipient saw a voice message
+  // that had never existed and could never play. Real voice notes need an
+  // audio recording library (expo-audio), a duration/waveform, and the same
+  // object-storage upload the photo path now uses — a feature, not a fix.
+
+  // Sends a photo to the room. The picked asset's `uri` is a device-local
+  // file://(/blob:/data: on web) path that resolves for nobody but the
+  // sender, so this used to put a broken image in front of every other
+  // member (docs/REMEDIATION.md §8.7 — the same bug §8.2/§8.4/§8.17 fixed
+  // for avatars, trip covers and reels). The bytes now go straight to object
+  // storage via a presigned URL and the message carries the public URL.
+  //
+  // No fake fallback: if storage is not configured the send fails visibly
+  // rather than posting a link only the sender can open.
+  const handleSendPhoto = async () => {
     setIsAttachmentOpen(false);
     try {
       if (!ImagePicker || typeof ImagePicker.requestMediaLibraryPermissionsAsync !== 'function') {
-        Alert.alert('Notice', 'Photo gallery module is initializing or requires restarting Expo dev client.');
+        await showAlert('Photos unavailable', 'The photo gallery module is still starting up. Try again shortly.');
         return;
       }
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permissionResult?.granted) {
-        Alert.alert(
-          'Permission Required',
-          'Permission to access photo gallery is required to select photos from your device.',
-        );
+        await showAlert('Permission required', 'Allow photo access to send a picture to this group.');
         return;
       }
 
@@ -1842,16 +1792,28 @@ function ChatScreen() {
         allowsEditing: true,
         quality: 0.8,
       });
+      if (result.canceled || !result.assets?.length) return;
 
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        sendNewMessage({
-          content: '📷 Photo Sent',
-          type: 'image',
-          mediaUrl: result.assets[0].uri,
-        });
-      }
-    } catch (err: any) {
-      Alert.alert('Notice', 'Photo gallery selection error: ' + (err?.message || 'Please try again.'));
+      const asset = result.assets[0];
+      if (!asset) return;
+
+      const contentType =
+        asset.mimeType === 'image/png' || asset.mimeType === 'image/webp' ? asset.mimeType : 'image/jpeg';
+
+      setPhotoUploading(true);
+      const { uploadUrl, publicUrl } = await apiService.getChatMediaUploadUrl(contentType);
+      await uploadFileToUrl(asset.uri, uploadUrl, contentType);
+
+      sendNewMessage({
+        content: '📷 Photo',
+        type: 'image',
+        mediaUrl: publicUrl,
+      });
+    } catch (err) {
+      logger.warn('[Chat] Photo send failed:', err);
+      toast(errorToastMessage(err, 'Could not send that photo. Please try again.'), 'error');
+    } finally {
+      setPhotoUploading(false);
     }
   };
 
@@ -1937,12 +1899,6 @@ function ChatScreen() {
     if (activeSOS) {
       resolveSOS(activeSOS.id);
     }
-  };
-
-  // Get total expense amount
-  const getExpensesTotal = () => {
-    const list = tripExpenses[selectedTripId] || [];
-    return list.reduce((sum, item) => sum + item.amount, 0);
   };
 
   const attachMenuHeight = attachPanelHeight.interpolate({
@@ -2333,7 +2289,7 @@ function ChatScreen() {
             <View style={styles.activityStatusRow}>
               <View style={styles.statusGreenDot} />
               <Text style={styles.roomHeaderStatusText}>
-                Active Group Ledger • {activeTrip.membersCount || 10} members
+                Active Group Ledger{activeTrip ? ` • ${activeTrip.membersCount} members` : ''}
               </Text>
             </View>
           </TouchableOpacity>
@@ -2512,19 +2468,11 @@ function ChatScreen() {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.attachScrollInner}
             >
-              <TouchableOpacity style={styles.attachBtn} onPress={() => setActiveModal('POLL')}>
-                <LinearGradient colors={['#FF8A65', '#FF5722']} style={styles.attachIconCircle}>
-                  <BarChart2 size={18} color="#FFF" />
-                </LinearGradient>
-                <Text style={styles.attachLabel}>Create Poll</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.attachBtn} onPress={() => setActiveModal('EXPENSE')}>
-                <LinearGradient colors={['#81C784', '#4CAF50']} style={styles.attachIconCircle}>
-                  <DollarSign size={18} color="#FFF" />
-                </LinearGradient>
-                <Text style={styles.attachLabel}>Split Expense</Text>
-              </TouchableOpacity>
+              {/* "Create Poll" and "Split Expense" removed here — polls had
+                  no backend at all, and the expense form wrote to a
+                  local-only ledger that contradicted the real one
+                  (docs/REMEDIATION.md §8.7). The expense tracker is reachable
+                  from this room's settings panel. */}
 
               <TouchableOpacity style={styles.attachBtn} onPress={() => setActiveModal('LOCATION')}>
                 <LinearGradient colors={['#64B5F6', '#2196F3']} style={styles.attachIconCircle}>
@@ -2533,18 +2481,18 @@ function ChatScreen() {
                 <Text style={styles.attachLabel}>Share Place</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.attachBtn} onPress={handleVoiceNoteSimulate}>
-                <LinearGradient colors={['#BA68C8', '#9C27B0']} style={styles.attachIconCircle}>
-                  <Mic size={18} color="#FFF" />
-                </LinearGradient>
-                <Text style={styles.attachLabel}>Voice Note</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.attachBtn} onPress={handlePhotoSimulate}>
+              <TouchableOpacity
+                style={styles.attachBtn}
+                onPress={handleSendPhoto}
+                disabled={photoUploading}
+                accessibilityRole="button"
+                accessibilityLabel={photoUploading ? 'Sending photo' : 'Send a photo'}
+                accessibilityState={{ disabled: photoUploading, busy: photoUploading }}
+              >
                 <LinearGradient colors={['#4DB6AC', '#009688']} style={styles.attachIconCircle}>
-                  <ImageIcon size={18} color="#FFF" />
+                  {photoUploading ? <ActivityIndicator size="small" color="#FFF" /> : <ImageIcon size={18} color="#FFF" />}
                 </LinearGradient>
-                <Text style={styles.attachLabel}>Send Photo</Text>
+                <Text style={styles.attachLabel}>{photoUploading ? 'Sending…' : 'Send Photo'}</Text>
               </TouchableOpacity>
             </ScrollView>
           </Animated.View>
@@ -2633,20 +2581,22 @@ function ChatScreen() {
               </View>
             </View>
 
-            <View style={styles.statsGrid}>
-              <View style={styles.statsCell}>
-                <Text style={styles.statsValLabel}>Shared Pool Total</Text>
-                <Text style={styles.statsValText}>₹{getExpensesTotal()}</Text>
+            {activeTrip ? (
+              <View style={styles.statsGrid}>
+                <View style={styles.statsCell}>
+                  <Text style={styles.statsValLabel}>Seats Left</Text>
+                  <Text style={styles.statsValText}>{activeTrip.availableSeats}</Text>
+                </View>
+                <View style={styles.statsCell}>
+                  <Text style={styles.statsValLabel}>Budget Per Person</Text>
+                  <Text style={[styles.statsValText, { color: C.greenText }]}>{formatINR(activeTrip.budget)}</Text>
+                </View>
               </View>
-              <View style={styles.statsCell}>
-                <Text style={styles.statsValLabel}>Budget Per Person</Text>
-                <Text style={[styles.statsValText, { color: C.green }]}>₹{activeTrip.budget}</Text>
-              </View>
-            </View>
+            ) : null}
 
             <View style={styles.statsFooter}>
               <Clock size={12} color="#C084FC" style={{ marginRight: 6 }} />
-              <Text style={styles.statsFooterText}>Assembly: {activeTrip.meetingPoint}</Text>
+              <Text style={styles.statsFooterText}>Assembly: {activeTrip?.meetingPoint ?? 'Not set'}</Text>
             </View>
           </LinearGradient>
 
@@ -3038,9 +2988,11 @@ function ChatScreen() {
               <View style={styles.settingsAvatarBlock}>
                 <Image source={{ uri: activeRoom?.avatar }} style={styles.settingsAvatarImg} />
                 <Text style={styles.settingsRoomName}>{activeRoom?.name}</Text>
-                <Text style={styles.settingsTripDates}>
-                  {activeTrip.startDate} to {activeTrip.endDate}
-                </Text>
+                {activeTrip ? (
+                  <Text style={styles.settingsTripDates}>
+                    {formatDateRange(activeTrip.startDate, activeTrip.endDate)}
+                  </Text>
+                ) : null}
               </View>
 
               {/* ADVANCED TELEMETRY MONITOR CARD */}
@@ -3082,12 +3034,12 @@ function ChatScreen() {
 
                   <View style={styles.telemetryMetaGrid}>
                     <View style={styles.telemetryMetaCell}>
-                      <Text style={styles.telemetryMetaVal}>{activeTrip.cities[1] || 'Delhi'}</Text>
+                      <Text style={styles.telemetryMetaVal}>{activeTrip?.cities[1] ?? '—'}</Text>
                       <Text style={styles.telemetryMetaLbl}>Last Node</Text>
                     </View>
                     <View style={[styles.telemetryMetaCell, { alignItems: 'flex-end' }]}>
                       <Text style={styles.telemetryMetaVal}>
-                        {activeTrip.cities[activeTrip.cities.length - 1] || 'Vrindavan'}
+                        {activeTrip?.cities[activeTrip.cities.length - 1] ?? '—'}
                       </Text>
                       <Text style={styles.telemetryMetaLbl}>Target Node</Text>
                     </View>
@@ -3119,8 +3071,8 @@ function ChatScreen() {
                       <Text style={styles.sectionHeaderTitle}>Itinerary Timeline</Text>
                     </View>
                     <View style={styles.timelineRow}>
-                      {activeTrip.cities.map((city, idx) => {
-                        const isLast = idx === activeTrip.cities.length - 1;
+                      {(activeTrip?.cities ?? []).map((city, idx) => {
+                        const isLast = idx === (activeTrip?.cities.length ?? 0) - 1;
                         const isPassed = idx <= 1;
                         return (
                           <View key={city} style={styles.timelineStepWrap}>
@@ -3159,7 +3111,7 @@ function ChatScreen() {
                       <Clock size={14} color="#0066FF" style={{ marginRight: 6 }} />
                       <Text style={styles.meetingTitle}>Assembly point:</Text>
                       <Text style={styles.meetingLocation} numberOfLines={1}>
-                        {activeTrip.meetingPoint}
+                        {activeTrip?.meetingPoint ?? 'Not set'}
                       </Text>
                     </View>
                   </View>
@@ -3173,80 +3125,34 @@ function ChatScreen() {
 
                     <View style={styles.budgetOverviewRow}>
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.budgetLabel}>Shared Pool Expense</Text>
-                        <Text style={styles.budgetValue}>₹{getExpensesTotal()}</Text>
-                      </View>
-                      <View style={{ flex: 1, alignItems: 'flex-end' }}>
                         <Text style={styles.budgetLabel}>Budget / Person</Text>
-                        <Text style={[styles.budgetValue, { color: C.green }]}>₹{activeTrip.budget}</Text>
+                        <Text style={styles.budgetValue}>{formatINR(activeTrip?.budget)}</Text>
                       </View>
                     </View>
 
+                    {/* Opens the real, persisted expense ledger (§8.12)
+                        rather than the local-only one this panel used to
+                        keep, which never agreed with it. */}
                     <TouchableOpacity
-                      style={[styles.settingsOutlineBtn, { borderColor: '#0066FF' }]}
+                      style={[styles.settingsOutlineBtn, { borderColor: C.blue }]}
                       onPress={() => {
                         setIsSettingsOpen(false);
-                        setActiveModal('EXPENSE');
+                        router.push('/budget-tracker');
                       }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Open the shared expense tracker"
                     >
-                      <DollarSign size={14} color="#0066FF" style={{ marginRight: 4 }} />
-                      <Text style={[styles.settingsOutlineBtnText, { color: '#0066FF' }]}>Log Shared Expense Bill</Text>
+                      <DollarSign size={14} color={C.blue} style={{ marginRight: 4 }} />
+                      <Text style={[styles.settingsOutlineBtnText, { color: C.blue }]}>Open Expense Tracker</Text>
                     </TouchableOpacity>
                   </View>
 
-                  {/* 3. Group Polls & Decisions */}
-                  <View style={styles.settingSectionCard}>
-                    <View style={styles.sectionHeader}>
-                      <BarChart2 size={16} color="#0066FF" style={{ marginRight: 6 }} />
-                      <Text style={styles.sectionHeaderTitle}>Group Polls</Text>
-                    </View>
+                  {/* The "Group Polls" section was removed, not rebuilt
+                      (docs/REMEDIATION.md §8.7) — see the note where
+                      INITIAL_TRIP_POLLS used to be defined. */}
 
-                    {tripPolls[selectedTripId] ? (
-                      <View style={styles.settingsPollMiniCard}>
-                        <Text style={styles.miniPollQuestion}>{tripPolls[selectedTripId].question}</Text>
-                        <Text style={styles.miniPollSubText}>
-                          Active in room thread • {tripPolls[selectedTripId].options.reduce((a, b) => a + b.votes, 0)}{' '}
-                          votes cast
-                        </Text>
-                      </View>
-                    ) : (
-                      <Text style={styles.noActiveLabel}>No active polls</Text>
-                    )}
-
-                    <TouchableOpacity
-                      style={[styles.settingsOutlineBtn, { borderColor: '#0066FF' }]}
-                      onPress={() => {
-                        setIsSettingsOpen(false);
-                        setActiveModal('POLL');
-                      }}
-                    >
-                      <BarChart2 size={14} color="#0066FF" style={{ marginRight: 4 }} />
-                      <Text style={[styles.settingsOutlineBtnText, { color: '#0066FF' }]}>Create Group Poll</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  {/* 4. Tour Guide details */}
-                  <View style={styles.settingSectionCard}>
-                    <View style={styles.sectionHeader}>
-                      <Compass size={16} color="#0066FF" style={{ marginRight: 6 }} />
-                      <Text style={styles.sectionHeaderTitle}>Your Travel Guide</Text>
-                    </View>
-
-                    <View style={styles.settingsGuideCard}>
-                      <Image source={{ uri: activeGuide?.avatar }} style={styles.guideSettingsAvatar} />
-                      <View style={styles.guideSettingsMeta}>
-                        <Text style={styles.guideSettingsName}>{activeGuide?.name}</Text>
-                        <View style={styles.guideSettingsRatingRow}>
-                          <Star size={12} color={C.yellow} fill={C.yellow} />
-                          <Text style={styles.guideSettingsRatingText}>{activeGuide?.rating}</Text>
-                          <Text style={styles.guideSettingsLangText}>• {activeGuide?.languages.join(', ')}</Text>
-                        </View>
-                        <Text style={styles.guideSettingsExpertise} numberOfLines={1}>
-                          Exp: {activeGuide?.expertise.join(', ')}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
+                  {/* The "Your Travel Guide" card was removed here — see the
+                      note at activeGuide's former definition. */}
 
                   {/* 5. Safety Desk Controls & SOS Trigger */}
                   <View style={[styles.settingSectionCard, { borderColor: 'rgba(239,68,68,0.2)' }]}>
@@ -3396,87 +3302,6 @@ function ChatScreen() {
       {activeModal !== 'NONE' && (
         <View style={styles.modalOverlay}>
           <View style={styles.modalContentCard}>
-            {activeModal === 'POLL' && (
-              <View>
-                <Text style={styles.modalHeading}>Create Group Poll</Text>
-                <Text style={styles.modalSubLabel}>Question / Activity</Text>
-                <TextInput
-                  placeholder="e.g. Which temple to visit next?"
-                  placeholderTextColor={C.textMuted}
-                  value={pollForm.question}
-                  onChangeText={(val) => setPollForm((p) => ({ ...p, question: val }))}
-                  style={styles.modalInput}
-                />
-                <Text style={styles.modalSubLabel}>Option A</Text>
-                <TextInput
-                  placeholder="Option 1"
-                  placeholderTextColor={C.textMuted}
-                  value={pollForm.opt1}
-                  onChangeText={(val) => setPollForm((p) => ({ ...p, opt1: val }))}
-                  style={styles.modalInput}
-                />
-                <Text style={styles.modalSubLabel}>Option B</Text>
-                <TextInput
-                  placeholder="Option 2"
-                  placeholderTextColor={C.textMuted}
-                  value={pollForm.opt2}
-                  onChangeText={(val) => setPollForm((p) => ({ ...p, opt2: val }))}
-                  style={styles.modalInput}
-                />
-                <View style={styles.modalActionButtons}>
-                  <TouchableOpacity
-                    style={[styles.modalBtn, styles.modalBtnCancel]}
-                    onPress={() => setActiveModal('NONE')}
-                  >
-                    <Text style={styles.modalBtnCancelText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSubmit]} onPress={handleCreatePollSubmit}>
-                    <Text style={styles.modalBtnSubmitText}>Create</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-
-            {activeModal === 'EXPENSE' && (
-              <View>
-                <Text style={styles.modalHeading}>Log Shared Expense</Text>
-                <Text style={styles.modalSubLabel}>Amount (₹)</Text>
-                <TextInput
-                  placeholder="e.g. 1200"
-                  keyboardType="numeric"
-                  placeholderTextColor={C.textMuted}
-                  value={expenseForm.amount}
-                  onChangeText={(val) => setExpenseForm((p) => ({ ...p, amount: val }))}
-                  style={styles.modalInput}
-                />
-                <Text style={styles.modalSubLabel}>Description</Text>
-                <TextInput
-                  placeholder="e.g. Dinner at Govindas"
-                  placeholderTextColor={C.textMuted}
-                  value={expenseForm.desc}
-                  onChangeText={(val) => setExpenseForm((p) => ({ ...p, desc: val }))}
-                  style={styles.modalInput}
-                />
-                <Text style={styles.modalInfoNotice}>
-                  * This will be split equally among all {activeTrip.membersCount || 10} trip participants.
-                </Text>
-                <View style={styles.modalActionButtons}>
-                  <TouchableOpacity
-                    style={[styles.modalBtn, styles.modalBtnCancel]}
-                    onPress={() => setActiveModal('NONE')}
-                  >
-                    <Text style={styles.modalBtnCancelText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.modalBtn, styles.modalBtnSubmit, { backgroundColor: C.green }]}
-                    onPress={handleLogExpenseSubmit}
-                  >
-                    <Text style={styles.modalBtnSubmitText}>Log bill</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-
             {activeModal === 'LOCATION' && (
               <View>
                 <Text style={styles.modalHeading}>Share Custom Location</Text>
@@ -3512,16 +3337,40 @@ function ChatScreen() {
                     />
                   </View>
                 </View>
+
+                <TouchableOpacity
+                  style={styles.useMyLocationBtn}
+                  onPress={handleUseMyLocation}
+                  disabled={locatingSelf}
+                  accessibilityRole="button"
+                  accessibilityLabel="Use my current location"
+                  accessibilityHint="Fills the latitude and longitude from your device GPS"
+                  accessibilityState={{ disabled: locatingSelf, busy: locatingSelf }}
+                >
+                  {locatingSelf ? (
+                    <ActivityIndicator size="small" color={C.blueText} />
+                  ) : (
+                    <MapPin size={14} color={C.blueText} />
+                  )}
+                  <Text style={styles.useMyLocationText}>
+                    {locatingSelf ? 'Reading your location…' : 'Use my location'}
+                  </Text>
+                </TouchableOpacity>
+
                 <View style={styles.modalActionButtons}>
                   <TouchableOpacity
                     style={[styles.modalBtn, styles.modalBtnCancel]}
                     onPress={() => setActiveModal('NONE')}
+                    accessibilityRole="button"
+                    accessibilityLabel="Cancel"
                   >
                     <Text style={styles.modalBtnCancelText}>Cancel</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.modalBtn, styles.modalBtnSubmit, { backgroundColor: C.blue }]}
                     onPress={handleShareLocationSubmit}
+                    accessibilityRole="button"
+                    accessibilityLabel="Share this location with the group"
                   >
                     <Text style={styles.modalBtnSubmitText}>Share</Text>
                   </TouchableOpacity>
@@ -3595,6 +3444,18 @@ function ChatScreen() {
 
 // ─── STYLES ────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
+  useMyLocationBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    minHeight: MIN_TOUCH_TARGET,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: C.blueText,
+    marginTop: 4,
+  },
+  useMyLocationText: { color: C.blueText, fontSize: fontSize.sm, fontWeight: '600' },
   container: {
     flex: 1,
     backgroundColor: C.bg,

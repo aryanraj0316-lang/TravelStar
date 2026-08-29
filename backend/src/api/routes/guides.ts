@@ -636,9 +636,30 @@ router.get('/:id/live-status', async (req, res) => {
   }
 });
 
+// docs/REMEDIATION.md §5.1 — this route took `latitude`/`longitude` straight
+// off req.body and ran them through parseFloat, so a missing or non-numeric
+// value became NaN and was written to the guide's LiveLocation row, and a
+// value outside the real coordinate range was accepted as-is. Both put a
+// guide's pin somewhere that is not a place, on a map other users navigate
+// by (§8.8).
+const liveStatusSchema = z.object({
+  latitude: z.coerce.number().min(-90).max(90),
+  longitude: z.coerce.number().min(-180).max(180),
+});
+
 router.post('/:id/live-status', async (req, res) => {
   const { id } = req.params;
-  const { latitude, longitude } = req.body;
+  const parsed = liveStatusSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      ok: false,
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'latitude must be between -90 and 90, and longitude between -180 and 180.',
+      },
+    });
+  }
+  const { latitude, longitude } = parsed.data;
   try {
     // Without this, anyone could spoof any guide's GPS position.
     if (!(await assertOwnsGuideProfile(req, res, id!))) return;
@@ -660,8 +681,8 @@ router.post('/:id/live-status', async (req, res) => {
       updatedLoc = await prisma.liveLocation.update({
         where: { id: existingLoc.id },
         data: {
-          latitude: parseFloat(latitude),
-          longitude: parseFloat(longitude),
+          latitude,
+          longitude,
           updatedAt: new Date(),
         },
       });
@@ -669,8 +690,8 @@ router.post('/:id/live-status', async (req, res) => {
       updatedLoc = await prisma.liveLocation.create({
         data: {
           userId: guideProfile.userId,
-          latitude: parseFloat(latitude),
-          longitude: parseFloat(longitude),
+          latitude,
+          longitude,
         },
       });
     }

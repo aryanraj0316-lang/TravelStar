@@ -139,3 +139,14 @@ export function createTripCoverUploadUrl(uploaderId: string, contentType: string
 export function createGuideMediaUploadUrl(uploaderId: string, contentType: string) {
   return createUploadUrl('guide-media', uploaderId, contentType);
 }
+
+// docs/REMEDIATION.md §8.7 — chat.tsx's photo attachment set the picker's
+// local file://(/blob:/data: on web) URI straight onto the outgoing
+// message's mediaUrl, so a photo "sent" to a group was only ever visible on
+// the sender's own device; every other member's client tried to load a path
+// that does not exist for them. Same class of bug as §8.2/§8.4/§8.17, and
+// the last remaining instance of it. Keyed by the uploading user rather than
+// the room, so leaving a room cannot orphan the key's ownership.
+export function createChatMediaUploadUrl(uploaderId: string, contentType: string) {
+  return createUploadUrl('chat-media', uploaderId, contentType);
+}
