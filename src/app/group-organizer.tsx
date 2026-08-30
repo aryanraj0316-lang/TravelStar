@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { logger } from '@/lib/logger';
 import {
   ScrollView,
@@ -76,7 +77,20 @@ interface JoinRequest {
   userAvatar: string;
 }
 
+const ROLE_LABEL_KEYS: Record<GroupMember['role'], string> = {
+  LEADER: 'groupOrganizer.roleLeader',
+  GUIDE: 'groupOrganizer.roleGuide',
+  MEMBER: 'groupOrganizer.roleMember',
+};
+
+const STATUS_LABEL_KEYS: Record<ActiveTour['status'], string> = {
+  OPEN: 'groupOrganizer.statusOpen',
+  FULL: 'groupOrganizer.statusFull',
+  COMPLETED: 'groupOrganizer.statusCompleted',
+};
+
 export default function GroupOrganizerScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const { profile, addTrip, trips } = useApp();
   const confirm = useConfirm();
@@ -189,7 +203,7 @@ export default function GroupOrganizerScreen() {
     } catch (e) {
       logger.warn('[GroupOrganizer] Failed to fetch itinerary:', e);
       setItinerary([]);
-      setItineraryError('Could not load the day schedule.');
+      setItineraryError(t('groupOrganizer.couldNotLoadDaySchedule'));
     } finally {
       setItineraryLoading(false);
     }
@@ -216,7 +230,7 @@ export default function GroupOrganizerScreen() {
 
   const handleCreateTour = () => {
     if (!newGroupName.trim() || !newDest.trim() || !newDuration.trim() || !newMaxSize.trim() || !newPrice.trim()) {
-      toast('Please fill in all the details for the new trip.', 'error');
+      toast(t('groupOrganizer.fillAllTripDetails'), 'error');
       return;
     }
 
@@ -258,31 +272,31 @@ export default function GroupOrganizerScreen() {
     setNewMaxSize('');
     setNewPrice('');
     setShowCreateModal(false);
-    toast(`Tour Created! — "${newTour.groupName}" has been added to your dashboard, with its own group chat.`, 'success');
+    toast(t('groupOrganizer.tourCreated', { name: newTour.groupName }), 'success');
   };
 
   const handleApproveRequest = async (reqId: string, userName: string, avatar: string) => {
     try {
       await apiService.updateJoinRequestStatus(reqId, 'APPROVED');
-      toast(`Approved! — "${userName}" has been added to ${currentTour.groupName} and the group chat.`, 'success');
+      toast(t('groupOrganizer.requestApproved', { name: userName, tour: currentTour.groupName }), 'success');
       fetchIncoming();
       if (currentTour) {
         fetchTourMembers(currentTour.id);
       }
     } catch (e) {
       logger.warn('Approve request failed:', e);
-      toast('Failed to approve join request.', 'error');
+      toast(t('groupOrganizer.failedToApproveRequest'), 'error');
     }
   };
 
   const handleRejectRequest = async (reqId: string, userName: string) => {
     try {
       await apiService.updateJoinRequestStatus(reqId, 'REJECTED');
-      toast(`Rejected — Declined group chat join request for "${userName}".`, 'info');
+      toast(t('groupOrganizer.requestRejected', { name: userName }), 'info');
       fetchIncoming();
     } catch (e) {
       logger.warn('Reject request failed:', e);
-      toast('Failed to reject join request.', 'error');
+      toast(t('groupOrganizer.failedToRejectRequest'), 'error');
     }
   };
 
@@ -316,7 +330,7 @@ export default function GroupOrganizerScreen() {
     } catch (e) {
       logger.warn('[GroupOrganizer] Check-in update failed:', e);
       setMembers((prev) => prev.map((m) => (m.id === member.id ? { ...m, checkedIn: member.checkedIn } : m)));
-      toast('Could not update check-in status.', 'error');
+      toast(t('groupOrganizer.couldNotUpdateCheckIn'), 'error');
     }
   };
 
@@ -330,7 +344,7 @@ export default function GroupOrganizerScreen() {
 
   const handleAddItineraryDay = async () => {
     if (!newDayTitle.trim() || !newDayDesc.trim()) {
-      toast('Please complete day title and schedule details.', 'error');
+      toast(t('groupOrganizer.pleaseCompleteDayDetails'), 'error');
       return;
     }
     if (!currentTour) return;
@@ -347,7 +361,7 @@ export default function GroupOrganizerScreen() {
       await fetchItinerary(currentTour.id);
     } catch (e) {
       logger.warn('[GroupOrganizer] Failed to add itinerary day:', e);
-      toast('Could not save that day. Please try again.', 'error');
+      toast(t('groupOrganizer.couldNotSaveDay'), 'error');
     } finally {
       setAddingDay(false);
     }
@@ -357,9 +371,9 @@ export default function GroupOrganizerScreen() {
     if (!currentTour) return;
     void (async () => {
       const ok = await confirm({
-        title: 'Remove Day',
-        message: `Remove Day ${target.day} — "${target.title}"?`,
-        confirmLabel: 'Remove',
+        title: t('groupOrganizer.removeDay'),
+        message: t('groupOrganizer.removeDayMessage', { number: target.day, title: target.title }),
+        confirmLabel: t('groupOrganizer.remove'),
         destructive: true,
       });
       if (!ok) return;
@@ -370,7 +384,7 @@ export default function GroupOrganizerScreen() {
         await fetchItinerary(currentTour.id);
       } catch (e) {
         logger.warn('[GroupOrganizer] Failed to delete itinerary day:', e);
-        toast('Could not remove that day.', 'error');
+        toast(t('groupOrganizer.couldNotRemoveDay'), 'error');
       }
     })();
   };
@@ -387,11 +401,11 @@ export default function GroupOrganizerScreen() {
     if (!currentTour) return;
     void (async () => {
       const room = await showPrompt({
-        title: 'Allocate Hotel Room',
-        message: 'Set the room number for this member.',
-        placeholder: 'e.g. Room 402',
+        title: t('groupOrganizer.allocateHotelRoom'),
+        message: t('groupOrganizer.setRoomNumberMessage'),
+        placeholder: t('groupOrganizer.roomPlaceholder'),
         defaultValue: member.roomAllocated ?? '',
-        confirmLabel: 'Allocate',
+        confirmLabel: t('groupOrganizer.allocate'),
       });
       if (room === null) return;
       const trimmed = room.trim();
@@ -404,7 +418,7 @@ export default function GroupOrganizerScreen() {
         setMembers((prev) =>
           prev.map((m) => (m.id === member.id ? { ...m, roomAllocated: member.roomAllocated } : m)),
         );
-        toast('Could not save the room assignment.', 'error');
+        toast(t('groupOrganizer.couldNotSaveRoomAssignment'), 'error');
       }
     })();
   };
@@ -413,11 +427,11 @@ export default function GroupOrganizerScreen() {
     if (!currentTour) return;
     void (async () => {
       const seat = await showPrompt({
-        title: 'Allocate Transport Seat',
-        message: 'Set the seat number for this member.',
-        placeholder: 'e.g. Seat 12A',
+        title: t('groupOrganizer.allocateTransportSeat'),
+        message: t('groupOrganizer.setSeatNumberMessage'),
+        placeholder: t('groupOrganizer.seatPlaceholder'),
         defaultValue: member.seatAllocated ?? '',
-        confirmLabel: 'Allocate',
+        confirmLabel: t('groupOrganizer.allocate'),
       });
       if (seat === null) return;
       const trimmed = seat.trim();
@@ -430,7 +444,7 @@ export default function GroupOrganizerScreen() {
         setMembers((prev) =>
           prev.map((m) => (m.id === member.id ? { ...m, seatAllocated: member.seatAllocated } : m)),
         );
-        toast('Could not save the seat assignment.', 'error');
+        toast(t('groupOrganizer.couldNotSaveSeatAssignment'), 'error');
       }
     })();
   };
@@ -472,7 +486,7 @@ export default function GroupOrganizerScreen() {
 
   const handlePublishAnnouncement = async () => {
     if (!newAnnounceTitle.trim() || !newAnnounceDesc.trim()) {
-      toast('Please fill in title and announcement contents.', 'error');
+      toast(t('groupOrganizer.fillTitleAndContent'), 'error');
       return;
     }
     if (!currentTour) return;
@@ -487,7 +501,7 @@ export default function GroupOrganizerScreen() {
           id: `a-${Date.now()}`,
           title: newAnnounceTitle.trim(),
           content: newAnnounceDesc.trim(),
-          createdAt: 'Just Now',
+          createdAt: t('groupOrganizer.justNow'),
         },
         ...prev,
       ]);
@@ -495,13 +509,13 @@ export default function GroupOrganizerScreen() {
       setNewAnnounceDesc('');
       toast(
         result.recipientCount > 0
-          ? `Published — sent to ${result.recipientCount} trip member${result.recipientCount === 1 ? '' : 's'}.`
-          : 'Published, but no other members have joined this trip yet.',
+          ? t('groupOrganizer.announcementPublished', { count: result.recipientCount })
+          : t('groupOrganizer.announcementPublishedNoMembers'),
         result.recipientCount > 0 ? 'success' : 'info',
       );
     } catch (e) {
       logger.warn('[GroupOrganizer] Publish announcement failed:', e);
-      toast('Could not send the announcement.', 'error');
+      toast(t('groupOrganizer.couldNotSendAnnouncement'), 'error');
     } finally {
       setPublishingAnnouncement(false);
     }
@@ -519,12 +533,18 @@ export default function GroupOrganizerScreen() {
         end={{ x: 0, y: 1 }}
       >
         <View style={styles.header}>
-          <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()} style={styles.backBtn}>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => router.back()}
+            style={styles.backBtn}
+            accessibilityRole="button"
+            accessibilityLabel={t('groupOrganizer.goBack')}
+          >
             <ArrowLeft size={18} color={C.white} />
           </TouchableOpacity>
           <View style={styles.headerTitleWrap}>
-            <Text style={styles.headerTitle}>Group Organizer Portal</Text>
-            <Text style={styles.headerSub}>Admin Panel & Trip Manager</Text>
+            <Text style={styles.headerTitle}>{t('groupOrganizer.headerTitle')}</Text>
+            <Text style={styles.headerSub}>{t('groupOrganizer.headerSub')}</Text>
           </View>
           <LinearGradient
             colors={['#7C3AED', '#5B21B6']}
@@ -533,7 +553,7 @@ export default function GroupOrganizerScreen() {
             end={{ x: 1, y: 1 }}
           >
             <Users size={11} color={C.white} />
-            <Text style={styles.badgeOfficialText}>ADMIN</Text>
+            <Text style={styles.badgeOfficialText}>{t('groupOrganizer.adminBadge')}</Text>
           </LinearGradient>
         </View>
 
@@ -541,10 +561,10 @@ export default function GroupOrganizerScreen() {
         <View style={styles.tabBarContainer}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabBarScroll}>
             {[
-              { key: 'dashboard', label: 'Dashboard', Icon: TrendingUp },
-              { key: 'trips', label: 'Tours & Roster', Icon: Users },
-              { key: 'logistics', label: 'Itinerary & Room', Icon: Hotel },
-              { key: 'chat', label: 'Chats & Approvals', Icon: MessageSquare },
+              { key: 'dashboard', labelKey: 'groupOrganizer.tabDashboard', Icon: TrendingUp },
+              { key: 'trips', labelKey: 'groupOrganizer.tabToursRoster', Icon: Users },
+              { key: 'logistics', labelKey: 'groupOrganizer.tabItineraryRoom', Icon: Hotel },
+              { key: 'chat', labelKey: 'groupOrganizer.tabChatsApprovals', Icon: MessageSquare },
             ].map((tab) => {
               const isActive = activeTab === tab.key;
               return (
@@ -553,9 +573,12 @@ export default function GroupOrganizerScreen() {
                   style={[styles.tabItem, isActive && styles.tabItemActive]}
                   onPress={() => setActiveTab(tab.key as any)}
                   activeOpacity={0.85}
+                  accessibilityRole="tab"
+                  accessibilityLabel={t(tab.labelKey)}
+                  accessibilityState={{ selected: isActive }}
                 >
                   <tab.Icon size={13} color={isActive ? C.white : C.textSec} strokeWidth={isActive ? 2.5 : 1.8} />
-                  <Text style={[styles.tabLabel, { color: isActive ? C.white : C.textSec }]}>{tab.label}</Text>
+                  <Text style={[styles.tabLabel, { color: isActive ? C.white : C.textSec }]}>{t(tab.labelKey)}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -564,17 +587,20 @@ export default function GroupOrganizerScreen() {
 
         {/* Dropdown Trip Selector */}
         <View style={styles.dropdownTripBar}>
-          <Text style={styles.dropdownLabel}>ACTIVE TOURNAMENT ROSTER:</Text>
+          <Text style={styles.dropdownLabel}>{t('groupOrganizer.activeRosterLabel')}</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dropdownTripScroll}>
-            {tours.map((t, idx) => {
+            {tours.map((tour, idx) => {
               const isSel = idx === selectedTourIdx;
               return (
                 <TouchableOpacity
-                  key={t.id}
+                  key={tour.id}
                   style={[styles.dropdownTripBtn, isSel && styles.dropdownTripBtnActive]}
                   onPress={() => setSelectedTourIdx(idx)}
+                  accessibilityRole="button"
+                  accessibilityLabel={tour.groupName}
+                  accessibilityState={{ selected: isSel }}
                 >
-                  <Text style={[styles.dropdownTripText, { color: isSel ? C.white : C.textSec }]}>{t.groupName}</Text>
+                  <Text style={[styles.dropdownTripText, { color: isSel ? C.white : C.textSec }]}>{tour.groupName}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -592,13 +618,16 @@ export default function GroupOrganizerScreen() {
         {!currentTour ? (
           <View style={styles.emptyTourState}>
             <Users size={40} color={C.textMuted} />
-            <Text style={styles.emptyTourStateTitle}>No tours yet</Text>
-            <Text style={styles.emptyTourStateDesc}>
-              Launch your first group tour to see the roster, itinerary, and chat moderation tools here.
-            </Text>
-            <TouchableOpacity style={styles.createTripBtn} onPress={() => setShowCreateModal(true)}>
+            <Text style={styles.emptyTourStateTitle}>{t('groupOrganizer.noToursYetTitle')}</Text>
+            <Text style={styles.emptyTourStateDesc}>{t('groupOrganizer.noToursYetDesc')}</Text>
+            <TouchableOpacity
+              style={styles.createTripBtn}
+              onPress={() => setShowCreateModal(true)}
+              accessibilityRole="button"
+              accessibilityLabel={t('groupOrganizer.launchNewTourGroup')}
+            >
               <Plus size={16} color={C.white} />
-              <Text style={styles.createTripBtnText}>Launch New Tour Group</Text>
+              <Text style={styles.createTripBtnText}>{t('groupOrganizer.launchNewTourGroup')}</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -615,34 +644,34 @@ export default function GroupOrganizerScreen() {
                     <Text style={styles.metricVal}>
                       {currentTour.currentSize} / {currentTour.maxSize}
                     </Text>
-                    <Text style={styles.metricLabel}>Total Members</Text>
+                    <Text style={styles.metricLabel}>{t('groupOrganizer.totalMembers')}</Text>
                   </LinearGradient>
 
                   <LinearGradient colors={['#181e3a', '#0b0d1b']} style={styles.metricCard}>
                     <Calendar size={16} color={C.purpleGlow} />
-                    <Text style={styles.metricVal}>{tours.length} Active</Text>
-                    <Text style={styles.metricLabel}>Upcoming Trips</Text>
+                    <Text style={styles.metricVal}>{t('groupOrganizer.upcomingTripsCount', { count: tours.length })}</Text>
+                    <Text style={styles.metricLabel}>{t('groupOrganizer.upcomingTrips')}</Text>
                   </LinearGradient>
 
                   <LinearGradient colors={['#181e3a', '#0b0d1b']} style={styles.metricCard}>
                     <DollarSign size={16} color={C.greenGlow} />
                     <Text style={styles.metricVal}>
-                      â‚¹{(currentTour.currentSize * currentTour.price).toLocaleString('en-IN')}
+                      ₹{(currentTour.currentSize * currentTour.price).toLocaleString('en-IN')}
                     </Text>
-                    <Text style={styles.metricLabel}>Revenue Booking</Text>
+                    <Text style={styles.metricLabel}>{t('groupOrganizer.revenueBooking')}</Text>
                   </LinearGradient>
 
                   <LinearGradient colors={['#181e3a', '#0b0d1b']} style={styles.metricCard}>
                     <Activity size={16} color={C.amberGlow} />
                     <Text style={styles.metricVal}>
-                      {joinRequests.filter((r) => r.tourId === currentTour.id).length} New
+                      {t('groupOrganizer.newCount', { count: joinRequests.filter((r) => r.tourId === currentTour.id).length })}
                     </Text>
-                    <Text style={styles.metricLabel}>Pending Requests</Text>
+                    <Text style={styles.metricLabel}>{t('groupOrganizer.pendingRequests')}</Text>
                   </LinearGradient>
                 </View>
 
                 {/* Performance Analytics Block */}
-                <Text style={styles.sectionLabelInline}>Reports & Statistics Overview</Text>
+                <Text style={styles.sectionLabelInline}>{t('groupOrganizer.reportsStatisticsOverview')}</Text>
                 <View style={styles.analyticsBox}>
                   {/* docs/REMEDIATION.md §8.6: this box used to also show a
                   hardcoded "Customer Satisfaction 96%★" and "Cancellation
@@ -652,21 +681,21 @@ export default function GroupOrganizerScreen() {
                   derived stat here. */}
                   <View style={styles.statsRow}>
                     <View style={styles.subStatBox}>
-                      <Text style={styles.subStatLabel}>Occupancy Rate</Text>
+                      <Text style={styles.subStatLabel}>{t('groupOrganizer.occupancyRate')}</Text>
                       <Text style={[styles.subStatValue, { color: C.blueGlow }]}>
                         {((currentTour.currentSize / currentTour.maxSize) * 100).toFixed(0)}%
                       </Text>
                     </View>
                     <View style={styles.subStatDivider} />
                     <View style={styles.subStatBox}>
-                      <Text style={styles.subStatLabel}>Checked In</Text>
+                      <Text style={styles.subStatLabel}>{t('groupOrganizer.checkedIn')}</Text>
                       <Text style={[styles.subStatValue, { color: C.greenGlow }]}>
                         {checkedInCount} / {members.length}
                       </Text>
                     </View>
                     <View style={styles.subStatDivider} />
                     <View style={styles.subStatBox}>
-                      <Text style={styles.subStatLabel}>Pending Requests</Text>
+                      <Text style={styles.subStatLabel}>{t('groupOrganizer.pendingRequests')}</Text>
                       <Text style={[styles.subStatValue, { color: C.amberGlow }]}>
                         {joinRequests.filter((r) => r.tourId === currentTour.id).length}
                       </Text>
@@ -684,8 +713,8 @@ export default function GroupOrganizerScreen() {
                 {/* Roster & Roster Action tools */}
                 <View style={styles.leadsHeaderRow}>
                   <View>
-                    <Text style={styles.subTitle}>Participant Roster Management</Text>
-                    <Text style={styles.descSec}>Check members in and see who&apos;s confirmed for this trip</Text>
+                    <Text style={styles.subTitle}>{t('groupOrganizer.participantRosterManagement')}</Text>
+                    <Text style={styles.descSec}>{t('groupOrganizer.checkMembersInDesc')}</Text>
                   </View>
                 </View>
 
@@ -693,9 +722,9 @@ export default function GroupOrganizerScreen() {
                 {members.length > 0 && (
                   <View style={styles.checkInProgressCard}>
                     <View style={styles.checkInRow}>
-                      <Text style={styles.checkInProgressText}> Roster Checked-in Status:</Text>
+                      <Text style={styles.checkInProgressText}>{t('groupOrganizer.rosterCheckedInStatus')}</Text>
                       <Text style={styles.checkInProgressValue}>
-                        {checkedInCount} / {members.length} Present
+                        {t('groupOrganizer.presentCount', { count: checkedInCount, total: members.length })}
                       </Text>
                     </View>
                     <View style={styles.progressTrack}>
@@ -726,7 +755,7 @@ export default function GroupOrganizerScreen() {
                                   : { backgroundColor: C.border },
                             ]}
                           >
-                            <Text style={styles.roleBadgeText}>{member.role}</Text>
+                            <Text style={styles.roleBadgeText}>{t(ROLE_LABEL_KEYS[member.role])}</Text>
                           </View>
                         </View>
                       </View>
@@ -744,6 +773,9 @@ export default function GroupOrganizerScreen() {
                               member.checkedIn ? styles.memberActionToggleBtnActive : {},
                             ]}
                             onPress={() => handleCheckInToggle(member)}
+                            accessibilityRole="switch"
+                            accessibilityLabel={t('groupOrganizer.checkInLabel')}
+                            accessibilityState={{ checked: !!member.checkedIn }}
                           >
                             <CheckCircle size={12} color={member.checkedIn ? C.white : C.textSec} />
                             <Text
@@ -752,7 +784,7 @@ export default function GroupOrganizerScreen() {
                                 { color: member.checkedIn ? C.white : C.textSec },
                               ]}
                             >
-                              {member.checkedIn ? 'Checked-In' : 'Check-In'}
+                              {member.checkedIn ? t('groupOrganizer.checkedInLabel') : t('groupOrganizer.checkInLabel')}
                             </Text>
                           </TouchableOpacity>
                         </View>
@@ -763,10 +795,8 @@ export default function GroupOrganizerScreen() {
 
                 {/* Trip management tool */}
                 <View style={styles.cardHeader}>
-                  <Text style={styles.subTitle}>Configure Tour Information</Text>
-                  <Text style={styles.descSec}>
-                    Add/Modify general parameters like destinations, group capacities, pricing details
-                  </Text>
+                  <Text style={styles.subTitle}>{t('groupOrganizer.configureTourInformation')}</Text>
+                  <Text style={styles.descSec}>{t('groupOrganizer.configureTourDesc')}</Text>
                 </View>
 
                 {/* Unified Trip Card Design */}
@@ -790,7 +820,7 @@ export default function GroupOrganizerScreen() {
                       style={StyleSheet.absoluteFill}
                     />
                     <View style={[styles.tripBadge, { backgroundColor: '#6C5CE7' }]}>
-                      <Text style={styles.tripBadgeText}>Active Tour</Text>
+                      <Text style={styles.tripBadgeText}>{t('groupOrganizer.activeTourBadge')}</Text>
                     </View>
                   </View>
 
@@ -806,7 +836,7 @@ export default function GroupOrganizerScreen() {
                     built). Seats-left is real. */}
                     <View style={styles.tripDetailsMetaRow}>
                       <Text style={{ fontSize: 12, fontWeight: '600', color: '#10B981' }}>
-                        {currentTour.maxSize - currentTour.currentSize} left
+                        {t('groupOrganizer.seatsLeft', { count: currentTour.maxSize - currentTour.currentSize })}
                       </Text>
                     </View>
 
@@ -820,13 +850,13 @@ export default function GroupOrganizerScreen() {
                       <View style={styles.capsule}>
                         <Clock size={8} color="#7E8494" />
                         <Text style={styles.capsuleText} numberOfLines={1}>
-                          {currentTour.durationDays} Days
+                          {t('groupOrganizer.daysCount', { count: currentTour.durationDays })}
                         </Text>
                       </View>
                       <View style={styles.capsule}>
                         <Users size={8} color="#7E8494" />
                         <Text style={styles.capsuleText} numberOfLines={1}>
-                          {currentTour.currentSize}/{currentTour.maxSize} Members
+                          {t('groupOrganizer.membersCount', { current: currentTour.currentSize, max: currentTour.maxSize })}
                         </Text>
                       </View>
                     </View>
@@ -834,7 +864,7 @@ export default function GroupOrganizerScreen() {
                     {/* Price and Action Buttons */}
                     <View style={styles.priceRow}>
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.priceLabel}>Package Cost</Text>
+                        <Text style={styles.priceLabel}>{t('groupOrganizer.packageCost')}</Text>
                         <Text style={styles.priceAmount}>₹{currentTour.price.toLocaleString('en-IN')}</Text>
                       </View>
                       <View style={{ gap: 4, width: 110 }}>
@@ -856,9 +886,11 @@ export default function GroupOrganizerScreen() {
                           onPress={() => {
                             setActiveTab('chat');
                           }}
+                          accessibilityRole="button"
+                          accessibilityLabel={t('groupOrganizer.openChat')}
                         >
                           <MessageSquare size={9} color="#0066FF" style={{ marginRight: 2 }} />
-                          <Text style={[styles.joinBtnText, { color: '#0066FF' }]}>Open Chat</Text>
+                          <Text style={[styles.joinBtnText, { color: '#0066FF' }]}>{t('groupOrganizer.openChat')}</Text>
                         </TouchableOpacity>
                       </View>
                     </View>
@@ -867,27 +899,27 @@ export default function GroupOrganizerScreen() {
 
                 <View style={styles.tripManagerConfigBox}>
                   <View style={styles.tripDetailField}>
-                    <Text style={styles.tripFieldLabel}>Destination Target</Text>
+                    <Text style={styles.tripFieldLabel}>{t('groupOrganizer.destinationTarget')}</Text>
                     <Text style={styles.tripFieldValue}>{currentTour.destination}</Text>
                   </View>
 
                   <View style={styles.tripDetailField}>
-                    <Text style={styles.tripFieldLabel}>Tour Duration</Text>
-                    <Text style={styles.tripFieldValue}>{currentTour.durationDays} Days</Text>
+                    <Text style={styles.tripFieldLabel}>{t('groupOrganizer.tourDuration')}</Text>
+                    <Text style={styles.tripFieldValue}>{t('groupOrganizer.daysCount', { count: currentTour.durationDays })}</Text>
                   </View>
 
                   <View style={styles.tripDetailField}>
-                    <Text style={styles.tripFieldLabel}>Max Group Capacity</Text>
-                    <Text style={styles.tripFieldValue}>{currentTour.maxSize} Persons</Text>
+                    <Text style={styles.tripFieldLabel}>{t('groupOrganizer.maxGroupCapacity')}</Text>
+                    <Text style={styles.tripFieldValue}>{t('groupOrganizer.personsCount', { count: currentTour.maxSize })}</Text>
                   </View>
 
                   <View style={styles.tripDetailField}>
-                    <Text style={styles.tripFieldLabel}>Price Per Tourist Package</Text>
+                    <Text style={styles.tripFieldLabel}>{t('groupOrganizer.pricePerTouristPackage')}</Text>
                     <Text style={styles.tripFieldValue}>₹{currentTour.price.toLocaleString('en-IN')}</Text>
                   </View>
 
                   <View style={styles.tripDetailField}>
-                    <Text style={styles.tripFieldLabel}>Current Status</Text>
+                    <Text style={styles.tripFieldLabel}>{t('groupOrganizer.currentStatus')}</Text>
                     <View
                       style={[
                         styles.statusBadge,
@@ -897,13 +929,18 @@ export default function GroupOrganizerScreen() {
                         },
                       ]}
                     >
-                      <Text style={styles.statusBadgeText}>{currentTour.status}</Text>
+                      <Text style={styles.statusBadgeText}>{t(STATUS_LABEL_KEYS[currentTour.status])}</Text>
                     </View>
                   </View>
 
-                  <TouchableOpacity style={styles.createTripBtn} onPress={() => setShowCreateModal(true)}>
+                  <TouchableOpacity
+                    style={styles.createTripBtn}
+                    onPress={() => setShowCreateModal(true)}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('groupOrganizer.launchNewTourGroup')}
+                  >
                     <Plus size={16} color={C.white} />
-                    <Text style={styles.createTripBtnText}>Launch New Tour Group</Text>
+                    <Text style={styles.createTripBtnText}>{t('groupOrganizer.launchNewTourGroup')}</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -917,9 +954,9 @@ export default function GroupOrganizerScreen() {
                 {/* Logistics Subtabs */}
                 <View style={styles.plannerSubTabs}>
                   {[
-                    { key: 'itinerary', label: 'Day Schedule', Icon: Calendar },
-                    { key: 'transport', label: 'Transport', Icon: Car },
-                    { key: 'hotel', label: 'Room Assigns', Icon: Hotel },
+                    { key: 'itinerary', labelKey: 'groupOrganizer.subtabDaySchedule', Icon: Calendar },
+                    { key: 'transport', labelKey: 'groupOrganizer.subtabTransport', Icon: Car },
+                    { key: 'hotel', labelKey: 'groupOrganizer.subtabRoomAssigns', Icon: Hotel },
                   ].map((sTab) => {
                     const isSubActive = logisticsTab === sTab.key;
                     return (
@@ -927,9 +964,12 @@ export default function GroupOrganizerScreen() {
                         key={sTab.key}
                         style={[styles.plannerSubTabItem, isSubActive && styles.plannerSubTabItemActive]}
                         onPress={() => setLogisticsTab(sTab.key as any)}
+                        accessibilityRole="tab"
+                        accessibilityLabel={t(sTab.labelKey)}
+                        accessibilityState={{ selected: isSubActive }}
                       >
                         <Text style={[styles.plannerSubTabLabel, { color: isSubActive ? C.blueGlow : C.textSec }]}>
-                          {sTab.label}
+                          {t(sTab.labelKey)}
                         </Text>
                         {isSubActive && <View style={styles.plannerSubTabIndicator} />}
                       </TouchableOpacity>
@@ -940,28 +980,28 @@ export default function GroupOrganizerScreen() {
                 {/* 3A: Day Schedule */}
                 {logisticsTab === 'itinerary' && (
                   <View style={styles.innerPlannerSection}>
-                    <Text style={styles.subTitle}>Day-Wise schedule details</Text>
-                    <Text style={styles.descSec}>
-                      Every trip member sees this schedule. Long-press a day to remove it.
-                    </Text>
+                    <Text style={styles.subTitle}>{t('groupOrganizer.dayWiseScheduleDetails')}</Text>
+                    <Text style={styles.descSec}>{t('groupOrganizer.dayScheduleDesc')}</Text>
 
                     {itineraryLoading && itinerary.length === 0 ? (
                       <View style={styles.itineraryStateBox}>
                         <ActivityIndicator size="small" color={C.blueGlow} />
-                        <Text style={styles.itineraryStateText}>Loading the day schedule...</Text>
+                        <Text style={styles.itineraryStateText}>{t('groupOrganizer.loadingDaySchedule')}</Text>
                       </View>
                     ) : itineraryError ? (
                       <View style={styles.itineraryStateBox}>
                         <Text style={styles.itineraryStateText}>{itineraryError}</Text>
-                        <TouchableOpacity onPress={() => currentTour && fetchItinerary(currentTour.id)}>
-                          <Text style={styles.itineraryRetryText}>Retry</Text>
+                        <TouchableOpacity
+                          onPress={() => currentTour && fetchItinerary(currentTour.id)}
+                          accessibilityRole="button"
+                          accessibilityLabel={t('groupOrganizer.retry')}
+                        >
+                          <Text style={styles.itineraryRetryText}>{t('groupOrganizer.retry')}</Text>
                         </TouchableOpacity>
                       </View>
                     ) : itinerary.length === 0 ? (
                       <View style={styles.itineraryStateBox}>
-                        <Text style={styles.itineraryStateText}>
-                          No days planned yet. Add the first one below.
-                        </Text>
+                        <Text style={styles.itineraryStateText}>{t('groupOrganizer.noDaysPlannedYet')}</Text>
                       </View>
                     ) : (
                       itinerary.map((day) => (
@@ -970,9 +1010,12 @@ export default function GroupOrganizerScreen() {
                           style={styles.dayCard}
                           activeOpacity={0.8}
                           onLongPress={() => handleDeleteItineraryDay(day)}
+                          accessibilityRole="button"
+                          accessibilityLabel={t('groupOrganizer.dayNumber', { number: day.day })}
+                          accessibilityHint={t('groupOrganizer.deleteDayHint')}
                         >
                           <View style={styles.dayHeader}>
-                            <Text style={styles.dayNumber}>Day {day.day}</Text>
+                            <Text style={styles.dayNumber}>{t('groupOrganizer.dayNumber', { number: day.day })}</Text>
                             <Text style={styles.dayTitleText}>{day.title}</Text>
                           </View>
                           <Text style={styles.dayActivitiesText}>{day.plan}</Text>
@@ -981,20 +1024,20 @@ export default function GroupOrganizerScreen() {
                     )}
 
                     <View style={styles.addDayBox}>
-                      <Text style={styles.addDayBoxTitle}>Add Schedule Day</Text>
-                      <Text style={styles.formInputLabel}>Day Heading</Text>
+                      <Text style={styles.addDayBoxTitle}>{t('groupOrganizer.addScheduleDay')}</Text>
+                      <Text style={styles.formInputLabel}>{t('groupOrganizer.dayHeading')}</Text>
                       <TextInput
                         style={styles.formInput}
-                        placeholder="e.g. Check-in & Free time blocks"
+                        placeholder={t('groupOrganizer.dayHeadingPlaceholder')}
                         placeholderTextColor={C.textMuted}
                         value={newDayTitle}
                         onChangeText={setNewDayTitle}
                       />
 
-                      <Text style={styles.formInputLabel}>Plan & Activities</Text>
+                      <Text style={styles.formInputLabel}>{t('groupOrganizer.planActivities')}</Text>
                       <TextInput
                         style={[styles.formInput, { height: 60, textAlignVertical: 'top' }]}
-                        placeholder="Detailed activities, hotel shifts, meal spots..."
+                        placeholder={t('groupOrganizer.planActivitiesPlaceholder')}
                         placeholderTextColor={C.textMuted}
                         multiline
                         value={newDayDesc}
@@ -1005,6 +1048,8 @@ export default function GroupOrganizerScreen() {
                         style={[styles.addDayBtn, addingDay && { opacity: 0.6 }]}
                         onPress={handleAddItineraryDay}
                         disabled={addingDay}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('groupOrganizer.insertItineraryDay')}
                       >
                         {addingDay ? (
                           <ActivityIndicator size="small" color={C.white} />
@@ -1012,7 +1057,7 @@ export default function GroupOrganizerScreen() {
                           <Plus size={14} color={C.white} />
                         )}
                         <Text style={styles.addDayBtnText}>
-                          {addingDay ? 'Saving...' : 'Insert Itinerary Day'}
+                          {addingDay ? t('groupOrganizer.saving') : t('groupOrganizer.insertItineraryDay')}
                         </Text>
                       </TouchableOpacity>
                     </View>
@@ -1027,16 +1072,21 @@ export default function GroupOrganizerScreen() {
                     phone number and bus, for every tour) — removed; there
                     is no real driver-assignment feature or schema behind
                     it. Seat allocation below is real. */}
-                    <Text style={styles.subTitle}>Seat Allocation Matrix</Text>
-                    <Text style={styles.descSec}>Assign transport seats to participants</Text>
+                    <Text style={styles.subTitle}>{t('groupOrganizer.seatAllocationMatrix')}</Text>
+                    <Text style={styles.descSec}>{t('groupOrganizer.assignTransportSeatsDesc')}</Text>
 
                     {members
                       .filter((m) => m.role !== 'LEADER')
                       .map((m) => (
                         <View key={m.id} style={styles.allocationRowItem}>
                           <Text style={styles.allocNameText}>{m.name}</Text>
-                          <TouchableOpacity style={styles.allocButton} onPress={() => handleAllocateSeat(m)}>
-                            <Text style={styles.allocButtonText}>{m.seatAllocated || 'Unassigned'}</Text>
+                          <TouchableOpacity
+                            style={styles.allocButton}
+                            onPress={() => handleAllocateSeat(m)}
+                            accessibilityRole="button"
+                            accessibilityLabel={t('groupOrganizer.allocateTransportSeat')}
+                          >
+                            <Text style={styles.allocButtonText}>{m.seatAllocated || t('groupOrganizer.unassigned')}</Text>
                             <ExternalLink size={10} color={C.blueGlow} />
                           </TouchableOpacity>
                         </View>
@@ -1047,16 +1097,21 @@ export default function GroupOrganizerScreen() {
                 {/* 3C: Room Assignments */}
                 {logisticsTab === 'hotel' && (
                   <View style={styles.innerPlannerSection}>
-                    <Text style={styles.subTitle}>Hotel Room Allocation Matrix</Text>
-                    <Text style={styles.descSec}>Assign hotel rooms to participants and track check-in status</Text>
+                    <Text style={styles.subTitle}>{t('groupOrganizer.hotelRoomAllocationMatrix')}</Text>
+                    <Text style={styles.descSec}>{t('groupOrganizer.assignHotelRoomsDesc')}</Text>
 
                     {members
                       .filter((m) => m.role !== 'LEADER')
                       .map((m) => (
                         <View key={m.id} style={styles.allocationRowItem}>
                           <Text style={styles.allocNameText}>{m.name}</Text>
-                          <TouchableOpacity style={styles.allocButton} onPress={() => handleAllocateRoom(m)}>
-                            <Text style={styles.allocButtonText}>{m.roomAllocated || 'Unassigned'}</Text>
+                          <TouchableOpacity
+                            style={styles.allocButton}
+                            onPress={() => handleAllocateRoom(m)}
+                            accessibilityRole="button"
+                            accessibilityLabel={t('groupOrganizer.allocateHotelRoom')}
+                          >
+                            <Text style={styles.allocButtonText}>{m.roomAllocated || t('groupOrganizer.unassigned')}</Text>
                             <ExternalLink size={10} color={C.blueGlow} />
                           </TouchableOpacity>
                         </View>
@@ -1091,21 +1146,17 @@ export default function GroupOrganizerScreen() {
                 {/* Chat Moderation Panel */}
                 <View style={styles.chatGroupModeratorHeader}>
                   <View>
-                    <Text style={styles.subTitle}>Group Chat Moderation</Text>
-                    <Text style={styles.descSec}>
-                      Approve join requests below to add travelers to this trip&apos;s group chat
-                    </Text>
+                    <Text style={styles.subTitle}>{t('groupOrganizer.groupChatModeration')}</Text>
+                    <Text style={styles.descSec}>{t('groupOrganizer.approveJoinRequestsDesc')}</Text>
                   </View>
                 </View>
 
                 {/* Moderation List of Requests */}
-                <Text style={styles.sectionLabelInline}>Pending Chat Join Requests</Text>
+                <Text style={styles.sectionLabelInline}>{t('groupOrganizer.pendingChatJoinRequests')}</Text>
                 {joinRequests.filter((r) => r.tourId === currentTour.id).length === 0 ? (
                   <View style={styles.emptyRequestsCard}>
                     <CheckCircle size={18} color={C.green} />
-                    <Text style={styles.emptyRequestsText}>
-                      All chat join requests have been processed successfully!
-                    </Text>
+                    <Text style={styles.emptyRequestsText}>{t('groupOrganizer.allRequestsProcessed')}</Text>
                   </View>
                 ) : (
                   joinRequests
@@ -1131,17 +1182,21 @@ export default function GroupOrganizerScreen() {
                           <TouchableOpacity
                             style={[styles.reqBtn, styles.reqBtnReject]}
                             onPress={() => handleRejectRequest(req.id, req.userName)}
+                            accessibilityRole="button"
+                            accessibilityLabel={t('groupOrganizer.reject')}
                           >
                             <X size={12} color={C.rose} />
-                            <Text style={styles.reqBtnRejectText}>Reject</Text>
+                            <Text style={styles.reqBtnRejectText}>{t('groupOrganizer.reject')}</Text>
                           </TouchableOpacity>
 
                           <TouchableOpacity
                             style={[styles.reqBtn, styles.reqBtnApprove]}
                             onPress={() => handleApproveRequest(req.id, req.userName, req.userAvatar)}
+                            accessibilityRole="button"
+                            accessibilityLabel={t('groupOrganizer.approveJoin')}
                           >
                             <Check size={12} color={C.white} />
-                            <Text style={styles.reqBtnApproveText}>Approve Join</Text>
+                            <Text style={styles.reqBtnApproveText}>{t('groupOrganizer.approveJoin')}</Text>
                           </TouchableOpacity>
                         </View>
                       </View>
@@ -1149,8 +1204,8 @@ export default function GroupOrganizerScreen() {
                 )}
 
                 {/* Announcements Panel */}
-                <Text style={styles.subTitle}>Group Announcements</Text>
-                <Text style={styles.descSec}>Broadcast important warnings & notices to all participants</Text>
+                <Text style={styles.subTitle}>{t('groupOrganizer.groupAnnouncements')}</Text>
+                <Text style={styles.descSec}>{t('groupOrganizer.broadcastWarningsDesc')}</Text>
 
                 {announcements.map((ann) => (
                   <View key={ann.id} style={styles.announceCard}>
@@ -1163,18 +1218,18 @@ export default function GroupOrganizerScreen() {
                 ))}
 
                 <View style={styles.addAnnounceBox}>
-                  <Text style={styles.formInputLabel}>Notice Title</Text>
+                  <Text style={styles.formInputLabel}>{t('groupOrganizer.noticeTitle')}</Text>
                   <TextInput
                     style={styles.formInput}
-                    placeholder="e.g. Schedule delay warning"
+                    placeholder={t('groupOrganizer.noticeTitlePlaceholder')}
                     placeholderTextColor={C.textMuted}
                     value={newAnnounceTitle}
                     onChangeText={setNewAnnounceTitle}
                   />
-                  <Text style={styles.formInputLabel}>Notice Description</Text>
+                  <Text style={styles.formInputLabel}>{t('groupOrganizer.noticeDescription')}</Text>
                   <TextInput
                     style={[styles.formInput, { height: 50 }]}
-                    placeholder="Enter details..."
+                    placeholder={t('groupOrganizer.noticeDescriptionPlaceholder')}
                     placeholderTextColor={C.textMuted}
                     value={newAnnounceDesc}
                     onChangeText={setNewAnnounceDesc}
@@ -1183,10 +1238,12 @@ export default function GroupOrganizerScreen() {
                     style={[styles.announceBtn, publishingAnnouncement && { opacity: 0.6 }]}
                     onPress={handlePublishAnnouncement}
                     disabled={publishingAnnouncement}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('groupOrganizer.broadcastNotice')}
                   >
                     <Send size={12} color={C.white} />
                     <Text style={styles.announceBtnText}>
-                      {publishingAnnouncement ? 'Sending…' : 'Broadcast Notice'}
+                      {publishingAnnouncement ? t('groupOrganizer.sending') : t('groupOrganizer.broadcastNotice')}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -1223,22 +1280,20 @@ export default function GroupOrganizerScreen() {
       </ScrollView>
 
       {/* CREATE NEW TOUR SHEET */}
-      <Sheet visible={showCreateModal} onClose={() => setShowCreateModal(false)} title="Launch New Tour Group">
-        <Text style={styles.modalDesc}>
-          Set up routing destinations, maximum capacities, pricing tiers, and generate group chats.
-        </Text>
+      <Sheet visible={showCreateModal} onClose={() => setShowCreateModal(false)} title={t('groupOrganizer.launchNewTourGroup')}>
+        <Text style={styles.modalDesc}>{t('groupOrganizer.launchNewTourGroupDesc')}</Text>
 
         <Input
-          label="Tour Group Name"
-          placeholder="e.g. Sikkim Rangers"
+          label={t('groupOrganizer.tourGroupName')}
+          placeholder={t('groupOrganizer.tourGroupNamePlaceholder')}
           value={newGroupName}
           onChangeText={setNewGroupName}
           containerStyle={styles.modalFieldGap}
         />
 
         <Input
-          label="Destination Target"
-          placeholder="e.g. Gangtok & Lachen"
+          label={t('groupOrganizer.destinationTarget')}
+          placeholder={t('groupOrganizer.destinationTargetPlaceholder')}
           value={newDest}
           onChangeText={setNewDest}
           containerStyle={styles.modalFieldGap}
@@ -1246,16 +1301,16 @@ export default function GroupOrganizerScreen() {
 
         <View style={[styles.modalInputRow, styles.modalFieldGap]}>
           <Input
-            label="Duration (Days)"
-            placeholder="e.g. 5"
+            label={t('groupOrganizer.durationDays')}
+            placeholder={t('groupOrganizer.durationDaysPlaceholder')}
             keyboardType="numeric"
             value={newDuration}
             onChangeText={setNewDuration}
             containerStyle={{ flex: 1, marginRight: 8 }}
           />
           <Input
-            label="Max Capacity"
-            placeholder="e.g. 12"
+            label={t('groupOrganizer.maxCapacity')}
+            placeholder={t('groupOrganizer.maxCapacityPlaceholder')}
             keyboardType="numeric"
             value={newMaxSize}
             onChangeText={setNewMaxSize}
@@ -1264,8 +1319,8 @@ export default function GroupOrganizerScreen() {
         </View>
 
         <Input
-          label="Price Package Per Head (₹)"
-          placeholder="e.g. 15000"
+          label={t('groupOrganizer.pricePackagePerHead')}
+          placeholder={t('groupOrganizer.pricePackagePerHeadPlaceholder')}
           keyboardType="numeric"
           value={newPrice}
           onChangeText={setNewPrice}
@@ -1274,12 +1329,12 @@ export default function GroupOrganizerScreen() {
 
         <View style={styles.modalActionRow}>
           <Button
-            label="Cancel"
+            label={t('common.cancel')}
             variant="secondary"
             onPress={() => setShowCreateModal(false)}
             style={{ flex: 1 }}
           />
-          <Button label="Create Tour Group" onPress={handleCreateTour} style={{ flex: 1 }} />
+          <Button label={t('groupOrganizer.createTourGroup')} onPress={handleCreateTour} style={{ flex: 1 }} />
         </View>
       </Sheet>
     </SafeAreaView>
