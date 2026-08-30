@@ -20,6 +20,7 @@ import {
 import { logger } from '@/lib/logger';
 import { toast } from '@/lib/feedback';
 import { C } from '@/theme/tokens';
+import { Card } from '@/components/ui';
 
 
 export default function SupportScreen() {
@@ -76,15 +77,16 @@ export default function SupportScreen() {
           <TouchableOpacity
             activeOpacity={0.8}
             onPress={() => toast('Live chat isn\'t available yet — email us at support@travelstar.app in the meantime.', 'info')}
-            style={styles.contactCard}
           >
-            <View style={styles.contactIconBg}>
-              <MessageSquare size={18} color={C.blue} />
-            </View>
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={styles.contactTitle}>Start Live Chat</Text>
-              <Text style={styles.contactSubtitle}>Average response time: 2 minutes</Text>
-            </View>
+            <Card style={styles.contactCard}>
+              <View style={styles.contactIconBg}>
+                <MessageSquare size={18} color={C.blue} />
+              </View>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={styles.contactTitle}>Start Live Chat</Text>
+                <Text style={styles.contactSubtitle}>Average response time: 2 minutes</Text>
+              </View>
+            </Card>
           </TouchableOpacity>
 
           {/* Email Support */}
@@ -94,30 +96,29 @@ export default function SupportScreen() {
               logger.warn('[Support] Failed to open mail client:', e);
               toast('Could not open your email app. Please email support@travelstar.app directly.', 'error');
             })}
-            style={styles.contactCard}
           >
-            <View style={styles.contactIconBg}>
-              <Mail size={18} color={C.blue} />
-            </View>
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={styles.contactTitle}>Email support@travelstar.app</Text>
-              <Text style={styles.contactSubtitle}>Get a reply within 2 hours</Text>
-            </View>
+            <Card style={styles.contactCard}>
+              <View style={styles.contactIconBg}>
+                <Mail size={18} color={C.blue} />
+              </View>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={styles.contactTitle}>Email support@travelstar.app</Text>
+                <Text style={styles.contactSubtitle}>Get a reply within 2 hours</Text>
+              </View>
+            </Card>
           </TouchableOpacity>
 
           {/* Call emergency hotline */}
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={handleSOSCall}
-            style={[styles.contactCard, styles.sosCardBorder]}
-          >
-            <View style={[styles.contactIconBg, { backgroundColor: 'rgba(255, 45, 85, 0.1)' }]}>
-              <PhoneCall size={18} color={C.rose} />
-            </View>
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={[styles.contactTitle, { color: C.rose }]}>Call 112 — National Emergency Number</Text>
-              <Text style={styles.contactSubtitle}>India&apos;s emergency helpline — police, ambulance, fire</Text>
-            </View>
+          <TouchableOpacity activeOpacity={0.8} onPress={handleSOSCall}>
+            <Card style={[styles.contactCard, styles.sosCardBorder]}>
+              <View style={[styles.contactIconBg, { backgroundColor: 'rgba(255, 45, 85, 0.1)' }]}>
+                <PhoneCall size={18} color={C.rose} />
+              </View>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={[styles.contactTitle, { color: C.rose }]}>Call 112 — National Emergency Number</Text>
+                <Text style={styles.contactSubtitle}>India&apos;s emergency helpline — police, ambulance, fire</Text>
+              </View>
+            </Card>
           </TouchableOpacity>
         </View>
 
@@ -182,11 +183,6 @@ const styles = StyleSheet.create({
   contactCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: C.card,
-    borderRadius: 14,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: C.border,
   },
   sosCardBorder: {
     borderColor: 'rgba(255, 45, 85, 0.25)',

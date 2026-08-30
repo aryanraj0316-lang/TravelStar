@@ -1960,6 +1960,50 @@ partial, exactly what's blocking full completion.
       one (chat.tsx, travel-guide.tsx, create.tsx, profile.tsx, map.tsx,
       search.tsx, group-organizer.tsx) — this was a deliberately scoped
       first slice, not a claim that migration is done.
+      Second slice (2026-08-30, commit 562d95a): legal/privacy.tsx,
+      legal/terms.tsx, about.tsx onto `Card`; licenses.tsx's search field
+      onto `Input`; budget-trips.tsx onto `ScreenLoading`/`ScreenError`/
+      `ScreenEmpty` plus `Chip` for its preset-budget and organizer-type
+      filter pills (Chip gained an optional leading `icon` slot for the
+      latter). (This tracker entry was not updated when the commit landed
+      — backfilled here from the commit message itself, since the next
+      slice's own "remaining" count depends on it being accurate.)
+      Third slice (2026-08-30, commit eba97f1): destination-details.tsx
+      onto `ScreenLoading`/`ScreenError`/`ScreenEmpty` (split not-found
+      from a real load failure, rather than one generic state), `Card` for
+      specialty cards, `Button` for the sticky "Plan a Trip Here" CTA
+      (dropped its bespoke gradient, same normalization as auth.tsx).
+      budget-tracker.tsx onto the three screen states, `Chip` for trip/
+      category selectors, `Card` for expense rows, and its hand-rolled Add
+      Expense modal replaced with the shared `Sheet` + `Input` + `Button`.
+      monsoon-advisory.tsx onto `Card` for alert cards and the three screen
+      states. Deliberately left alone: monsoon-advisory.tsx's severity
+      filter tabs (each keeps its own accent colour regardless of selected
+      state, which doesn't fit Chip's binary model without more surgery)
+      and a hardcoded Devanagari string in the same file — flagged under
+      §9.4 (i18n), not a component-library gap. (Also not recorded in this
+      tracker at the time — backfilled from the commit message.)
+      Fourth slice (2026-08-30, this session): support.tsx's three contact
+      rows (chat/email/emergency-call) wrapped in `Card` instead of a
+      hand-rolled card style, matching about.tsx's precedent. stories.tsx
+      was evaluated and deliberately NOT migrated: its "no stories" state
+      and "Go back" button are a bespoke translucent-white-on-black
+      immersive treatment (Instagram-stories-style), not one of the
+      "same idea styled twelve different ways" cases this phase targets —
+      forcing the generic `ScreenEmpty`/`Button` there would be a visual
+      regression, the same reasoning that already exempted the two map
+      screens' literals. legal/privacy.tsx and legal/terms.tsx turned out
+      to already be on `Card` (done in an earlier, unlogged pass) —
+      confirmed, not re-touched.
+      After this slice: 11 screens remain unmigrated — group-organizer.tsx,
+      stories.tsx (deliberately skipped, see above), travel-guide.tsx, and
+      the six `(tabs)/` screens (chat.tsx 5388 lines, create.tsx 3405,
+      map.tsx 2359 + map.web.tsx 1952, profile.tsx 2337, search.tsx 2233).
+      Every one of those is large enough (2000-5400 lines) to need its own
+      careful pass rather than a mechanical swap — search.tsx does have a
+      real `isLoading`/empty candidate on its main trip list worth doing
+      first. Not attempted in this pass; see the consolidated report for
+      the recommended next step.
 - [ ] Phase 10 — Performance (in progress — the list-virtualization and
       backend caching/pooling items done; bundle analysis, code-splitting,
       and a measured TTI budget not started):
