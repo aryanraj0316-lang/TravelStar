@@ -2094,18 +2094,41 @@ partial, exactly what's blocking full completion.
       seamless bar) is a genuinely compound control, not a labelled
       field — same reasoning as search.tsx's own search bar. Removed 11
       now-dead styles this surfaced.
-      Remaining after this slice: group-organizer.tsx, profile.tsx,
-      map.tsx, map.web.tsx, create.tsx, and travel-guide.tsx are done (map
-      pair only for the isDark/icon fixes, not full tokenization). 5
-      screens remain — stories.tsx (deliberately skipped), chat.tsx (5388
-      lines), and index.tsx/home-screen (not yet audited this round —
-      already partially on the library per the first slice's notes,
-      extent unconfirmed). Also flagged, not yet scoped as its own phase
-      item: both map screens' RN-chrome StyleSheets (not the Leaflet
-      template strings) are still raw hex literals rather than tokens.ts —
-      a real §9.1 gap, separate from the screen-migration list above.
-      chat.tsx is now the only unattempted large screen and needs its own
-      dedicated pass; not attempted this session beyond what's listed.
+      chat.tsx (commit b62b826): the screen's core — message bubbles,
+      room sidebar, media rendering, typing indicators — is genuinely
+      bespoke chat UI and left alone, same restraint as the map screens'
+      Leaflet literals and stories.tsx's immersive overlay. Scoped to two
+      real matches: the inbox search bar (icon + field, no attached
+      button, unlike the message composer bar which keeps its attach/
+      emoji/send buttons and stays custom) onto `Input`; the "Share
+      Custom Location" overlay's 3 fields onto `Input` and its Cancel/
+      Share buttons onto `Button` (the overlay's centered-card chrome
+      stays a custom View, not `Sheet` — a centered confirm card is a
+      different pattern from a bottom sheet, matching profile.tsx's
+      delete-account dialog and create.tsx's date pickers). Both
+      converted fields had heights (38px) under the 44pt minimum touch
+      target — fixed for free. Removed 9 now-dead styles. No isDark
+      violation, no `Modal` usage, and no ScreenLoading/Error/Empty
+      candidate — chat data comes from sockets/AppContext, not a
+      useQuery loading/error gate, and there's no "no chats yet" empty
+      state in this file.
+      index.tsx / src/screens/home-screen.tsx checked (not previously
+      confirmed): already imports `ScreenEmpty`/`ScreenError`/
+      `SkeletonCard` from `@/components/ui` and uses all three; no
+      `TextInput`, `Modal`, or isDark violation found. Nothing to migrate
+      here — already done from a prior, untracked pass.
+      **Screen-migration list closed out** (except stories.tsx,
+      deliberately and permanently exempt — see its slice-4 entry): every
+      screen originally listed as unmigrated is now either on the
+      component library or confirmed to have nothing left to convert.
+      Two things remain flagged, not yet scoped as their own phase items:
+      (1) both map screens' RN-chrome StyleSheets (not the Leaflet
+      template strings) are still raw hex literals rather than tokens.ts
+      — a real §9.1 gap; (2) §9.1's other named deliverables — §9.3
+      (accessibility labels/roles/hints, contrast, i18n-ready strings),
+      §9.4 (i18n), §9.5 (hotlinked images) — are untouched by this
+      session's screen-migration work and remain their own undone items
+      per the Phase 9 entry above.
 - [ ] Phase 10 — Performance (in progress — the list-virtualization and
       backend caching/pooling items done; bundle analysis, code-splitting,
       and a measured TTI budget not started):
