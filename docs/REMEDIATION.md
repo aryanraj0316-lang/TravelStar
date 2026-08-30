@@ -2259,8 +2259,12 @@ partial, exactly what's blocking full completion.
       fully done now. Also fixed a real display bug found in the same
       pass: the revenue metric card rendered a mojibake "â‚¹" instead of
       "₹" (a mis-encoded rupee sign).
+      **create.tsx** now done too (df41bc4 — full pass across all 4
+      studio tabs, both modals, and the creation detail drawer; the
+      largest single locale namespace added this session). 25
+      screens/components fully done now.
       Remaining large screens: chat.tsx (5388 lines), travel-guide.tsx
-      (3713), create.tsx (3405).
+      (3713).
       Touch target sizing — §9.3's other concrete ask, ~100 elements
       under 44×44 — not yet started on any screen; too easy to break
       layout to bulk-script like fontSize was, needs the same per-screen
