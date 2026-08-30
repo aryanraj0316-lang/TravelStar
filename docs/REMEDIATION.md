@@ -2129,6 +2129,63 @@ partial, exactly what's blocking full completion.
       §9.4 (i18n), §9.5 (hotlinked images) — are untouched by this
       session's screen-migration work and remain their own undone items
       per the Phase 9 entry above.
+
+      **§9.3/§9.4, started same session (2026-08-30), combined into one
+      pass per screen** since both touch the same JSX — extract every
+      string into `src/locales/{en,hi}.json` AND add
+      accessibilityRole/Label/Hint/State to every interactive element
+      lacking them, in one edit pass per file, rather than two separate
+      full sweeps.
+      Raised the type floor first (commit fb4107d): 397 raw `fontSize`
+      literals below the 12px floor across 24 files, bumped to 12
+      mechanically (script-scoped to direct `fontSize: <number>` literals
+      only, verified against comments/ternaries). tsc clean; full
+      `eslint src/` run showed 219 problems vs 220 at session start (one
+      fewer, from an earlier dead-code removal, not this change).
+      i18n infrastructure (commit 5ae604b): installed i18next +
+      react-i18next + expo-localization (`npx expo install` for SDK 57
+      alignment). `src/lib/i18n.ts` initializes synchronously at
+      `_layout.tsx`'s module scope (resources are bundled, so nothing to
+      await for first render) using the device-detected language, then
+      applies a stored override as a fire-and-forget async follow-up.
+      Only English and Hindi ship real translations
+      (`SUPPORTED_LANGUAGES`); profile.tsx's language sheet now actually
+      calls `setAppLanguage()` for those two, and honestly toasts "isn't
+      translated yet" for Punjabi/Bengali/Tamil rather than silently
+      staying in English. Found and fixed a real bug in the same pass:
+      `datetime.ts`'s `formatRelative` had hardcoded English text ("just
+      now", "ago"/"in") completely bypassing i18n, and its locale was
+      pinned to `en-IN` regardless of app language — every relative
+      timestamp app-wide would have stayed English even after this
+      feature shipped. Wired the shared component library's own
+      hardcoded defaults (`ScreenState`, `Sheet`, `Select`) onto the same
+      translation keys — the highest-leverage fix, since every Phase 9.1-
+      migrated screen uses these. Added real
+      accessibilityRole="tab"/Label/State to `AppTabBar`'s five nav
+      buttons (previously none).
+      Screens done so far: **home-screen.tsx** (commit f6071b3) and
+      **search.tsx** (commit 296354c) — both fully extracted and labeled,
+      verified `tsc --noEmit` clean and `eslint` diffed against baseline
+      (no new issues) each time. search.tsx's pass also found and fixed
+      two real latent bugs: the Duration and Transport Mode filters were
+      regex/substring-matching English words (`"Day"`, `"bike"`, `"bus"`,
+      `"ac"`) back out of already-formatted, now-translatable display
+      text — silently would have broken those filters the moment the UI
+      rendered in Hindi. Added `computeDurationDays()` and
+      `deriveTransportCode()` returning stable untranslated values for
+      the filters to match against, keeping the translated strings purely
+      for display.
+      Translations in `hi.json` are model-written, not reviewed by a
+      native speaker or professional translator — flagged honestly in
+      every commit that touches them, not presented as verified.
+      Remaining: ~28 screens/components still need this same combined
+      pass (touch target sizing — §9.3's other concrete ask, ~100
+      elements under 44×44 — not yet started on any screen; too easy to
+      break layout to bulk-script like fontSize was). §9.5 (hotlinked
+      images) not started — hard-blocked on real licensed imagery, which
+      only the user can provide; the object-storage/caching pipeline
+      itself could still be built ahead of that. This is large enough
+      that it will span many more commits.
 - [ ] Phase 10 — Performance (in progress — the list-virtualization and
       backend caching/pooling items done; bundle analysis, code-splitting,
       and a measured TTI budget not started):
