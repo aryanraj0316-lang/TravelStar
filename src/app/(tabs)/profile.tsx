@@ -20,12 +20,12 @@ import {
   LifeBuoy,
   LogOut,
   MapPin,
-  Maximize2,
   Pencil,
   Trash2,
   X,
 } from 'lucide-react-native';
 import React, { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Image,
@@ -67,6 +67,7 @@ function ProfileScreen() {
   useEffect(() => {
     logger.log('Screen mounted: ProfileScreen');
   }, []);
+  const { t } = useTranslation();
   const router = useRouter();
   const navigation = useNavigation();
   const {
@@ -228,16 +229,16 @@ function ProfileScreen() {
         const result = await registerForPushNotifications();
         if (result.status === 'denied') {
           setPushNotifications(false);
-          toast('Notifications Blocked — Turn notifications on for TravelStar in your device settings to receive trip and safety alerts.', 'info');
+          toast(t('profile.pushBlockedMessage'), 'info');
           return;
         }
         if (result.status === 'not-configured' || result.status === 'unsupported') {
           setPushNotifications(false);
           await showAlert(
-            'Push Not Available',
+            t('profile.pushNotAvailableTitle'),
             result.status === 'unsupported'
-              ? 'Push notifications need a real device — a simulator cannot receive them.'
-              : 'This build has no push project configured, so notifications cannot be delivered to it yet.',
+              ? t('profile.pushUnsupportedMessage')
+              : t('profile.pushNotConfiguredMessage'),
           );
           return;
         }
@@ -249,7 +250,7 @@ function ProfileScreen() {
     } catch (e) {
       logger.warn('[Profile] Failed to update push setting:', e);
       setPushNotifications(!next);
-      toast('Could not save that setting.', 'error');
+      toast(t('profile.couldNotSaveSetting'), 'error');
     } finally {
       setPushBusy(false);
     }
@@ -265,7 +266,7 @@ function ProfileScreen() {
     } catch (e) {
       logger.warn('[Profile] Failed to update notification category:', e);
       setPushPrefs(previous);
-      toast('Could not save that setting.', 'error');
+      toast(t('profile.couldNotSaveSetting'), 'error');
     }
   };
 
@@ -292,7 +293,7 @@ function ProfileScreen() {
       setEditAvatar(publicUrl);
     } catch (err) {
       logger.warn('[Profile] Avatar upload failed:', err);
-      toast(errorToastMessage(err, 'Could not upload that photo. Please try again.'), 'error');
+      toast(errorToastMessage(err, t('profile.couldNotUploadPhoto')), 'error');
     } finally {
       setAvatarUploading(false);
     }
@@ -301,12 +302,12 @@ function ProfileScreen() {
   const pickImageFromDevice = async () => {
     try {
       if (!ImagePicker || typeof ImagePicker.requestMediaLibraryPermissionsAsync !== 'function') {
-        toast('Photo gallery module is initializing or requires restarting Expo dev client.', 'info');
+        toast(t('profile.galleryModuleInitializing'), 'info');
         return;
       }
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permissionResult?.granted) {
-        toast('Permission Required — Permission to access photo gallery is required to select photos from your device.', 'error');
+        toast(t('profile.galleryPermissionRequired'), 'error');
         return;
       }
 
@@ -321,19 +322,19 @@ function ProfileScreen() {
         await uploadPickedAvatar(result.assets[0]);
       }
     } catch (err: any) {
-      toast(errorToastMessage(err, 'Could not open the photo gallery. Please try again.'), 'error');
+      toast(errorToastMessage(err, t('profile.couldNotOpenGallery')), 'error');
     }
   };
 
   const takePhotoWithCamera = async () => {
     try {
       if (!ImagePicker || typeof ImagePicker.requestCameraPermissionsAsync !== 'function') {
-        toast('Camera module is initializing or requires restarting Expo dev client.', 'info');
+        toast(t('profile.cameraModuleInitializing'), 'info');
         return;
       }
       const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
       if (!permissionResult?.granted) {
-        toast('Permission Required — Camera permission is required to capture a photo.', 'error');
+        toast(t('profile.cameraPermissionRequired'), 'error');
         return;
       }
 
@@ -347,7 +348,7 @@ function ProfileScreen() {
         await uploadPickedAvatar(result.assets[0]);
       }
     } catch (err: any) {
-      toast(errorToastMessage(err, 'Could not open the camera. Please try again.'), 'error');
+      toast(errorToastMessage(err, t('profile.couldNotOpenCamera')), 'error');
     }
   };
 
@@ -363,7 +364,7 @@ function ProfileScreen() {
   // Handlers
   const handleSaveProfile = () => {
     if (!editName.trim()) {
-      toast('Profile Name cannot be empty.', 'error');
+      toast(t('profile.nameCannotBeEmpty'), 'error');
       return;
     }
     updateProfile({
@@ -377,7 +378,7 @@ function ProfileScreen() {
       travelStyles: editStyles,
     });
     setShowEditModal(false);
-    toast('Profile saved.', 'success');
+    toast(t('profile.profileSaved'), 'success');
   };
 
   // "Share Profile" was removed rather than kept (docs/REMEDIATION.md §0.2
@@ -390,9 +391,9 @@ function ProfileScreen() {
   const handleLogout = () => {
     void (async () => {
       const ok = await confirm({
-        title: 'Sign out of TravelStar?',
-        message: 'You will need to sign in again to see your trips and messages.',
-        confirmLabel: 'Sign Out',
+        title: t('profile.signOutTitle'),
+        message: t('profile.signOutMessage'),
+        confirmLabel: t('profile.signOutConfirmLabel'),
         destructive: true,
       });
       if (!ok) return;
@@ -415,9 +416,9 @@ function ProfileScreen() {
       // No file-download primitive on RN/Expo web here — surface the export
       // as JSON the user can copy. A share-sheet / file save is a follow-up.
       logger.log('[Profile] Data export', JSON.stringify(data));
-      toast('Your data export is ready in the app logs. A file download is coming soon.', 'success');
+      toast(t('profile.exportReady'), 'success');
     } catch (e) {
-      toast(errorToastMessage(e, 'Could not build your data export.'), 'error');
+      toast(errorToastMessage(e, t('profile.couldNotBuildExport')), 'error');
     } finally {
       setExporting(false);
     }
@@ -430,11 +431,11 @@ function ProfileScreen() {
       await apiService.deleteAccount(deletePassword);
       setShowDeleteModal(false);
       setDeletePassword('');
-      toast('Your account has been deleted.', 'success');
+      toast(t('profile.accountDeleted'), 'success');
       logout();
       setShowAuthModal(true);
     } catch (e) {
-      toast(errorToastMessage(e, 'Could not delete your account.'), 'error');
+      toast(errorToastMessage(e, t('profile.couldNotDeleteAccount')), 'error');
     } finally {
       setDeleting(false);
     }
@@ -480,14 +481,15 @@ function ProfileScreen() {
           />
           <LinearGradient colors={['rgba(7,9,19,0.3)', 'rgba(7,9,19,0.98)']} style={StyleSheet.absoluteFill} />
 
-          {/* Top-Left Maximize/Scan Icon */}
-          <TouchableOpacity style={styles.topLeftScanBtn} activeOpacity={0.7}>
-            <Maximize2 size={20} color="#FFF" />
-          </TouchableOpacity>
-
-          {/* Top-Right Action Column: Edit (Pencil), Notifications (Bell), Share */}
+          {/* Top-Right Action Column: Edit (Pencil), Notifications (Bell) */}
           <View style={styles.topRightActionCol}>
-            <TouchableOpacity style={styles.topActionBtn} activeOpacity={0.7} onPress={() => setShowEditModal(true)}>
+            <TouchableOpacity
+              style={styles.topActionBtn}
+              activeOpacity={0.7}
+              onPress={() => setShowEditModal(true)}
+              accessibilityRole="button"
+              accessibilityLabel={t('profile.editProfile')}
+            >
               <Pencil size={16} color="#FFF" />
             </TouchableOpacity>
 
@@ -495,6 +497,8 @@ function ProfileScreen() {
               style={styles.topActionBtn}
               activeOpacity={0.7}
               onPress={() => router.push('/notifications')}
+              accessibilityRole="button"
+              accessibilityLabel={t('notifications.title')}
             >
               <Bell size={16} color="#FFF" />
               {hasUnreadNotification && <View style={styles.topNotifDot} />}
@@ -533,25 +537,25 @@ function ProfileScreen() {
             ════════════════════════════════════════════════ */}
         <View style={styles.menuContainer}>
           {/* Section: PERSONAL DETAILS */}
-          <Text style={styles.sectionHeader}>PERSONAL DETAILS</Text>
+          <Text style={styles.sectionHeader}>{t('profile.personalDetails')}</Text>
           <View style={styles.menuCard}>
             <View style={styles.profileDetailRow}>
-              <Text style={styles.profileDetailLabel}>Mobile Phone</Text>
+              <Text style={styles.profileDetailLabel}>{t('profile.mobilePhone')}</Text>
               <Text style={styles.profileDetailValue}>{profile.phoneNumber || '+91 98765 43210'}</Text>
             </View>
             <View style={styles.profileDetailDivider} />
             <View style={styles.profileDetailRow}>
-              <Text style={styles.profileDetailLabel}>Emergency SOS Contact</Text>
+              <Text style={styles.profileDetailLabel}>{t('profile.emergencySosContact')}</Text>
               <Text style={styles.profileDetailValue}>{profile.emergencyContact || '+91 98111 22334'}</Text>
             </View>
             <View style={styles.profileDetailDivider} />
             <View style={styles.profileDetailRow}>
-              <Text style={styles.profileDetailLabel}>Languages Spoken</Text>
+              <Text style={styles.profileDetailLabel}>{t('profile.languagesSpoken')}</Text>
               <Text style={styles.profileDetailValue}>{profile.languages || 'Hindi, English, Punjabi'}</Text>
             </View>
             <View style={styles.profileDetailDivider} />
             <View style={styles.profileDetailRow}>
-              <Text style={styles.profileDetailLabel}>Adventure Styles</Text>
+              <Text style={styles.profileDetailLabel}>{t('profile.adventureStyles')}</Text>
               <Text style={styles.profileDetailValue}>
                 {profile.travelStyles || 'Mountains, Backpacking, Photography'}
               </Text>
@@ -559,13 +563,19 @@ function ProfileScreen() {
           </View>
 
           {/* Section 1: TRAVEL HUB */}
-          <Text style={styles.sectionHeader}>TRAVEL HUB</Text>
+          <Text style={styles.sectionHeader}>{t('profile.travelHub')}</Text>
           <View style={styles.menuCard}>
             {/* Bookings & Trips */}
-            <TouchableOpacity style={styles.menuItem} activeOpacity={0.7} onPress={() => router.push('/bookings')}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              activeOpacity={0.7}
+              onPress={() => router.push('/bookings')}
+              accessibilityRole="button"
+              accessibilityLabel={t('profile.bookingsTrips')}
+            >
               <View style={styles.menuItemLeft}>
                 <Briefcase size={17} color="#FFF" style={{ opacity: 0.8 }} />
-                <Text style={styles.menuItemText}>Bookings & Trips</Text>
+                <Text style={styles.menuItemText}>{t('profile.bookingsTrips')}</Text>
               </View>
               <ChevronRight size={14} color="#8B949E" />
             </TouchableOpacity>
@@ -580,10 +590,12 @@ function ProfileScreen() {
                 setShowSavedPlacesModal(true);
                 setNavbarHidden(true);
               }}
+              accessibilityRole="button"
+              accessibilityLabel={t('profile.savedDestinations')}
             >
               <View style={styles.menuItemLeft}>
                 <Bookmark size={17} color="#FFF" style={{ opacity: 0.8 }} />
-                <Text style={styles.menuItemText}>Saved Destinations</Text>
+                <Text style={styles.menuItemText}>{t('profile.savedDestinations')}</Text>
               </View>
               <ChevronRight size={14} color="#8B949E" />
             </TouchableOpacity>
@@ -595,17 +607,19 @@ function ProfileScreen() {
               style={styles.menuItem}
               activeOpacity={0.7}
               onPress={() => router.push('/budget-tracker')}
+              accessibilityRole="button"
+              accessibilityLabel={t('profile.expenseTracker')}
             >
               <View style={styles.menuItemLeft}>
                 <CreditCard size={17} color="#FFF" style={{ opacity: 0.8 }} />
-                <Text style={styles.menuItemText}>Expense Tracker</Text>
+                <Text style={styles.menuItemText}>{t('profile.expenseTracker')}</Text>
               </View>
               <ChevronRight size={14} color="#8B949E" />
             </TouchableOpacity>
           </View>
 
           {/* Section 2: PREFERENCES & SUPPORT */}
-          <Text style={styles.sectionHeader}>PREFERENCES & SUPPORT</Text>
+          <Text style={styles.sectionHeader}>{t('profile.preferencesSupport')}</Text>
           <View style={styles.menuCard}>
             {/* Language & Region */}
             <TouchableOpacity
@@ -615,10 +629,12 @@ function ProfileScreen() {
                 setShowLanguageModal(true);
                 setNavbarHidden(true);
               }}
+              accessibilityRole="button"
+              accessibilityLabel={t('profile.languageRegion', { language: selectedLanguage })}
             >
               <View style={styles.menuItemLeft}>
                 <Globe size={17} color="#FFF" style={{ opacity: 0.8 }} />
-                <Text style={styles.menuItemText}>Language & Region ({selectedLanguage})</Text>
+                <Text style={styles.menuItemText}>{t('profile.languageRegion', { language: selectedLanguage })}</Text>
               </View>
               <ChevronRight size={14} color="#8B949E" />
             </TouchableOpacity>
@@ -629,7 +645,7 @@ function ProfileScreen() {
             <View style={styles.menuItem}>
               <View style={styles.menuItemLeft}>
                 <Bell size={17} color="#FFF" style={{ opacity: 0.8 }} />
-                <Text style={styles.menuItemText}>Push Notifications</Text>
+                <Text style={styles.menuItemText}>{t('profile.pushNotifications')}</Text>
               </View>
               <TouchableOpacity
                 activeOpacity={0.8}
@@ -639,6 +655,9 @@ function ProfileScreen() {
                   styles.switchTrack,
                   { backgroundColor: pushNotifications ? '#0066FF' : '#2C2F48', opacity: pushBusy ? 0.6 : 1 },
                 ]}
+                accessibilityRole="switch"
+                accessibilityLabel={t('profile.pushNotifications')}
+                accessibilityState={{ checked: pushNotifications, disabled: pushBusy }}
               >
                 <View style={[styles.switchThumb, pushNotifications ? styles.switchThumbOn : styles.switchThumbOff]} />
               </TouchableOpacity>
@@ -650,13 +669,13 @@ function ProfileScreen() {
               <View style={styles.pushCategoryGroup}>
                 {(
                   [
-                    { key: 'pushTripUpdates' as const, label: 'Trip updates' },
-                    { key: 'pushHazardAlerts' as const, label: 'Hazard & safety alerts' },
-                    { key: 'pushSeasonal' as const, label: 'Seasonal suggestions' },
+                    { key: 'pushTripUpdates' as const, labelKey: 'profile.tripUpdates' },
+                    { key: 'pushHazardAlerts' as const, labelKey: 'profile.hazardSafetyAlerts' },
+                    { key: 'pushSeasonal' as const, labelKey: 'profile.seasonalSuggestions' },
                   ]
                 ).map((row) => (
                   <View key={row.key} style={styles.pushCategoryRow}>
-                    <Text style={styles.pushCategoryLabel}>{row.label}</Text>
+                    <Text style={styles.pushCategoryLabel}>{t(row.labelKey)}</Text>
                     <TouchableOpacity
                       activeOpacity={0.8}
                       onPress={() => handleToggleCategory(row.key)}
@@ -664,6 +683,9 @@ function ProfileScreen() {
                         styles.switchTrack,
                         { backgroundColor: pushPrefs[row.key] ? '#0066FF' : '#2C2F48', transform: [{ scale: 0.85 }] },
                       ]}
+                      accessibilityRole="switch"
+                      accessibilityLabel={t(row.labelKey)}
+                      accessibilityState={{ checked: pushPrefs[row.key] }}
                     >
                       <View
                         style={[styles.switchThumb, pushPrefs[row.key] ? styles.switchThumbOn : styles.switchThumbOff]}
@@ -680,7 +702,7 @@ function ProfileScreen() {
             <View style={styles.menuItem}>
               <View style={styles.menuItemLeft}>
                 <MapPin size={17} color="#FFF" style={{ opacity: 0.8 }} />
-                <Text style={styles.menuItemText}>Location Sharing</Text>
+                <Text style={styles.menuItemText}>{t('profile.locationSharing')}</Text>
               </View>
               <TouchableOpacity
                 activeOpacity={0.8}
@@ -690,6 +712,9 @@ function ProfileScreen() {
                   updateProfile({ locationSharing: newValue });
                 }}
                 style={[styles.switchTrack, { backgroundColor: locationSharing ? '#0066FF' : '#2C2F48' }]}
+                accessibilityRole="switch"
+                accessibilityLabel={t('profile.locationSharing')}
+                accessibilityState={{ checked: locationSharing }}
               >
                 <View style={[styles.switchThumb, locationSharing ? styles.switchThumbOn : styles.switchThumbOff]} />
               </TouchableOpacity>
@@ -698,10 +723,16 @@ function ProfileScreen() {
             <View style={styles.menuDivider} />
 
             {/* Customer Support */}
-            <TouchableOpacity style={styles.menuItem} activeOpacity={0.7} onPress={() => router.push('/support')}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              activeOpacity={0.7}
+              onPress={() => router.push('/support')}
+              accessibilityRole="button"
+              accessibilityLabel={t('profile.customerSupport')}
+            >
               <View style={styles.menuItemLeft}>
                 <LifeBuoy size={17} color="#FFF" style={{ opacity: 0.8 }} />
-                <Text style={styles.menuItemText}>Customer Support</Text>
+                <Text style={styles.menuItemText}>{t('profile.customerSupport')}</Text>
               </View>
               <ChevronRight size={14} color="#8B949E" />
             </TouchableOpacity>
@@ -709,10 +740,16 @@ function ProfileScreen() {
             <View style={styles.menuDivider} />
 
             {/* About TravelStar */}
-            <TouchableOpacity style={styles.menuItem} activeOpacity={0.7} onPress={() => router.push('/about')}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              activeOpacity={0.7}
+              onPress={() => router.push('/about')}
+              accessibilityRole="button"
+              accessibilityLabel={t('profile.aboutTravelStar')}
+            >
               <View style={styles.menuItemLeft}>
                 <HelpCircle size={17} color="#FFF" style={{ opacity: 0.8 }} />
-                <Text style={styles.menuItemText}>About TravelStar</Text>
+                <Text style={styles.menuItemText}>{t('profile.aboutTravelStar')}</Text>
               </View>
               <ChevronRight size={14} color="#8B949E" />
             </TouchableOpacity>
@@ -727,11 +764,11 @@ function ProfileScreen() {
                 onPress={handleExportData}
                 disabled={exporting}
                 accessibilityRole="button"
-                accessibilityLabel="Download my data"
+                accessibilityLabel={t('profile.downloadMyData')}
               >
                 <View style={styles.menuItemLeft}>
                   <Download size={17} color="#8B949E" />
-                  <Text style={styles.menuItemText}>{exporting ? 'Preparing…' : 'Download my data'}</Text>
+                  <Text style={styles.menuItemText}>{exporting ? t('profile.preparingExport') : t('profile.downloadMyData')}</Text>
                 </View>
                 <ChevronRight size={14} color="#8B949E" />
               </TouchableOpacity>
@@ -744,11 +781,11 @@ function ProfileScreen() {
                 activeOpacity={0.7}
                 onPress={() => setShowDeleteModal(true)}
                 accessibilityRole="button"
-                accessibilityLabel="Delete my account"
+                accessibilityLabel={t('profile.deleteMyAccount')}
               >
                 <View style={styles.menuItemLeft}>
                   <Trash2 size={17} color="#FF453A" style={{ opacity: 0.9 }} />
-                  <Text style={[styles.menuItemText, { color: '#FF453A' }]}>Delete my account</Text>
+                  <Text style={[styles.menuItemText, { color: '#FF453A' }]}>{t('profile.deleteMyAccount')}</Text>
                 </View>
                 <ChevronRight size={14} color="#8B949E" />
               </TouchableOpacity>
@@ -757,10 +794,16 @@ function ProfileScreen() {
             <View style={styles.menuDivider} />
 
             {/* Sign Out of Account */}
-            <TouchableOpacity style={styles.menuItem} activeOpacity={0.7} onPress={handleLogout}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              activeOpacity={0.7}
+              onPress={handleLogout}
+              accessibilityRole="button"
+              accessibilityLabel={t('profile.signOutOfAccount')}
+            >
               <View style={styles.menuItemLeft}>
                 <LogOut size={17} color="#FF453A" style={{ opacity: 0.9 }} />
-                <Text style={[styles.menuItemText, { color: '#FF453A' }]}>Sign Out of Account</Text>
+                <Text style={[styles.menuItemText, { color: '#FF453A' }]}>{t('profile.signOutOfAccount')}</Text>
               </View>
               <ChevronRight size={14} color="#8B949E" />
             </TouchableOpacity>
@@ -776,21 +819,18 @@ function ProfileScreen() {
         >
           <View style={styles.deleteOverlay}>
             <View style={styles.deleteCard}>
-              <Text style={styles.deleteTitle}>Delete your account?</Text>
-              <Text style={styles.deleteBodyText}>
-                This permanently removes your profile, trips you organize, join requests, messages, and expenses. It
-                cannot be undone. Enter your password to confirm.
-              </Text>
+              <Text style={styles.deleteTitle}>{t('profile.deleteAccountTitle')}</Text>
+              <Text style={styles.deleteBodyText}>{t('profile.deleteAccountBody')}</Text>
               <Input
-                placeholder="Current password"
+                placeholder={t('profile.currentPassword')}
                 secureTextEntry
                 value={deletePassword}
                 onChangeText={setDeletePassword}
-                accessibilityLabel="Current password"
+                accessibilityLabel={t('profile.currentPassword')}
               />
               <View style={styles.deleteBtnRow}>
                 <Button
-                  label="Cancel"
+                  label={t('common.cancel')}
                   variant="secondary"
                   style={{ flex: 1 }}
                   onPress={() => {
@@ -799,7 +839,7 @@ function ProfileScreen() {
                   }}
                 />
                 <Button
-                  label={deleting ? 'Deleting…' : 'Delete forever'}
+                  label={deleting ? t('profile.deletingAccount') : t('profile.deleteForever')}
                   variant="destructive"
                   style={{ flex: 1 }}
                   disabled={deleting || deletePassword.length === 0}
@@ -816,10 +856,10 @@ function ProfileScreen() {
       {/* ════════════════════════════════════════════════
           EDIT PROFILE MODAL
           ════════════════════════════════════════════════ */}
-      <Sheet visible={showEditModal} onClose={() => setShowEditModal(false)} title="Edit Profile Details">
+      <Sheet visible={showEditModal} onClose={() => setShowEditModal(false)} title={t('profile.editProfileTitle')}>
         {/* Profile Photo Selector Section */}
         <View style={styles.photoPickerSection}>
-          <Text style={styles.inputLabel}>Profile Photo</Text>
+          <Text style={styles.inputLabel}>{t('profile.profilePhoto')}</Text>
 
           {/* Large Preview with Interactive Tap */}
           <TouchableOpacity
@@ -827,6 +867,8 @@ function ProfileScreen() {
             style={styles.avatarPreviewWrap}
             onPress={pickImageFromDevice}
             disabled={avatarUploading}
+            accessibilityRole="button"
+            accessibilityLabel={t('profile.avatarPhoto')}
           >
             <Image source={{ uri: editAvatar }} style={styles.avatarPreviewImage} />
             {avatarUploading ? (
@@ -847,9 +889,11 @@ function ProfileScreen() {
               activeOpacity={0.8}
               onPress={pickImageFromDevice}
               disabled={avatarUploading}
+              accessibilityRole="button"
+              accessibilityLabel={t('profile.fromGallery')}
             >
               <ImageIcon size={15} color="#0066FF" />
-              <Text style={styles.devicePickBtnText}>From Gallery</Text>
+              <Text style={styles.devicePickBtnText}>{t('profile.fromGallery')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -857,15 +901,17 @@ function ProfileScreen() {
               activeOpacity={0.8}
               onPress={takePhotoWithCamera}
               disabled={avatarUploading}
+              accessibilityRole="button"
+              accessibilityLabel={t('profile.takePhoto')}
             >
               <Camera size={15} color="#0066FF" />
-              <Text style={styles.devicePickBtnText}>Take Photo</Text>
+              <Text style={styles.devicePickBtnText}>{t('profile.takePhoto')}</Text>
             </TouchableOpacity>
           </View>
 
           {/* Preset Avatars Row */}
           <Text style={{ fontSize: 12, color: '#7E8494', marginTop: 12, marginBottom: 8, alignSelf: 'flex-start' }}>
-            Or Choose from Preset Avatars:
+            {t('profile.orChoosePreset')}
           </Text>
           <ScrollView
             horizontal
@@ -880,6 +926,9 @@ function ProfileScreen() {
                   activeOpacity={0.8}
                   onPress={() => setEditAvatar(presetUrl)}
                   style={[styles.presetAvatarTile, isSelected && styles.presetAvatarTileSelected]}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('profile.selectAvatarPreset', { number: idx + 1 })}
+                  accessibilityState={{ selected: isSelected }}
                 >
                   <Image source={{ uri: presetUrl }} style={styles.presetAvatarImage} />
                   {isSelected && (
@@ -893,20 +942,20 @@ function ProfileScreen() {
           </ScrollView>
         </View>
 
-        <Input label="Full Name" value={editName} onChangeText={setEditName} placeholder="Enter full name" />
+        <Input label={t('profile.fullName')} value={editName} onChangeText={setEditName} placeholder={t('profile.enterFullName')} />
 
         {/* Gender Selection Section */}
-        <Text style={styles.inputLabel}>Gender</Text>
+        <Text style={styles.inputLabel}>{t('profile.gender')}</Text>
         <View style={styles.genderWrap}>
           {[
-            { label: 'Male', icon: '👨' },
-            { label: 'Female', icon: '👩' },
-            { label: 'Non-Binary', icon: '✨' },
-            { label: 'Private', icon: '🔒' },
+            { label: 'Male', labelKey: 'profile.genderMale', icon: '👨' },
+            { label: 'Female', labelKey: 'profile.genderFemale', icon: '👩' },
+            { label: 'Non-Binary', labelKey: 'profile.genderNonBinary', icon: '✨' },
+            { label: 'Private', labelKey: 'profile.genderPrivate', icon: '🔒' },
           ].map((g) => (
             <Chip
               key={g.label}
-              label={g.label}
+              label={t(g.labelKey)}
               icon={<Text style={{ fontSize: 13 }}>{g.icon}</Text>}
               selected={editGender === g.label}
               onPress={() => setEditGender(g.label)}
@@ -915,42 +964,42 @@ function ProfileScreen() {
         </View>
 
         <Input
-          label="Bio / Traveler Tagline"
+          label={t('profile.bioTagline')}
           value={editBio}
           onChangeText={setEditBio}
           multiline
-          placeholder="Share your travel motto"
+          placeholder={t('profile.shareTravelMotto')}
           containerStyle={styles.editFieldGap}
         />
         <Input
-          label="Mobile Phone"
+          label={t('profile.mobilePhone')}
           value={editPhone}
           onChangeText={setEditPhone}
           keyboardType="phone-pad"
           containerStyle={styles.editFieldGap}
         />
         <Input
-          label="Emergency SOS Contact"
+          label={t('profile.emergencySosContact')}
           value={editEmergencyPhone}
           onChangeText={setEditEmergencyPhone}
           keyboardType="phone-pad"
           containerStyle={styles.editFieldGap}
         />
         <Input
-          label="Languages Spoken"
+          label={t('profile.languagesSpoken')}
           value={editLanguages}
           onChangeText={setEditLanguages}
           containerStyle={styles.editFieldGap}
         />
         <Input
-          label="Travel & Adventure Styles"
+          label={t('profile.travelAdventureStyles')}
           value={editStyles}
           onChangeText={setEditStyles}
           containerStyle={styles.editFieldGap}
         />
 
         <Button
-          label="Save Profile Changes"
+          label={t('profile.saveProfileChanges')}
           onPress={handleSaveProfile}
           fullWidth
           style={styles.saveModalBtnSpacing}
@@ -971,6 +1020,8 @@ function ProfileScreen() {
               backgroundColor: 'rgba(255, 255, 255, 0.2)',
             }}
             onPress={() => setShowAuthModal(false)}
+            accessibilityRole="button"
+            accessibilityLabel={t('profile.closeSignIn')}
           >
             <X size={22} color="#FFF" />
           </TouchableOpacity>
@@ -997,7 +1048,7 @@ function ProfileScreen() {
             <View style={styles.bottomSheetHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Text style={{ fontSize: 16 }}>❤️</Text>
-                <Text style={styles.bottomSheetTitle}>Saved Places</Text>
+                <Text style={styles.bottomSheetTitle}>{t('profile.savedPlacesTitle')}</Text>
               </View>
               <TouchableOpacity
                 onPress={() => {
@@ -1005,6 +1056,8 @@ function ProfileScreen() {
                   setNavbarHidden(false);
                 }}
                 style={styles.bottomSheetCloseBtn}
+                accessibilityRole="button"
+                accessibilityLabel={t('common.close')}
               >
                 <X size={20} color="#FFF" />
               </TouchableOpacity>
@@ -1026,6 +1079,8 @@ function ProfileScreen() {
                       updateProfile({ savedPlaces: updated });
                     }}
                     style={styles.deletePlaceBtn}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('profile.removeSavedPlace', { name: place.name })}
                   >
                     <Trash2 size={16} color="#FF453A" />
                   </TouchableOpacity>
@@ -1034,7 +1089,7 @@ function ProfileScreen() {
               {savedPlaces.length === 0 && (
                 <View style={{ paddingVertical: 40, alignItems: 'center' }}>
                   <Text style={{ color: '#8A92A6', fontStyle: 'italic', fontSize: 13 }}>
-                    Your saved places list is empty.
+                    {t('profile.savedPlacesEmpty')}
                   </Text>
                 </View>
               )}
@@ -1063,7 +1118,7 @@ function ProfileScreen() {
             <View style={styles.bottomSheetHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Text style={{ fontSize: 16 }}>🌐</Text>
-                <Text style={styles.bottomSheetTitle}>Select Language / भाषा</Text>
+                <Text style={styles.bottomSheetTitle}>{t('profile.selectLanguageTitle')}</Text>
               </View>
               <TouchableOpacity
                 onPress={() => {
@@ -1071,6 +1126,8 @@ function ProfileScreen() {
                   setNavbarHidden(false);
                 }}
                 style={styles.bottomSheetCloseBtn}
+                accessibilityRole="button"
+                accessibilityLabel={t('common.close')}
               >
                 <X size={20} color="#FFF" />
               </TouchableOpacity>
@@ -1102,9 +1159,18 @@ function ProfileScreen() {
                         if (lang.code) {
                           void setAppLanguage(lang.code);
                         } else {
-                          toast(`${lang.label} isn't translated yet — staying in ${getAppLanguage() === 'hi' ? 'Hindi' : 'English'} for now.`, 'info');
+                          toast(
+                            t('profile.notTranslatedYet', {
+                              language: lang.label,
+                              current: getAppLanguage() === 'hi' ? t('profile.langNameHindi') : t('profile.langNameEnglish'),
+                            }),
+                            'info',
+                          );
                         }
                       }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${lang.label} ${lang.sub}`.trim()}
+                      accessibilityState={{ selected: isSelected }}
                     >
                       <Text style={[styles.langText, isSelected && { color: '#00D1FF', fontWeight: '700' }]}>
                         {lang.label} {lang.sub && <Text style={styles.langSubText}>{lang.sub}</Text>}
@@ -1144,25 +1210,6 @@ const styles = StyleSheet.create({
   },
   coverImage: {
     ...StyleSheet.absoluteFill,
-  },
-  topLeftScanBtn: {
-    position: 'absolute',
-    top: 16,
-    left: 16,
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.25)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
   },
   menuContainer: {
     paddingHorizontal: 16,
