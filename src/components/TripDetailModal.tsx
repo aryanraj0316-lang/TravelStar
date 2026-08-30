@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Modal,
   View,
@@ -27,6 +28,7 @@ import { useApp } from '@/store/AppContext';
 import { eventBus } from '@/services/event-bus';
 import { useRouter } from 'expo-router';
 import { toast } from '@/lib/feedback';
+import { formatDate } from '@/lib/datetime';
 import { C } from '@/theme/tokens';
 
 export interface TripDetailModalProps {
@@ -43,6 +45,7 @@ export default function TripDetailModal({
   trip,
   onClose,
 }: TripDetailModalProps) {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { joinTrip, cancelJoinRequest, profile, isLoggedIn, requestedTrips } = useApp();
@@ -65,7 +68,7 @@ export default function TripDetailModal({
       setEndCity(t.cities[t.cities.length - 1]);
       setMidwayJoin(true);
     } else {
-      toast('Midway joining is only available for trips covering 3 or more cities.', 'info');
+      toast(t('tripDetailModal.midwayOnlyFor3Plus'), 'info');
     }
   };
 
@@ -111,11 +114,15 @@ export default function TripDetailModal({
           {joinedMsg ? (
             <View style={styles.successContainer}>
               <CheckCircle size={54} color="#2ECC71" />
-              <Text style={styles.successTitle}>Request Submitted!</Text>
+              <Text style={styles.successTitle}>{t('tripDetailModal.requestSubmitted')}</Text>
               <Text style={styles.successSub}>
                 {midwayJoin
-                  ? `Midway request (${startCity} → ${endCity}) sent to organizer. Adjusted price: ₹${calculateMidwayPrice(trip)}.`
-                  : 'Join request sent to the group organizer.'}
+                  ? t('tripDetailModal.midwayRequestSent', {
+                      startCity,
+                      endCity,
+                      price: calculateMidwayPrice(trip),
+                    })
+                  : t('tripDetailModal.joinRequestSent')}
               </Text>
             </View>
           ) : (
@@ -127,9 +134,9 @@ export default function TripDetailModal({
                     {tripName}
                   </Text>
                   <Text style={styles.modalOrganizerText}>
-                    Organized by {organizerName}
+                    {t('tripDetailModal.organizedBy', { name: organizerName })}
                   </Text>
-                  
+
                   {/* Dynamic Route Map Link Option */}
                   <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
                     <TouchableOpacity
@@ -142,9 +149,11 @@ export default function TripDetailModal({
                           eventBus.emit('focusTripOnMap', trip.id);
                         }, 100);
                       }}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('tripDetailModal.viewRouteOnMap')}
                     >
                       <Navigation size={12} color="#FFF" style={{ marginRight: 4 }} />
-                      <Text style={styles.viewOnMapHeaderBtnText}>View Route on Map</Text>
+                      <Text style={styles.viewOnMapHeaderBtnText}>{t('tripDetailModal.viewRouteOnMap')}</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -152,6 +161,8 @@ export default function TripDetailModal({
                 <TouchableOpacity
                   onPress={() => { onClose(); setMidwayJoin(false); }}
                   style={styles.closeBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('tripDetailModal.close')}
                 >
                   <X size={20} color={C.text} />
                 </TouchableOpacity>
@@ -169,70 +180,76 @@ export default function TripDetailModal({
                     <Text style={styles.modalOrganizerName}>{organizerName}</Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
                       <Shield size={11} color={C.accent} style={{ marginRight: 4 }} />
-                      <Text style={{ fontSize: 12, color: C.textSecondary }}>Background-Verified Organizer</Text>
+                      <Text style={{ fontSize: 12, color: C.textSecondary }}>{t('tripDetailModal.backgroundVerifiedOrganizer')}</Text>
                     </View>
                   </View>
                 </View>
 
                 {/* Schedule / Dates Details */}
-                <Text style={[styles.formSectionTitle, { marginTop: 14 }]}>SCHEDULE & DURATION</Text>
+                <Text style={[styles.formSectionTitle, { marginTop: 14 }]}>{t('tripDetailModal.scheduleDuration')}</Text>
                 <View style={styles.detailRowCard}>
                   <View style={styles.detailCardHalf}>
                     <Calendar size={14} color={C.accent} />
                     <View style={{ marginLeft: 6 }}>
-                      <Text style={{ fontSize: 12, color: C.textSecondary, fontWeight: '700' }}>START DATE</Text>
-                      <Text style={styles.detailCardVal}>{trip.startDate}</Text>
+                      <Text style={{ fontSize: 12, color: C.textSecondary, fontWeight: '700' }}>{t('tripDetailModal.startDate')}</Text>
+                      <Text style={styles.detailCardVal}>{formatDate(trip.startDate)}</Text>
                     </View>
                   </View>
                   <View style={styles.detailCardDivider} />
                   <View style={styles.detailCardHalf}>
                     <Calendar size={14} color={C.accent} />
                     <View style={{ marginLeft: 6 }}>
-                      <Text style={{ fontSize: 12, color: C.textSecondary, fontWeight: '700' }}>END DATE</Text>
-                      <Text style={styles.detailCardVal}>{trip.endDate || trip.startDate}</Text>
+                      <Text style={{ fontSize: 12, color: C.textSecondary, fontWeight: '700' }}>{t('tripDetailModal.endDate')}</Text>
+                      <Text style={styles.detailCardVal}>{formatDate(trip.endDate || trip.startDate)}</Text>
                     </View>
                   </View>
                 </View>
 
                 {/* Itinerary */}
-                <Text style={[styles.formSectionTitle, { marginTop: 14 }]}>ITINERARY PATH</Text>
+                <Text style={[styles.formSectionTitle, { marginTop: 14 }]}>{t('tripDetailModal.itineraryPath')}</Text>
                 <View style={styles.modalItineraryRow}>
                   {trip.cities && trip.cities.map((city: string, i: number) => (
                     <View key={city} style={styles.itineraryCityCard}>
                       <Text style={styles.itineraryCityText}>{city}</Text>
-                      <Text style={{ fontSize: 12, color: C.textSecondary }}>City #{i + 1}</Text>
+                      <Text style={{ fontSize: 12, color: C.textSecondary }}>{t('tripDetailModal.cityNumber', { number: i + 1 })}</Text>
                     </View>
                   ))}
                 </View>
 
                 {/* Assembly / Meeting Point Details */}
-                <Text style={[styles.formSectionTitle, { marginTop: 14 }]}>MEETING & ASSEMBLY POINT</Text>
+                <Text style={[styles.formSectionTitle, { marginTop: 14 }]}>{t('tripDetailModal.meetingAssemblyPoint')}</Text>
                 <View style={styles.meetingPointInfoCard}>
                   <MapPin size={15} color={C.accent} />
                   <View style={{ flex: 1, marginLeft: 8 }}>
                     <Text style={styles.meetingPointValText}>
-                      {trip.meetingPoint || 'Central Assembly Point'}
+                      {trip.meetingPoint || t('tripDetailModal.centralAssemblyPoint')}
                     </Text>
                     <Text style={{ fontSize: 12, color: C.textSecondary, marginTop: 2 }}>
-                      Please arrive at the assembly point 30 minutes before time.
+                      {t('tripDetailModal.arriveEarlyNote')}
                     </Text>
                   </View>
                 </View>
 
                 {/* Service Inclusions */}
-                <Text style={[styles.formSectionTitle, { marginTop: 14 }]}>SERVICE INCLUSIONS</Text>
+                <Text style={[styles.formSectionTitle, { marginTop: 14 }]}>{t('tripDetailModal.serviceInclusions')}</Text>
                 <View style={styles.inclusionsGrid}>
                   <View style={styles.inclusionCell}>
                     <UserCheck size={12} color={trip.guideIncluded ? '#2ECC71' : C.textSecondary} />
-                    <Text style={styles.inclusionText}>Local Guide: {trip.guideIncluded ? 'YES' : 'NO'}</Text>
+                    <Text style={styles.inclusionText}>
+                      {t('tripDetailModal.localGuide', { value: trip.guideIncluded ? t('tripDetailModal.yes') : t('tripDetailModal.no') })}
+                    </Text>
                   </View>
                   <View style={styles.inclusionCell}>
                     <Hotel size={12} color={trip.hotelIncluded !== false ? '#2ECC71' : C.textSecondary} />
-                    <Text style={styles.inclusionText}>Hotel Stay: {trip.hotelIncluded !== false ? 'YES' : 'NO'}</Text>
+                    <Text style={styles.inclusionText}>
+                      {t('tripDetailModal.hotelStay', { value: trip.hotelIncluded !== false ? t('tripDetailModal.yes') : t('tripDetailModal.no') })}
+                    </Text>
                   </View>
                   <View style={styles.inclusionCell}>
                     <Utensils size={12} color={trip.foodIncluded ? '#2ECC71' : C.textSecondary} />
-                    <Text style={styles.inclusionText}>Meals/Food: {trip.foodIncluded ? 'YES' : 'NO'}</Text>
+                    <Text style={styles.inclusionText}>
+                      {t('tripDetailModal.mealsFood', { value: trip.foodIncluded ? t('tripDetailModal.yes') : t('tripDetailModal.no') })}
+                    </Text>
                   </View>
                   <View style={styles.inclusionCell}>
                     {tripName.toLowerCase().includes('bike') ? (
@@ -241,8 +258,9 @@ export default function TripDetailModal({
                       <Bus size={12} color={trip.cabIncluded !== false ? '#2ECC71' : C.textSecondary} />
                     )}
                     <Text style={styles.inclusionText}>
-                      {tripName.toLowerCase().includes('bike') ? 'Fuel/Bike: ' : 'AC Cab: '}
-                      {trip.cabIncluded !== false ? 'YES' : 'NO'}
+                      {tripName.toLowerCase().includes('bike')
+                        ? t('tripDetailModal.fuelBike', { value: trip.cabIncluded !== false ? t('tripDetailModal.yes') : t('tripDetailModal.no') })
+                        : t('tripDetailModal.acCab', { value: trip.cabIncluded !== false ? t('tripDetailModal.yes') : t('tripDetailModal.no') })}
                     </Text>
                   </View>
                 </View>
@@ -250,9 +268,9 @@ export default function TripDetailModal({
                 {/* Midway Toggle */}
                 <View style={[styles.toggleRow, { marginTop: 14 }]}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.toggleLabel}>Family Connect Midway Join</Text>
+                    <Text style={styles.toggleLabel}>{t('tripDetailModal.familyConnectMidwayJoin')}</Text>
                     <Text style={{ fontSize: 12, color: C.textSecondary }}>
-                      Already at a midway stop? Join from there and pay only for remaining cities!
+                      {t('tripDetailModal.midwayJoinDesc')}
                     </Text>
                   </View>
                   <TouchableOpacity
@@ -264,6 +282,9 @@ export default function TripDetailModal({
                       styles.toggleSwitch,
                       midwayJoin ? styles.toggleSwitchOn : styles.toggleSwitchOff,
                     ]}
+                    accessibilityRole="switch"
+                    accessibilityLabel={t('tripDetailModal.midwayToggleLabel')}
+                    accessibilityState={{ checked: midwayJoin }}
                   >
                     <View style={[styles.toggleCircle, midwayJoin ? styles.circleOn : styles.circleOff]} />
                   </TouchableOpacity>
@@ -272,9 +293,9 @@ export default function TripDetailModal({
                 {/* Midway Selectors */}
                 {midwayJoin && (
                   <View style={styles.midwaySection}>
-                    <Text style={styles.midwaySectionTitle}>SELECT SEGMENT</Text>
+                    <Text style={styles.midwaySectionTitle}>{t('tripDetailModal.selectSegment')}</Text>
                     <View style={{ marginBottom: 12 }}>
-                      <Text style={[styles.fieldLabel, { color: C.textSecondary, marginBottom: 6 }]}>Start Joining From</Text>
+                      <Text style={[styles.fieldLabel, { color: C.textSecondary, marginBottom: 6 }]}>{t('tripDetailModal.startJoiningFrom')}</Text>
                       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.citySelectScroll}>
                         {trip.cities.slice(0, trip.cities.length - 1).map((city: string) => {
                           const isSelected = startCity === city;
@@ -294,6 +315,9 @@ export default function TripDetailModal({
                                   setEndCity(trip.cities[startIdx + 1] || '');
                                 }
                               }}
+                              accessibilityRole="button"
+                              accessibilityLabel={city}
+                              accessibilityState={{ selected: isSelected }}
                             >
                               <Text style={[styles.citySelectChipText, { color: isSelected ? '#FFF' : C.text }, isSelected && { fontWeight: '700' }]}>{city}</Text>
                             </TouchableOpacity>
@@ -307,7 +331,7 @@ export default function TripDetailModal({
                           whatever the Start picker's onPress silently
                           defaulted it to (the very next city), so the user
                           could never actually choose where they get off. */}
-                      <Text style={[styles.fieldLabel, { color: C.textSecondary, marginBottom: 6 }]}>Travelling Until</Text>
+                      <Text style={[styles.fieldLabel, { color: C.textSecondary, marginBottom: 6 }]}>{t('tripDetailModal.travellingUntil')}</Text>
                       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.citySelectScroll}>
                         {trip.cities
                           .filter((city: string) => trip.cities.indexOf(city) > trip.cities.indexOf(startCity))
@@ -322,6 +346,9 @@ export default function TripDetailModal({
                                   { borderColor: isSelected ? C.accent : C.cardBorder }
                                 ]}
                                 onPress={() => setEndCity(city)}
+                                accessibilityRole="button"
+                                accessibilityLabel={city}
+                                accessibilityState={{ selected: isSelected }}
                               >
                                 <Text style={[styles.citySelectChipText, { color: isSelected ? '#FFF' : C.text }, isSelected && { fontWeight: '700' }]}>{city}</Text>
                               </TouchableOpacity>
@@ -330,10 +357,10 @@ export default function TripDetailModal({
                       </ScrollView>
                     </View>
                     <View style={styles.priceCalcRow}>
-                      <Text style={{ fontSize: 12, color: C.textSecondary }}>Automatic Price Adjustment</Text>
+                      <Text style={{ fontSize: 12, color: C.textSecondary }}>{t('tripDetailModal.automaticPriceAdjustment')}</Text>
                       <Text style={{ fontSize: 16, fontWeight: '700', color: '#2ECC71' }}>
                         ₹{calculateMidwayPrice(trip)}{' '}
-                        <Text style={{ fontSize: 12, color: C.textSecondary }}>(vs ₹{price})</Text>
+                        <Text style={{ fontSize: 12, color: C.textSecondary }}>{t('tripDetailModal.vsPrice', { price })}</Text>
                       </Text>
                     </View>
                   </View>
@@ -342,7 +369,7 @@ export default function TripDetailModal({
                 {/* Cost & Vacancy Bar */}
                 <View style={styles.pricingBar}>
                   <View style={styles.pricingBarLeft}>
-                    <Text style={styles.pricingBarLabel}>Per Person</Text>
+                    <Text style={styles.pricingBarLabel}>{t('tripDetailModal.perPerson')}</Text>
                     <View style={styles.pricingBarAmountRow}>
                       <Text style={[styles.pricingBarCurrency, { color: C.accent }]}>₹</Text>
                       <Text style={styles.pricingBarAmount}>
@@ -355,11 +382,11 @@ export default function TripDetailModal({
                   </View>
                   <View style={styles.pricingBarDivider} />
                   <View style={styles.pricingBarRight}>
-                    <Text style={styles.pricingBarLabel}>Availability</Text>
+                    <Text style={styles.pricingBarLabel}>{t('tripDetailModal.availability')}</Text>
                     <View style={styles.pricingBarSeatsRow}>
                       <Users size={12} color={trip.availableSeats > 0 ? '#10B981' : '#EF4444'} />
                       <Text style={[styles.pricingBarSeats, { color: trip.availableSeats > 0 ? '#10B981' : '#EF4444' }]}>
-                        {trip.availableSeats} of {trip.totalSeats} open
+                        {t('tripDetailModal.seatsOpen', { available: trip.availableSeats, total: trip.totalSeats })}
                       </Text>
                     </View>
                   </View>
@@ -373,9 +400,9 @@ export default function TripDetailModal({
                         <CheckCircle size={18} color='#10B981' />
                       </View>
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.requestedStatusTitle}>Request Submitted</Text>
+                        <Text style={styles.requestedStatusTitle}>{t('tripDetailModal.requestSubmittedTitle')}</Text>
                         <Text style={[styles.requestedStatusSub, { color: C.textSecondary }]}>
-                          Awaiting organizer confirmation
+                          {t('tripDetailModal.awaitingConfirmation')}
                         </Text>
                       </View>
                     </View>
@@ -383,14 +410,22 @@ export default function TripDetailModal({
                       style={styles.cancelRequestBtn}
                       onPress={handleCancelRequest}
                       activeOpacity={0.8}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('tripDetailModal.withdrawRequest')}
                     >
-                      <Text style={styles.cancelRequestBtnText}>Withdraw Request</Text>
+                      <Text style={styles.cancelRequestBtnText}>{t('tripDetailModal.withdrawRequest')}</Text>
                     </TouchableOpacity>
                   </View>
                 ) : (
-                  <TouchableOpacity style={styles.modalSubmitBtn} onPress={handleRequestJoin} activeOpacity={0.88}>
+                  <TouchableOpacity
+                    style={styles.modalSubmitBtn}
+                    onPress={handleRequestJoin}
+                    activeOpacity={0.88}
+                    accessibilityRole="button"
+                    accessibilityLabel={midwayJoin ? t('tripDetailModal.requestSegmentJoin') : t('tripDetailModal.requestToJoin')}
+                  >
                     <Text style={styles.modalSubmitBtnText}>
-                      {midwayJoin ? 'Request Segment Join' : 'Request to Join'}
+                      {midwayJoin ? t('tripDetailModal.requestSegmentJoin') : t('tripDetailModal.requestToJoin')}
                     </Text>
                   </TouchableOpacity>
                 )}
