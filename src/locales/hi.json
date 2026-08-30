@@ -396,5 +396,33 @@
     "categoryFood": "भोजन",
     "categoryActivity": "गतिविधि",
     "categoryOther": "अन्य"
+  },
+  "budgetTrips": {
+    "title": "बजट ट्रिप्स",
+    "goBack": "वापस जाएं",
+    "maxBudgetLabel": "प्रति व्यक्ति अधिकतम बजट",
+    "maxBudgetPlaceholder": "जैसे 15000",
+    "maxBudgetAccessibilityLabel": "अधिकतम बजट",
+    "presetBudget": "≤ ₹{{amount}}k",
+    "filterAllTrips": "सभी ट्रिप्स",
+    "filterGuided": "गाइडेड",
+    "filterCommunity": "कम्युनिटी",
+    "loadingTrips": "ट्रिप्स लोड हो रही हैं…",
+    "couldNotLoadTrips": "ट्रिप्स लोड नहीं हो सकीं।",
+    "noTripsFoundTitle": "कोई ट्रिप नहीं मिली",
+    "noTripsFoundMessage": "अभी ₹{{amount}} से कम की कोई ट्रिप नहीं है।",
+    "listHeader_one": "{{count}} ट्रिप ≤ ₹{{amount}}",
+    "listHeader_other": "{{count}} ट्रिप्स ≤ ₹{{amount}}",
+    "yourTrip": "आपकी ट्रिप",
+    "placesCount_one": "{{count}} जगह",
+    "placesCount_other": "{{count}} जगहें",
+    "nightsSuffix_one": " · {{count}} रात",
+    "nightsSuffix_other": " · {{count}} रातें",
+    "joinedCount": "{{joined}}/{{total}} शामिल हुए",
+    "inclusionGuide": "गाइड",
+    "inclusionHotel": "होटल",
+    "inclusionMeals": "भोजन",
+    "inclusionTransport": "परिवहन",
+    "noInclusionsListed": "कोई शामिल सुविधा सूचीबद्ध नहीं"
   }
 }

@@ -1,7 +1,9 @@
 import React, { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useApp } from '@/store/AppContext';
 import { apiService } from '@/services/api';
 import { queryKeys } from '@/lib/query-keys';
+import { formatDateRange } from '@/lib/datetime';
 import TripDetailModal from '@/components/TripDetailModal';
 import { useQuery } from '@tanstack/react-query';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -77,16 +79,17 @@ function BudgetTripCard({
   isMyTrip: boolean;
   onPress: (trip: BudgetTrip) => void;
 }) {
+  const { t } = useTranslation();
   const nights = nightsBetween(trip.startDate, trip.endDate);
   const inclusions =
     [
-      trip.guideIncluded && 'guide',
-      trip.hotelIncluded && 'hotel',
-      trip.foodIncluded && 'meals',
-      trip.cabIncluded && 'transport',
+      trip.guideIncluded && t('budgetTrips.inclusionGuide'),
+      trip.hotelIncluded && t('budgetTrips.inclusionHotel'),
+      trip.foodIncluded && t('budgetTrips.inclusionMeals'),
+      trip.cabIncluded && t('budgetTrips.inclusionTransport'),
     ]
       .filter(Boolean)
-      .join(', ') || 'no inclusions listed';
+      .join(', ') || t('budgetTrips.noInclusionsListed');
 
   return (
     <TouchableOpacity activeOpacity={0.9} style={styles.tripCard} onPress={() => onPress(trip)}>
@@ -98,7 +101,7 @@ function BudgetTripCard({
         </View>
         {isMyTrip && (
           <View style={styles.myTripBadge}>
-            <Text style={styles.myTripBadgeText}>YOUR TRIP</Text>
+            <Text style={styles.myTripBadgeText}>{t('budgetTrips.yourTrip')}</Text>
           </View>
         )}
       </View>
@@ -113,20 +116,20 @@ function BudgetTripCard({
         <View style={styles.tripRow}>
           <MapPin size={12} color={C.green} />
           <Text style={styles.tripRowText} numberOfLines={1}>
-            {trip.cities.join(' → ')} · {trip.cities.length} {trip.cities.length === 1 ? 'place' : 'places'}
+            {trip.cities.join(' → ')} · {t('budgetTrips.placesCount', { count: trip.cities.length })}
           </Text>
         </View>
         <View style={styles.tripRow}>
           <Calendar size={12} color={C.textMuted} />
           <Text style={styles.tripMetaText}>
-            {trip.startDate} → {trip.endDate}
-            {nights > 0 ? ` · ${nights} night${nights === 1 ? '' : 's'}` : ''}
+            {formatDateRange(trip.startDate, trip.endDate)}
+            {nights > 0 ? t('budgetTrips.nightsSuffix', { count: nights }) : ''}
           </Text>
         </View>
         <View style={styles.tripRow}>
           <User size={12} color={C.textMuted} />
           <Text style={styles.tripMetaText}>
-            {trip.membersCount}/{trip.totalSeats} joined · {inclusions}
+            {t('budgetTrips.joinedCount', { joined: trip.membersCount, total: trip.totalSeats })} · {inclusions}
           </Text>
         </View>
       </View>
@@ -138,6 +141,7 @@ const keyExtractor = (t: BudgetTrip) => t.id;
 const listFooter = <View style={{ height: 100 }} />;
 
 export default function BudgetTripsScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const { profile, isLoggedIn } = useApp();
 
@@ -199,11 +203,11 @@ export default function BudgetTripsScreen() {
           style={styles.backBtn}
           onPress={() => router.back()}
           accessibilityRole="button"
-          accessibilityLabel="Go back"
+          accessibilityLabel={t('budgetTrips.goBack')}
         >
           <ArrowLeft size={18} color={C.white} />
         </TouchableOpacity>
-        <Text style={styles.topNavTitle}>Budget Trips</Text>
+        <Text style={styles.topNavTitle}>{t('budgetTrips.title')}</Text>
         <View style={styles.budgetBadge}>
           <IndianRupee size={12} color={C.amber} />
           <Text style={styles.budgetBadgeText}>{maxBudget.toLocaleString('en-IN')}</Text>
@@ -212,7 +216,7 @@ export default function BudgetTripsScreen() {
 
       {/* Budget filter */}
       <View style={styles.filterCard}>
-        <Text style={styles.filterTitle}>Maximum budget per person</Text>
+        <Text style={styles.filterTitle}>{t('budgetTrips.maxBudgetLabel')}</Text>
         <View style={styles.inputWrapper}>
           <IndianRupee size={15} color={C.amber} style={{ marginRight: 6 }} />
           <TextInput
@@ -220,14 +224,19 @@ export default function BudgetTripsScreen() {
             keyboardType="numeric"
             value={budgetText}
             onChangeText={handleBudgetText}
-            placeholder="e.g. 15000"
+            placeholder={t('budgetTrips.maxBudgetPlaceholder')}
             placeholderTextColor={C.textMuted}
-            accessibilityLabel="Maximum budget"
+            accessibilityLabel={t('budgetTrips.maxBudgetAccessibilityLabel')}
           />
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.presetRow}>
           {PRESET_BUDGETS.map((b) => (
-            <Chip key={b} label={`≤ ₹${(b / 1000).toFixed(0)}k`} selected={maxBudget === b} onPress={() => selectPreset(b)} />
+            <Chip
+              key={b}
+              label={t('budgetTrips.presetBudget', { amount: (b / 1000).toFixed(0) })}
+              selected={maxBudget === b}
+              onPress={() => selectPreset(b)}
+            />
           ))}
         </ScrollView>
       </View>
@@ -236,16 +245,16 @@ export default function BudgetTripsScreen() {
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.orgTabsRow}>
         {(
           [
-            { key: 'ALL', label: 'All trips', Icon: Compass },
-            { key: 'GUIDE', label: 'Guided', Icon: Briefcase },
-            { key: 'ORGANIZER', label: 'Community', Icon: Users },
-          ] as { key: OrgFilter; label: string; Icon: typeof Compass }[]
-        ).map(({ key, label, Icon }) => {
+            { key: 'ALL', labelKey: 'budgetTrips.filterAllTrips', Icon: Compass },
+            { key: 'GUIDE', labelKey: 'budgetTrips.filterGuided', Icon: Briefcase },
+            { key: 'ORGANIZER', labelKey: 'budgetTrips.filterCommunity', Icon: Users },
+          ] as { key: OrgFilter; labelKey: string; Icon: typeof Compass }[]
+        ).map(({ key, labelKey, Icon }) => {
           const active = orgFilter === key;
           return (
             <Chip
               key={key}
-              label={label}
+              label={t(labelKey)}
               selected={active}
               onPress={() => setOrgFilter(key)}
               icon={<Icon size={13} color={active ? C.white : C.textSec} />}
@@ -255,11 +264,17 @@ export default function BudgetTripsScreen() {
       </ScrollView>
 
       {isLoading ? (
-        <ScreenLoading label="Loading trips…" />
+        <ScreenLoading label={t('budgetTrips.loadingTrips')} />
       ) : isError ? (
-        <ScreenError message={error instanceof Error ? error.message : 'Could not load trips.'} onRetry={() => refetch()} />
+        <ScreenError
+          message={error instanceof Error ? error.message : t('budgetTrips.couldNotLoadTrips')}
+          onRetry={() => refetch()}
+        />
       ) : visibleTrips.length === 0 ? (
-        <ScreenEmpty title="No trips found" message={`No trips under ₹${maxBudget.toLocaleString('en-IN')} right now.`} />
+        <ScreenEmpty
+          title={t('budgetTrips.noTripsFoundTitle')}
+          message={t('budgetTrips.noTripsFoundMessage', { amount: maxBudget.toLocaleString('en-IN') })}
+        />
       ) : (
         <FlatList
           data={visibleTrips}
@@ -280,7 +295,7 @@ export default function BudgetTripsScreen() {
           removeClippedSubviews
           ListHeaderComponent={
             <Text style={styles.listHeader}>
-              {visibleTrips.length} trip{visibleTrips.length === 1 ? '' : 's'} ≤ ₹{maxBudget.toLocaleString('en-IN')}
+              {t('budgetTrips.listHeader', { count: visibleTrips.length, amount: maxBudget.toLocaleString('en-IN') })}
             </Text>
           }
           ListFooterComponent={listFooter}

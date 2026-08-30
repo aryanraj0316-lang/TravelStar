@@ -396,5 +396,33 @@
     "categoryFood": "Food",
     "categoryActivity": "Activity",
     "categoryOther": "Other"
+  },
+  "budgetTrips": {
+    "title": "Budget Trips",
+    "goBack": "Go back",
+    "maxBudgetLabel": "Maximum budget per person",
+    "maxBudgetPlaceholder": "e.g. 15000",
+    "maxBudgetAccessibilityLabel": "Maximum budget",
+    "presetBudget": "≤ ₹{{amount}}k",
+    "filterAllTrips": "All trips",
+    "filterGuided": "Guided",
+    "filterCommunity": "Community",
+    "loadingTrips": "Loading trips…",
+    "couldNotLoadTrips": "Could not load trips.",
+    "noTripsFoundTitle": "No trips found",
+    "noTripsFoundMessage": "No trips under ₹{{amount}} right now.",
+    "listHeader_one": "{{count}} trip ≤ ₹{{amount}}",
+    "listHeader_other": "{{count}} trips ≤ ₹{{amount}}",
+    "yourTrip": "YOUR TRIP",
+    "placesCount_one": "{{count}} place",
+    "placesCount_other": "{{count}} places",
+    "nightsSuffix_one": " · {{count}} night",
+    "nightsSuffix_other": " · {{count}} nights",
+    "joinedCount": "{{joined}}/{{total}} joined",
+    "inclusionGuide": "guide",
+    "inclusionHotel": "hotel",
+    "inclusionMeals": "meals",
+    "inclusionTransport": "transport",
+    "noInclusionsListed": "no inclusions listed"
   }
 }
