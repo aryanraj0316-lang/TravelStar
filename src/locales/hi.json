@@ -327,5 +327,30 @@
     "privacyPending": "TravelStar की गोपनीयता नीति अभी अंतिम रूप से तैयार नहीं हुई है। यह स्क्रीन एक वास्तविक, काम करने वाला प्लेसहोल्डर है — कानूनी सामग्री इस बिल्ड से अलग तैयार और समीक्षा की जा रही है।",
     "termsTitle": "सेवा की शर्तें",
     "termsPending": "TravelStar की सेवा शर्तें अभी अंतिम रूप से तैयार नहीं हुई हैं। यह स्क्रीन एक वास्तविक, काम करने वाला प्लेसहोल्डर है — कानूनी सामग्री इस बिल्ड से अलग तैयार और समीक्षा की जा रही है।"
+  },
+  "notifications": {
+    "title": "सूचनाएं और अलर्ट",
+    "goBack": "वापस जाएं",
+    "unreadCount": "{{count}} नई",
+    "markAllRead": "सभी को पढ़ा हुआ चिह्नित करें",
+    "tabAllFeed": "सभी फीड",
+    "tabTripsPasses": "ट्रिप्स और पास",
+    "tabDisasterAlerts": "आपदा अलर्ट 🚨",
+    "groupChatInvitations": "ग्रुप चैट आमंत्रण",
+    "tapToOpenGroupChat": "ग्रुप चैट खोलने के लिए टैप करें",
+    "liveHazardAlerts": "लाइव खतरा और आपदा अलर्ट",
+    "newsWire": "न्यूज़ वायर",
+    "noActiveHazards": "अभी कोई सक्रिय खतरा अलर्ट नहीं है।",
+    "affected": "प्रभावित: {{route}}",
+    "detourRoute": "वैकल्पिक मार्ग",
+    "myActiveTrips": "मेरी सक्रिय और आगामी ट्रिप्स",
+    "trackLiveTrip": "लाइव ट्रिप ट्रैक करें",
+    "openTripChat": "ट्रिप चैट खोलें",
+    "viewTrip": "ट्रिप देखें",
+    "new": "नई",
+    "couldNotMarkRead": "सूचनाओं को पढ़ा हुआ चिह्नित नहीं किया जा सका।",
+    "severityCritical": "गंभीर",
+    "severityWarning": "चेतावनी",
+    "severityAdvisory": "सलाह"
   }
 }

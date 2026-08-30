@@ -327,5 +327,30 @@
     "privacyPending": "TravelStar's Privacy Policy has not been finalized yet. This screen is a real, working placeholder — legal content is being drafted and reviewed separately from this build.",
     "termsTitle": "Terms of Service",
     "termsPending": "TravelStar's Terms of Service have not been finalized yet. This screen is a real, working placeholder — legal content is being drafted and reviewed separately from this build."
+  },
+  "notifications": {
+    "title": "Notifications & Alerts",
+    "goBack": "Go back",
+    "unreadCount": "{{count}} NEW",
+    "markAllRead": "Mark all as read",
+    "tabAllFeed": "All Feed",
+    "tabTripsPasses": "Trips & Passes",
+    "tabDisasterAlerts": "Disaster Alerts 🚨",
+    "groupChatInvitations": "Group Chat Invitations",
+    "tapToOpenGroupChat": "Tap to open group chat",
+    "liveHazardAlerts": "Live Hazard & Disaster Alerts",
+    "newsWire": "NEWS WIRE",
+    "noActiveHazards": "No active hazard alerts right now.",
+    "affected": "Affected: {{route}}",
+    "detourRoute": "Detour Route",
+    "myActiveTrips": "My Active & Upcoming Trips",
+    "trackLiveTrip": "Track Live Trip",
+    "openTripChat": "Open Trip Chat",
+    "viewTrip": "View Trip",
+    "new": "NEW",
+    "couldNotMarkRead": "Could not mark notifications as read.",
+    "severityCritical": "CRITICAL",
+    "severityWarning": "WARNING",
+    "severityAdvisory": "ADVISORY"
   }
 }

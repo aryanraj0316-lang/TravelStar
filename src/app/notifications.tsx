@@ -16,6 +16,7 @@ import {
   Waves,
 } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiService } from '../services/api';
 import { useApp } from '../store/AppContext';
@@ -23,6 +24,7 @@ import { logger } from '@/lib/logger';
 import { syncBadgeCount } from '@/lib/push';
 import { toast, errorToastMessage } from '@/lib/feedback';
 import { queryKeys } from '@/lib/query-keys';
+import { formatDateRange } from '@/lib/datetime';
 import {
   Image,
   ScrollView,
@@ -83,6 +85,17 @@ const SEVERITY_STYLE: Record<string, { color: string; bg: string; border: string
   ADVISORY: { color: C.blue, bg: 'rgba(59, 130, 246, 0.12)', border: 'rgba(59, 130, 246, 0.4)' },
 };
 
+const SEVERITY_LABEL_KEYS: Record<string, string> = {
+  CRITICAL: 'notifications.severityCritical',
+  WARNING: 'notifications.severityWarning',
+  ADVISORY: 'notifications.severityAdvisory',
+};
+
+const TRIP_STATUS_LABEL_KEYS: Record<string, string> = {
+  ONGOING: 'bookings.statusOngoing',
+  UPCOMING: 'bookings.statusUpcoming',
+};
+
 const CATEGORY_ICON: Record<string, typeof Mountain> = {
   LANDSLIDE: Mountain,
   FLOOD_RAIN: Waves,
@@ -124,6 +137,7 @@ function TripCountdownBadge({ targetDate }: { targetDate: string }) {
 
 // ─── Main Component ─────────────────────────────────────────────────
 export default function NotificationsScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const queryClient = useQueryClient();
   const { setActiveRoomId, checkUnreadNotifications } = useApp();
@@ -165,7 +179,7 @@ export default function NotificationsScreen() {
       await syncBadgeCount();
     } catch (e) {
       logger.warn('[Notifications] Mark-all-read failed:', e);
-      toast(errorToastMessage(e, 'Could not mark notifications as read.'), 'error');
+      toast(errorToastMessage(e, t('notifications.couldNotMarkRead')), 'error');
     }
   };
 
@@ -208,15 +222,17 @@ export default function NotificationsScreen() {
           style={styles.backBtn}
           activeOpacity={0.8}
           onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel={t('notifications.goBack')}
         >
           <ArrowLeft size={20} color={C.white} />
         </TouchableOpacity>
 
         <View style={styles.headerTitleWrap}>
-          <Text style={styles.headerTitle}>Notifications & Alerts</Text>
+          <Text style={styles.headerTitle}>{t('notifications.title')}</Text>
           {unreadCount > 0 && (
             <View style={styles.unreadBadge}>
-              <Text style={styles.unreadBadgeText}>{unreadCount} NEW</Text>
+              <Text style={styles.unreadBadgeText}>{t('notifications.unreadCount', { count: unreadCount })}</Text>
             </View>
           )}
         </View>
@@ -225,6 +241,8 @@ export default function NotificationsScreen() {
           style={styles.markReadBtn}
           activeOpacity={0.8}
           onPress={handleMarkAllRead}
+          accessibilityRole="button"
+          accessibilityLabel={t('notifications.markAllRead')}
         >
           <CheckCheck size={18} color={unreadCount > 0 ? C.blue : C.textMuted} />
         </TouchableOpacity>
@@ -241,9 +259,9 @@ export default function NotificationsScreen() {
         >
           {(
             [
-              { key: 'ALL', label: 'All Feed' },
-              { key: 'TRIPS', label: 'Trips & Passes' },
-              { key: 'HAZARDS', label: 'Disaster Alerts 🚨' },
+              { key: 'ALL', labelKey: 'notifications.tabAllFeed' },
+              { key: 'TRIPS', labelKey: 'notifications.tabTripsPasses' },
+              { key: 'HAZARDS', labelKey: 'notifications.tabDisasterAlerts' },
             ] as const
           ).map((tab) => {
             const isActive = activeTab === tab.key;
@@ -253,9 +271,12 @@ export default function NotificationsScreen() {
                 activeOpacity={0.8}
                 onPress={() => setActiveTab(tab.key)}
                 style={[styles.tabItem, isActive && styles.tabItemActive]}
+                accessibilityRole="tab"
+                accessibilityLabel={t(tab.labelKey)}
+                accessibilityState={{ selected: isActive }}
               >
                 <Text style={[styles.tabText, isActive && styles.tabTextActive]}>
-                  {tab.label}
+                  {t(tab.labelKey)}
                 </Text>
               </TouchableOpacity>
             );
@@ -276,7 +297,7 @@ export default function NotificationsScreen() {
             <View style={styles.sectionHeaderRow}>
               <View style={styles.sectionHeaderTitleGroup}>
                 <CheckCheck size={18} color={C.green} />
-                <Text style={styles.sectionHeaderTitle}>Group Chat Invitations</Text>
+                <Text style={styles.sectionHeaderTitle}>{t('notifications.groupChatInvitations')}</Text>
               </View>
             </View>
 
@@ -309,6 +330,9 @@ export default function NotificationsScreen() {
                     router.navigate('/chat');
                   }
                 }}
+                accessibilityRole="button"
+                accessibilityLabel={notif.title}
+                accessibilityHint={t('notifications.tapToOpenGroupChat')}
               >
                 <View style={styles.hazardHeader}>
                   <View style={styles.hazardCategoryGroup}>
@@ -323,14 +347,14 @@ export default function NotificationsScreen() {
                   <View style={styles.hazardMetaRight}>
                     {notif.unread && (
                       <View style={[styles.severityPill, { backgroundColor: C.green }]}>
-                        <Text style={styles.severityText}>NEW</Text>
+                        <Text style={styles.severityText}>{t('notifications.new')}</Text>
                       </View>
                     )}
                     <Text style={styles.hazardTime}>{notif.time}</Text>
                   </View>
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-                  <Text style={{ fontSize: 12, color: C.blue, fontWeight: '700' }}>Tap to open group chat</Text>
+                  <Text style={{ fontSize: 12, color: C.blue, fontWeight: '700' }}>{t('notifications.tapToOpenGroupChat')}</Text>
                   <ChevronRight size={12} color={C.blue} style={{ marginLeft: 2 }} />
                 </View>
               </TouchableOpacity>
@@ -344,16 +368,16 @@ export default function NotificationsScreen() {
             <View style={styles.sectionHeaderRow}>
               <View style={styles.sectionHeaderTitleGroup}>
                 <ShieldAlert size={18} color={C.red} />
-                <Text style={styles.sectionHeaderTitle}>Live Hazard & Disaster Alerts</Text>
+                <Text style={styles.sectionHeaderTitle}>{t('notifications.liveHazardAlerts')}</Text>
               </View>
               <View style={styles.liveNewsChip}>
                 <View style={styles.liveNewsDot} />
-                <Text style={styles.liveNewsText}>NEWS WIRE</Text>
+                <Text style={styles.liveNewsText}>{t('notifications.newsWire')}</Text>
               </View>
             </View>
 
             {mappedHazards.length === 0 && (
-              <Text style={{ fontSize: 12, color: C.textMuted }}>No active hazard alerts right now.</Text>
+              <Text style={{ fontSize: 12, color: C.textMuted }}>{t('notifications.noActiveHazards')}</Text>
             )}
 
             {mappedHazards.map((alert) => {
@@ -378,7 +402,9 @@ export default function NotificationsScreen() {
                     </View>
                     <View style={styles.hazardMetaRight}>
                       <View style={[styles.severityPill, { backgroundColor: alert.iconColor }]}>
-                        <Text style={styles.severityText}>{alert.severity}</Text>
+                        <Text style={styles.severityText}>
+                          {t(SEVERITY_LABEL_KEYS[alert.severity] ?? 'notifications.severityAdvisory')}
+                        </Text>
                       </View>
                       <Text style={styles.hazardTime}>{alert.time}</Text>
                     </View>
@@ -389,10 +415,17 @@ export default function NotificationsScreen() {
                   <View style={styles.hazardFooter}>
                     <View style={styles.affectedRouteRow}>
                       <Navigation size={12} color={C.textSec} />
-                      <Text style={styles.affectedRouteText}>Affected: {alert.affectedRoute}</Text>
+                      <Text style={styles.affectedRouteText}>
+                        {t('notifications.affected', { route: alert.affectedRoute })}
+                      </Text>
                     </View>
-                    <TouchableOpacity style={styles.altRouteBtn} activeOpacity={0.8}>
-                      <Text style={styles.altRouteBtnText}>Detour Route</Text>
+                    <TouchableOpacity
+                      style={styles.altRouteBtn}
+                      activeOpacity={0.8}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('notifications.detourRoute')}
+                    >
+                      <Text style={styles.altRouteBtnText}>{t('notifications.detourRoute')}</Text>
                       <ChevronRight size={12} color={alert.iconColor} />
                     </TouchableOpacity>
                   </View>
@@ -408,7 +441,7 @@ export default function NotificationsScreen() {
             <View style={styles.sectionHeaderRow}>
               <View style={styles.sectionHeaderTitleGroup}>
                 <Plane size={18} color={C.blue} />
-                <Text style={styles.sectionHeaderTitle}>My Active & Upcoming Trips</Text>
+                <Text style={styles.sectionHeaderTitle}>{t('notifications.myActiveTrips')}</Text>
               </View>
             </View>
 
@@ -425,6 +458,15 @@ export default function NotificationsScreen() {
                     router.navigate('/chat');
                   }
                 }}
+                accessibilityRole="button"
+                accessibilityLabel={trip.name}
+                accessibilityHint={
+                  trip.status === 'ONGOING'
+                    ? t('notifications.trackLiveTrip')
+                    : trip.chatRoomId
+                      ? t('notifications.openTripChat')
+                      : t('notifications.viewTrip')
+                }
               >
                 {/* Full Tourist Location Background Image */}
                 <Image source={{ uri: trip.coverImage }} style={StyleSheet.absoluteFill} resizeMode="cover" />
@@ -447,7 +489,9 @@ export default function NotificationsScreen() {
                       },
                     ]}
                   >
-                    <Text style={styles.statusBadgeText}>{trip.status}</Text>
+                    <Text style={styles.statusBadgeText}>
+                      {t(TRIP_STATUS_LABEL_KEYS[trip.status] ?? 'bookings.statusUpcoming')}
+                    </Text>
                   </View>
                   {trip.status === 'UPCOMING' && <TripCountdownBadge targetDate={trip.startDate} />}
                 </View>
@@ -461,7 +505,7 @@ export default function NotificationsScreen() {
                     <View style={styles.tripInfoItem}>
                       <Calendar size={13} color={C.cyan} />
                       <Text style={styles.tripInfoText}>
-                        {trip.startDate} → {trip.endDate}
+                        {formatDateRange(trip.startDate, trip.endDate)}
                       </Text>
                     </View>
                     <View style={styles.tripInfoItem}>
@@ -474,7 +518,11 @@ export default function NotificationsScreen() {
 
                   <View style={styles.trackItineraryBtn}>
                     <Text style={styles.trackItineraryText}>
-                      {trip.status === 'ONGOING' ? 'Track Live Trip' : trip.chatRoomId ? 'Open Trip Chat' : 'View Trip'}
+                      {trip.status === 'ONGOING'
+                        ? t('notifications.trackLiveTrip')
+                        : trip.chatRoomId
+                          ? t('notifications.openTripChat')
+                          : t('notifications.viewTrip')}
                     </Text>
                     <ChevronRight size={14} color={C.white} />
                   </View>
