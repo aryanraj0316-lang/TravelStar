@@ -1,0 +1,43 @@
+{
+  "common": {
+    "appName": "TravelStar",
+    "cancel": "रद्द करें",
+    "save": "सहेजें",
+    "delete": "हटाएं",
+    "retry": "फिर से कोशिश करें",
+    "close": "बंद करें",
+    "loading": "लोड हो रहा है…",
+    "somethingWrong": "कुछ गड़बड़ हो गई",
+    "loadFailedMessage": "हम इसे अभी लोड नहीं कर सके। अपना कनेक्शन जांचें और फिर से प्रयास करें।",
+    "retriesLoadingHint": "इस स्क्रीन को फिर से लोड करता है",
+    "dismissesPanelHint": "इस पैनल को बंद करता है",
+    "select": "चुनें",
+    "selectPlaceholder": "चुनें…",
+    "opensChoiceListHint": "विकल्पों की सूची खोलता है",
+    "justNow": "अभी-अभी",
+    "minutesAgo_one": "{{count}} मिनट पहले",
+    "minutesAgo_other": "{{count}} मिनट पहले",
+    "hoursAgo_one": "{{count}} घंटे पहले",
+    "hoursAgo_other": "{{count}} घंटे पहले",
+    "daysAgo_one": "{{count}} दिन पहले",
+    "daysAgo_other": "{{count}} दिन पहले",
+    "weeksAgo_one": "{{count}} हफ्ते पहले",
+    "weeksAgo_other": "{{count}} हफ्ते पहले",
+    "inMinutes_one": "{{count}} मिनट में",
+    "inMinutes_other": "{{count}} मिनट में",
+    "inHours_one": "{{count}} घंटे में",
+    "inHours_other": "{{count}} घंटे में",
+    "inDays_one": "{{count}} दिन में",
+    "inDays_other": "{{count}} दिन में",
+    "inWeeks_one": "{{count}} हफ्ते में",
+    "inWeeks_other": "{{count}} हफ्तों में"
+  },
+  "nav": {
+    "home": "होम",
+    "search": "खोजें",
+    "create": "बनाएं",
+    "map": "मानचित्र",
+    "chat": "चैट",
+    "profile": "प्रोफ़ाइल"
+  }
+}

@@ -15,6 +15,7 @@ import {
   User,
 } from 'lucide-react-native';
 import React, { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
@@ -45,13 +46,13 @@ const TAB_ICONS: Record<string, typeof Home> = {
   profile: User,
 };
 
-const TAB_LABELS: Record<string, string> = {
-  index: 'Home',
-  search: 'Search',
-  create: 'Create',
-  map: 'Map',
-  chat: 'Chat',
-  profile: 'Profile',
+const TAB_LABEL_KEYS: Record<string, string> = {
+  index: 'nav.home',
+  search: 'nav.search',
+  create: 'nav.create',
+  map: 'nav.map',
+  chat: 'nav.chat',
+  profile: 'nav.profile',
 };
 
 const AnimatedTabButton = React.memo(function AnimatedTabButton({
@@ -67,6 +68,7 @@ const AnimatedTabButton = React.memo(function AnimatedTabButton({
   isDark: boolean;
   showDot?: boolean;
 }) {
+  const { t } = useTranslation();
   const scale = useSharedValue(isFocused ? 1 : 0);
 
   useEffect(() => {
@@ -81,10 +83,17 @@ const AnimatedTabButton = React.memo(function AnimatedTabButton({
   }));
 
   const Icon = TAB_ICONS[routeName] || Home;
-  const label = TAB_LABELS[routeName] || routeName;
+  const labelKey = TAB_LABEL_KEYS[routeName];
+  const label = labelKey ? t(labelKey) : routeName;
 
   return (
-    <Pressable onPress={onPress} style={styles.tabButton}>
+    <Pressable
+      onPress={onPress}
+      style={styles.tabButton}
+      accessibilityRole="tab"
+      accessibilityLabel={label}
+      accessibilityState={{ selected: isFocused }}
+    >
       <Animated.View style={animatedStyle}>
         {isFocused ? (
           <LinearGradient

@@ -15,7 +15,13 @@ import { queryClient } from '@/lib/query-client';
 import { queryPersister, QUERY_CACHE_MAX_AGE_MS } from '@/lib/query-persister';
 import { startMutationQueueAutoFlush } from '@/lib/offline-mutation-queue';
 import { useNotificationRouter } from '@/lib/use-notification-router';
+import { initI18n } from '@/lib/i18n';
 import { C } from '@/theme/tokens';
+
+// Synchronous (resources are bundled) — must run before any component
+// calls useTranslation(). See src/lib/i18n.ts for why this doesn't need
+// to gate first render.
+initI18n();
 
 // Root error boundary (REMEDIATION.md §7.5) — expo-router auto-wraps the
 // whole app in this when a named `ErrorBoundary` export exists on the root

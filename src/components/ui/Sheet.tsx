@@ -1,6 +1,7 @@
 // docs/REMEDIATION.md §9.1 — the bottom-sheet shell every screen was
 // hand-rolling with a bare <Modal> plus its own backdrop and panel styles.
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { X } from 'lucide-react-native';
 import { C, MIN_TOUCH_TARGET, fontSize, fontWeight, radii, space } from '@/theme/tokens';
@@ -15,6 +16,7 @@ export interface SheetProps {
 }
 
 export function Sheet({ visible, onClose, title, children, scrollable = true }: SheetProps) {
+  const { t } = useTranslation();
   const Body = scrollable ? ScrollView : View;
 
   return (
@@ -24,8 +26,8 @@ export function Sheet({ visible, onClose, title, children, scrollable = true }: 
           style={styles.backdropTouch}
           onPress={onClose}
           accessibilityRole="button"
-          accessibilityLabel="Close"
-          accessibilityHint="Dismisses this panel"
+          accessibilityLabel={t('common.close')}
+          accessibilityHint={t('common.dismissesPanelHint')}
         />
         <View style={styles.panel}>
           <View style={styles.grabber} />
@@ -34,7 +36,12 @@ export function Sheet({ visible, onClose, title, children, scrollable = true }: 
               <Text style={styles.title} accessibilityRole="header">
                 {title}
               </Text>
-              <Pressable onPress={onClose} style={styles.close} accessibilityRole="button" accessibilityLabel="Close">
+              <Pressable
+                onPress={onClose}
+                style={styles.close}
+                accessibilityRole="button"
+                accessibilityLabel={t('common.close')}
+              >
                 <X size={20} color={C.textSec} />
               </Pressable>
             </View>

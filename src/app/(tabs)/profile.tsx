@@ -44,6 +44,7 @@ import { toast, errorToastMessage, showAlert, useConfirm } from '@/lib/feedback'
 import { uploadFileToUrl } from '@/lib/upload';
 import { C } from '@/theme/tokens';
 import { Button, Chip, Input, Sheet } from '@/components/ui';
+import { getAppLanguage, setAppLanguage } from '@/lib/i18n';
 
 // Safe dynamic import to prevent native app crash if module is unlinked in old APK
 let ImagePicker: any = null;
@@ -1075,14 +1076,17 @@ function ProfileScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* List */}
+            {/* List. docs/REMEDIATION.md §9.4: only English and Hindi have
+                real translations shipped. Picking one of the other three
+                still records the preference (for when it's built) but
+                does not pretend the UI actually switched to it. */}
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 }}>
               {[
-                { label: 'English', sub: '' },
-                { label: 'Hindi', sub: '(हिन्दी)' },
-                { label: 'Punjabi', sub: '(ਪੰਜਾਬੀ)' },
-                { label: 'Bengali', sub: '(বাংলা)' },
-                { label: 'Tamil', sub: '(தமிழ்)' },
+                { label: 'English', sub: '', code: 'en' as const },
+                { label: 'Hindi', sub: '(हिन्दी)', code: 'hi' as const },
+                { label: 'Punjabi', sub: '(ਪੰਜਾਬੀ)', code: null },
+                { label: 'Bengali', sub: '(বাংলা)', code: null },
+                { label: 'Tamil', sub: '(தமிழ்)', code: null },
               ].map((lang, idx, arr) => {
                 const isSelected = selectedLanguage.startsWith(lang.label);
                 return (
@@ -1095,6 +1099,11 @@ function ProfileScreen() {
                         updateProfile({ selectedLanguage: lang.label });
                         setShowLanguageModal(false);
                         setNavbarHidden(false);
+                        if (lang.code) {
+                          void setAppLanguage(lang.code);
+                        } else {
+                          toast(`${lang.label} isn't translated yet — staying in ${getAppLanguage() === 'hi' ? 'Hindi' : 'English'} for now.`, 'info');
+                        }
                       }}
                     >
                       <Text style={[styles.langText, isSelected && { color: '#00D1FF', fontWeight: '700' }]}>

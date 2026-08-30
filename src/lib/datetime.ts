@@ -10,9 +10,21 @@
 // Timezone: Asia/Kolkata is the product's home market and the fallback, but
 // the device's own zone wins when it has one — a user actually in Dubai
 // should see Dubai times, not IST.
+//
+// Locale: always the -IN region (Indian date/number grouping is this
+// product's convention regardless of UI language, matching money.ts's own
+// choice of en-IN for currency), but the language subtag follows the
+// active app language (docs/REMEDIATION.md §9.4) so month/weekday names
+// and formatRelative's "ago"/"in" text render in Hindi when the UI is in
+// Hindi, not just the numbers.
+import i18n from '@/lib/i18n';
 
 export const FALLBACK_TIME_ZONE = 'Asia/Kolkata';
-export const DEFAULT_LOCALE = 'en-IN';
+
+function resolveLocale(): string {
+  const lang = i18n.language?.split('-')[0] || 'en';
+  return `${lang}-IN`;
+}
 
 function resolveTimeZone(): string {
   try {
@@ -34,7 +46,7 @@ function format(value: string | number | Date | null | undefined, options: Intl.
   const d = toDate(value);
   if (!d) return fallback;
   try {
-    return new Intl.DateTimeFormat(DEFAULT_LOCALE, { timeZone: resolveTimeZone(), ...options }).format(d);
+    return new Intl.DateTimeFormat(resolveLocale(), { timeZone: resolveTimeZone(), ...options }).format(d);
   } catch {
     return d.toISOString().slice(0, 10);
   }
@@ -96,7 +108,7 @@ export function formatRelative(value: string | number | Date | null | undefined,
   const deltaMs = d.getTime() - Date.now();
   const abs = Math.abs(deltaMs);
 
-  if (abs < MINUTE) return 'just now';
+  if (abs < MINUTE) return i18n.t('common.justNow');
   if (abs >= 4 * WEEK) return formatDate(d, fallback);
 
   const [amount, unit]: [number, Intl.RelativeTimeFormatUnit] =
@@ -109,12 +121,14 @@ export function formatRelative(value: string | number | Date | null | undefined,
           : [Math.round(deltaMs / WEEK), 'week'];
 
   try {
-    return new Intl.RelativeTimeFormat(DEFAULT_LOCALE, { numeric: 'auto', style: 'short' }).format(amount, unit);
+    return new Intl.RelativeTimeFormat(resolveLocale(), { numeric: 'auto', style: 'short' }).format(amount, unit);
   } catch {
-    // Same trimmed-ICU concern as money.ts.
+    // Same trimmed-ICU concern as money.ts. Each unit has its own key so
+    // i18next's `_one`/`_other` plural suffixes pick the right English/
+    // Hindi plural category, same as Intl.RelativeTimeFormat would have.
     const n = Math.abs(amount);
-    const label = `${n} ${unit}${n === 1 ? '' : 's'}`;
-    return deltaMs < 0 ? `${label} ago` : `in ${label}`;
+    const key = deltaMs < 0 ? `common.${unit}sAgo` : `common.in${unit.charAt(0).toUpperCase()}${unit.slice(1)}s`;
+    return i18n.t(key, { count: n });
   }
 }
 

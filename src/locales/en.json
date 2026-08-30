@@ -1,0 +1,43 @@
+{
+  "common": {
+    "appName": "TravelStar",
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "retry": "Try again",
+    "close": "Close",
+    "loading": "Loading…",
+    "somethingWrong": "Something went wrong",
+    "loadFailedMessage": "We could not load this right now. Check your connection and try again.",
+    "retriesLoadingHint": "Retries loading this screen",
+    "dismissesPanelHint": "Dismisses this panel",
+    "select": "Select",
+    "selectPlaceholder": "Select…",
+    "opensChoiceListHint": "Opens a list of choices",
+    "justNow": "just now",
+    "minutesAgo_one": "{{count}} min ago",
+    "minutesAgo_other": "{{count}} min ago",
+    "hoursAgo_one": "{{count}} h ago",
+    "hoursAgo_other": "{{count}} h ago",
+    "daysAgo_one": "{{count}} d ago",
+    "daysAgo_other": "{{count}} d ago",
+    "weeksAgo_one": "{{count}} wk ago",
+    "weeksAgo_other": "{{count}} wk ago",
+    "inMinutes_one": "in {{count}} min",
+    "inMinutes_other": "in {{count}} min",
+    "inHours_one": "in {{count}} h",
+    "inHours_other": "in {{count}} h",
+    "inDays_one": "in {{count}} d",
+    "inDays_other": "in {{count}} d",
+    "inWeeks_one": "in {{count}} wk",
+    "inWeeks_other": "in {{count}} wk"
+  },
+  "nav": {
+    "home": "Home",
+    "search": "Search",
+    "create": "Create",
+    "map": "Map",
+    "chat": "Chat",
+    "profile": "Profile"
+  }
+}
