@@ -8,14 +8,11 @@ import {
   ChevronRight,
   Clock,
   CloudRain,
-  Compass,
   MapPin,
   Mountain,
   Navigation,
   Plane,
   ShieldAlert,
-  Sparkles,
-  Sun,
   Waves,
 } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
@@ -40,87 +37,41 @@ import { C } from '@/theme/tokens';
 
 
 
-type TabType = 'ALL' | 'TRIPS' | 'SEASONAL' | 'HAZARDS';
+type TabType = 'ALL' | 'TRIPS' | 'HAZARDS';
 
 // ─── Data Definitions ───────────────────────────────────────────────
-
-const TRIP_NOTIFICATIONS = [
-  {
-    id: 't1',
-    type: 'TRIP',
-    status: 'UPCOMING',
-    title: 'Ranchi → Vrindavan Express',
-    route: 'Ranchi ➔ Vrindavan',
-    date: 'Starts Today • 03:30 PM',
-    passenger: 'Aarav Sharma (Seat 42B)',
-    image: 'https://images.unsplash.com/photo-1599661046289-e31897846e41?w=800&q=80',
-    initialSeconds: 8140, // 2h 15m 40s
-    monsoonNotice: 'Monsoon weather advisory in effect for UP region',
-  },
-  {
-    id: 't2',
-    type: 'TRIP',
-    status: 'ONGOING',
-    title: 'Goa Coastal Getaway',
-    route: 'Day 2 of 5 • North Goa',
-    date: 'Jul 20 - Jul 25, 2026',
-    passenger: 'Baga & Calangute Beach Circuit',
-    image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80',
-    initialSeconds: 0,
-    monsoonNotice: 'High tide warning between 4 PM - 7 PM at Baga',
-  },
-  {
-    id: 't3',
-    type: 'TRIP',
-    status: 'UPCOMING',
-    title: 'Manali Mountain Expedition',
-    route: 'Delhi ➔ Manali ➔ Solang',
-    date: 'Starts Aug 1, 2026',
-    passenger: 'Group of 4 Travelers',
-    image: 'https://images.unsplash.com/photo-1605649487212-47bdab064df7?w=800&q=80',
-    initialSeconds: 984000,
-    monsoonNotice: null,
-  },
-];
-
-const SEASONAL_RECOMMENDATIONS = [
-  {
-    id: 's1',
-    type: 'SEASONAL',
-    tag: 'JULY BEST PICK',
-    title: 'Valley of Flowers, Uttarakhand',
-    season: 'Peak Monsoon Bloom (July - August)',
-    temp: '20°C',
-    weather: 'Mist & Alpine Flora',
-    aqi: 'Pure AQI • 10',
-    image: 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=800&q=80',
-    reason: 'Over 500 species of wild mountain flowers are in full bloom this week!',
-  },
-  {
-    id: 's2',
-    type: 'SEASONAL',
-    tag: 'MONSOON HEAVEN',
-    title: 'Munnar Tea Plantations, Kerala',
-    season: 'Refreshing Rain Season',
-    temp: '19°C',
-    weather: 'Lush Greenery & Clouds',
-    aqi: 'Pure AQI • 12',
-    image: 'https://images.unsplash.com/photo-1593693397690-362cb9666fc2?w=800&q=80',
-    reason: 'Experience mist-covered hills, waterfalls in full gush & fresh tea tasting.',
-  },
-  {
-    id: 's3',
-    type: 'SEASONAL',
-    tag: 'DRY HIMALAYAN PASS',
-    title: 'Pangong Tso & Leh-Ladakh',
-    season: 'Ideal Road Trip Window',
-    temp: '16°C',
-    weather: 'Sunny & Chilly Breeze',
-    aqi: 'Pure AQI • 8',
-    image: 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=800&q=80',
-    reason: 'Rain-shadow zone with crystal clear blue skies and open mountain passes.',
-  },
-];
+//
+// This screen used to render a "My Active & Upcoming Trips" section and a
+// "Weather & Seasonal Picks" section that were both fabricated, in two
+// different ways:
+//
+// - The trips section read real Notification rows (type: 'TRIP', which the
+//   backend only ever creates for JOIN_ACCEPTED/CHAT_ADDED — the exact same
+//   rows the "Group Chat Invitations" section above already renders
+//   honestly) and grafted a hardcoded route/passenger/cover-image/countdown
+//   onto each one BY ARRAY INDEX. A join-acceptance notification for any
+//   real trip displayed a fake "Ranchi ➔ Vrindavan" route, a fake seat
+//   assignment, and a fake monsoon notice — exactly the "grafted mock data
+//   onto a real row" bug this file's own comment on mappedHazards already
+//   describes as dangerous, just not yet applied to this section too. If
+//   there were zero such notifications, it fell back to a fully invented
+//   TRIP_NOTIFICATIONS array shown as if real, for every user.
+// - The seasonal section had no backing feature at all: nothing in
+//   backend/prisma/schema.prisma's NotificationType enum's SEASONAL case is
+//   ever created anywhere in backend/src, so `dbSeasonal` was always empty
+//   and every user saw the same three fully-fabricated
+//   SEASONAL_RECOMMENDATIONS cards, permanently, with no path to real data
+//   ever landing there.
+//
+// Fixed: "My Active & Upcoming Trips" now sources GET /trips/mine (the same
+// real endpoint bookings.tsx uses) instead of Notification rows, so it
+// shows an honest status, route, meeting point, and cover image, and a
+// real countdown computed from the trip's actual `startDate` instead of a
+// fabricated initialSeconds. The seasonal section is removed outright — a
+// real "recommended for this month" feature does not exist yet, and per
+// this project's own convention (see docs/REMEDIATION.md's "remove it"
+// guidance, applied identically to map.tsx's fabricated turn-by-turn guide
+// in §8.8), an unbuildable feature is removed rather than faked.
 
 // Real Alert data → display styling (REMEDIATION.md §8.10). Keyed by the
 // Prisma enum member names the API actually returns (e.g. `FLOOD_RAIN`),
@@ -139,21 +90,23 @@ const CATEGORY_ICON: Record<string, typeof Mountain> = {
   TRAFFIC_RUSH: Car,
 };
 
-// Each trip card owns its own countdown, ticking down from that specific
-// trip's initialSeconds (REMEDIATION.md §8.10 — the old code had one
+// Each trip card owns its own countdown, ticking down to that specific
+// trip's real `startDate` (REMEDIATION.md §8.10 — the old code had one
 // `secondsLeft` state shared across every card in the list, so all trips
 // displayed the exact same countdown regardless of when each actually
-// departs).
-function TripCountdownBadge({ initialSeconds }: { initialSeconds: number }) {
-  const [secondsLeft, setSecondsLeft] = useState(initialSeconds);
+// departs — and counted down from a fabricated number rather than the
+// trip's real start time).
+function TripCountdownBadge({ targetDate }: { targetDate: string }) {
+  const targetMs = new Date(targetDate).getTime();
+  const [secondsLeft, setSecondsLeft] = useState(() => Math.max(0, Math.round((targetMs - Date.now()) / 1000)));
 
   useEffect(() => {
-    if (initialSeconds <= 0) return;
+    if (Number.isNaN(targetMs) || targetMs <= Date.now()) return;
     const timer = setInterval(() => {
-      setSecondsLeft((prev) => (prev > 0 ? prev - 1 : 0));
+      setSecondsLeft(Math.max(0, Math.round((targetMs - Date.now()) / 1000)));
     }, 1000);
     return () => clearInterval(timer);
-  }, [initialSeconds]);
+  }, [targetMs]);
 
   if (secondsLeft <= 0) return null;
 
@@ -198,9 +151,7 @@ export default function NotificationsScreen() {
     queryFn: async () => (await apiService.getAlerts()) ?? [],
   });
 
-  // Matches the previous behaviour exactly: a placeholder count of 5 until
-  // real notifications have actually loaded, then the real unread count.
-  const unreadCount = notifications.length > 0 ? notifications.filter((n: any) => n.unread).length : 5;
+  const unreadCount = notifications.filter((n: any) => n.unread).length;
 
   const handleMarkAllRead = async () => {
     try {
@@ -237,66 +188,13 @@ export default function NotificationsScreen() {
     };
   });
 
-  const dbTrips = notifications.filter(n => n.type === 'TRIP');
-  const mappedTrips = dbTrips.length > 0 ? dbTrips.map((t, i) => {
-    const defaultMocks = [
-      {
-        status: 'UPCOMING',
-        route: 'Ranchi ➔ Vrindavan',
-        date: 'Starts Today • 03:30 PM',
-        passenger: 'Aarav Sharma (Seat 42B)',
-        image: 'https://images.unsplash.com/photo-1599661046289-e31897846e41?w=800&q=80',
-        initialSeconds: 8140,
-        monsoonNotice: 'Monsoon weather advisory in effect for UP region',
-      }
-    ];
-    const mock = defaultMocks[i % defaultMocks.length];
-    return {
-      id: t.id,
-      title: t.title,
-      status: mock.status,
-      route: mock.route,
-      date: mock.date,
-      passenger: mock.passenger,
-      image: mock.image,
-      initialSeconds: mock.initialSeconds,
-      monsoonNotice: mock.monsoonNotice,
-    };
-  }) : TRIP_NOTIFICATIONS;
-
-  const dbSeasonal = notifications.filter(n => n.type === 'SEASONAL');
-  const mappedSeasonal = dbSeasonal.length > 0 ? dbSeasonal.map((s, i) => {
-    const defaultMocks = [
-      {
-        tag: 'JULY BEST PICK',
-        season: 'Peak Monsoon Bloom (July - August)',
-        temp: '20°C',
-        weather: 'Mist & Alpine Flora',
-        aqi: 'Pure AQI • 10',
-        image: 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=800&q=80',
-      },
-      {
-        tag: 'MONSOON HEAVEN',
-        season: 'Refreshing Rain Season',
-        temp: '19°C',
-        weather: 'Lush Greenery & Clouds',
-        aqi: 'Pure AQI • 12',
-        image: 'https://images.unsplash.com/photo-1593693397690-362cb9666fc2?w=800&q=80',
-      }
-    ];
-    const mock = defaultMocks[i % defaultMocks.length];
-    return {
-      id: s.id,
-      tag: mock.tag,
-      title: s.title,
-      season: mock.season,
-      temp: mock.temp,
-      weather: mock.weather,
-      aqi: mock.aqi,
-      image: mock.image,
-      reason: s.content,
-    };
-  }) : SEASONAL_RECOMMENDATIONS;
+  // "My Active & Upcoming Trips" — real trips the caller organizes or has
+  // joined, the same endpoint and status derivation bookings.tsx uses.
+  const { data: myTrips = [] } = useQuery({
+    queryKey: queryKeys.myTrips(),
+    queryFn: async () => (await apiService.getMyTrips()) ?? [],
+  });
+  const activeTrips = myTrips.filter((t) => t.status === 'ONGOING' || t.status === 'UPCOMING');
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
@@ -345,7 +243,6 @@ export default function NotificationsScreen() {
             [
               { key: 'ALL', label: 'All Feed' },
               { key: 'TRIPS', label: 'Trips & Passes' },
-              { key: 'SEASONAL', label: 'Weather Picks' },
               { key: 'HAZARDS', label: 'Disaster Alerts 🚨' },
             ] as const
           ).map((tab) => {
@@ -506,7 +403,7 @@ export default function NotificationsScreen() {
         )}
 
         {/* ── ONGOING & UPCOMING TRIPS ── */}
-        {(activeTab === 'ALL' || activeTab === 'TRIPS') && (
+        {(activeTab === 'ALL' || activeTab === 'TRIPS') && activeTrips.length > 0 && (
           <View style={styles.sectionBlock}>
             <View style={styles.sectionHeaderRow}>
               <View style={styles.sectionHeaderTitleGroup}>
@@ -515,10 +412,22 @@ export default function NotificationsScreen() {
               </View>
             </View>
 
-            {mappedTrips.map((trip: any) => (
-              <TouchableOpacity key={trip.id} style={styles.fullCardWrap} activeOpacity={0.9}>
+            {activeTrips.map((trip) => (
+              <TouchableOpacity
+                key={trip.id}
+                style={styles.fullCardWrap}
+                activeOpacity={0.9}
+                onPress={() => {
+                  if (trip.status === 'ONGOING') {
+                    router.navigate('/map');
+                  } else if (trip.chatRoomId) {
+                    setActiveRoomId(trip.chatRoomId);
+                    router.navigate('/chat');
+                  }
+                }}
+              >
                 {/* Full Tourist Location Background Image */}
-                <Image source={{ uri: trip.image }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                <Image source={{ uri: trip.coverImage }} style={StyleSheet.absoluteFill} resizeMode="cover" />
                 <LinearGradient
                   colors={['rgba(10,12,22,0.45)', 'rgba(10,12,22,0.85)', 'rgba(10,12,22,0.96)']}
                   locations={[0, 0.45, 1]}
@@ -540,100 +449,37 @@ export default function NotificationsScreen() {
                   >
                     <Text style={styles.statusBadgeText}>{trip.status}</Text>
                   </View>
-                  <TripCountdownBadge initialSeconds={trip.initialSeconds} />
+                  {trip.status === 'UPCOMING' && <TripCountdownBadge targetDate={trip.startDate} />}
                 </View>
 
                 {/* Main Card Content */}
                 <View style={styles.tripCardBody}>
-                  <Text style={styles.fullTripTitle}>{trip.title}</Text>
-                  <Text style={styles.fullTripRoute}>{trip.route}</Text>
+                  <Text style={styles.fullTripTitle}>{trip.name}</Text>
+                  <Text style={styles.fullTripRoute}>{trip.cities.join(' → ')}</Text>
 
                   <View style={styles.tripInfoRow}>
                     <View style={styles.tripInfoItem}>
                       <Calendar size={13} color={C.cyan} />
-                      <Text style={styles.tripInfoText}>{trip.date}</Text>
+                      <Text style={styles.tripInfoText}>
+                        {trip.startDate} → {trip.endDate}
+                      </Text>
                     </View>
                     <View style={styles.tripInfoItem}>
                       <MapPin size={13} color={C.green} />
-                      <Text style={styles.tripInfoText}>{trip.passenger}</Text>
+                      <Text style={styles.tripInfoText} numberOfLines={1}>
+                        {trip.meetingPoint}
+                      </Text>
                     </View>
                   </View>
 
-                  {trip.monsoonNotice && (
-                    <View style={styles.monsoonAdvisoryWrap}>
-                      <CloudRain size={13} color={C.orange} />
-                      <Text style={styles.monsoonAdvisoryText}>{trip.monsoonNotice}</Text>
-                    </View>
-                  )}
-
-                  <TouchableOpacity style={styles.trackItineraryBtn} activeOpacity={0.85}>
-                    <Text style={styles.trackItineraryText}>View Boarding Pass & Route</Text>
+                  <View style={styles.trackItineraryBtn}>
+                    <Text style={styles.trackItineraryText}>
+                      {trip.status === 'ONGOING' ? 'Track Live Trip' : trip.chatRoomId ? 'Open Trip Chat' : 'View Trip'}
+                    </Text>
                     <ChevronRight size={14} color={C.white} />
-                  </TouchableOpacity>
+                  </View>
                 </View>
               </TouchableOpacity>
-            ))}
-          </View>
-        )}
-
-        {/* ── SEASONAL & WEATHER TRAVEL RECOMMENDATIONS ── */}
-        {(activeTab === 'ALL' || activeTab === 'SEASONAL') && (
-          <View style={styles.sectionBlock}>
-            <View style={styles.sectionHeaderRow}>
-              <View style={styles.sectionHeaderTitleGroup}>
-                <Sparkles size={18} color={C.purple} />
-                <Text style={styles.sectionHeaderTitle}>Weather & Seasonal Picks</Text>
-              </View>
-              <Text style={styles.monthBadge}>JULY RECS</Text>
-            </View>
-
-            {mappedSeasonal.map((item: any) => (
-              <View key={item.id} style={styles.fullSeasonalCardWrap}>
-                {/* Full Tourist Destination Background Image */}
-                <Image source={{ uri: item.image }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                <LinearGradient
-                  colors={['rgba(10,12,22,0.45)', 'rgba(10,12,22,0.85)', 'rgba(10,12,22,0.96)']}
-                  locations={[0, 0.45, 1]}
-                  style={StyleSheet.absoluteFill}
-                />
-
-                {/* Top Seasonal Tag Pill */}
-                <View style={styles.seasonalTagPill}>
-                  <Text style={styles.seasonalTagPillText}>{item.tag}</Text>
-                </View>
-
-                {/* Card Body */}
-                <View style={styles.seasonalBody}>
-                  <Text style={styles.seasonalTitle}>{item.title}</Text>
-                  <Text style={styles.seasonalSub}>{item.season}</Text>
-
-                  <View style={styles.weatherMetricsRow}>
-                    <View style={styles.metricItem}>
-                      <Sun size={14} color={C.orange} />
-                      <Text style={styles.metricText}>{item.temp}</Text>
-                    </View>
-                    <View style={styles.metricItem}>
-                      <CloudRain size={14} color={C.cyan} />
-                      <Text style={styles.metricText}>{item.weather}</Text>
-                    </View>
-                    <View style={styles.aqiChipSmall}>
-                      <Text style={styles.aqiChipSmallText}>{item.aqi}</Text>
-                    </View>
-                  </View>
-
-                  <Text style={styles.seasonalReason}>{item.reason}</Text>
-
-                  <TouchableOpacity
-                    style={styles.exploreDestBtn}
-                    activeOpacity={0.85}
-                    onPress={() => router.navigate('/search')}
-                  >
-                    <Compass size={14} color={C.blue} />
-                    <Text style={styles.exploreDestBtnText}>Explore Itinerary & Booking</Text>
-                    <ChevronRight size={14} color={C.blue} style={{ marginLeft: 'auto' }} />
-                  </TouchableOpacity>
-                </View>
-              </View>
             ))}
           </View>
         )}
@@ -784,12 +630,6 @@ const styles = StyleSheet.create({
     fontSize: 8,
     fontWeight: '900',
     color: C.red,
-    letterSpacing: 0.5,
-  },
-  monthBadge: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: C.purple,
     letterSpacing: 0.5,
   },
 
@@ -955,26 +795,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: 'rgba(255,255,255,0.85)',
   },
-  monsoonAdvisoryWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(245, 158, 11, 0.12)',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.3)',
-    marginTop: 2,
-  },
-  monsoonAdvisoryText: {
-    fontSize: 11,
-    color: C.orange,
-    fontWeight: '600',
-  },
-  tripActionRow: {
-    marginTop: 4,
-  },
   trackItineraryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -988,100 +808,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     color: C.white,
-  },
-
-  // ── Seasonal Cards ──────────────────────────────────
-  fullSeasonalCardWrap: {
-    minHeight: 240,
-    borderRadius: 22,
-    overflow: 'hidden',
-    position: 'relative',
-    padding: 16,
-    justifyContent: 'space-between',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-    marginBottom: 6,
-  },
-  seasonalTagPill: {
-    alignSelf: 'flex-start',
-    backgroundColor: C.purple,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    marginBottom: 24,
-  },
-  seasonalTagPillText: {
-    fontSize: 8.5,
-    fontWeight: '900',
-    color: C.white,
-    letterSpacing: 0.5,
-  },
-  seasonalBody: {
-    gap: 8,
-  },
-  seasonalTitle: {
-    fontSize: 19,
-    fontWeight: '800',
-    color: C.white,
-    letterSpacing: -0.3,
-  },
-  seasonalSub: {
-    fontSize: 11.5,
-    color: 'rgba(255,255,255,0.85)',
-    fontWeight: '500',
-  },
-  seasonalContent: {
-    padding: 14,
-    gap: 10,
-  },
-  weatherMetricsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  metricItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  metricText: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: C.white,
-  },
-  aqiChipSmall: {
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.3)',
-    marginLeft: 'auto',
-  },
-  aqiChipSmallText: {
-    fontSize: 9.5,
-    fontWeight: '700',
-    color: C.green,
-  },
-  seasonalReason: {
-    fontSize: 11.5,
-    color: C.textSec,
-    lineHeight: 16,
-  },
-  exploreDestBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(59, 130, 246, 0.12)',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(59, 130, 246, 0.25)',
-  },
-  exploreDestBtnText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: C.blue,
   },
 });
