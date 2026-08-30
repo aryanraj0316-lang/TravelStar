@@ -32,6 +32,7 @@ import {
   Waves
 } from 'lucide-react-native';
 import React, { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Animated,
   Dimensions,
@@ -54,16 +55,16 @@ const TRENDING_CARD_WIDTH = SCREEN_WIDTH * 0.52;
 // ─── Color Palette synchronized with search page theme ───────────────
 
 // ─── Data ───────────────────────────────────────────────────────────
-const roles: { value: UserRole; label: string; sub: string; Icon: typeof Globe; borderColors: [string, string] }[] = [
-  { value: 'TOURIST', label: 'Tourist', sub: 'Explore places', Icon: Globe, borderColors: ['#0066FF', '#00F2FE'] },
-  { value: 'GUIDE', label: 'Travel Guide', sub: 'Guide travelers', Icon: Map, borderColors: ['#0066FF', '#6366F1'] },
-  { value: 'ORGANIZER', label: 'Group Organizer', sub: 'Plan together', Icon: Users, borderColors: ['#0066FF', '#7C3AED'] },
+const roles: { value: UserRole; labelKey: string; subKey: string; Icon: typeof Globe; borderColors: [string, string] }[] = [
+  { value: 'TOURIST', labelKey: 'home.roleTourist', subKey: 'home.roleTouristSub', Icon: Globe, borderColors: ['#0066FF', '#00F2FE'] },
+  { value: 'GUIDE', labelKey: 'home.roleGuide', subKey: 'home.roleGuideSub', Icon: Map, borderColors: ['#0066FF', '#6366F1'] },
+  { value: 'ORGANIZER', labelKey: 'home.roleOrganizer', subKey: 'home.roleOrganizerSub', Icon: Users, borderColors: ['#0066FF', '#7C3AED'] },
 ];
 
-const quickAccessItems: { label: string; Icon: typeof MapPin; gradient: [string, string]; iconColor: string; isNew: boolean; route?: string }[] = [
-  { label: 'Nearby', Icon: MapPin, gradient: ['#111322', '#1B1E30'], iconColor: '#38BDF8', isNew: false, route: '/nearby-trips' },
-  { label: 'Bookings', Icon: CalendarCheck, gradient: ['#111322', '#1B1E30'], iconColor: '#34D399', isNew: false, route: '/bookings' },
-  { label: 'Budget Tracker', Icon: Wallet, gradient: ['#111322', '#1B1E30'], iconColor: '#F59E0B', isNew: true, route: '/budget-tracker' },
+const quickAccessItems: { labelKey: string; Icon: typeof MapPin; gradient: [string, string]; iconColor: string; isNew: boolean; route?: string }[] = [
+  { labelKey: 'home.quickNearby', Icon: MapPin, gradient: ['#111322', '#1B1E30'], iconColor: '#38BDF8', isNew: false, route: '/nearby-trips' },
+  { labelKey: 'home.quickBookings', Icon: CalendarCheck, gradient: ['#111322', '#1B1E30'], iconColor: '#34D399', isNew: false, route: '/bookings' },
+  { labelKey: 'home.quickBudgetTracker', Icon: Wallet, gradient: ['#111322', '#1B1E30'], iconColor: '#F59E0B', isNew: true, route: '/budget-tracker' },
 ];
 
 const DEFAULT_STORIES = [
@@ -169,6 +170,7 @@ function AppleMultilingualGreeting({ isFocused }: { isFocused: boolean }) {
 }
 
 function FloatingTouristWeatherCard({ locations, isFocused }: { locations: any[]; isFocused: boolean }) {
+  const { t } = useTranslation();
   // Base image: always static at (0,0), fully visible
   const [baseIndex, setBaseIndex] = useState(0);
   // Sliding image: only exists while animating, starts off-screen and slides to (0,0)
@@ -244,10 +246,10 @@ function FloatingTouristWeatherCard({ locations, isFocused }: { locations: any[]
         <Text style={styles.weatherCondition}>{loc.condition}</Text>
         <Text style={styles.aqiText}>{loc.aqi}</Text>
         <View style={styles.weatherBottom}>
-          <Text style={styles.weatherDetail}>Humidity {loc.humidity}</Text>
+          <Text style={styles.weatherDetail}>{t('home.humidity', { value: loc.humidity })}</Text>
           <View style={styles.badgeLive}>
             <View style={styles.liveDot} />
-            <Text style={styles.liveText}>LIVE</Text>
+            <Text style={styles.liveText}>{t('home.live')}</Text>
           </View>
         </View>
       </View>
@@ -284,6 +286,7 @@ function FloatingTouristWeatherCard({ locations, isFocused }: { locations: any[]
 }
 
 function RotatingMonsoonAlertCard({ alerts, isFocused }: { alerts: any[]; isFocused: boolean }) {
+  const { t } = useTranslation();
   const router = useRouter();
   const [alertIndex, setAlertIndex] = useState(0);
   const fadeAnim = useState(() => new Animated.Value(1))[0];
@@ -375,8 +378,10 @@ function RotatingMonsoonAlertCard({ alerts, isFocused }: { alerts: any[]; isFocu
           style={styles.alertLink}
           activeOpacity={0.8}
           onPress={() => router.push('/monsoon-advisory' as any)}
+          accessibilityRole="button"
+          accessibilityLabel={t('home.viewDetails')}
         >
-          <Text style={[styles.alertLinkText, { color: colors.text }]}>View Details</Text>
+          <Text style={[styles.alertLinkText, { color: colors.text }]}>{t('home.viewDetails')}</Text>
           <ChevronRight size={11} color={colors.text} />
         </TouchableOpacity>
       </View>
@@ -385,6 +390,7 @@ function RotatingMonsoonAlertCard({ alerts, isFocused }: { alerts: any[]; isFocu
 }
 
 function FeaturedTripsCarousel({ isFocused }: { isFocused: boolean }) {
+  const { t } = useTranslation();
   const { trips, setActiveRoomId, dataStatus, refreshTrips } = useApp();
   const router = useRouter();
   const carouselRef = useRef<ScrollView>(null);
@@ -434,8 +440,8 @@ function FeaturedTripsCarousel({ isFocused }: { isFocused: boolean }) {
     return (
       <View style={styles.carouselContainer}>
         <ScreenError
-          title="Could not load trips"
-          message="We could not reach the server. Check your connection and try again."
+          title={t('home.couldNotLoadTrips')}
+          message={t('home.couldNotLoadTripsMessage')}
           onRetry={refreshTrips}
         />
       </View>
@@ -446,9 +452,9 @@ function FeaturedTripsCarousel({ isFocused }: { isFocused: boolean }) {
     return (
       <View style={styles.carouselContainer}>
         <ScreenEmpty
-          title="No trips yet"
-          message="Nobody has published a trip yet. Create one and it will show up here."
-          actionLabel="Create a trip"
+          title={t('home.noTripsYet')}
+          message={t('home.noTripsYetMessage')}
+          actionLabel={t('home.createATrip')}
           onAction={() => router.navigate('/create')}
         />
       </View>
@@ -486,6 +492,9 @@ function FeaturedTripsCarousel({ isFocused }: { isFocused: boolean }) {
                 router.navigate('/search');
               }}
               style={[styles.tripCard, { width: SCREEN_WIDTH - 40 }]}
+              accessibilityRole="button"
+              accessibilityLabel={trip.name}
+              accessibilityHint={t('home.tripCardHint')}
             >
               {/* Left side: Image */}
               <View style={styles.tripImageContainer}>
@@ -502,7 +511,7 @@ function FeaturedTripsCarousel({ isFocused }: { isFocused: boolean }) {
                   style={StyleSheet.absoluteFill}
                 />
                 <View style={[styles.tripBadge, { backgroundColor: '#6C5CE7' }]}>
-                  <Text style={styles.tripBadgeText}>Featured</Text>
+                  <Text style={styles.tripBadgeText}>{t('home.featured')}</Text>
                 </View>
               </View>
 
@@ -521,14 +530,14 @@ function FeaturedTripsCarousel({ isFocused }: { isFocused: boolean }) {
                   {trip.guideIncluded ? (
                     <View style={styles.verifiedBadge}>
                       <Check size={8} color={C.blue} strokeWidth={3} />
-                      <Text style={styles.verifiedText}>Guide included</Text>
+                      <Text style={styles.verifiedText}>{t('home.guideIncluded')}</Text>
                     </View>
                   ) : null}
                   <Text style={styles.tripMetaText}>
-                    {trip.membersCount} joined
+                    {t('home.joined', { count: trip.membersCount })}
                   </Text>
                   <Text style={styles.tripMetaDot}>•</Text>
-                  <Text style={styles.tripMetaSeats}>{trip.availableSeats} left</Text>
+                  <Text style={styles.tripMetaSeats}>{t('home.seatsLeft', { count: trip.availableSeats })}</Text>
                 </View>
 
                 {/* Route cities with arrow */}
@@ -562,7 +571,7 @@ function FeaturedTripsCarousel({ isFocused }: { isFocused: boolean }) {
                 {/* Price and Action Buttons */}
                 <View style={styles.priceRow}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.priceLabel}>Total Package</Text>
+                    <Text style={styles.priceLabel}>{t('home.totalPackage')}</Text>
                     <Text style={styles.priceAmount}>{formatINR(trip.budget)}</Text>
                   </View>
                   <View style={{ gap: 4, width: 110 }}>
@@ -571,8 +580,10 @@ function FeaturedTripsCarousel({ isFocused }: { isFocused: boolean }) {
                       onPress={() => {
                         router.navigate('/search');
                       }}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('home.joinNow')}
                     >
-                      <Text style={styles.joinBtnText}>Join Now</Text>
+                      <Text style={styles.joinBtnText}>{t('home.joinNow')}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.joinBtn, { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#0066FF', paddingVertical: 4 }]}
@@ -580,9 +591,11 @@ function FeaturedTripsCarousel({ isFocused }: { isFocused: boolean }) {
                         setActiveRoomId(getRoomId(trip));
                         router.navigate('/chat');
                       }}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('home.joinChat')}
                     >
                       <MessageSquare size={9} color="#0066FF" style={{ marginRight: 2 }} />
-                      <Text style={[styles.joinBtnText, { color: '#0066FF' }]}>Join Chat</Text>
+                      <Text style={[styles.joinBtnText, { color: '#0066FF' }]}>{t('home.joinChat')}</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -597,6 +610,7 @@ function FeaturedTripsCarousel({ isFocused }: { isFocused: boolean }) {
 
 // ─── Component ──────────────────────────────────────────────────────
 function HomeScreen() {
+  const { t } = useTranslation();
   useEffect(() => {
     logger.log('Screen mounted: HomeScreen');
   }, []);
@@ -746,7 +760,7 @@ function HomeScreen() {
           <View style={{ flex: 1 }}>
             <AppleMultilingualGreeting isFocused={isFocused} />
             <Text style={styles.userName}>{profile.name}</Text>
-            <Text style={styles.userSub}>Explore more. Experience better.</Text>
+            <Text style={styles.userSub}>{t('home.userSub')}</Text>
           </View>
           <View style={styles.headerRight}>
             {!isLoggedIn && (
@@ -764,9 +778,11 @@ function HomeScreen() {
                 }}
                 activeOpacity={0.8}
                 onPress={() => router.push('/auth')}
+                accessibilityRole="button"
+                accessibilityLabel={t('home.loginSignUp')}
               >
                 <Text style={{ fontSize: 12, fontWeight: '700', color: '#60A5FA', marginRight: 4 }}>
-                  Login / Sign Up
+                  {t('home.loginSignUp')}
                 </Text>
                 <ChevronRight size={12} color="#60A5FA" />
               </TouchableOpacity>
@@ -777,6 +793,9 @@ function HomeScreen() {
               activeOpacity={0.7}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               onPress={() => router.push('/notifications')}
+              accessibilityRole="button"
+              accessibilityLabel={t('home.notificationsLabel')}
+              accessibilityHint={hasUnreadNotification ? t('home.notificationsUnreadHint') : undefined}
             >
               <Bell size={16} color={C.white} strokeWidth={1.8} />
               {hasUnreadNotification && <View style={styles.bellDot} />}
@@ -785,6 +804,8 @@ function HomeScreen() {
               activeOpacity={0.85}
               style={styles.avatarWrap}
               onPress={() => router.navigate('/profile')}
+              accessibilityRole="button"
+              accessibilityLabel={t('home.profileLabel')}
             >
               <LinearGradient
                 colors={['#0066FF', '#7C3AED']}
@@ -826,6 +847,10 @@ function HomeScreen() {
                     router.push('/group-organizer' as any);
                   }
                 }}
+                accessibilityRole="button"
+                accessibilityLabel={`${t(role.labelKey)}, ${t(role.subKey)}`}
+                accessibilityHint={t('home.roleSelectHint')}
+                accessibilityState={{ selected: isActive }}
               >
                 <LinearGradient
                   colors={
@@ -840,8 +865,8 @@ function HomeScreen() {
                   <View style={[styles.roleTabInner, isActive && { backgroundColor: 'rgba(0, 102, 255, 0.12)' }]}>
                     <role.Icon size={18} color={isActive ? C.white : C.textSec} strokeWidth={2} />
                     <View>
-                      <Text style={[styles.roleLabel, { color: C.white }]}>{role.label}</Text>
-                      <Text style={styles.roleSub}>{role.sub}</Text>
+                      <Text style={[styles.roleLabel, { color: C.white }]}>{t(role.labelKey)}</Text>
+                      <Text style={styles.roleSub}>{t(role.subKey)}</Text>
                     </View>
                   </View>
                 </LinearGradient>
@@ -854,9 +879,9 @@ function HomeScreen() {
             TRAVEL REELS & STORIES
             ════════════════════════════════════════════════ */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Travel Reels & Stories</Text>
-          <TouchableOpacity style={styles.viewAllBtn}>
-            <Text style={styles.viewAllText}>View all</Text>
+          <Text style={styles.sectionTitle}>{t('home.reelsAndStories')}</Text>
+          <TouchableOpacity style={styles.viewAllBtn} accessibilityRole="button" accessibilityLabel={t('home.viewAll')}>
+            <Text style={styles.viewAllText}>{t('home.viewAll')}</Text>
             <ChevronRight size={14} color={C.blue} />
           </TouchableOpacity>
         </View>
@@ -876,6 +901,8 @@ function HomeScreen() {
                   params: { location: story.location || story.title }
                 });
               }}
+              accessibilityRole="button"
+              accessibilityLabel={t('home.storyLabel', { location: story.location || story.title })}
             >
               <LinearGradient
                 colors={['#00E5FF', '#0066FF', '#0891B2']}
@@ -911,6 +938,8 @@ function HomeScreen() {
                   router.push(item.route as any);
                 }
               }}
+              accessibilityRole="button"
+              accessibilityLabel={t(item.labelKey)}
             >
               <View style={{ position: 'relative' }}>
                 <LinearGradient
@@ -923,11 +952,11 @@ function HomeScreen() {
                 </LinearGradient>
                 {item.isNew && (
                   <View style={styles.newBadgeGold}>
-                    <Text style={styles.newBadgeGoldText}>NEW</Text>
+                    <Text style={styles.newBadgeGoldText}>{t('home.new')}</Text>
                   </View>
                 )}
               </View>
-              <Text style={styles.quickLabel}>{item.label}</Text>
+              <Text style={styles.quickLabel}>{t(item.labelKey)}</Text>
             </TouchableOpacity>
           ))}
         </LinearGradient>
@@ -950,7 +979,7 @@ function HomeScreen() {
             FEATURED GROUP TRIPS CAROUSEL
             ════════════════════════════════════════════════ */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Featured Group Trips</Text>
+          <Text style={styles.sectionTitle}>{t('home.featuredGroupTrips')}</Text>
         </View>
         <FeaturedTripsCarousel isFocused={isFocused} />
 
@@ -958,9 +987,9 @@ function HomeScreen() {
             TRENDING DESTINATIONS — Carousel + dots
             ════════════════════════════════════════════════ */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Trending Destinations</Text>
-          <TouchableOpacity style={styles.viewAllBtn}>
-            <Text style={styles.viewAllText}>View all</Text>
+          <Text style={styles.sectionTitle}>{t('home.trendingDestinations')}</Text>
+          <TouchableOpacity style={styles.viewAllBtn} accessibilityRole="button" accessibilityLabel={t('home.viewAll')}>
+            <Text style={styles.viewAllText}>{t('home.viewAll')}</Text>
             <ChevronRight size={14} color={C.blue} />
           </TouchableOpacity>
         </View>
@@ -1008,6 +1037,8 @@ function HomeScreen() {
                   params: { id: String(dest.id) }
                 });
               }}
+              accessibilityRole="button"
+              accessibilityLabel={t('home.destinationCardLabel', { name: dest.name, rating: dest.rating })}
             >
               <Image
                 source={{ uri: dest.image }}
@@ -1032,7 +1063,12 @@ function HomeScreen() {
                 </LinearGradient>
               </View>
               {/* Heart Button */}
-              <TouchableOpacity style={styles.heartBtn} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={styles.heartBtn}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={t('home.favoriteHint')}
+              >
                 <Heart size={16} color={C.white} strokeWidth={2} />
               </TouchableOpacity>
               {/* Bottom Info */}
