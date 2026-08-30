@@ -64,6 +64,7 @@ import { apiService } from '@/services/api';
 import { eventBus } from '@/services/event-bus';
 import { useApp } from '@/store/AppContext';
 import { C, MIN_TOUCH_TARGET, fontSize, radii } from '@/theme/tokens';
+import { Button, Input } from '@/components/ui';
 
 let ImagePicker: any = null;
 try {
@@ -1845,16 +1846,12 @@ function ChatScreen() {
 
         {/* Search bar */}
         <View style={styles.searchBarWrapper}>
-          <View style={styles.searchBarInner}>
-            <Search size={16} color={C.textMuted} style={{ marginRight: 8 }} />
-            <TextInput
-              placeholder="Search groups, guides, or alerts..."
-              placeholderTextColor={C.textMuted}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              style={styles.searchInput}
-            />
-          </View>
+          <Input
+            placeholder="Search groups, guides, or alerts..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            icon={<Search size={16} color={C.textMuted} />}
+          />
         </View>
 
         {/* Category filters */}
@@ -3081,37 +3078,29 @@ function ChatScreen() {
             {activeModal === 'LOCATION' && (
               <View>
                 <Text style={styles.modalHeading}>Share Custom Location</Text>
-                <Text style={styles.modalSubLabel}>Location Name / Meeting spot</Text>
-                <TextInput
+                <Input
+                  label="Location Name / Meeting spot"
                   placeholder="e.g. Prem Mandir Entrance Gate"
-                  placeholderTextColor={C.textMuted}
                   value={locationForm.label}
                   onChangeText={(val) => setLocationForm((p) => ({ ...p, label: val }))}
-                  style={styles.modalInput}
                 />
                 <View style={styles.rowInputs}>
-                  <View style={{ flex: 1, marginRight: 8 }}>
-                    <Text style={styles.modalSubLabel}>Latitude</Text>
-                    <TextInput
-                      placeholder="e.g. 27.5650"
-                      keyboardType="numeric"
-                      placeholderTextColor={C.textMuted}
-                      value={locationForm.lat}
-                      onChangeText={(val) => setLocationForm((p) => ({ ...p, lat: val }))}
-                      style={styles.modalInput}
-                    />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.modalSubLabel}>Longitude</Text>
-                    <TextInput
-                      placeholder="e.g. 77.6593"
-                      keyboardType="numeric"
-                      placeholderTextColor={C.textMuted}
-                      value={locationForm.lng}
-                      onChangeText={(val) => setLocationForm((p) => ({ ...p, lng: val }))}
-                      style={styles.modalInput}
-                    />
-                  </View>
+                  <Input
+                    label="Latitude"
+                    placeholder="e.g. 27.5650"
+                    keyboardType="numeric"
+                    value={locationForm.lat}
+                    onChangeText={(val) => setLocationForm((p) => ({ ...p, lat: val }))}
+                    containerStyle={{ flex: 1, marginRight: 8 }}
+                  />
+                  <Input
+                    label="Longitude"
+                    placeholder="e.g. 77.6593"
+                    keyboardType="numeric"
+                    value={locationForm.lng}
+                    onChangeText={(val) => setLocationForm((p) => ({ ...p, lng: val }))}
+                    containerStyle={{ flex: 1 }}
+                  />
                 </View>
 
                 <TouchableOpacity
@@ -3134,22 +3123,13 @@ function ChatScreen() {
                 </TouchableOpacity>
 
                 <View style={styles.modalActionButtons}>
-                  <TouchableOpacity
-                    style={[styles.modalBtn, styles.modalBtnCancel]}
-                    onPress={() => setActiveModal('NONE')}
-                    accessibilityRole="button"
-                    accessibilityLabel="Cancel"
-                  >
-                    <Text style={styles.modalBtnCancelText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.modalBtn, styles.modalBtnSubmit, { backgroundColor: C.blue }]}
+                  <Button label="Cancel" variant="secondary" size="sm" onPress={() => setActiveModal('NONE')} />
+                  <Button
+                    label="Share"
+                    size="sm"
                     onPress={handleShareLocationSubmit}
-                    accessibilityRole="button"
                     accessibilityLabel="Share this location with the group"
-                  >
-                    <Text style={styles.modalBtnSubmitText}>Share</Text>
-                  </TouchableOpacity>
+                  />
                 </View>
               </View>
             )}
@@ -3231,21 +3211,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     backgroundColor: '#070913',
-  },
-  searchBarInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: C.card,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    height: 38,
-    borderWidth: 1,
-    borderColor: C.border,
-  },
-  searchInput: {
-    flex: 1,
-    color: '#FFF',
-    fontSize: 13,
   },
   inboxFiltersRow: {
     flexDirection: 'row',
@@ -4550,26 +4515,9 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     textAlign: 'center',
   },
-  modalSubLabel: {
-    color: C.textSec,
-    fontSize: 10.5,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    marginBottom: 4,
-    marginTop: 8,
-  },
-  modalInput: {
-    backgroundColor: C.cardAlt,
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    height: 38,
-    color: '#FFF',
-    fontSize: 13,
-  },
   rowInputs: {
     flexDirection: 'row',
+    marginTop: 10,
   },
   modalInfoNotice: {
     color: C.textMuted,
@@ -4582,31 +4530,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     gap: 10,
     marginTop: 20,
-  },
-  modalBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 10,
-    minWidth: 70,
-    alignItems: 'center',
-  },
-  modalBtnCancel: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: C.border,
-  },
-  modalBtnCancelText: {
-    color: C.textSec,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  modalBtnSubmit: {
-    backgroundColor: C.blue,
-  },
-  modalBtnSubmitText: {
-    color: '#FFF',
-    fontSize: 12,
-    fontWeight: '800',
   },
 
   // Swipe to Reply & Reply UI Styles
