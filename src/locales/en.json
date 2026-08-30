@@ -489,5 +489,16 @@
     "closeGallery": "Close",
     "photoGalleryTitle": "{{name}} Photo Gallery",
     "photoCounter": "{{current}} / {{total}}"
+  },
+  "stories": {
+    "noStoriesYetTitle": "No stories yet",
+    "noStoriesFromLocation": "Nobody has shared a story from {{location}} yet.",
+    "beFirstToShare": "Be the first to share a travel story.",
+    "goBack": "Go back",
+    "closeStories": "Close stories",
+    "likeStory": "Like story",
+    "unlikeStory": "Unlike story",
+    "defaultCreatorName": "Traveler",
+    "defaultLocation": "India"
   }
 }

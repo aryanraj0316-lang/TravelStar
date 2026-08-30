@@ -489,5 +489,16 @@
     "closeGallery": "बंद करें",
     "photoGalleryTitle": "{{name}} फोटो गैलरी",
     "photoCounter": "{{current}} / {{total}}"
+  },
+  "stories": {
+    "noStoriesYetTitle": "अभी तक कोई कहानी नहीं",
+    "noStoriesFromLocation": "अभी तक किसी ने {{location}} से कोई कहानी साझा नहीं की है।",
+    "beFirstToShare": "यात्रा कहानी साझा करने वाले पहले व्यक्ति बनें।",
+    "goBack": "वापस जाएं",
+    "closeStories": "कहानियां बंद करें",
+    "likeStory": "कहानी पसंद करें",
+    "unlikeStory": "पसंद हटाएं",
+    "defaultCreatorName": "यात्री",
+    "defaultLocation": "भारत"
   }
 }

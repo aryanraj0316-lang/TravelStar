@@ -5,6 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Heart, X } from 'lucide-react-native';
 import React, { useRef, useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Image,
   StyleSheet,
@@ -44,6 +45,7 @@ interface FeedStory {
 }
 
 export default function StoriesScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const params = useLocalSearchParams();
   const locationParam = (params.location as string) ?? '';
@@ -116,14 +118,19 @@ export default function StoriesScreen() {
     return (
       <SafeAreaView style={styles.emptyContainer}>
         <StatusBar barStyle="light-content" backgroundColor="#000" />
-        <Text style={styles.emptyTitle}>No stories yet</Text>
+        <Text style={styles.emptyTitle}>{t('stories.noStoriesYetTitle')}</Text>
         <Text style={styles.emptyText}>
           {locationParam
-            ? `Nobody has shared a story from ${locationParam} yet.`
-            : 'Be the first to share a travel story.'}
+            ? t('stories.noStoriesFromLocation', { location: locationParam })
+            : t('stories.beFirstToShare')}
         </Text>
-        <TouchableOpacity style={styles.emptyBtn} onPress={goBackOrHome}>
-          <Text style={styles.emptyBtnText}>Go back</Text>
+        <TouchableOpacity
+          style={styles.emptyBtn}
+          onPress={goBackOrHome}
+          accessibilityRole="button"
+          accessibilityLabel={t('stories.goBack')}
+        >
+          <Text style={styles.emptyBtnText}>{t('stories.goBack')}</Text>
         </TouchableOpacity>
       </SafeAreaView>
     );
@@ -135,12 +142,12 @@ export default function StoriesScreen() {
     activeStory.image ||
     'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1000&q=80';
   const storyCaption = activeStory.content || activeStory.caption || '';
-  const storyCreator = activeStory.authorName || activeStory.creator || 'Traveler';
+  const storyCreator = activeStory.authorName || activeStory.creator || t('stories.defaultCreatorName');
   const storyCreatorAvatar =
     activeStory.authorAvatar ||
     activeStory.creatorAvatar ||
     'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80';
-  const storyLocation = activeStory.location || 'India';
+  const storyLocation = activeStory.location || t('stories.defaultLocation');
 
   const handleToggleLike = async () => {
     const wasLiked = !!isLiked[activeStory.id];
@@ -202,7 +209,7 @@ export default function StoriesScreen() {
             <Text style={styles.locationText}>{storyLocation}</Text>
           </View>
         </View>
-        <TouchableOpacity style={styles.closeBtn} onPress={goBackOrHome} accessibilityRole="button" accessibilityLabel="Close stories">
+        <TouchableOpacity style={styles.closeBtn} onPress={goBackOrHome} accessibilityRole="button" accessibilityLabel={t('stories.closeStories')}>
           <X size={20} color="#FFF" />
         </TouchableOpacity>
       </View>
@@ -225,7 +232,7 @@ export default function StoriesScreen() {
             style={styles.controlIconCircle}
             onPress={handleToggleLike}
             accessibilityRole="button"
-            accessibilityLabel={isLiked[activeStory.id] ? 'Unlike story' : 'Like story'}
+            accessibilityLabel={isLiked[activeStory.id] ? t('stories.unlikeStory') : t('stories.likeStory')}
           >
             <Heart
               size={20}
