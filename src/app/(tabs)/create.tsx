@@ -34,6 +34,7 @@ import {
   XCircle,
 } from 'lucide-react-native';
 import React, { useRef, useState, useEffect, memo } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Dimensions,
@@ -247,19 +248,31 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 
 const PRESET_COVERS = [
-  { label: 'Taj Mahal', url: 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1000&q=80' },
-  { label: 'Mountain', url: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=800&q=80' },
-  { label: 'Beach', url: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80' },
-  { label: 'Valley/Lake', url: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&q=80' },
-  { label: 'Desert', url: 'https://images.unsplash.com/photo-1547234935-80c7145ec969?w=800&q=80' },
+  { labelKey: 'createTrip.presetTajMahal', url: 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1000&q=80' },
+  { labelKey: 'createTrip.presetMountain', url: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=800&q=80' },
+  { labelKey: 'createTrip.presetBeach', url: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80' },
+  { labelKey: 'createTrip.presetValleyLake', url: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&q=80' },
+  { labelKey: 'createTrip.presetDesert', url: 'https://images.unsplash.com/photo-1547234935-80c7145ec969?w=800&q=80' },
 ];
 
 const TRIP_CATEGORIES = ['Adventure', 'Religious', 'Family', 'Road Trip', 'Beach', 'Wildlife', 'Heritage', 'Honeymoon'];
+
+const CATEGORY_LABEL_KEYS: Record<string, string> = {
+  Adventure: 'createTrip.categoryAdventure',
+  Religious: 'createTrip.categoryReligious',
+  Family: 'createTrip.categoryFamily',
+  'Road Trip': 'createTrip.categoryRoadTrip',
+  Beach: 'createTrip.categoryBeach',
+  Wildlife: 'createTrip.categoryWildlife',
+  Heritage: 'createTrip.categoryHeritage',
+  Honeymoon: 'createTrip.categoryHoneymoon',
+};
 
 function CreateTripScreen() {
   useEffect(() => {
     logger.log('Screen mounted: CreateTripScreen');
   }, []);
+  const { t } = useTranslation();
   const router = useRouter();
   const lastScrollYRef = useRef(0);
   const navbarHiddenRef = useRef(false);
@@ -402,14 +415,14 @@ function CreateTripScreen() {
 
   // Essential Packing Checklist
   const [checklist, setChecklist] = useState([
-    { id: '1', item: 'Passport & National ID / Aadhaar Card', checked: false },
-    { id: '2', item: 'Driving License & Required Travel Permits', checked: false },
-    { id: '3', item: 'Flight / Bus / Train Tickets & Hotel Vouchers', checked: false },
-    { id: '4', item: 'Powerbank, Portable Chargers & Universal Cable', checked: false },
-    { id: '5', item: 'First Aid Kit & Personal Prescription Medications', checked: false },
-    { id: '6', item: 'Sunscreen, Sunglasses & Personal Toiletries', checked: false },
-    { id: '7', item: 'Weather-Appropriate Clothing & Trekking Shoes', checked: false },
-    { id: '8', item: 'Emergency Cash & Credit / Debit Cards', checked: false },
+    { id: '1', itemKey: 'createTrip.checklistItem1', checked: false },
+    { id: '2', itemKey: 'createTrip.checklistItem2', checked: false },
+    { id: '3', itemKey: 'createTrip.checklistItem3', checked: false },
+    { id: '4', itemKey: 'createTrip.checklistItem4', checked: false },
+    { id: '5', itemKey: 'createTrip.checklistItem5', checked: false },
+    { id: '6', itemKey: 'createTrip.checklistItem6', checked: false },
+    { id: '7', itemKey: 'createTrip.checklistItem7', checked: false },
+    { id: '8', itemKey: 'createTrip.checklistItem8', checked: false },
   ]);
 
   // Meeting Point details
@@ -436,7 +449,7 @@ function CreateTripScreen() {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        toast('Permission Required — Please allow access to your photo library to pick a cover image.', 'error');
+        toast(t('createTrip.galleryPermissionRequired'), 'error');
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -457,7 +470,7 @@ function CreateTripScreen() {
         setCustomCoverUri(publicUrl);
       } catch (uploadErr) {
         logger.warn('[Create] Cover upload failed:', uploadErr);
-        toast(errorToastMessage(uploadErr, 'Could not upload that photo. Please try again.'), 'error');
+        toast(errorToastMessage(uploadErr, t('createTrip.couldNotUploadPhoto')), 'error');
       } finally {
         setCoverUploading(false);
       }
@@ -494,19 +507,19 @@ function CreateTripScreen() {
 
   const handleCreate = () => {
     if (!tripName || !citiesInput || !startDate || !budget || !totalSeats) {
-      toast('Please fill in all required fields marked with *', 'error');
+      toast(t('createTrip.fillRequiredFields'), 'error');
       return;
     }
 
     if (parsedCities.length < 2) {
-      toast('Route Error — Please enter at least 2 cities separated by commas (e.g. Delhi, Jaipur).', 'error');
+      toast(t('createTrip.routeErrorTitle'), 'error');
       return;
     }
 
     const newTrip = {
       id: `trip-${Date.now()}`,
       name: tripName,
-      creator: `${profile?.name || 'Aarav Sharma'} (Organizer)`,
+      creator: t('createTrip.organizerSuffix', { name: profile?.name || 'Aarav Sharma' }),
       creatorId: profile?.id,
       cities: parsedCities,
       startDate,
@@ -514,9 +527,11 @@ function CreateTripScreen() {
       budget: parseFloat(budget),
       availableSeats: parseInt(totalSeats),
       totalSeats: parseInt(totalSeats),
-      meetingPoint: meetingPoint
-        ? `${meetingPoint} (on ${meetingDate} at ${meetingTime})`
-        : `Central Point (on ${meetingDate} at ${meetingTime})`,
+      meetingPoint: t('createTrip.meetingPointSuffix', {
+        point: meetingPoint || t('createTrip.centralPoint'),
+        date: meetingDate,
+        time: meetingTime,
+      }),
       guideIncluded,
       foodIncluded,
       hotelIncluded,
@@ -532,7 +547,7 @@ function CreateTripScreen() {
     // A single-action alert was only ever an "OK" gate in front of the
     // navigation it performed; a success toast says the same thing without
     // blocking, per §0.2.6.
-    toast('Trip published — it is now live for travellers to join.', 'success');
+    toast(t('createTrip.tripPublished'), 'success');
 
     setTripName('');
     setCitiesInput('');
@@ -550,21 +565,21 @@ function CreateTripScreen() {
 
   const handleSaveDraft = () => {
     if (!tripName) {
-      toast('Please enter a Trip Name before saving a draft.', 'error');
+      toast(t('createTrip.enterTripNameForDraft'), 'error');
       return;
     }
     const newTrip = {
       id: `draft-${Date.now()}`,
-      name: `[DRAFT] ${tripName}`,
-      creator: `${profile?.name || 'Aarav Sharma'} (Organizer)`,
+      name: t('createTrip.draftPrefix', { name: tripName }),
+      creator: t('createTrip.organizerSuffix', { name: profile?.name || 'Aarav Sharma' }),
       creatorId: profile?.id,
-      cities: parsedCities.length > 0 ? parsedCities : ['Delhi', 'Destination'],
+      cities: parsedCities.length > 0 ? parsedCities : ['Delhi', t('createTrip.destinationFallback')],
       startDate,
       endDate: endDate || startDate,
       budget: budget ? parseFloat(budget) : 0,
       availableSeats: totalSeats ? parseInt(totalSeats) : 0,
       totalSeats: totalSeats ? parseInt(totalSeats) : 0,
-      meetingPoint: meetingPoint || 'To be decided',
+      meetingPoint: meetingPoint || t('createTrip.toBeDecided'),
       guideIncluded,
       foodIncluded,
       hotelIncluded,
@@ -576,7 +591,7 @@ function CreateTripScreen() {
       coordinates: previewRouteCoords,
     };
     addTrip(newTrip);
-    showToast('📝 Trip saved to Drafts successfully!');
+    showToast(t('createTrip.draftSaved'));
   };
 
   const showToast = (msg: string) => {
@@ -591,26 +606,26 @@ function CreateTripScreen() {
   const handleAcceptRequest = async (reqId: string, name: string) => {
     try {
       await apiService.updateJoinRequestStatus(reqId, 'APPROVED');
-      showToast(`✅ Accepted ${name}'s join request!`);
+      showToast(t('createTrip.requestAccepted', { name }));
       fetchIncomingRequests();
       if (selectedCreation) {
         fetchCreationMembers(selectedCreation.id);
       }
     } catch {
-      showToast('❌ Failed to accept request');
+      showToast(t('createTrip.failedToAcceptRequest'));
     }
   };
 
   const handleRejectRequest = async (reqId: string) => {
     try {
       await apiService.updateJoinRequestStatus(reqId, 'REJECTED');
-      showToast('❌ Join request declined');
+      showToast(t('createTrip.requestDeclined'));
       fetchIncomingRequests();
       if (selectedCreation) {
         fetchCreationMembers(selectedCreation.id);
       }
     } catch {
-      showToast('❌ Failed to decline request');
+      showToast(t('createTrip.failedToDeclineRequest'));
     }
   };
 
@@ -719,6 +734,8 @@ function CreateTripScreen() {
                   setShowCreationsModal(true);
                 }}
                 activeOpacity={0.9}
+                accessibilityRole="button"
+                accessibilityLabel={t('createTrip.myCreations')}
               >
                 <LinearGradient
                   colors={hasAlert ? ['#2A1B54', '#150D33'] : ['#1E123C', '#0E0720']}
@@ -732,19 +749,19 @@ function CreateTripScreen() {
                       {hasAlert && <View style={styles.notificationRedDot} />}
                     </View>
                     <View style={styles.notificationTextColumn}>
-                      <Text style={styles.notificationAppName}>ORGANIZER CONSOLE</Text>
-                      <Text style={styles.notificationTitle}>My Creations</Text>
+                      <Text style={styles.notificationAppName}>{t('createTrip.organizerConsole')}</Text>
+                      <Text style={styles.notificationTitle}>{t('createTrip.myCreations')}</Text>
                       <Text style={styles.notificationDescText} numberOfLines={1}>
                         {hasAlert
-                          ? `${pendingCount} new request${pendingCount !== 1 ? 's' : ''} pending approval`
-                          : `${myTrips.length} active group route${myTrips.length !== 1 ? 's' : ''} published`}
+                          ? t('createTrip.pendingApproval', { count: pendingCount })
+                          : t('createTrip.routesPublished', { count: myTrips.length })}
                       </Text>
                     </View>
                   </View>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                     {hasAlert && (
                       <View style={styles.notificationAlertPill}>
-                        <Text style={styles.notificationAlertPillText}>Action Required</Text>
+                        <Text style={styles.notificationAlertPillText}>{t('createTrip.actionRequired')}</Text>
                       </View>
                     )}
                     <ChevronRight size={13} color={hasAlert ? '#F59E0B' : '#8B5CF6'} />
@@ -756,10 +773,8 @@ function CreateTripScreen() {
 
           {/* ─── SECTION TITLE: NEW TRIP BUILDER ─── */}
           <View style={styles.sectionDividerWrap}>
-            <Text style={styles.sectionDividerTitle}>NEW TRIP BUILDER</Text>
-            <Text style={styles.sectionDividerSub}>
-              Configure parameters, plan routes, and publish new custom itineraries below.
-            </Text>
+            <Text style={styles.sectionDividerTitle}>{t('createTrip.newTripBuilder')}</Text>
+            <Text style={styles.sectionDividerSub}>{t('createTrip.newTripBuilderDesc')}</Text>
           </View>
 
           {/* ════════════════════════════════════════════════
@@ -772,7 +787,7 @@ function CreateTripScreen() {
             <View style={styles.heroBadgeRow}>
               <View style={styles.heroBadge}>
                 <Sparkles size={12} color={C.amber} />
-                <Text style={styles.heroBadgeText}>ORGANIZER SUITE</Text>
+                <Text style={styles.heroBadgeText}>{t('createTrip.organizerSuite')}</Text>
               </View>
               {/* Gallery pick button inside hero — clean pill */}
               <TouchableOpacity
@@ -780,6 +795,8 @@ function CreateTripScreen() {
                 onPress={pickImageFromGallery}
                 activeOpacity={0.8}
                 disabled={coverUploading}
+                accessibilityRole="button"
+                accessibilityLabel={t('createTrip.uploadCoverPhoto')}
               >
                 {coverUploading ? (
                   <ActivityIndicator size="small" color={C.white} />
@@ -787,15 +804,13 @@ function CreateTripScreen() {
                   <ImageIcon size={13} color={customCoverUri ? C.green : C.white} />
                 )}
                 <Text style={[styles.galleryPickBtnText, customCoverUri && { color: C.green }]}>
-                  {coverUploading ? 'Uploading…' : customCoverUri ? 'Custom Photo' : 'Upload Photo'}
+                  {coverUploading ? t('createTrip.uploading') : customCoverUri ? t('createTrip.customPhoto') : t('createTrip.uploadPhoto')}
                 </Text>
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.heroTitle}>Create Group Trip Route</Text>
-            <Text style={styles.heroSub}>
-              Set up custom tour itineraries, assign route segments, budget, and open seats.
-            </Text>
+            <Text style={styles.heroTitle}>{t('createTrip.heroTitle')}</Text>
+            <Text style={styles.heroSub}>{t('createTrip.heroSub')}</Text>
           </View>
 
           {/* ────────────────────────────────────────────
@@ -808,6 +823,8 @@ function CreateTripScreen() {
               onPress={pickImageFromGallery}
               activeOpacity={0.85}
               disabled={coverUploading}
+              accessibilityRole="button"
+              accessibilityLabel={customCoverUri ? t('createTrip.customCoverApplied') : t('createTrip.uploadCoverPhoto')}
             >
               <View style={[styles.galleryIconCircle, customCoverUri && styles.galleryIconCircleSelected]}>
                 {coverUploading ? (
@@ -818,19 +835,19 @@ function CreateTripScreen() {
               </View>
               <View style={styles.galleryCardContent}>
                 <Text style={styles.galleryCardTitle}>
-                  {coverUploading ? 'Uploading…' : customCoverUri ? 'Custom Cover Photo Applied' : 'Upload Cover Photo'}
+                  {coverUploading ? t('createTrip.uploading') : customCoverUri ? t('createTrip.customCoverApplied') : t('createTrip.uploadCoverPhoto')}
                 </Text>
                 <Text style={styles.galleryCardSub}>
                   {coverUploading
-                    ? 'Hold on while your photo uploads'
+                    ? t('createTrip.uploadingCoverHint')
                     : customCoverUri
-                      ? 'Tap to replace with a different image from your gallery'
-                      : 'Select an image from your device photo library'}
+                      ? t('createTrip.replaceCoverHint')
+                      : t('createTrip.selectCoverHint')}
                 </Text>
               </View>
               <View style={[styles.galleryChevron, customCoverUri && styles.galleryChevronSelected]}>
                 <Text style={[styles.galleryChevronText, customCoverUri && styles.galleryChevronTextSelected]}>
-                  {customCoverUri ? 'CHANGE' : 'BROWSE'}
+                  {customCoverUri ? t('createTrip.change') : t('createTrip.browse')}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -838,7 +855,7 @@ function CreateTripScreen() {
             {/* Divider */}
             <View style={styles.coverDivider}>
               <View style={styles.coverDividerLine} />
-              <Text style={styles.coverDividerText}>OR USE A PRESET</Text>
+              <Text style={styles.coverDividerText}>{t('createTrip.orUsePreset')}</Text>
               <View style={styles.coverDividerLine} />
             </View>
 
@@ -848,15 +865,18 @@ function CreateTripScreen() {
                 const isSelected = !customCoverUri && coverImage === cov.url;
                 return (
                   <TouchableOpacity
-                    key={cov.label}
+                    key={cov.labelKey}
                     style={[styles.presetChip, isSelected && styles.presetChipActive]}
                     onPress={() => {
                       setCustomCoverUri(null);
                       setCoverImage(cov.url);
                     }}
                     activeOpacity={0.8}
+                    accessibilityRole="button"
+                    accessibilityLabel={t(cov.labelKey)}
+                    accessibilityState={{ selected: isSelected }}
                   >
-                    <Text style={[styles.presetChipText, isSelected && styles.presetChipTextActive]}>{cov.label}</Text>
+                    <Text style={[styles.presetChipText, isSelected && styles.presetChipTextActive]}>{t(cov.labelKey)}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -871,36 +891,48 @@ function CreateTripScreen() {
               style={[styles.tabItem, activeTab === 'PLANNER' && styles.tabItemActive]}
               onPress={() => setActiveTab('PLANNER')}
               activeOpacity={0.8}
+              accessibilityRole="tab"
+              accessibilityLabel={t('createTrip.tabPlan')}
+              accessibilityState={{ selected: activeTab === 'PLANNER' }}
             >
               <Compass size={14} color={activeTab === 'PLANNER' ? C.white : C.textSec} />
-              <Text style={[styles.tabText, activeTab === 'PLANNER' && styles.tabTextActive]}>Plan</Text>
+              <Text style={[styles.tabText, activeTab === 'PLANNER' && styles.tabTextActive]}>{t('createTrip.tabPlan')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.tabItem, activeTab === 'TIMELINE' && styles.tabItemActive]}
               onPress={() => setActiveTab('TIMELINE')}
               activeOpacity={0.8}
+              accessibilityRole="tab"
+              accessibilityLabel={t('createTrip.tabTimeline')}
+              accessibilityState={{ selected: activeTab === 'TIMELINE' }}
             >
               <Clock size={14} color={activeTab === 'TIMELINE' ? C.white : C.textSec} />
-              <Text style={[styles.tabText, activeTab === 'TIMELINE' && styles.tabTextActive]}>Timeline</Text>
+              <Text style={[styles.tabText, activeTab === 'TIMELINE' && styles.tabTextActive]}>{t('createTrip.tabTimeline')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.tabItem, activeTab === 'TRAVELERS' && styles.tabItemActive]}
               onPress={() => setActiveTab('TRAVELERS')}
               activeOpacity={0.8}
+              accessibilityRole="tab"
+              accessibilityLabel={t('createTrip.tabTravelers')}
+              accessibilityState={{ selected: activeTab === 'TRAVELERS' }}
             >
               <Users size={14} color={activeTab === 'TRAVELERS' ? C.white : C.textSec} />
-              <Text style={[styles.tabText, activeTab === 'TRAVELERS' && styles.tabTextActive]}>Travelers</Text>
+              <Text style={[styles.tabText, activeTab === 'TRAVELERS' && styles.tabTextActive]}>{t('createTrip.tabTravelers')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.tabItem, activeTab === 'CHECKLIST' && styles.tabItemActive]}
               onPress={() => setActiveTab('CHECKLIST')}
               activeOpacity={0.8}
+              accessibilityRole="tab"
+              accessibilityLabel={t('createTrip.tabChecklist')}
+              accessibilityState={{ selected: activeTab === 'CHECKLIST' }}
             >
               <CheckSquare size={14} color={activeTab === 'CHECKLIST' ? C.white : C.textSec} />
-              <Text style={[styles.tabText, activeTab === 'CHECKLIST' && styles.tabTextActive]}>Checklist</Text>
+              <Text style={[styles.tabText, activeTab === 'CHECKLIST' && styles.tabTextActive]}>{t('createTrip.tabChecklist')}</Text>
             </TouchableOpacity>
           </View>
 
@@ -912,12 +944,12 @@ function CreateTripScreen() {
                 <LinearGradient colors={['#3B82F6', '#1E40AF']} style={styles.stepBadge}>
                   <Text style={styles.stepBadgeText}>01</Text>
                 </LinearGradient>
-                <Text style={styles.sectionTitle}>Basic Trip Overview</Text>
+                <Text style={styles.sectionTitle}>{t('createTrip.step1Title')}</Text>
               </View>
 
               <Input
-                label="TRIP NAME *"
-                placeholder="e.g. Royal Rajasthan Grand Expedition"
+                label={t('createTrip.tripNameLabel')}
+                placeholder={t('createTrip.tripNamePlaceholder')}
                 value={tripName}
                 onChangeText={setTripName}
                 icon={<Compass size={17} color={C.blue} />}
@@ -926,8 +958,8 @@ function CreateTripScreen() {
 
               {/* Short Description (Merged feature) */}
               <Input
-                label="SHORT DESCRIPTION"
-                placeholder="e.g. Exploring Grand Palaces, Desert camping & Camel safari"
+                label={t('createTrip.shortDescLabel')}
+                placeholder={t('createTrip.shortDescPlaceholder')}
                 value={shortDesc}
                 onChangeText={setShortDesc}
                 icon={<ImageIcon size={17} color={C.blue} />}
@@ -939,23 +971,23 @@ function CreateTripScreen() {
                 <LinearGradient colors={['#10B981', '#065F46']} style={styles.stepBadge}>
                   <Text style={styles.stepBadgeText}>02</Text>
                 </LinearGradient>
-                <Text style={styles.sectionTitle}>Route Sequence & Destinations</Text>
+                <Text style={styles.sectionTitle}>{t('createTrip.step2Title')}</Text>
               </View>
 
               <View style={styles.inputGroup}>
                 <Input
-                  label="CITIES & STOPS (COMMA SEPARATED) *"
-                  placeholder="e.g. Delhi, Agra, Jaipur, Udaipur"
+                  label={t('createTrip.citiesLabel')}
+                  placeholder={t('createTrip.citiesPlaceholder')}
                   value={citiesInput}
                   onChangeText={setCitiesInput}
                   icon={<MapPin size={17} color={C.green} />}
-                  hint="Order matters! Travelers can join midway along any segment."
+                  hint={t('createTrip.citiesHint')}
                 />
 
                 {/* Live Interactive Route Flow Card */}
                 {parsedCities.length > 0 && (
                   <View style={styles.routeFlowCard}>
-                    <Text style={styles.routeFlowTitle}>LIVE ROUTE PATH:</Text>
+                    <Text style={styles.routeFlowTitle}>{t('createTrip.liveRoutePath')}</Text>
                     <ScrollView
                       horizontal
                       showsHorizontalScrollIndicator={false}
@@ -980,7 +1012,7 @@ function CreateTripScreen() {
                           <iframe
                             srcDoc={buildPreviewMapHTML(previewRouteCoords)}
                             style={{ width: '100%', height: '100%', border: 'none' }}
-                            title="Route Preview Map"
+                            title={t('createTrip.routePreviewMapTitle')}
                           />
                         ) : (
                           <WebView
@@ -1003,11 +1035,11 @@ function CreateTripScreen() {
                 <LinearGradient colors={['#EC4899', '#BE185D']} style={styles.stepBadge}>
                   <Text style={styles.stepBadgeText}>03</Text>
                 </LinearGradient>
-                <Text style={styles.sectionTitle}>Trip Category</Text>
+                <Text style={styles.sectionTitle}>{t('createTrip.step3Title')}</Text>
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>SELECT A CATEGORY *</Text>
+                <Text style={styles.inputLabel}>{t('createTrip.selectCategoryLabel')}</Text>
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
@@ -1021,8 +1053,11 @@ function CreateTripScreen() {
                         style={[styles.categoryChip, isActive && styles.categoryChipActive]}
                         onPress={() => setSelectedCategory(cat)}
                         activeOpacity={0.8}
+                        accessibilityRole="button"
+                        accessibilityLabel={t(CATEGORY_LABEL_KEYS[cat])}
+                        accessibilityState={{ selected: isActive }}
                       >
-                        <Text style={[styles.categoryChipText, isActive && styles.categoryChipTextActive]}>{cat}</Text>
+                        <Text style={[styles.categoryChipText, isActive && styles.categoryChipTextActive]}>{t(CATEGORY_LABEL_KEYS[cat])}</Text>
                       </TouchableOpacity>
                     );
                   })}
@@ -1034,33 +1069,37 @@ function CreateTripScreen() {
                 <LinearGradient colors={['#8B5CF6', '#581C87']} style={styles.stepBadge}>
                   <Text style={styles.stepBadgeText}>04</Text>
                 </LinearGradient>
-                <Text style={styles.sectionTitle}>Schedule & Dates</Text>
+                <Text style={styles.sectionTitle}>{t('createTrip.step4Title')}</Text>
               </View>
 
               <View style={styles.gridRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>START DATE *</Text>
+                  <Text style={styles.inputLabel}>{t('createTrip.startDateLabel')}</Text>
                   <TouchableOpacity
                     activeOpacity={0.85}
                     style={styles.inputWrapper}
                     onPress={() => setActiveDatePicker('start')}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('createTrip.startDateLabel')}
                   >
                     <CalendarIcon size={16} color={C.purple} style={styles.inputIcon} />
                     <Text style={[styles.textInput, !startDate && { color: C.textMuted }]}>
-                      {startDate || 'Select Date'}
+                      {startDate || t('createTrip.selectDate')}
                     </Text>
                   </TouchableOpacity>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>END DATE</Text>
+                  <Text style={styles.inputLabel}>{t('createTrip.endDateLabel')}</Text>
                   <TouchableOpacity
                     activeOpacity={0.85}
                     style={styles.inputWrapper}
                     onPress={() => setActiveDatePicker('end')}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('createTrip.endDateLabel')}
                   >
                     <CalendarIcon size={16} color={C.purple} style={styles.inputIcon} />
                     <Text style={[styles.textInput, !endDate && { color: C.textMuted }]}>
-                      {endDate || 'Select Date'}
+                      {endDate || t('createTrip.selectDate')}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -1071,13 +1110,13 @@ function CreateTripScreen() {
                 <LinearGradient colors={['#F59E0B', '#B45309']} style={styles.stepBadge}>
                   <Text style={styles.stepBadgeText}>05</Text>
                 </LinearGradient>
-                <Text style={styles.sectionTitle}>Budget & Capacity</Text>
+                <Text style={styles.sectionTitle}>{t('createTrip.step5Title')}</Text>
               </View>
 
               <View style={styles.gridRow}>
                 <Input
-                  label="BUDGET PER PERSON (₹) *"
-                  placeholder="e.g. 14500"
+                  label={t('createTrip.budgetPerPersonLabel')}
+                  placeholder={t('createTrip.budgetPlaceholder')}
                   keyboardType="numeric"
                   value={budget}
                   onChangeText={setBudget}
@@ -1085,8 +1124,8 @@ function CreateTripScreen() {
                   containerStyle={{ flex: 1 }}
                 />
                 <Input
-                  label="TOTAL SLOTS *"
-                  placeholder="e.g. 12"
+                  label={t('createTrip.totalSlotsLabel')}
+                  placeholder={t('createTrip.totalSlotsPlaceholder')}
                   keyboardType="numeric"
                   value={totalSeats}
                   onChangeText={setTotalSeats}
@@ -1097,8 +1136,8 @@ function CreateTripScreen() {
 
               {/* Transport Mode (Merged feature) */}
               <Input
-                label="TRANSPORTATION MODE"
-                placeholder="e.g. AC SUV / Sedan / Luxury Coach"
+                label={t('createTrip.transportModeLabel')}
+                placeholder={t('createTrip.transportModePlaceholder')}
                 value={transportMode}
                 onChangeText={setTransportMode}
                 icon={<Car size={16} color={C.blue} />}
@@ -1107,8 +1146,8 @@ function CreateTripScreen() {
 
               {/* PICKUP / MEETING POINT */}
               <Input
-                label="PICKUP / MEETING POINT"
-                placeholder="e.g. Terminal 3 Exit Gate 4 or New Delhi Railway Station"
+                label={t('createTrip.meetingPointLabel')}
+                placeholder={t('createTrip.meetingPointPlaceholder')}
                 value={meetingPoint}
                 onChangeText={setMeetingPoint}
                 icon={<Navigation size={16} color={C.blue} />}
@@ -1118,21 +1157,23 @@ function CreateTripScreen() {
               {/* MEETING DATE & TIME */}
               <View style={styles.gridRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>MEETING DATE *</Text>
+                  <Text style={styles.inputLabel}>{t('createTrip.meetingDateLabel')}</Text>
                   <TouchableOpacity
                     activeOpacity={0.85}
                     style={styles.inputWrapper}
                     onPress={() => openDatePicker('meeting')}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('createTrip.meetingDateLabel')}
                   >
                     <CalendarIcon size={16} color={C.purple} style={styles.inputIcon} />
                     <Text style={[styles.textInput, !meetingDate && { color: C.textMuted }]}>
-                      {meetingDate || 'Select Date'}
+                      {meetingDate || t('createTrip.selectDate')}
                     </Text>
                   </TouchableOpacity>
                 </View>
                 <Input
-                  label="MEETING TIME *"
-                  placeholder="e.g. 10:00 AM"
+                  label={t('createTrip.meetingTimeLabel')}
+                  placeholder={t('createTrip.meetingTimePlaceholder')}
                   value={meetingTime}
                   onChangeText={setMeetingTime}
                   icon={<Clock size={16} color={C.amber} />}
@@ -1145,7 +1186,7 @@ function CreateTripScreen() {
                 <LinearGradient colors={['#06B6D4', '#0891B2']} style={styles.stepBadge}>
                   <Text style={styles.stepBadgeText}>06</Text>
                 </LinearGradient>
-                <Text style={styles.sectionTitle}>Included Services</Text>
+                <Text style={styles.sectionTitle}>{t('createTrip.step6Title')}</Text>
               </View>
 
               <View style={styles.amenitiesGrid}>
@@ -1153,15 +1194,18 @@ function CreateTripScreen() {
                   activeOpacity={0.85}
                   style={[styles.amenityCard, guideIncluded && styles.amenityCardActive]}
                   onPress={() => setGuideIncluded(!guideIncluded)}
+                  accessibilityRole="switch"
+                  accessibilityLabel={t('createTrip.verifiedGuide')}
+                  accessibilityState={{ checked: guideIncluded }}
                 >
                   <View style={[styles.amenityIconCircle, guideIncluded && { backgroundColor: C.blue }]}>
                     <Compass size={16} color={guideIncluded ? C.white : C.textMuted} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.amenityTitle, guideIncluded && styles.amenityTitleActive]}>
-                      Verified Guide
+                      {t('createTrip.verifiedGuide')}
                     </Text>
-                    <Text style={styles.amenitySub}>Local Tour Leader</Text>
+                    <Text style={styles.amenitySub}>{t('createTrip.localTourLeader')}</Text>
                   </View>
                   <View style={[styles.checkDot, guideIncluded && styles.checkDotActive]}>
                     {guideIncluded && <Check size={10} color={C.white} />}
@@ -1172,13 +1216,16 @@ function CreateTripScreen() {
                   activeOpacity={0.85}
                   style={[styles.amenityCard, foodIncluded && styles.amenityCardActive]}
                   onPress={() => setFoodIncluded(!foodIncluded)}
+                  accessibilityRole="switch"
+                  accessibilityLabel={t('createTrip.mealsFood')}
+                  accessibilityState={{ checked: foodIncluded }}
                 >
                   <View style={[styles.amenityIconCircle, foodIncluded && { backgroundColor: C.purple }]}>
                     <Utensils size={16} color={foodIncluded ? C.white : C.textMuted} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.amenityTitle, foodIncluded && styles.amenityTitleActive]}>Meals & Food</Text>
-                    <Text style={styles.amenitySub}>Breakfast & Dinner</Text>
+                    <Text style={[styles.amenityTitle, foodIncluded && styles.amenityTitleActive]}>{t('createTrip.mealsFood')}</Text>
+                    <Text style={styles.amenitySub}>{t('createTrip.breakfastDinner')}</Text>
                   </View>
                   <View style={[styles.checkDot, foodIncluded && styles.checkDotActive]}>
                     {foodIncluded && <Check size={10} color={C.white} />}
@@ -1189,13 +1236,16 @@ function CreateTripScreen() {
                   activeOpacity={0.85}
                   style={[styles.amenityCard, hotelIncluded && styles.amenityCardActive]}
                   onPress={() => setHotelIncluded(!hotelIncluded)}
+                  accessibilityRole="switch"
+                  accessibilityLabel={t('createTrip.hotelStays')}
+                  accessibilityState={{ checked: hotelIncluded }}
                 >
                   <View style={[styles.amenityIconCircle, hotelIncluded && { backgroundColor: C.green }]}>
                     <Hotel size={16} color={hotelIncluded ? C.white : C.textMuted} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.amenityTitle, hotelIncluded && styles.amenityTitleActive]}>Hotel Stays</Text>
-                    <Text style={styles.amenitySub}>Rated 4★ Accommodations</Text>
+                    <Text style={[styles.amenityTitle, hotelIncluded && styles.amenityTitleActive]}>{t('createTrip.hotelStays')}</Text>
+                    <Text style={styles.amenitySub}>{t('createTrip.ratedAccommodations')}</Text>
                   </View>
                   <View style={[styles.checkDot, hotelIncluded && styles.checkDotActive]}>
                     {hotelIncluded && <Check size={10} color={C.white} />}
@@ -1206,13 +1256,16 @@ function CreateTripScreen() {
                   activeOpacity={0.85}
                   style={[styles.amenityCard, cabIncluded && styles.amenityCardActive]}
                   onPress={() => setCabIncluded(!cabIncluded)}
+                  accessibilityRole="switch"
+                  accessibilityLabel={t('createTrip.acVehicle')}
+                  accessibilityState={{ checked: cabIncluded }}
                 >
                   <View style={[styles.amenityIconCircle, cabIncluded && { backgroundColor: C.amber }]}>
                     <Car size={16} color={cabIncluded ? C.white : C.textMuted} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.amenityTitle, cabIncluded && styles.amenityTitleActive]}>AC Vehicle</Text>
-                    <Text style={styles.amenitySub}>Dedicated Sightseeing</Text>
+                    <Text style={[styles.amenityTitle, cabIncluded && styles.amenityTitleActive]}>{t('createTrip.acVehicle')}</Text>
+                    <Text style={styles.amenitySub}>{t('createTrip.dedicatedSightseeing')}</Text>
                   </View>
                   <View style={[styles.checkDot, cabIncluded && styles.checkDotActive]}>
                     {cabIncluded && <Check size={10} color={C.white} />}
@@ -1225,7 +1278,7 @@ function CreateTripScreen() {
                 <LinearGradient colors={['#EC4899', '#BE185D']} style={styles.stepBadge}>
                   <Text style={styles.stepBadgeText}>07</Text>
                 </LinearGradient>
-                <Text style={styles.sectionTitle}>Privacy Settings</Text>
+                <Text style={styles.sectionTitle}>{t('createTrip.step7Title')}</Text>
               </View>
 
               <View style={styles.privacyGrid}>
@@ -1233,38 +1286,53 @@ function CreateTripScreen() {
                   activeOpacity={0.8}
                   style={[styles.privacyCard, privacy === 'PUBLIC' && styles.privacyCardActive]}
                   onPress={() => setPrivacy('PUBLIC')}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('createTrip.privacyPublic')}
+                  accessibilityState={{ selected: privacy === 'PUBLIC' }}
                 >
                   <Globe size={20} color={privacy === 'PUBLIC' ? C.blue : C.textMuted} />
-                  <Text style={[styles.privacyTitle, privacy === 'PUBLIC' && styles.privacyTitleActive]}>Public</Text>
-                  <Text style={styles.privacySub}>Open for all</Text>
+                  <Text style={[styles.privacyTitle, privacy === 'PUBLIC' && styles.privacyTitleActive]}>{t('createTrip.privacyPublic')}</Text>
+                  <Text style={styles.privacySub}>{t('createTrip.privacyPublicSub')}</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   activeOpacity={0.8}
                   style={[styles.privacyCard, privacy === 'PRIVATE' && styles.privacyCardActive]}
                   onPress={() => setPrivacy('PRIVATE')}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('createTrip.privacyPrivate')}
+                  accessibilityState={{ selected: privacy === 'PRIVATE' }}
                 >
                   <Lock size={20} color={privacy === 'PRIVATE' ? C.amber : C.textMuted} />
-                  <Text style={[styles.privacyTitle, privacy === 'PRIVATE' && styles.privacyTitleActive]}>Private</Text>
-                  <Text style={styles.privacySub}>Approval needed</Text>
+                  <Text style={[styles.privacyTitle, privacy === 'PRIVATE' && styles.privacyTitleActive]}>{t('createTrip.privacyPrivate')}</Text>
+                  <Text style={styles.privacySub}>{t('createTrip.privacyPrivateSub')}</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   activeOpacity={0.8}
                   style={[styles.privacyCard, privacy === 'INVITE_ONLY' && styles.privacyCardActive]}
                   onPress={() => setPrivacy('INVITE_ONLY')}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('createTrip.privacyInviteOnly')}
+                  accessibilityState={{ selected: privacy === 'INVITE_ONLY' }}
                 >
                   <Mail size={20} color={privacy === 'INVITE_ONLY' ? C.purple : C.textMuted} />
                   <Text style={[styles.privacyTitle, privacy === 'INVITE_ONLY' && styles.privacyTitleActive]}>
-                    Invite Only
+                    {t('createTrip.privacyInviteOnly')}
                   </Text>
-                  <Text style={styles.privacySub}>Link sharing</Text>
+                  <Text style={styles.privacySub}>{t('createTrip.privacyInviteOnlySub')}</Text>
                 </TouchableOpacity>
               </View>
 
               {/* TWO BUTTON ACTIONS at bottom */}
               <View style={styles.publishBtnRow}>
-                <TouchableOpacity activeOpacity={0.9} style={styles.primaryPublishBtn} onPress={handleCreate}>
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  style={styles.primaryPublishBtn}
+                  onPress={handleCreate}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('createTrip.publishItinerary')}
+                >
                   <LinearGradient
                     colors={['#3B82F6', '#8B5CF6']}
                     start={{ x: 0, y: 0 }}
@@ -1272,12 +1340,18 @@ function CreateTripScreen() {
                     style={styles.submitGradient}
                   >
                     <Sparkles size={16} color={C.white} />
-                    <Text style={styles.submitText}>Publish Itinerary</Text>
+                    <Text style={styles.submitText}>{t('createTrip.publishItinerary')}</Text>
                   </LinearGradient>
                 </TouchableOpacity>
 
-                <TouchableOpacity activeOpacity={0.85} style={styles.secondaryDraftBtn} onPress={handleSaveDraft}>
-                  <Text style={styles.secondaryDraftBtnText}>Save Draft</Text>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  style={styles.secondaryDraftBtn}
+                  onPress={handleSaveDraft}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('createTrip.saveDraft')}
+                >
+                  <Text style={styles.secondaryDraftBtnText}>{t('createTrip.saveDraft')}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1286,7 +1360,7 @@ function CreateTripScreen() {
           {/* ─── TAB 2: DYNAMIC DAY-BY-DAY VISUAL TIMELINE ────── */}
           {activeTab === 'TIMELINE' && (
             <View style={styles.timelineContainer}>
-              <Text style={styles.timelineHeaderTitle}>Dynamic Day-by-Day Itinerary Timeline</Text>
+              <Text style={styles.timelineHeaderTitle}>{t('createTrip.dynamicTimelineTitle')}</Text>
 
               {parsedCities.length > 0 ? (
                 parsedCities.map((loc, idx) => (
@@ -1303,16 +1377,18 @@ function CreateTripScreen() {
 
                     <View style={styles.timelineContentCard}>
                       <Text style={styles.dayBadge}>
-                        DAY {idx + 1} • {loc.toUpperCase()}
+                        {t('createTrip.dayBadge', { number: idx + 1, location: loc.toUpperCase() })}
                       </Text>
                       <Text style={styles.timelineTitle}>
-                        {idx === 0 ? `Departure & Arrival at ${loc}` : `Sightseeing & Exploration at ${loc}`}
+                        {idx === 0
+                          ? t('createTrip.departureArrival', { location: loc })
+                          : t('createTrip.sightseeingExploration', { location: loc })}
                       </Text>
-                      <Text style={styles.timelineTime}>⏰ Morning & Afternoon Schedule</Text>
+                      <Text style={styles.timelineTime}>{t('createTrip.morningAfternoonSchedule')}</Text>
                       <Text style={styles.timelineDesc}>
                         {idx === 0
-                          ? `Check in at the assembly/stay point, relax, and explore local spots.`
-                          : `Guided tour of key attraction spots around ${loc}, photo sessions & group evening sunset view.`}
+                          ? t('createTrip.checkInDesc')
+                          : t('createTrip.guidedTourDesc', { location: loc })}
                       </Text>
                     </View>
                   </View>
@@ -1320,11 +1396,8 @@ function CreateTripScreen() {
               ) : (
                 <View style={styles.emptyTimelineCard}>
                   <Compass size={32} color={C.blue} style={{ marginBottom: 10 }} />
-                  <Text style={styles.emptyTimelineTitle}>Prepare Your Custom Itinerary</Text>
-                  <Text style={styles.emptyTimelineSub}>
-                    Enter stopover locations in the Plan tab (e.g. "Delhi, Jaipur, Udaipur") to automatically generate
-                    your day-by-day travel timeline here!
-                  </Text>
+                  <Text style={styles.emptyTimelineTitle}>{t('createTrip.prepareItineraryTitle')}</Text>
+                  <Text style={styles.emptyTimelineSub}>{t('createTrip.prepareItineraryDesc')}</Text>
                 </View>
               )}
             </View>
@@ -1335,7 +1408,7 @@ function CreateTripScreen() {
             <View style={styles.travelersContainer}>
               {/* CAPACITY SELECTOR */}
               <View style={styles.capacityBox}>
-                <Text style={styles.boxTitle}>GROUP CAPACITY (CO-TRAVELERS)</Text>
+                <Text style={styles.boxTitle}>{t('createTrip.groupCapacityLabel')}</Text>
                 <View style={styles.capacityCounterRow}>
                   <TouchableOpacity
                     style={styles.counterBtn}
@@ -1350,7 +1423,7 @@ function CreateTripScreen() {
 
                   <View style={styles.counterDisplay}>
                     <Text style={styles.counterValueText}>{totalSeats || '0'}</Text>
-                    <Text style={styles.counterSubText}>Total Slots</Text>
+                    <Text style={styles.counterSubText}>{t('createTrip.totalSlots')}</Text>
                   </View>
 
                   <TouchableOpacity
@@ -1368,17 +1441,29 @@ function CreateTripScreen() {
 
               {/* TRIP TYPE SELECTION */}
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>TRIP TYPE</Text>
+                <Text style={styles.inputLabel}>{t('createTrip.tripTypeLabel')}</Text>
                 <View style={styles.pillsRow}>
-                  {['Solo', 'Couple', 'Family', 'Friends', 'Group', 'Business'].map((t) => (
+                  {(
+                    [
+                      { value: 'Solo', labelKey: 'createTrip.tripTypeSolo' },
+                      { value: 'Couple', labelKey: 'createTrip.tripTypeCouple' },
+                      { value: 'Family', labelKey: 'createTrip.tripTypeFamily' },
+                      { value: 'Friends', labelKey: 'createTrip.tripTypeFriends' },
+                      { value: 'Group', labelKey: 'createTrip.tripTypeGroup' },
+                      { value: 'Business', labelKey: 'createTrip.tripTypeBusiness' },
+                    ] as const
+                  ).map((type) => (
                     <TouchableOpacity
-                      key={t}
-                      style={[styles.categoryPill, selectedTripType === t && styles.categoryPillActive]}
-                      onPress={() => setSelectedTripType(t)}
+                      key={type.value}
+                      style={[styles.categoryPill, selectedTripType === type.value && styles.categoryPillActive]}
+                      onPress={() => setSelectedTripType(type.value)}
                       activeOpacity={0.8}
+                      accessibilityRole="button"
+                      accessibilityLabel={t(type.labelKey)}
+                      accessibilityState={{ selected: selectedTripType === type.value }}
                     >
-                      <Text style={[styles.categoryPillText, selectedTripType === t && styles.categoryPillTextActive]}>
-                        {t}
+                      <Text style={[styles.categoryPillText, selectedTripType === type.value && styles.categoryPillTextActive]}>
+                        {t(type.labelKey)}
                       </Text>
                     </TouchableOpacity>
                   ))}
@@ -1391,7 +1476,7 @@ function CreateTripScreen() {
                   <View style={styles.sectionHeader}>
                     <UserPlus size={16} color={C.amber} />
                     <Text style={styles.sectionTitle}>
-                      Pending Join Requests ({joinRequests.filter((req) => req.status === 'PENDING').length})
+                      {t('createTrip.pendingJoinRequestsCount', { count: joinRequests.filter((req) => req.status === 'PENDING').length })}
                     </Text>
                   </View>
 
@@ -1404,13 +1489,15 @@ function CreateTripScreen() {
                         </View>
                         <View style={{ flex: 1 }}>
                           <Text style={styles.reqName}>{req.applicantName}</Text>
-                          <Text style={styles.reqSub}>Requested to join group route</Text>
+                          <Text style={styles.reqSub}>{t('createTrip.requestedToJoin')}</Text>
                         </View>
 
                         <TouchableOpacity
                           style={styles.acceptBtn}
                           onPress={() => handleAcceptRequest(req.id, req.applicantName)}
                           activeOpacity={0.8}
+                          accessibilityRole="button"
+                          accessibilityLabel={t('createTrip.acceptRequest')}
                         >
                           <Check size={14} color="#FFF" />
                         </TouchableOpacity>
@@ -1419,6 +1506,8 @@ function CreateTripScreen() {
                           style={styles.rejectBtn}
                           onPress={() => handleRejectRequest(req.id)}
                           activeOpacity={0.8}
+                          accessibilityRole="button"
+                          accessibilityLabel={t('createTrip.rejectRequest')}
                         >
                           <XCircle size={15} color="#EF4444" />
                         </TouchableOpacity>
@@ -1432,10 +1521,8 @@ function CreateTripScreen() {
           {/* ─── TAB 4: ESSENTIAL CHECKLIST ──────────────────── */}
           {activeTab === 'CHECKLIST' && (
             <View style={styles.checklistContainer}>
-              <Text style={styles.checklistTitle}>Essential Packing & Travel Documents Checklist</Text>
-              <Text style={styles.checklistSub}>
-                Review and tick off items before sharing the itinerary with co-travelers.
-              </Text>
+              <Text style={styles.checklistTitle}>{t('createTrip.checklistTitle')}</Text>
+              <Text style={styles.checklistSub}>{t('createTrip.checklistDesc')}</Text>
 
               {checklist.map((item) => (
                 <TouchableOpacity
@@ -1443,9 +1530,12 @@ function CreateTripScreen() {
                   activeOpacity={0.8}
                   style={[styles.checklistCard, item.checked && styles.checklistCardChecked]}
                   onPress={() => toggleChecklist(item.id)}
+                  accessibilityRole="checkbox"
+                  accessibilityLabel={t(item.itemKey)}
+                  accessibilityState={{ checked: item.checked }}
                 >
                   {item.checked ? <CheckSquare size={18} color={C.green} /> : <Square size={18} color={C.textMuted} />}
-                  <Text style={[styles.checkItemText, item.checked && styles.checkItemTextChecked]}>{item.item}</Text>
+                  <Text style={[styles.checkItemText, item.checked && styles.checkItemTextChecked]}>{t(item.itemKey)}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -1464,11 +1554,26 @@ function CreateTripScreen() {
           <View style={styles.modalOverlay}>
             <View style={styles.calendarModalCard}>
               <View style={styles.calendarHeaderRow}>
-                <TouchableOpacity style={styles.monthNavBtn} onPress={handlePrevMonth}>
+                <TouchableOpacity
+                  style={styles.monthNavBtn}
+                  onPress={handlePrevMonth}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('createTrip.previousMonth')}
+                >
                   <Text style={styles.monthNavText}>◀</Text>
                 </TouchableOpacity>
                 <View style={{ flex: 1, alignItems: 'center' }}>
-                  <Text style={styles.calendarHeaderTitle}>Select {activeDatePicker.toUpperCase()} Date</Text>
+                  <Text style={styles.calendarHeaderTitle}>
+                    {t('createTrip.selectDateType', {
+                      type: t(
+                        activeDatePicker === 'start'
+                          ? 'createTrip.datePickerStart'
+                          : activeDatePicker === 'end'
+                            ? 'createTrip.datePickerEnd'
+                            : 'createTrip.datePickerMeeting',
+                      ),
+                    })}
+                  </Text>
                   <Text style={styles.calendarMonthText}>
                     {new Date(calendarYear, calendarMonth).toLocaleString('default', {
                       month: 'long',
@@ -1476,19 +1581,39 @@ function CreateTripScreen() {
                     })}
                   </Text>
                 </View>
-                <TouchableOpacity style={styles.monthNavBtn} onPress={handleNextMonth}>
+                <TouchableOpacity
+                  style={styles.monthNavBtn}
+                  onPress={handleNextMonth}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('createTrip.nextMonth')}
+                >
                   <Text style={styles.monthNavText}>▶</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.closeBtn} onPress={() => setActiveDatePicker(null)}>
+                <TouchableOpacity
+                  style={styles.closeBtn}
+                  onPress={() => setActiveDatePicker(null)}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('createTrip.closeCalendar')}
+                >
                   <X size={16} color={C.white} />
                 </TouchableOpacity>
               </View>
 
               {/* Days Grid Headers */}
               <View style={styles.weekDaysRow}>
-                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, i) => (
+                {(
+                  [
+                    'createTrip.weekdaySun',
+                    'createTrip.weekdayMon',
+                    'createTrip.weekdayTue',
+                    'createTrip.weekdayWed',
+                    'createTrip.weekdayThu',
+                    'createTrip.weekdayFri',
+                    'createTrip.weekdaySat',
+                  ] as const
+                ).map((dayKey, i) => (
                   <Text key={i} style={styles.weekDayText}>
-                    {day}
+                    {t(dayKey)}
                   </Text>
                 ))}
               </View>
@@ -1519,6 +1644,9 @@ function CreateTripScreen() {
                         style={[styles.dayCell, isSelected && styles.dayCellSelected]}
                         onPress={() => selectCalendarDay(d)}
                         activeOpacity={0.8}
+                        accessibilityRole="button"
+                        accessibilityLabel={String(d)}
+                        accessibilityState={{ selected: isSelected }}
                       >
                         <Text style={[styles.dayCellText, isSelected && styles.dayCellTextSelected]}>{d}</Text>
                       </TouchableOpacity>,
@@ -1529,8 +1657,13 @@ function CreateTripScreen() {
                 })()}
               </View>
 
-              <TouchableOpacity style={styles.calendarConfirmBtn} onPress={() => setActiveDatePicker(null)}>
-                <Text style={styles.calendarConfirmText}>Confirm Date</Text>
+              <TouchableOpacity
+                style={styles.calendarConfirmBtn}
+                onPress={() => setActiveDatePicker(null)}
+                accessibilityRole="button"
+                accessibilityLabel={t('createTrip.confirmDate')}
+              >
+                <Text style={styles.calendarConfirmText}>{t('createTrip.confirmDate')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1550,22 +1683,27 @@ function CreateTripScreen() {
               {/* Header */}
               <View style={styles.creationsHeader}>
                 <View>
-                  <Text style={styles.creationsHeaderTitle}>Published Route Creations</Text>
-                  <Text style={styles.creationsHeaderSub}>Verify bookings and accept join requests</Text>
+                  <Text style={styles.creationsHeaderTitle}>{t('createTrip.publishedRouteCreations')}</Text>
+                  <Text style={styles.creationsHeaderSub}>{t('createTrip.verifyBookingsDesc')}</Text>
                 </View>
-                <TouchableOpacity style={styles.creationsCloseBtn} onPress={() => setShowCreationsModal(false)}>
+                <TouchableOpacity
+                  style={styles.creationsCloseBtn}
+                  onPress={() => setShowCreationsModal(false)}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('createTrip.closeCreations')}
+                >
                   <X size={16} color={C.white} />
                 </TouchableOpacity>
               </View>
 
               {/* List */}
               {(() => {
-                const myTrips = trips.filter((t) => !!(profile && profile.id && t.creatorId === profile.id));
+                const myTrips = trips.filter((tr) => !!(profile && profile.id && tr.creatorId === profile.id));
                 if (myTrips.length === 0) {
                   return (
                     <ScreenEmpty
-                      title="No Creations Yet"
-                      message="Use the Plan tab to publish your first group tour route itinerary."
+                      title={t('createTrip.noCreationsYetTitle')}
+                      message={t('createTrip.noCreationsYetMessage')}
                     />
                   );
                 }
@@ -1603,13 +1741,13 @@ function CreateTripScreen() {
                                 return (
                                   <View style={styles.requestNotifyIndicator}>
                                     <Text style={styles.requestNotifyText}>
-                                      {tripPendingCount} Pending Request{tripPendingCount !== 1 ? 's' : ''}
+                                      {t('createTrip.pendingRequestCount', { count: tripPendingCount })}
                                     </Text>
                                   </View>
                                 );
                               })()}
                               <View style={styles.creationCategoryBadge}>
-                                <Text style={styles.creationCategoryText}>{trip.category || 'Tour'}</Text>
+                                <Text style={styles.creationCategoryText}>{trip.category || t('createTrip.tourFallback')}</Text>
                               </View>
                             </View>
 
@@ -1622,12 +1760,12 @@ function CreateTripScreen() {
 
                             <View style={styles.creationStatsRow}>
                               <View style={styles.creationStat}>
-                                <Text style={styles.creationStatLabel}>BUDGET</Text>
+                                <Text style={styles.creationStatLabel}>{t('createTrip.budgetLabel')}</Text>
                                 <Text style={styles.creationStatVal}>₹{trip.budget.toLocaleString('en-IN')}</Text>
                               </View>
                               <View style={styles.creationStat}>
-                                <Text style={styles.creationStatLabel}>SLOTS</Text>
-                                <Text style={styles.creationStatVal}>{trip.availableSeats} Left</Text>
+                                <Text style={styles.creationStatLabel}>{t('createTrip.slotsLabel')}</Text>
+                                <Text style={styles.creationStatVal}>{t('createTrip.slotsLeft', { count: trip.availableSeats })}</Text>
                               </View>
                             </View>
                           </View>
@@ -1655,10 +1793,15 @@ function CreateTripScreen() {
               <View style={[styles.creationDetailCard, { backgroundColor: '#0B0D19', borderColor: '#1E243B' }]}>
                 {/* Header */}
                 <View style={styles.creationDetailHeader}>
-                  <TouchableOpacity style={styles.detailBackBtn} onPress={() => setSelectedCreation(null)}>
-                    <Text style={styles.detailBackBtnText}>✕ Close</Text>
+                  <TouchableOpacity
+                    style={styles.detailBackBtn}
+                    onPress={() => setSelectedCreation(null)}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('createTrip.closeDetail')}
+                  >
+                    <Text style={styles.detailBackBtnText}>{t('createTrip.closeDetail')}</Text>
                   </TouchableOpacity>
-                  <Text style={styles.detailHeaderTitle}>Itinerary Overview</Text>
+                  <Text style={styles.detailHeaderTitle}>{t('createTrip.itineraryOverview')}</Text>
                   <View style={{ width: 60 }} />
                 </View>
 
@@ -1679,13 +1822,13 @@ function CreateTripScreen() {
                     />
                     <LinearGradient colors={['transparent', 'rgba(11,13,25,0.95)']} style={StyleSheet.absoluteFill} />
                     <View style={styles.detailCategoryPill}>
-                      <Text style={styles.detailCategoryText}>{selectedCreation.category || 'Adventure'}</Text>
+                      <Text style={styles.detailCategoryText}>{selectedCreation.category || t('createTrip.adventureFallback')}</Text>
                     </View>
                   </View>
 
                   {/* Title & Desc */}
                   <Text style={styles.detailTripName}>{selectedCreation.name}</Text>
-                  <Text style={styles.detailOrganizerText}>Organized by {selectedCreation.creator}</Text>
+                  <Text style={styles.detailOrganizerText}>{t('createTrip.organizedBy', { name: selectedCreation.creator })}</Text>
 
                   <TouchableOpacity
                     style={styles.viewOnMapHeaderBtn}
@@ -1698,9 +1841,11 @@ function CreateTripScreen() {
                         eventBus.emit('focusTripOnMap', selectedCreation.id);
                       }, 100);
                     }}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('createTrip.viewRouteOnMap')}
                   >
                     <Compass size={12} color="#FFF" style={{ marginRight: 4 }} />
-                    <Text style={styles.viewOnMapHeaderBtnText}>View Route on Map</Text>
+                    <Text style={styles.viewOnMapHeaderBtnText}>{t('createTrip.viewRouteOnMap')}</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -1718,15 +1863,17 @@ function CreateTripScreen() {
                         router.navigate('/chat');
                       }
                     }}
+                    accessibilityRole="button"
+                    accessibilityLabel={selectedCreation.chatRoomId ? t('createTrip.openGroupChat') : t('createTrip.chatRoomSetupPending')}
                   >
                     <MessageSquare size={12} color="#FFF" style={{ marginRight: 4 }} />
                     <Text style={styles.viewOnMapHeaderBtnText}>
-                      {selectedCreation.chatRoomId ? 'Open Group Chat' : 'Chat room setup pending'}
+                      {selectedCreation.chatRoomId ? t('createTrip.openGroupChat') : t('createTrip.chatRoomSetupPending')}
                     </Text>
                   </TouchableOpacity>
 
                   {/* Cities stops */}
-                  <Text style={styles.detailSectionTitle}>ITINERARY FLOW</Text>
+                  <Text style={styles.detailSectionTitle}>{t('createTrip.itineraryFlow')}</Text>
                   <View style={styles.detailRouteFlow}>
                     {selectedCreation.cities.map((city: string, idx: number) => (
                       <React.Fragment key={idx}>
@@ -1740,50 +1887,50 @@ function CreateTripScreen() {
                   </View>
 
                   {/* Details stats */}
-                  <Text style={styles.detailSectionTitle}>TRIP LOGISTICS & DETAILS</Text>
+                  <Text style={styles.detailSectionTitle}>{t('createTrip.tripLogisticsDetails')}</Text>
                   <View style={styles.detailStatsGrid}>
                     <View style={styles.detailStatCell}>
-                      <Text style={styles.detailStatLabel}>START DATE</Text>
+                      <Text style={styles.detailStatLabel}>{t('createTrip.startDateCaps')}</Text>
                       <Text style={styles.detailStatVal}>{selectedCreation.startDate}</Text>
                     </View>
                     <View style={styles.detailStatCell}>
-                      <Text style={styles.detailStatLabel}>END DATE</Text>
+                      <Text style={styles.detailStatLabel}>{t('createTrip.endDateCaps')}</Text>
                       <Text style={styles.detailStatVal}>{selectedCreation.endDate || selectedCreation.startDate}</Text>
                     </View>
                     <View style={styles.detailStatCell}>
-                      <Text style={styles.detailStatLabel}>BUDGET</Text>
+                      <Text style={styles.detailStatLabel}>{t('createTrip.budgetCaps')}</Text>
                       <Text style={[styles.detailStatVal, { color: '#10B981' }]}>
                         ₹{selectedCreation.budget.toLocaleString('en-IN')}
                       </Text>
                     </View>
                     <View style={styles.detailStatCell}>
-                      <Text style={styles.detailStatLabel}>AVAILABILITY</Text>
+                      <Text style={styles.detailStatLabel}>{t('createTrip.availabilityCaps')}</Text>
                       <Text style={[styles.detailStatVal, { color: '#F59E0B' }]}>
-                        {selectedCreation.availableSeats} / {selectedCreation.totalSeats} Slots
+                        {t('createTrip.slotsCount', { available: selectedCreation.availableSeats, total: selectedCreation.totalSeats })}
                       </Text>
                     </View>
                   </View>
 
                   {/* Meeting point */}
-                  <Text style={styles.detailSectionTitle}>ASSEMBLY / DEPARTURE</Text>
+                  <Text style={styles.detailSectionTitle}>{t('createTrip.assemblyDeparture')}</Text>
                   <View style={styles.detailMeetingCard}>
                     <MapPin size={14} color="#3B82F6" />
                     <View style={{ flex: 1 }}>
                       <Text style={styles.detailMeetingText}>{selectedCreation.meetingPoint}</Text>
-                      <Text style={styles.detailMeetingSub}>Please report 30 mins before time.</Text>
+                      <Text style={styles.detailMeetingSub}>{t('createTrip.reportEarlyNote')}</Text>
                     </View>
                   </View>
 
                   {/* Included Services */}
-                  <Text style={styles.detailSectionTitle}>SERVICES INCLUDED</Text>
+                  <Text style={styles.detailSectionTitle}>{t('createTrip.servicesIncluded')}</Text>
                   <View style={styles.detailInclusionsRow}>
                     <View style={[styles.detailInclusionCell, { opacity: selectedCreation.guideIncluded ? 1 : 0.4 }]}>
                       <Compass size={12} color={selectedCreation.guideIncluded ? '#10B981' : '#7E8494'} />
-                      <Text style={styles.detailInclusionText}>Local Guide</Text>
+                      <Text style={styles.detailInclusionText}>{t('createTrip.localGuide')}</Text>
                     </View>
                     <View style={[styles.detailInclusionCell, { opacity: selectedCreation.foodIncluded ? 1 : 0.4 }]}>
                       <Utensils size={12} color={selectedCreation.foodIncluded ? '#10B981' : '#7E8494'} />
-                      <Text style={styles.detailInclusionText}>Meals / Food</Text>
+                      <Text style={styles.detailInclusionText}>{t('createTrip.mealsFoodSlash')}</Text>
                     </View>
                     <View
                       style={[
@@ -1792,7 +1939,7 @@ function CreateTripScreen() {
                       ]}
                     >
                       <Hotel size={12} color={selectedCreation.hotelIncluded !== false ? '#10B981' : '#7E8494'} />
-                      <Text style={styles.detailInclusionText}>Hotel Stay</Text>
+                      <Text style={styles.detailInclusionText}>{t('createTrip.hotelStay')}</Text>
                     </View>
                   </View>
 
@@ -1801,12 +1948,9 @@ function CreateTripScreen() {
                     0 && (
                     <>
                       <Text style={styles.detailSectionTitle}>
-                        PENDING JOIN REQUESTS (
-                        {
-                          joinRequests.filter((req) => req.tripId === selectedCreation.id && req.status === 'PENDING')
-                            .length
-                        }
-                        )
+                        {t('createTrip.pendingJoinRequestsHeader', {
+                          count: joinRequests.filter((req) => req.tripId === selectedCreation.id && req.status === 'PENDING').length,
+                        })}
                       </Text>
                       {joinRequests
                         .filter((req) => req.tripId === selectedCreation.id && req.status === 'PENDING')
@@ -1817,22 +1961,26 @@ function CreateTripScreen() {
                             </View>
                             <View style={{ flex: 1 }}>
                               <Text style={styles.detailReqName}>{req.applicantName}</Text>
-                              <Text style={styles.detailReqSub}>Wants to join this trip</Text>
+                              <Text style={styles.detailReqSub}>{t('createTrip.wantsToJoin')}</Text>
                             </View>
                             <View style={styles.detailReqActionRow}>
                               <TouchableOpacity
                                 style={styles.detailAcceptBtn}
                                 onPress={() => handleAcceptRequest(req.id, req.applicantName)}
                                 activeOpacity={0.8}
+                                accessibilityRole="button"
+                                accessibilityLabel={t('createTrip.accept')}
                               >
-                                <Text style={styles.detailAcceptText}>Accept</Text>
+                                <Text style={styles.detailAcceptText}>{t('createTrip.accept')}</Text>
                               </TouchableOpacity>
                               <TouchableOpacity
                                 style={styles.detailRejectBtn}
                                 onPress={() => handleRejectRequest(req.id)}
                                 activeOpacity={0.8}
+                                accessibilityRole="button"
+                                accessibilityLabel={t('createTrip.decline')}
                               >
-                                <Text style={styles.detailRejectText}>Decline</Text>
+                                <Text style={styles.detailRejectText}>{t('createTrip.decline')}</Text>
                               </TouchableOpacity>
                             </View>
                           </View>
@@ -1842,7 +1990,7 @@ function CreateTripScreen() {
                   {/* CONFIRMED TRAVELERS */}
                   {creationMembers.length > 0 && (
                     <>
-                      <Text style={styles.detailSectionTitle}>CONFIRMED TRAVELERS ({creationMembers.length})</Text>
+                      <Text style={styles.detailSectionTitle}>{t('createTrip.confirmedTravelersCount', { count: creationMembers.length })}</Text>
                       <View style={{ gap: 8, marginTop: 6 }}>
                         {creationMembers.map((p) => (
                           <View key={p.id} style={styles.detailRequestItem}>
@@ -1859,12 +2007,12 @@ function CreateTripScreen() {
                             <View style={{ flex: 1 }}>
                               <Text style={styles.detailReqName}>{p.name}</Text>
                               <Text style={styles.detailReqSub}>
-                                {p.isCreator ? 'Organizer / Creator' : 'Confirmed Traveler'}
+                                {p.isCreator ? t('createTrip.organizerCreator') : t('createTrip.confirmedTraveler')}
                               </Text>
                             </View>
                             {p.isCreator && (
                               <View style={styles.creatorBadge}>
-                                <Text style={styles.creatorBadgeText}>CREATOR</Text>
+                                <Text style={styles.creatorBadgeText}>{t('createTrip.creatorBadge')}</Text>
                               </View>
                             )}
                           </View>
