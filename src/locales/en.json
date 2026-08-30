@@ -450,5 +450,25 @@
     "emergencyHelplineTitle": "National Emergency Helpline",
     "emergencyHelplineSub": "For heavy floods, stranded vehicles or rescue requests",
     "emergencyHelplineNumbers": "NDRF desk: 011-23438091 • Toll Free: 1078"
+  },
+  "nearbyTrips": {
+    "goBack": "Go back",
+    "title": "Trips Near You",
+    "routeTBD": "Route TBD",
+    "distanceAway": "≈ {{km}} km away · straight-line",
+    "joinedCount": "{{joined}}/{{total}} joined",
+    "usingCurrentLocation": "Using your current location",
+    "coordsDistanceNote": "{{lat}}, {{lng}} — distances are straight-line estimates",
+    "gettingLocation": "Getting your location…",
+    "locationDenied": "Location permission denied",
+    "locationUnavailable": "Location unavailable",
+    "showingAllUnsorted": "Showing all upcoming trips, unsorted by distance.",
+    "shareLocationPrompt": "Share your location to sort trips by how close they are.",
+    "useLocation": "Use location",
+    "useMyLocationLabel": "Use my location",
+    "findingTrips": "Finding trips near you…",
+    "couldNotLoadNearbyTrips": "Could not load nearby trips.",
+    "noTripsNearbyTitle": "No trips nearby",
+    "noTripsNearbyMessage": "No upcoming trips are open right now."
   }
 }

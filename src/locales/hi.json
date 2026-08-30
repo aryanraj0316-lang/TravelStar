@@ -450,5 +450,25 @@
     "emergencyHelplineTitle": "राष्ट्रीय आपातकालीन हेल्पलाइन",
     "emergencyHelplineSub": "भारी बाढ़, फंसे हुए वाहनों या बचाव अनुरोधों के लिए",
     "emergencyHelplineNumbers": "NDRF डेस्क: 011-23438091 • टोल फ्री: 1078"
+  },
+  "nearbyTrips": {
+    "goBack": "वापस जाएं",
+    "title": "आपके पास की ट्रिप्स",
+    "routeTBD": "मार्ग तय होना बाकी",
+    "distanceAway": "≈ {{km}} किमी दूर · सीधी दूरी",
+    "joinedCount": "{{joined}}/{{total}} शामिल हुए",
+    "usingCurrentLocation": "आपके वर्तमान स्थान का उपयोग हो रहा है",
+    "coordsDistanceNote": "{{lat}}, {{lng}} — दूरियां सीधी-रेखा अनुमान हैं",
+    "gettingLocation": "आपका स्थान प्राप्त किया जा रहा है…",
+    "locationDenied": "स्थान अनुमति अस्वीकृत",
+    "locationUnavailable": "स्थान उपलब्ध नहीं है",
+    "showingAllUnsorted": "सभी आगामी ट्रिप्स दिखाई जा रही हैं, दूरी के अनुसार क्रमबद्ध नहीं।",
+    "shareLocationPrompt": "ट्रिप्स को दूरी के अनुसार क्रमबद्ध करने के लिए अपना स्थान साझा करें।",
+    "useLocation": "स्थान उपयोग करें",
+    "useMyLocationLabel": "मेरा स्थान उपयोग करें",
+    "findingTrips": "आपके पास की ट्रिप्स खोजी जा रही हैं…",
+    "couldNotLoadNearbyTrips": "आस-पास की ट्रिप्स लोड नहीं हो सकीं।",
+    "noTripsNearbyTitle": "आस-पास कोई ट्रिप नहीं",
+    "noTripsNearbyMessage": "अभी कोई आगामी ट्रिप खुली नहीं है।"
   }
 }

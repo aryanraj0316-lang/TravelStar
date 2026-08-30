@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { apiService } from '@/services/api';
 import { queryKeys } from '@/lib/query-keys';
 import { getCurrentDeviceLocation } from '@/lib/device-location';
+import { formatDateRange } from '@/lib/datetime';
 import TripDetailModal from '@/components/TripDetailModal';
 import { useQuery } from '@tanstack/react-query';
 import { FlatList, Image, RefreshControl, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -28,10 +30,11 @@ import type { NearbyTrip } from '@/types/api';
 // Phase 10 win: this list used to be a ScrollView + .map() that mounted
 // every trip at once (docs/REMEDIATION.md Phase 10).
 function NearbyTripCard({ trip, onPress }: { trip: NearbyTrip; onPress: (trip: NearbyTrip) => void }) {
+  const { t } = useTranslation();
   const distance =
     trip.distanceKm === null
-      ? (trip.cities[0] ?? 'Route TBD')
-      : `≈ ${trip.distanceKm.toLocaleString('en-IN')} km away · straight-line`;
+      ? (trip.cities[0] ?? t('nearbyTrips.routeTBD'))
+      : t('nearbyTrips.distanceAway', { km: trip.distanceKm.toLocaleString('en-IN') });
 
   return (
     <TouchableOpacity activeOpacity={0.9} style={styles.tripCard} onPress={() => onPress(trip)}>
@@ -57,14 +60,12 @@ function NearbyTripCard({ trip, onPress }: { trip: NearbyTrip; onPress: (trip: N
           <View style={styles.tripRow}>
             <Users size={12} color={C.textMuted} />
             <Text style={styles.tripMetaText}>
-              {trip.membersCount}/{trip.totalSeats} joined
+              {t('nearbyTrips.joinedCount', { joined: trip.membersCount, total: trip.totalSeats })}
             </Text>
           </View>
           <Text style={styles.tripPrice}>₹{Number(trip.budget).toLocaleString('en-IN')}</Text>
         </View>
-        <Text style={styles.tripDates}>
-          {trip.startDate} → {trip.endDate}
-        </Text>
+        <Text style={styles.tripDates}>{formatDateRange(trip.startDate, trip.endDate)}</Text>
       </View>
     </TouchableOpacity>
   );
@@ -84,6 +85,7 @@ type LocationState =
   | { status: 'denied' | 'unavailable' };
 
 export default function NearbyTripsScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const [location, setLocation] = useState<LocationState>({ status: 'idle' });
   const [selectedTrip, setSelectedTrip] = useState<NearbyTrip | null>(null);
@@ -137,11 +139,11 @@ export default function NearbyTripsScreen() {
           style={styles.backBtn}
           onPress={() => router.back()}
           accessibilityRole="button"
-          accessibilityLabel="Go back"
+          accessibilityLabel={t('nearbyTrips.goBack')}
         >
           <ArrowLeft size={18} color={C.white} />
         </TouchableOpacity>
-        <Text style={styles.topNavTitle}>Trips Near You</Text>
+        <Text style={styles.topNavTitle}>{t('nearbyTrips.title')}</Text>
         <View style={{ width: 36 }} />
       </View>
 
@@ -153,22 +155,25 @@ export default function NearbyTripsScreen() {
         <View style={{ flex: 1 }}>
           {location.status === 'granted' ? (
             <>
-              <Text style={styles.locTitle}>Using your current location</Text>
+              <Text style={styles.locTitle}>{t('nearbyTrips.usingCurrentLocation')}</Text>
               <Text style={styles.locSub}>
-                {location.latitude.toFixed(3)}, {location.longitude.toFixed(3)} — distances are straight-line estimates
+                {t('nearbyTrips.coordsDistanceNote', {
+                  lat: location.latitude.toFixed(3),
+                  lng: location.longitude.toFixed(3),
+                })}
               </Text>
             </>
           ) : location.status === 'loading' ? (
-            <Text style={styles.locSub}>Getting your location…</Text>
+            <Text style={styles.locSub}>{t('nearbyTrips.gettingLocation')}</Text>
           ) : location.status === 'denied' || location.status === 'unavailable' ? (
             <>
               <Text style={styles.locTitle}>
-                {location.status === 'denied' ? 'Location permission denied' : 'Location unavailable'}
+                {location.status === 'denied' ? t('nearbyTrips.locationDenied') : t('nearbyTrips.locationUnavailable')}
               </Text>
-              <Text style={styles.locSub}>Showing all upcoming trips, unsorted by distance.</Text>
+              <Text style={styles.locSub}>{t('nearbyTrips.showingAllUnsorted')}</Text>
             </>
           ) : (
-            <Text style={styles.locSub}>Share your location to sort trips by how close they are.</Text>
+            <Text style={styles.locSub}>{t('nearbyTrips.shareLocationPrompt')}</Text>
           )}
         </View>
         {location.status !== 'granted' && location.status !== 'loading' && (
@@ -176,23 +181,23 @@ export default function NearbyTripsScreen() {
             style={styles.locBtn}
             onPress={requestLocation}
             accessibilityRole="button"
-            accessibilityLabel="Use my location"
+            accessibilityLabel={t('nearbyTrips.useMyLocationLabel')}
           >
             <Navigation size={13} color={C.blue} />
-            <Text style={styles.locBtnText}>Use location</Text>
+            <Text style={styles.locBtnText}>{t('nearbyTrips.useLocation')}</Text>
           </TouchableOpacity>
         )}
       </View>
 
       {isLoading ? (
-        <ScreenLoading label="Finding trips near you…" />
+        <ScreenLoading label={t('nearbyTrips.findingTrips')} />
       ) : isError ? (
         <ScreenError
-          message={error instanceof Error ? error.message : 'Could not load nearby trips.'}
+          message={error instanceof Error ? error.message : t('nearbyTrips.couldNotLoadNearbyTrips')}
           onRetry={() => refetch()}
         />
       ) : trips.length === 0 ? (
-        <ScreenEmpty title="No trips nearby" message="No upcoming trips are open right now." />
+        <ScreenEmpty title={t('nearbyTrips.noTripsNearbyTitle')} message={t('nearbyTrips.noTripsNearbyMessage')} />
       ) : (
         <FlatList
           data={trips}
