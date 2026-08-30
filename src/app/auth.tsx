@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { setTokens } from '@/services/api';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -13,14 +14,15 @@ import { apiService } from '@/services/api';
 import { C, space } from '@/theme/tokens';
 import { errorToastMessage, showAlert, toast } from '@/lib/feedback';
 
-const ROLES: { id: UserRole; title: string; subtitle: string; icon: string }[] = [
-  { id: 'TOURIST', title: 'Tourist', subtitle: 'Explore & Join Trips', icon: '🧳' },
-  { id: 'GUIDE', title: 'Verified Guide', subtitle: 'Offer Tours & Earn', icon: '🧭' },
-  { id: 'ORGANIZER', title: 'Trip Organizer', subtitle: 'Host Group Journeys', icon: '⛺' },
-  { id: 'FAMILY_TRAVELER', title: 'Family Connect', subtitle: 'Midway Segment Join', icon: '👨‍👩‍👧‍👦' },
+const ROLES: { id: UserRole; titleKey: string; subtitleKey: string; icon: string }[] = [
+  { id: 'TOURIST', titleKey: 'auth.roleTourist', subtitleKey: 'auth.roleTouristSub', icon: '🧳' },
+  { id: 'GUIDE', titleKey: 'auth.roleGuide', subtitleKey: 'auth.roleGuideSub', icon: '🧭' },
+  { id: 'ORGANIZER', titleKey: 'auth.roleOrganizer', subtitleKey: 'auth.roleOrganizerSub', icon: '⛺' },
+  { id: 'FAMILY_TRAVELER', titleKey: 'auth.roleFamily', subtitleKey: 'auth.roleFamilySub', icon: '👨‍👩‍👧‍👦' },
 ];
 
 export default function AuthScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const { currentRole, setCurrentRole, updateProfile, login, refreshTrips } = useApp();
 
@@ -37,14 +39,14 @@ export default function AuthScreen() {
   const handleFormSubmit = async () => {
     if (mode === 'LOGIN') {
       if (!email.trim() || !password.trim()) {
-        toast('Please enter your email and password', 'error');
+        toast(t('auth.pleaseEnterEmailPassword'), 'error');
         return;
       }
       setLoading(true);
       try {
         const response = await apiService.login(email, password);
         if (!response) {
-          toast('Login Failed ❌ — Invalid response from server.', 'error');
+          toast(t('auth.loginFailed'), 'error');
           return;
         }
         if (response.token && response.refreshToken) {
@@ -58,21 +60,21 @@ export default function AuthScreen() {
         setTimeout(() => refreshTrips(), 300);
         // A single-action alert was only an "OK" gate in front of the
         // navigation below; a toast says the same without blocking (§0.2.6).
-        toast('Welcome back!', 'success');
+        toast(t('auth.welcomeBackToast'), 'success');
         if (router.canGoBack()) {
           router.back();
         } else {
           router.replace('/');
         }
       } catch (err) {
-        toast(errorToastMessage(err, 'Could not sign you in. Please try again.'), 'error');
+        toast(errorToastMessage(err, t('auth.couldNotSignIn')), 'error');
       } finally {
         setLoading(false);
       }
     } else {
       // SIGNUP flow
       if (!fullName.trim() || !email.trim() || !password.trim()) {
-        toast('Please enter your full name, email, and password', 'error');
+        toast(t('auth.pleaseEnterAllSignup'), 'error');
         return;
       }
       setLoading(true);
@@ -84,7 +86,7 @@ export default function AuthScreen() {
           role: selectedRole,
         });
         if (!response) {
-          toast('Signup Failed ❌ — Invalid response from server.', 'error');
+          toast(t('auth.signupFailed'), 'error');
           return;
         }
         if (response.token && response.refreshToken) {
@@ -109,12 +111,12 @@ export default function AuthScreen() {
         // welcome does not, and is a toast.
         if (roleChanged) {
           await showAlert(
-            'Account created',
-            'Your account starts as a Tourist. Guide and Organizer access is granted after a short verification step, available from your profile.',
-            'Start Exploring',
+            t('auth.accountCreatedTitle'),
+            t('auth.accountCreatedMessage'),
+            t('auth.startExploring'),
           );
         } else {
-          toast('Welcome to TravelStar!', 'success');
+          toast(t('auth.welcomeToApp'), 'success');
         }
         if (router.canGoBack()) {
           router.back();
@@ -122,7 +124,7 @@ export default function AuthScreen() {
           router.replace('/');
         }
       } catch (err) {
-        toast(errorToastMessage(err, 'Could not create your account. Please try again.'), 'error');
+        toast(errorToastMessage(err, t('auth.couldNotCreateAccount')), 'error');
       } finally {
         setLoading(false);
       }
@@ -140,7 +142,7 @@ export default function AuthScreen() {
               style={styles.backBtn}
               activeOpacity={0.8}
               accessibilityRole="button"
-              accessibilityLabel="Go back"
+              accessibilityLabel={t('auth.goBack')}
             >
               <ArrowLeft size={20} color={C.white} />
             </TouchableOpacity>
@@ -163,11 +165,9 @@ export default function AuthScreen() {
             >
               <Sparkles size={24} color={C.white} />
             </LinearGradient>
-            <Text style={styles.heroHeading}>{mode === 'LOGIN' ? 'Welcome Back' : 'Create Account'}</Text>
+            <Text style={styles.heroHeading}>{mode === 'LOGIN' ? t('auth.welcomeBack') : t('auth.createAccount')}</Text>
             <Text style={styles.heroSub}>
-              {mode === 'LOGIN'
-                ? 'Log in to access your trips, wallet & live chats'
-                : 'Connect with 50,000+ travelers & guides across India'}
+              {mode === 'LOGIN' ? t('auth.loginSub') : t('auth.signupSub')}
             </Text>
           </View>
 
@@ -177,22 +177,28 @@ export default function AuthScreen() {
               style={[styles.modeTab, mode === 'LOGIN' && styles.modeTabActive]}
               onPress={() => setMode('LOGIN')}
               activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel={t('auth.logIn')}
+              accessibilityState={{ selected: mode === 'LOGIN' }}
             >
-              <Text style={[styles.modeText, mode === 'LOGIN' && styles.modeTextActive]}>Log In</Text>
+              <Text style={[styles.modeText, mode === 'LOGIN' && styles.modeTextActive]}>{t('auth.logIn')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.modeTab, mode === 'SIGNUP' && styles.modeTabActive]}
               onPress={() => setMode('SIGNUP')}
               activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel={t('auth.createAccount')}
+              accessibilityState={{ selected: mode === 'SIGNUP' }}
             >
-              <Text style={[styles.modeText, mode === 'SIGNUP' && styles.modeTextActive]}>Create Account</Text>
+              <Text style={[styles.modeText, mode === 'SIGNUP' && styles.modeTextActive]}>{t('auth.createAccount')}</Text>
             </TouchableOpacity>
           </View>
 
           {/* Role Selector Section */}
           <View style={{ marginBottom: 18 }}>
-            <Text style={styles.sectionTitle}>Select Your Role</Text>
+            <Text style={styles.sectionTitle}>{t('auth.selectYourRole')}</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               {ROLES.map((item) => {
                 const isSelected = selectedRole === item.id;
@@ -202,10 +208,14 @@ export default function AuthScreen() {
                     onPress={() => setSelectedRole(item.id)}
                     activeOpacity={0.8}
                     style={[styles.roleCard, isSelected && styles.roleCardActive]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${t(item.titleKey)}, ${t(item.subtitleKey)}`}
+                    accessibilityHint={t('auth.roleSelectHint')}
+                    accessibilityState={{ selected: isSelected }}
                   >
                     <Text style={{ fontSize: 24, marginBottom: 4 }}>{item.icon}</Text>
-                    <Text style={[styles.roleTitle, isSelected && styles.roleTitleActive]}>{item.title}</Text>
-                    <Text style={styles.roleSub}>{item.subtitle}</Text>
+                    <Text style={[styles.roleTitle, isSelected && styles.roleTitleActive]}>{t(item.titleKey)}</Text>
+                    <Text style={styles.roleSub}>{t(item.subtitleKey)}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -216,9 +226,9 @@ export default function AuthScreen() {
           <GlassCard style={styles.card}>
             {mode === 'SIGNUP' && (
               <Input
-                label="Full Name (Username)"
+                label={t('auth.fullNameLabel')}
                 icon={<User size={18} color={C.textSec} />}
-                placeholder="e.g. Aarav Sharma"
+                placeholder={t('auth.fullNamePlaceholder')}
                 value={fullName}
                 onChangeText={setFullName}
                 containerStyle={styles.inputWrap}
@@ -226,7 +236,7 @@ export default function AuthScreen() {
             )}
 
             <Input
-              label="Email Address"
+              label={t('auth.emailLabel')}
               icon={<Mail size={18} color={C.textSec} />}
               placeholder="aarav@example.com"
               keyboardType="email-address"
@@ -237,7 +247,7 @@ export default function AuthScreen() {
             />
 
             <Input
-              label="Password"
+              label={t('auth.passwordLabel')}
               icon={<Lock size={18} color={C.textSec} />}
               placeholder="••••••••"
               secureTextEntry={!showPassword}
@@ -249,7 +259,7 @@ export default function AuthScreen() {
                   onPress={() => setShowPassword(!showPassword)}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   accessibilityRole="button"
-                  accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                  accessibilityLabel={showPassword ? t('auth.hidePassword') : t('auth.showPassword')}
                 >
                   {showPassword ? <EyeOff size={18} color={C.textSec} /> : <Eye size={18} color={C.textSec} />}
                 </TouchableOpacity>
@@ -260,30 +270,34 @@ export default function AuthScreen() {
                 onPress={() => router.push('/forgot-password')}
                 style={styles.forgotPasswordLink}
                 accessibilityRole="button"
-                accessibilityLabel="Forgot password"
+                accessibilityLabel={t('auth.forgotPassword')}
               >
-                <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+                <Text style={styles.forgotPasswordText}>{t('auth.forgotPassword')}</Text>
               </TouchableOpacity>
             )}
 
             {/* Primary Submit Button */}
             <Button
-              label={mode === 'LOGIN' ? 'Log In' : 'Create Account'}
+              label={mode === 'LOGIN' ? t('auth.logIn') : t('auth.createAccount')}
               onPress={handleFormSubmit}
               loading={loading}
               fullWidth
               icon={<ShieldCheck size={20} color={C.white} />}
               style={styles.submitBtn}
-              accessibilityHint={mode === 'LOGIN' ? 'Signs you in' : 'Creates your account'}
+              accessibilityHint={mode === 'LOGIN' ? t('auth.signsYouIn') : t('auth.createsYourAccount')}
             />
 
             {/* Footer Switcher */}
             <View style={styles.footerWrap}>
               <Text style={styles.footerText}>
-                {mode === 'LOGIN' ? "Don't have an account? " : 'Already registered? '}
+                {mode === 'LOGIN' ? t('auth.noAccountYet') : t('auth.alreadyRegistered')}
               </Text>
-              <TouchableOpacity onPress={() => setMode(mode === 'LOGIN' ? 'SIGNUP' : 'LOGIN')}>
-                <Text style={styles.footerLink}>{mode === 'LOGIN' ? 'Create one now' : 'Log In'}</Text>
+              <TouchableOpacity
+                onPress={() => setMode(mode === 'LOGIN' ? 'SIGNUP' : 'LOGIN')}
+                accessibilityRole="button"
+                accessibilityLabel={mode === 'LOGIN' ? t('auth.createOneNow') : t('auth.switchToLogIn')}
+              >
+                <Text style={styles.footerLink}>{mode === 'LOGIN' ? t('auth.createOneNow') : t('auth.switchToLogIn')}</Text>
               </TouchableOpacity>
             </View>
           </GlassCard>
