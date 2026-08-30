@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ScrollView,
   StyleSheet,
@@ -21,6 +22,7 @@ import { Card } from '@/components/ui';
 
 
 export default function AboutScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
 
 
@@ -34,28 +36,30 @@ export default function AboutScreen() {
           activeOpacity={0.7}
           onPress={() => router.back()}
           style={styles.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel={t('about.goBack')}
         >
           <ArrowLeft size={18} color={C.white} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>About TravelStar</Text>
+        <Text style={styles.headerTitle}>{t('about.title')}</Text>
         <View style={{ width: 36 }} />
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        
+
         {/* Brand Header */}
         <View style={styles.brandContainer}>
           <View style={styles.logoBadge}>
             <Globe size={40} color={C.white} />
           </View>
           <Text style={styles.brandName}>TravelStar</Text>
-          <Text style={styles.versionText}>Version 1.4.2</Text>
+          <Text style={styles.versionText}>{t('about.version')}</Text>
         </View>
 
         {/* Short Mission description */}
         <Card style={{ marginBottom: 24 }}>
           <Text style={styles.descriptionText}>
-            TravelStar is a unified travel companion designed to organize group trips, track shared expenses, hire verified local guides, and ensure traveler safety with an active SOS network.
+            {t('about.description')}
           </Text>
         </Card>
 
@@ -65,10 +69,12 @@ export default function AboutScreen() {
             activeOpacity={0.7}
             style={styles.legalRow}
             onPress={() => router.push('/legal/terms')}
+            accessibilityRole="button"
+            accessibilityLabel={t('about.termsOfService')}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <FileText size={16} color={C.textSec} style={{ marginRight: 10 }} />
-              <Text style={styles.legalLabelText}>Terms of Service</Text>
+              <Text style={styles.legalLabelText}>{t('about.termsOfService')}</Text>
             </View>
           </TouchableOpacity>
 
@@ -78,10 +84,12 @@ export default function AboutScreen() {
             activeOpacity={0.7}
             style={styles.legalRow}
             onPress={() => router.push('/legal/privacy')}
+            accessibilityRole="button"
+            accessibilityLabel={t('about.privacyPolicy')}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <Shield size={16} color={C.textSec} style={{ marginRight: 10 }} />
-              <Text style={styles.legalLabelText}>Privacy Policy</Text>
+              <Text style={styles.legalLabelText}>{t('about.privacyPolicy')}</Text>
             </View>
           </TouchableOpacity>
 
@@ -91,15 +99,17 @@ export default function AboutScreen() {
             activeOpacity={0.7}
             style={styles.legalRow}
             onPress={() => router.push('/licenses')}
+            accessibilityRole="button"
+            accessibilityLabel={t('about.thirdPartyLicenses')}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <Info size={16} color={C.textSec} style={{ marginRight: 10 }} />
-              <Text style={styles.legalLabelText}>Third-Party Licenses</Text>
+              <Text style={styles.legalLabelText}>{t('about.thirdPartyLicenses')}</Text>
             </View>
           </TouchableOpacity>
         </Card>
 
-        <Text style={styles.copyrightText}>© 2026 TravelStar Technologies Pvt Ltd</Text>
+        <Text style={styles.copyrightText}>{t('about.copyright')}</Text>
 
         <View style={{ height: 40 }} />
       </ScrollView>

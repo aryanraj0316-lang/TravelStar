@@ -285,5 +285,15 @@
     "noBookings": "No bookings",
     "noBookingsAtAll": "You haven't joined any trips yet.",
     "noBookingsInCategory": "No bookings found in this category."
+  },
+  "about": {
+    "title": "About TravelStar",
+    "goBack": "Go back",
+    "version": "Version 1.4.2",
+    "description": "TravelStar is a unified travel companion designed to organize group trips, track shared expenses, hire verified local guides, and ensure traveler safety with an active SOS network.",
+    "termsOfService": "Terms of Service",
+    "privacyPolicy": "Privacy Policy",
+    "thirdPartyLicenses": "Third-Party Licenses",
+    "copyright": "© 2026 TravelStar Technologies Pvt Ltd"
   }
 }
