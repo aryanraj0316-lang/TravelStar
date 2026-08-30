@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, Calendar, ChevronRight, MapPin, MessageCircle, Users } from 'lucide-react-native';
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { FlatList, Image, RefreshControl, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -10,12 +11,21 @@ import { apiService } from '@/services/api';
 import { queryKeys } from '@/lib/query-keys';
 import { MyTripBooking, useApp } from '@/store/AppContext';
 import { C } from '@/theme/tokens';
+import { formatDateRange } from '@/lib/datetime';
+import { formatINR } from '@/lib/money';
 import { ScreenEmpty, ScreenError, ScreenLoading } from '@/components/ui';
 
 
 type BookingFilter = 'ALL' | 'ONGOING' | 'UPCOMING' | 'COMPLETED';
 
+const STATUS_LABEL_KEYS = {
+  ONGOING: 'bookings.statusOngoing',
+  UPCOMING: 'bookings.statusUpcoming',
+  COMPLETED: 'bookings.statusCompleted',
+} as const;
+
 function StatusBadge({ status }: { status: 'ONGOING' | 'UPCOMING' | 'COMPLETED' }) {
+  const { t } = useTranslation();
   switch (status) {
     case 'ONGOING':
       return (
@@ -29,7 +39,7 @@ function StatusBadge({ status }: { status: 'ONGOING' | 'UPCOMING' | 'COMPLETED' 
           ]}
         >
           <View style={[styles.pulseDot, { backgroundColor: C.green }]} />
-          <Text style={[styles.badgeText, { color: C.green }]}>ONGOING</Text>
+          <Text style={[styles.badgeText, { color: C.green }]}>{t(STATUS_LABEL_KEYS.ONGOING)}</Text>
         </View>
       );
     case 'UPCOMING':
@@ -44,7 +54,7 @@ function StatusBadge({ status }: { status: 'ONGOING' | 'UPCOMING' | 'COMPLETED' 
           ]}
         >
           <View style={[styles.pulseDot, { backgroundColor: C.amber }]} />
-          <Text style={[styles.badgeText, { color: C.amber }]}>UPCOMING</Text>
+          <Text style={[styles.badgeText, { color: C.amber }]}>{t(STATUS_LABEL_KEYS.UPCOMING)}</Text>
         </View>
       );
     case 'COMPLETED':
@@ -59,7 +69,7 @@ function StatusBadge({ status }: { status: 'ONGOING' | 'UPCOMING' | 'COMPLETED' 
           ]}
         >
           <View style={[styles.pulseDot, { backgroundColor: C.purple }]} />
-          <Text style={[styles.badgeText, { color: C.purple }]}>COMPLETED</Text>
+          <Text style={[styles.badgeText, { color: C.purple }]}>{t(STATUS_LABEL_KEYS.COMPLETED)}</Text>
         </View>
       );
   }
@@ -80,6 +90,7 @@ function BookingCard({
   onOpenChat: (chatRoomId?: string) => void;
   onTrackLive: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <View style={styles.bookingCard}>
       {/* Card Image Header */}
@@ -89,7 +100,7 @@ function BookingCard({
         <View style={styles.cardHeaderOverlay}>
           <StatusBadge status={booking.status} />
           {booking.memberRole !== 'MEMBER' && (
-            <Text style={styles.bookingIdText}>{booking.memberRole === 'ORGANIZER' ? 'Organizer' : 'Co-Lead'}</Text>
+            <Text style={styles.bookingIdText}>{booking.memberRole === 'ORGANIZER' ? t('bookings.roleOrganizer') : t('bookings.roleCoLead')}</Text>
           )}
         </View>
       </View>
@@ -104,7 +115,7 @@ function BookingCard({
         <View style={styles.detailRow}>
           <Calendar size={13} color={C.textSec} style={{ marginRight: 6 }} />
           <Text style={styles.detailText}>
-            {booking.startDate} to {booking.endDate}
+            {formatDateRange(booking.startDate, booking.endDate)}
           </Text>
         </View>
 
@@ -120,7 +131,7 @@ function BookingCard({
         <View style={[styles.detailRow, { alignItems: 'flex-start' }]}>
           <MapPin size={13} color={C.textSec} style={{ marginRight: 6, marginTop: 2 }} />
           <Text style={[styles.detailText, { flex: 1 }]} numberOfLines={2}>
-            Meeting: {booking.meetingPoint}
+            {t('bookings.meetingPoint', { point: booking.meetingPoint })}
           </Text>
         </View>
 
@@ -131,7 +142,7 @@ function BookingCard({
           <View style={styles.footerCol}>
             <View style={styles.footerIconLabel}>
               <Users size={12} color={C.textMuted} style={{ marginRight: 4 }} />
-              <Text style={styles.footerLabel}>Travelers</Text>
+              <Text style={styles.footerLabel}>{t('bookings.travelers')}</Text>
             </View>
             <Text style={styles.footerValue}>
               {booking.membersCount}/{booking.totalSeats}
@@ -140,24 +151,36 @@ function BookingCard({
 
           <View style={[styles.footerCol, { alignItems: 'flex-end' }]}>
             <View style={styles.footerIconLabel}>
-              <Text style={styles.footerLabel}>Est. Budget</Text>
+              <Text style={styles.footerLabel}>{t('bookings.estBudget')}</Text>
             </View>
             <Text style={[styles.footerValue, { color: C.green }]}>
-              ₹{Number(booking.budget).toLocaleString('en-IN')}
+              {formatINR(booking.budget)}
             </Text>
           </View>
         </View>
 
         {/* Contextual Action Button */}
         {booking.status === 'ONGOING' ? (
-          <TouchableOpacity activeOpacity={0.8} style={styles.actionBtn} onPress={onTrackLive}>
-            <Text style={styles.actionBtnText}>Track Live Trip</Text>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            style={styles.actionBtn}
+            onPress={onTrackLive}
+            accessibilityRole="button"
+            accessibilityLabel={t('bookings.trackLiveTrip')}
+          >
+            <Text style={styles.actionBtnText}>{t('bookings.trackLiveTrip')}</Text>
             <ChevronRight size={14} color={C.white} />
           </TouchableOpacity>
         ) : booking.status === 'UPCOMING' && booking.chatRoomId ? (
-          <TouchableOpacity activeOpacity={0.8} style={styles.actionBtn} onPress={() => onOpenChat(booking.chatRoomId)}>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            style={styles.actionBtn}
+            onPress={() => onOpenChat(booking.chatRoomId)}
+            accessibilityRole="button"
+            accessibilityLabel={t('bookings.openTripChat')}
+          >
             <MessageCircle size={14} color={C.white} style={{ marginRight: 2 }} />
-            <Text style={styles.actionBtnText}>Open Trip Chat</Text>
+            <Text style={styles.actionBtnText}>{t('bookings.openTripChat')}</Text>
           </TouchableOpacity>
         ) : null}
       </View>
@@ -175,7 +198,15 @@ const keyExtractor = (b: MyTripBooking) => b.id;
 // simply a trip the user has a confirmed seat on, sourced from
 // GET /trips/mine (a TripMember row). No amount, no ticket ID, no rating
 // flow are shown because none of those exist yet.
+const FILTER_LABEL_KEYS: Record<BookingFilter, string> = {
+  ALL: 'bookings.filterAll',
+  ONGOING: 'bookings.filterOngoing',
+  UPCOMING: 'bookings.filterUpcoming',
+  COMPLETED: 'bookings.filterCompleted',
+};
+
 export default function BookingsScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const { isLoggedIn, setActiveRoomId } = useApp();
   const [filter, setFilter] = useState<BookingFilter>('ALL');
@@ -209,10 +240,16 @@ export default function BookingsScreen() {
 
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => router.back()}
+          style={styles.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel={t('bookings.goBack')}
+        >
           <ArrowLeft size={18} color={C.white} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>My Bookings</Text>
+        <Text style={styles.headerTitle}>{t('bookings.title')}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -221,7 +258,15 @@ export default function BookingsScreen() {
         {(['ALL', 'ONGOING', 'UPCOMING', 'COMPLETED'] as BookingFilter[]).map((tab) => {
           const isActive = filter === tab;
           return (
-            <TouchableOpacity key={tab} activeOpacity={0.8} onPress={() => setFilter(tab)} style={styles.tabBtn}>
+            <TouchableOpacity
+              key={tab}
+              activeOpacity={0.8}
+              onPress={() => setFilter(tab)}
+              style={styles.tabBtn}
+              accessibilityRole="button"
+              accessibilityLabel={t(FILTER_LABEL_KEYS[tab])}
+              accessibilityState={{ selected: isActive }}
+            >
               {isActive ? (
                 <LinearGradient
                   colors={['#00F2FE', '#0066FF']}
@@ -230,13 +275,13 @@ export default function BookingsScreen() {
                   style={styles.activeTabGradient}
                 >
                   <Text style={[styles.tabText, styles.activeTabText]}>
-                    {tab.charAt(0) + tab.slice(1).toLowerCase()}
+                    {t(FILTER_LABEL_KEYS[tab])}
                   </Text>
                 </LinearGradient>
               ) : (
                 <View style={styles.inactiveTabBox}>
                   <Text style={[styles.tabText, styles.inactiveTabText]}>
-                    {tab.charAt(0) + tab.slice(1).toLowerCase()}
+                    {t(FILTER_LABEL_KEYS[tab])}
                   </Text>
                 </View>
               )}
@@ -248,16 +293,16 @@ export default function BookingsScreen() {
       {/* Bookings List */}
       {!isLoggedIn ? (
         <ScreenEmpty
-          title="Sign in required"
-          message="Sign in to see your bookings."
-          actionLabel="Sign In"
+          title={t('bookings.signInRequired')}
+          message={t('bookings.signInRequiredMessage')}
+          actionLabel={t('bookings.signIn')}
           onAction={() => router.navigate('/auth')}
         />
       ) : isLoading ? (
-        <ScreenLoading label="Loading your bookings…" />
+        <ScreenLoading label={t('bookings.loadingBookings')} />
       ) : isError ? (
         <ScreenError
-          message={error instanceof Error ? error.message : 'Could not load your bookings.'}
+          message={error instanceof Error ? error.message : t('bookings.couldNotLoadBookings')}
           onRetry={() => refetch()}
         />
       ) : (
@@ -276,8 +321,8 @@ export default function BookingsScreen() {
           removeClippedSubviews
           ListEmptyComponent={
             <ScreenEmpty
-              title="No bookings"
-              message={myTrips.length === 0 ? "You haven't joined any trips yet." : 'No bookings found in this category.'}
+              title={t('bookings.noBookings')}
+              message={myTrips.length === 0 ? t('bookings.noBookingsAtAll') : t('bookings.noBookingsInCategory')}
             />
           }
         />

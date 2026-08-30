@@ -259,5 +259,31 @@
     "passwordTooShort": "पासवर्ड कम से कम 8 अक्षरों का होना चाहिए।",
     "passwordsDoNotMatch": "पासवर्ड मेल नहीं खाते।",
     "couldNotResetPassword": "आपका पासवर्ड रीसेट नहीं किया जा सका। लिंक की समय-सीमा समाप्त हो सकती है।"
+  },
+  "bookings": {
+    "title": "मेरी बुकिंग्स",
+    "goBack": "वापस जाएं",
+    "filterAll": "सभी",
+    "filterOngoing": "जारी",
+    "filterUpcoming": "आगामी",
+    "filterCompleted": "पूर्ण",
+    "statusOngoing": "जारी",
+    "statusUpcoming": "आगामी",
+    "statusCompleted": "पूर्ण",
+    "roleOrganizer": "आयोजक",
+    "roleCoLead": "सह-नेता",
+    "meetingPoint": "मिलन स्थल: {{point}}",
+    "travelers": "यात्री",
+    "estBudget": "अनुमानित बजट",
+    "trackLiveTrip": "लाइव ट्रिप ट्रैक करें",
+    "openTripChat": "ट्रिप चैट खोलें",
+    "signInRequired": "साइन इन आवश्यक",
+    "signInRequiredMessage": "अपनी बुकिंग्स देखने के लिए साइन इन करें।",
+    "signIn": "साइन इन करें",
+    "loadingBookings": "आपकी बुकिंग्स लोड हो रही हैं…",
+    "couldNotLoadBookings": "आपकी बुकिंग्स लोड नहीं की जा सकीं।",
+    "noBookings": "कोई बुकिंग नहीं",
+    "noBookingsAtAll": "आप अभी तक किसी ट्रिप में शामिल नहीं हुए हैं।",
+    "noBookingsInCategory": "इस श्रेणी में कोई बुकिंग नहीं मिली।"
   }
 }

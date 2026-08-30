@@ -259,5 +259,31 @@
     "passwordTooShort": "Password must be at least 8 characters.",
     "passwordsDoNotMatch": "Passwords do not match.",
     "couldNotResetPassword": "Could not reset your password. The link may have expired."
+  },
+  "bookings": {
+    "title": "My Bookings",
+    "goBack": "Go back",
+    "filterAll": "All",
+    "filterOngoing": "Ongoing",
+    "filterUpcoming": "Upcoming",
+    "filterCompleted": "Completed",
+    "statusOngoing": "ONGOING",
+    "statusUpcoming": "UPCOMING",
+    "statusCompleted": "COMPLETED",
+    "roleOrganizer": "Organizer",
+    "roleCoLead": "Co-Lead",
+    "meetingPoint": "Meeting: {{point}}",
+    "travelers": "Travelers",
+    "estBudget": "Est. Budget",
+    "trackLiveTrip": "Track Live Trip",
+    "openTripChat": "Open Trip Chat",
+    "signInRequired": "Sign in required",
+    "signInRequiredMessage": "Sign in to see your bookings.",
+    "signIn": "Sign In",
+    "loadingBookings": "Loading your bookings…",
+    "couldNotLoadBookings": "Could not load your bookings.",
+    "noBookings": "No bookings",
+    "noBookingsAtAll": "You haven't joined any trips yet.",
+    "noBookingsInCategory": "No bookings found in this category."
   }
 }
