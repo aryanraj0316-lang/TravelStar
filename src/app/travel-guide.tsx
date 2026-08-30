@@ -9,7 +9,6 @@ import {
   Text,
   StatusBar,
   TextInput,
-  Modal,
   Image,
   Dimensions,
   Linking,
@@ -17,6 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { errorToastMessage, toast, useConfirm } from '@/lib/feedback';
 import { uploadFileToUrl } from '@/lib/upload';
+import { Button, Input, ScreenEmpty, ScreenLoading, Sheet } from '@/components/ui';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useApp } from '@/store/AppContext';
@@ -987,33 +987,25 @@ export default function TravelGuideScreen() {
               </View>
             </View>
 
-            <View style={styles.searchBar}>
-              <Search size={16} color={C.textSec} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search by state, city, tourist name..."
-                placeholderTextColor={C.textMuted}
-                value={searchLeadQuery}
-                onChangeText={setSearchLeadQuery}
-              />
-            </View>
+            <Input
+              placeholder="Search by state, city, tourist name..."
+              value={searchLeadQuery}
+              onChangeText={setSearchLeadQuery}
+              icon={<Search size={16} color={C.textSec} />}
+              containerStyle={{ marginBottom: 14 }}
+            />
 
             {leadsLoading ? (
-              <View style={{ paddingVertical: 40, alignItems: 'center' }}>
-                <Text style={{ color: C.textSec, fontSize: 13 }}>Loading leads...</Text>
-              </View>
+              <ScreenLoading label="Loading leads…" />
             ) : filteredLeads.length === 0 ? (
-              <View style={{ paddingVertical: 40, alignItems: 'center' }}>
-                <Users size={32} color="#7E8494" style={{ marginBottom: 12 }} />
-                <Text style={{ color: C.white, fontSize: 15, fontWeight: '800', marginBottom: 6 }}>
-                  No Matching Leads
-                </Text>
-                <Text style={{ color: C.textSec, fontSize: 12, textAlign: 'center', paddingHorizontal: 20 }}>
-                  {leads.length === 0
+              <ScreenEmpty
+                title="No Matching Leads"
+                message={
+                  leads.length === 0
                     ? 'No tourist requests match your expertise cities yet. New leads will appear here automatically.'
-                    : 'No leads match your search. Try a different keyword.'}
-                </Text>
-              </View>
+                    : 'No leads match your search. Try a different keyword.'
+                }
+              />
             ) : null}
 
             {filteredLeads.map((lead) => {
@@ -1163,36 +1155,31 @@ export default function TravelGuideScreen() {
               </View>
 
               {/* Form inputs */}
-              <Text style={styles.formInputLabel}>Caption & Description</Text>
-              <TextInput
-                style={styles.formInput}
+              <Input
+                label="Caption & Description"
                 placeholder="Give a catchy title..."
-                placeholderTextColor={C.textMuted}
                 value={mediaTitle}
                 onChangeText={setMediaTitle}
+                containerStyle={styles.formFieldGap}
               />
 
-              <Text style={styles.formInputLabel}>Location Tag</Text>
-              <TextInput
-                style={styles.formInput}
+              <Input
+                label="Location Tag"
                 placeholder="e.g. Amer Fort, Jaipur"
-                placeholderTextColor={C.textMuted}
                 value={mediaLocation}
                 onChangeText={setMediaLocation}
+                containerStyle={styles.formFieldGap}
               />
 
               {uploadTheme === 'PRICING' && (
-                <View>
-                  <Text style={styles.formInputLabel}>Trip Package Price List (₹ / Day)</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    placeholder="e.g. 2500"
-                    placeholderTextColor={C.textMuted}
-                    keyboardType="numeric"
-                    value={mediaPrice}
-                    onChangeText={setMediaPrice}
-                  />
-                </View>
+                <Input
+                  label="Trip Package Price List (₹ / Day)"
+                  placeholder="e.g. 2500"
+                  keyboardType="numeric"
+                  value={mediaPrice}
+                  onChangeText={setMediaPrice}
+                  containerStyle={styles.formFieldGap}
+                />
               )}
 
               {/* docs/REMEDIATION.md §8.17: real pickers, uploaded to object
@@ -1383,13 +1370,10 @@ export default function TravelGuideScreen() {
                 </View>
 
                 {packages.length === 0 ? (
-                  <View style={[styles.emptyCreations, { paddingVertical: 40 }]}>
-                    <Compass size={32} color="#7E8494" style={{ marginBottom: 12, alignSelf: 'center' }} />
-                    <Text style={[styles.emptyCreationsTitle, { textAlign: 'center' }]}>No Packages Listed</Text>
-                    <Text style={[styles.emptyCreationsSub, { textAlign: 'center' }]}>
-                      Create a package to display your services and pricing guides.
-                    </Text>
-                  </View>
+                  <ScreenEmpty
+                    title="No Packages Listed"
+                    message="Create a package to display your services and pricing guides."
+                  />
                 ) : (
                   <View style={{ gap: 12 }}>
                     {packages.map((pkg) => (
@@ -1455,89 +1439,60 @@ export default function TravelGuideScreen() {
                 )}
 
                 {/* Create/Edit Package Modal */}
-                <Modal
+                <Sheet
                   visible={pkgModalVisible}
-                  animationType="slide"
-                  transparent={true}
-                  onRequestClose={() => setPkgModalVisible(false)}
+                  onClose={() => setPkgModalVisible(false)}
+                  title={editingPackage ? 'Edit Package' : 'Create Package'}
                 >
-                  <View style={styles.creationDetailOverlay}>
-                    <View
-                      style={[
-                        styles.creationDetailCard,
-                        { backgroundColor: '#0B0D19', borderColor: '#1E243B', padding: 20 },
-                      ]}
-                    >
-                      <Text style={[styles.detailHeaderTitle, { fontSize: 18, marginBottom: 16 }]}>
-                        {editingPackage ? 'Edit Package' : 'Create Package'}
-                      </Text>
+                  <Input
+                    label="Package Title *"
+                    placeholder="e.g. Sikkim Highlights Tour Guide"
+                    value={pkgTitle}
+                    onChangeText={setPkgTitle}
+                  />
+                  <Input
+                    label="Price (₹) *"
+                    placeholder="e.g. 2500"
+                    keyboardType="numeric"
+                    value={pkgPrice}
+                    onChangeText={setPkgPrice}
+                    containerStyle={styles.formFieldGap}
+                  />
+                  <Input
+                    label="Duration (Days) *"
+                    placeholder="e.g. 5"
+                    keyboardType="numeric"
+                    value={pkgDuration}
+                    onChangeText={setPkgDuration}
+                    containerStyle={styles.formFieldGap}
+                  />
+                  <Input
+                    label="Cities Included (Comma separated)"
+                    placeholder="e.g. Gangtok, Lachen, Lachung"
+                    value={pkgCities}
+                    onChangeText={setPkgCities}
+                    containerStyle={styles.formFieldGap}
+                  />
+                  <Input
+                    label="Description"
+                    placeholder="Describe services, inclusions, and experience..."
+                    multiline
+                    numberOfLines={3}
+                    value={pkgDesc}
+                    onChangeText={setPkgDesc}
+                    containerStyle={styles.formFieldGap}
+                  />
 
-                      <Text style={styles.formInputLabel}>Package Title *</Text>
-                      <TextInput
-                        style={styles.formInput}
-                        placeholder="e.g. Sikkim Highlights Tour Guide"
-                        placeholderTextColor={C.textMuted}
-                        value={pkgTitle}
-                        onChangeText={(pkgTitle) => setPkgTitle(pkgTitle)}
-                      />
-
-                      <Text style={styles.formInputLabel}>Price (₹) *</Text>
-                      <TextInput
-                        style={styles.formInput}
-                        placeholder="e.g. 2500"
-                        placeholderTextColor={C.textMuted}
-                        keyboardType="numeric"
-                        value={pkgPrice}
-                        onChangeText={(pkgPrice) => setPkgPrice(pkgPrice)}
-                      />
-
-                      <Text style={styles.formInputLabel}>Duration (Days) *</Text>
-                      <TextInput
-                        style={styles.formInput}
-                        placeholder="e.g. 5"
-                        placeholderTextColor={C.textMuted}
-                        keyboardType="numeric"
-                        value={pkgDuration}
-                        onChangeText={(pkgDuration) => setPkgDuration(pkgDuration)}
-                      />
-
-                      <Text style={styles.formInputLabel}>Cities Included (Comma separated)</Text>
-                      <TextInput
-                        style={styles.formInput}
-                        placeholder="e.g. Gangtok, Lachen, Lachung"
-                        placeholderTextColor={C.textMuted}
-                        value={pkgCities}
-                        onChangeText={(pkgCities) => setPkgCities(pkgCities)}
-                      />
-
-                      <Text style={styles.formInputLabel}>Description</Text>
-                      <TextInput
-                        style={[styles.formInput, { height: 80, textAlignVertical: 'top' }]}
-                        placeholder="Describe services, inclusions, and experience..."
-                        placeholderTextColor={C.textMuted}
-                        multiline
-                        numberOfLines={3}
-                        value={pkgDesc}
-                        onChangeText={(pkgDesc) => setPkgDesc(pkgDesc)}
-                      />
-
-                      <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
-                        <TouchableOpacity
-                          style={[styles.publishBtn, { flex: 1, backgroundColor: C.green }]}
-                          onPress={handleSavePackage}
-                        >
-                          <Text style={styles.publishBtnText}>Save</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[styles.publishBtn, { flex: 1, backgroundColor: C.border }]}
-                          onPress={() => setPkgModalVisible(false)}
-                        >
-                          <Text style={styles.publishBtnText}>Cancel</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
+                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
+                    <Button label="Save" style={{ flex: 1 }} onPress={handleSavePackage} />
+                    <Button
+                      label="Cancel"
+                      variant="secondary"
+                      style={{ flex: 1 }}
+                      onPress={() => setPkgModalVisible(false)}
+                    />
                   </View>
-                </Modal>
+                </Sheet>
               </View>
             )}
 
@@ -1549,36 +1504,29 @@ export default function TravelGuideScreen() {
 
                 <View style={styles.estimatorForm}>
                   <View style={styles.formInputRow}>
-                    <View style={{ flex: 1, marginRight: 8 }}>
-                      <Text style={styles.formInputLabel}>Origin City</Text>
-                      <TextInput
-                        style={styles.formInput}
-                        placeholder="e.g. Gangtok"
-                        placeholderTextColor={C.textMuted}
-                        value={estFrom}
-                        onChangeText={setEstFrom}
-                      />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.formInputLabel}>Destination City</Text>
-                      <TextInput
-                        style={styles.formInput}
-                        placeholder="e.g. Gurudongmar"
-                        placeholderTextColor={C.textMuted}
-                        value={estTo}
-                        onChangeText={setEstTo}
-                      />
-                    </View>
+                    <Input
+                      label="Origin City"
+                      placeholder="e.g. Gangtok"
+                      value={estFrom}
+                      onChangeText={setEstFrom}
+                      containerStyle={{ flex: 1, marginRight: 8 }}
+                    />
+                    <Input
+                      label="Destination City"
+                      placeholder="e.g. Gurudongmar"
+                      value={estTo}
+                      onChangeText={setEstTo}
+                      containerStyle={{ flex: 1 }}
+                    />
                   </View>
 
-                  <Text style={styles.formInputLabel}>Road Distance (in km)</Text>
-                  <TextInput
-                    style={styles.formInput}
+                  <Input
+                    label="Road Distance (in km)"
                     placeholder="e.g. 180"
-                    placeholderTextColor={C.textMuted}
                     keyboardType="numeric"
                     value={estDist}
                     onChangeText={setEstDist}
+                    containerStyle={styles.formFieldGap}
                   />
 
                   <Text style={styles.formInputLabel}>Travel Mode Selection</Text>
@@ -1628,55 +1576,40 @@ export default function TravelGuideScreen() {
                 <Text style={styles.descSec}>Evaluate day-wise tourist expenses across core sectors</Text>
 
                 <View style={styles.budgetForm}>
-                  <View style={styles.budgetInputItem}>
-                    <Text style={styles.budgetInputLabel}>Transport Expenses (₹)</Text>
-                    <TextInput
-                      style={styles.budgetInput}
-                      keyboardType="numeric"
-                      value={costTransport}
-                      onChangeText={setCostTransport}
-                    />
-                  </View>
-
-                  <View style={styles.budgetInputItem}>
-                    <Text style={styles.budgetInputLabel}>Food & Meals Cost (₹)</Text>
-                    <TextInput
-                      style={styles.budgetInput}
-                      keyboardType="numeric"
-                      value={costFood}
-                      onChangeText={setCostFood}
-                    />
-                  </View>
-
-                  <View style={styles.budgetInputItem}>
-                    <Text style={styles.budgetInputLabel}>Accommodation / Stays (₹)</Text>
-                    <TextInput
-                      style={styles.budgetInput}
-                      keyboardType="numeric"
-                      value={costLodge}
-                      onChangeText={setCostLodge}
-                    />
-                  </View>
-
-                  <View style={styles.budgetInputItem}>
-                    <Text style={styles.budgetInputLabel}>Guide Service Charge (₹)</Text>
-                    <TextInput
-                      style={styles.budgetInput}
-                      keyboardType="numeric"
-                      value={costGuide}
-                      onChangeText={setCostGuide}
-                    />
-                  </View>
-
-                  <View style={styles.budgetInputItem}>
-                    <Text style={styles.budgetInputLabel}>Miscellaneous Buffer (₹)</Text>
-                    <TextInput
-                      style={styles.budgetInput}
-                      keyboardType="numeric"
-                      value={costMisc}
-                      onChangeText={setCostMisc}
-                    />
-                  </View>
+                  <Input
+                    label="Transport Expenses (₹)"
+                    keyboardType="numeric"
+                    value={costTransport}
+                    onChangeText={setCostTransport}
+                  />
+                  <Input
+                    label="Food & Meals Cost (₹)"
+                    keyboardType="numeric"
+                    value={costFood}
+                    onChangeText={setCostFood}
+                    containerStyle={styles.formFieldGap}
+                  />
+                  <Input
+                    label="Accommodation / Stays (₹)"
+                    keyboardType="numeric"
+                    value={costLodge}
+                    onChangeText={setCostLodge}
+                    containerStyle={styles.formFieldGap}
+                  />
+                  <Input
+                    label="Guide Service Charge (₹)"
+                    keyboardType="numeric"
+                    value={costGuide}
+                    onChangeText={setCostGuide}
+                    containerStyle={styles.formFieldGap}
+                  />
+                  <Input
+                    label="Miscellaneous Buffer (₹)"
+                    keyboardType="numeric"
+                    value={costMisc}
+                    onChangeText={setCostMisc}
+                    containerStyle={styles.formFieldGap}
+                  />
 
                   <TouchableOpacity
                     style={styles.calculateBudgetBtn}
@@ -2403,26 +2336,6 @@ const styles = StyleSheet.create({
     color: C.rose,
   },
 
-  // ── Search & Inputs ──────────────────────────────────
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: C.card,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    height: 44,
-    borderWidth: 1.5,
-    borderColor: C.border,
-    marginBottom: 14,
-  },
-  searchInput: {
-    flex: 1,
-    color: C.white,
-    marginLeft: 8,
-    fontSize: 12.5,
-    fontWeight: '600',
-  },
-
   // ── Glowing Leads Cards ──────────────────────────────
   leadCard: {
     backgroundColor: C.card,
@@ -2711,6 +2624,9 @@ const styles = StyleSheet.create({
     color: C.textSec,
     marginTop: 14,
     marginBottom: 6,
+  },
+  formFieldGap: {
+    marginTop: 14,
   },
   formInput: {
     backgroundColor: 'rgba(255,255,255,0.02)',
@@ -3062,26 +2978,6 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1.5,
     borderColor: C.border,
-  },
-  budgetInputItem: {
-    marginBottom: 10,
-  },
-  budgetInputLabel: {
-    fontSize: 11,
-    color: C.textSec,
-    marginBottom: 4,
-    fontWeight: '700',
-  },
-  budgetInput: {
-    backgroundColor: 'rgba(255,255,255,0.02)',
-    borderWidth: 1.5,
-    borderColor: C.border,
-    borderRadius: 10,
-    height: 36,
-    paddingHorizontal: 10,
-    color: C.white,
-    fontSize: 13,
-    fontWeight: '600',
   },
   calculateBudgetBtn: {
     flexDirection: 'row',
@@ -3672,42 +3568,5 @@ const styles = StyleSheet.create({
     color: C.white,
     fontSize: 13,
     fontWeight: '800',
-  },
-  emptyCreations: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingBottom: 60,
-  },
-  emptyCreationsTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#F8FAFC',
-    marginBottom: 6,
-  },
-  emptyCreationsSub: {
-    fontSize: 12,
-    color: C.textMuted,
-    textAlign: 'center',
-    lineHeight: 18,
-    paddingHorizontal: 32,
-  },
-  creationDetailOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    justifyContent: 'flex-end',
-  },
-  creationDetailCard: {
-    width: '100%',
-    height: '92%',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    borderWidth: 1,
-    paddingTop: 16,
-  },
-  detailHeaderTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#F8FAFC',
   },
 });
