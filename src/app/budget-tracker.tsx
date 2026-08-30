@@ -1,43 +1,17 @@
 import React, { useState } from 'react';
-import {
-  ActivityIndicator,
-  FlatList,
-  Image,
-  Modal,
-  RefreshControl,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { FlatList, Image, RefreshControl, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  AlertCircle,
-  ArrowLeft,
-  Car,
-  Check,
-  ChevronRight,
-  Hotel,
-  MapPin,
-  Plus,
-  ShoppingBag,
-  Ticket,
-  Trash2,
-  Utensils,
-  X,
-} from 'lucide-react-native';
+import { ArrowLeft, Car, Check, Hotel, Plus, ShoppingBag, Ticket, Trash2, Utensils } from 'lucide-react-native';
 
 import { apiService } from '@/services/api';
 import { queryKeys } from '@/lib/query-keys';
 import { toast, errorToastMessage } from '@/lib/feedback';
 import { useApp } from '@/store/AppContext';
 import { C } from '@/theme/tokens';
+import { Button, Card, Chip, Input, ScreenEmpty, ScreenError, ScreenLoading, Sheet } from '@/components/ui';
 
 // docs/REMEDIATION.md §8.12: this screen was pure local useState — a
 // hardcoded ₹15,000 budget and five hardcoded expense rows that reset the
@@ -112,7 +86,7 @@ function ExpenseRow({
   const meta = catMeta(expense.category);
 
   return (
-    <View style={styles.expenseRow}>
+    <Card style={styles.expenseRow}>
       <View style={[styles.expenseIcon, { backgroundColor: meta.color + '22' }]}>
         <meta.Icon size={16} color={meta.color} />
       </View>
@@ -134,7 +108,7 @@ function ExpenseRow({
           <Trash2 size={15} color={C.textMuted} />
         </TouchableOpacity>
       )}
-    </View>
+    </Card>
   );
 }
 
@@ -211,13 +185,12 @@ export default function BudgetTrackerScreen() {
   if (!isLoggedIn) {
     return (
       <Shell title="Budget Tracker" onBack={() => router.back()}>
-        <View style={styles.stateWrap}>
-          <MapPin size={52} color={C.textMuted} strokeWidth={1.3} />
-          <Text style={styles.stateText}>Sign in to track a trip budget.</Text>
-          <TouchableOpacity style={styles.primaryBtn} onPress={() => router.navigate('/auth')}>
-            <Text style={styles.primaryBtnText}>Sign In</Text>
-          </TouchableOpacity>
-        </View>
+        <ScreenEmpty
+          title="Sign in required"
+          message="Sign in to track a trip budget."
+          actionLabel="Sign In"
+          onAction={() => router.navigate('/auth')}
+        />
       </Shell>
     );
   }
@@ -225,10 +198,7 @@ export default function BudgetTrackerScreen() {
   if (tripsLoading) {
     return (
       <Shell title="Budget Tracker" onBack={() => router.back()}>
-        <View style={styles.stateWrap}>
-          <ActivityIndicator size="large" color={C.blue} />
-          <Text style={styles.stateText}>Loading your trips…</Text>
-        </View>
+        <ScreenLoading label="Loading your trips…" />
       </Shell>
     );
   }
@@ -236,15 +206,12 @@ export default function BudgetTrackerScreen() {
   if (tripsError || myTrips.length === 0) {
     return (
       <Shell title="Budget Tracker" onBack={() => router.back()}>
-        <View style={styles.stateWrap}>
-          <MapPin size={52} color={C.textMuted} strokeWidth={1.3} />
-          <Text style={styles.stateText}>
-            {tripsError ? 'Could not load your trips.' : 'Join or create a trip to start tracking a shared budget.'}
-          </Text>
-          <TouchableOpacity style={styles.primaryBtn} onPress={() => router.navigate('/search')}>
-            <Text style={styles.primaryBtnText}>Browse trips</Text>
-          </TouchableOpacity>
-        </View>
+        <ScreenEmpty
+          title={tripsError ? 'Could not load trips' : 'No trips yet'}
+          message={tripsError ? 'Could not load your trips.' : 'Join or create a trip to start tracking a shared budget.'}
+          actionLabel="Browse trips"
+          onAction={() => router.navigate('/search')}
+        />
       </Shell>
     );
   }
@@ -253,37 +220,18 @@ export default function BudgetTrackerScreen() {
     <Shell title="Budget Tracker" onBack={() => router.back()}>
       {/* Trip selector */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tripChips}>
-        {myTrips.map((t) => {
-          const active = t.id === activeTripId;
-          return (
-            <TouchableOpacity
-              key={t.id}
-              style={[styles.tripChip, active && styles.tripChipActive]}
-              onPress={() => setTripId(t.id)}
-            >
-              <Text style={[styles.tripChipText, active && styles.tripChipTextActive]} numberOfLines={1}>
-                {t.name}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
+        {myTrips.map((t) => (
+          <Chip key={t.id} label={t.name} selected={t.id === activeTripId} onPress={() => setTripId(t.id)} />
+        ))}
       </ScrollView>
 
       {budgetLoading ? (
-        <View style={styles.stateWrap}>
-          <ActivityIndicator size="large" color={C.blue} />
-          <Text style={styles.stateText}>Loading expenses…</Text>
-        </View>
+        <ScreenLoading label="Loading expenses…" />
       ) : budgetError || !budget ? (
-        <View style={styles.stateWrap}>
-          <AlertCircle size={48} color={C.rose} strokeWidth={1.4} />
-          <Text style={styles.stateText}>
-            {error instanceof Error ? error.message : 'Could not load this trip budget.'}
-          </Text>
-          <TouchableOpacity style={styles.primaryBtn} onPress={() => refetch()}>
-            <Text style={styles.primaryBtnText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
+        <ScreenError
+          message={error instanceof Error ? error.message : 'Could not load this trip budget.'}
+          onRetry={() => refetch()}
+        />
       ) : (
         <FlatList
           data={budget.expenses}
@@ -368,68 +316,48 @@ export default function BudgetTrackerScreen() {
       )}
 
       {/* Add expense modal */}
-      <Modal visible={showAdd} transparent animationType="slide" onRequestClose={() => setShowAdd(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add expense{activeTrip ? ` · ${activeTrip.name}` : ''}</Text>
-              <TouchableOpacity onPress={() => setShowAdd(false)} accessibilityRole="button" accessibilityLabel="Close">
-                <X size={20} color={C.textSec} />
-              </TouchableOpacity>
-            </View>
+      <Sheet
+        visible={showAdd}
+        onClose={() => setShowAdd(false)}
+        title={`Add expense${activeTrip ? ` · ${activeTrip.name}` : ''}`}
+        scrollable={false}
+      >
+        <View style={{ gap: 12, paddingBottom: 20 }}>
+          <Input placeholder="What was it for?" value={desc} onChangeText={setDesc} accessibilityLabel="Expense description" />
+          <Input
+            placeholder="Amount (₹)"
+            keyboardType="numeric"
+            value={amount}
+            onChangeText={setAmount}
+            accessibilityLabel="Expense amount"
+          />
 
-            <TextInput
-              style={styles.modalInput}
-              placeholder="What was it for?"
-              placeholderTextColor={C.textMuted}
-              value={desc}
-              onChangeText={setDesc}
-              accessibilityLabel="Expense description"
-            />
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Amount (₹)"
-              placeholderTextColor={C.textMuted}
-              keyboardType="numeric"
-              value={amount}
-              onChangeText={setAmount}
-              accessibilityLabel="Expense amount"
-            />
-
-            <View style={styles.catRow}>
-              {CATEGORIES.map((c) => {
-                const active = category === c.key;
-                return (
-                  <TouchableOpacity
-                    key={c.key}
-                    style={[styles.catPill, active && { backgroundColor: c.color + '22', borderColor: c.color }]}
-                    onPress={() => setCategory(c.key)}
-                  >
-                    <c.Icon size={13} color={active ? c.color : C.textMuted} />
-                    <Text style={[styles.catPillText, active && { color: c.color }]}>{c.label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            <TouchableOpacity
-              style={[styles.submitBtn, !canSubmit && { opacity: 0.5 }]}
-              disabled={!canSubmit}
-              onPress={() => addMutation.mutate()}
-            >
-              {addMutation.isPending ? (
-                <ActivityIndicator color={C.white} />
-              ) : (
-                <>
-                  <Check size={16} color={C.white} />
-                  <Text style={styles.submitBtnText}>Add expense</Text>
-                  <ChevronRight size={16} color={C.white} />
-                </>
-              )}
-            </TouchableOpacity>
+          <View style={styles.catRow}>
+            {CATEGORIES.map((c) => {
+              const active = category === c.key;
+              return (
+                <Chip
+                  key={c.key}
+                  label={c.label}
+                  selected={active}
+                  onPress={() => setCategory(c.key)}
+                  icon={<c.Icon size={13} color={active ? c.color : C.textMuted} />}
+                  style={active ? { backgroundColor: c.color + '22', borderColor: c.color } : undefined}
+                />
+              );
+            })}
           </View>
+
+          <Button
+            label="Add expense"
+            onPress={() => addMutation.mutate()}
+            disabled={!canSubmit}
+            loading={addMutation.isPending}
+            icon={<Check size={16} color={C.white} />}
+            fullWidth
+          />
         </View>
-      </Modal>
+      </Sheet>
     </Shell>
   );
 }
@@ -476,23 +404,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.08)',
   },
   headerTitle: { fontSize: 18, fontWeight: '700', color: C.white },
-  stateWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, paddingHorizontal: 40 },
-  stateText: { color: C.textSec, fontSize: 13.5, fontWeight: '600', textAlign: 'center', lineHeight: 19 },
-  primaryBtn: { backgroundColor: C.blue, paddingHorizontal: 22, paddingVertical: 10, borderRadius: 12 },
-  primaryBtnText: { color: C.white, fontSize: 13, fontWeight: '700' },
   tripChips: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingBottom: 12 },
-  tripChip: {
-    maxWidth: 200,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 12,
-    backgroundColor: C.card,
-    borderWidth: 1,
-    borderColor: C.border,
-  },
-  tripChipActive: { backgroundColor: C.blue, borderColor: C.blue },
-  tripChipText: { fontSize: 12, fontWeight: '700', color: C.textSec },
-  tripChipTextActive: { color: C.white },
   scrollContent: { paddingHorizontal: 16, paddingTop: 4 },
   summaryCard: { borderRadius: 20, padding: 18, gap: 6, marginBottom: 16 },
   summaryLabel: { fontSize: 10, fontWeight: '800', color: C.textSec, letterSpacing: 1 },
@@ -521,10 +433,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: C.card,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: C.border,
     padding: 12,
     marginBottom: 8,
   },
@@ -549,48 +457,5 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
   },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'flex-end' },
-  modalCard: {
-    backgroundColor: C.card,
-    borderTopLeftRadius: 26,
-    borderTopRightRadius: 26,
-    padding: 20,
-    gap: 12,
-    borderWidth: 1,
-    borderColor: C.border,
-  },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  modalTitle: { fontSize: 15, fontWeight: '800', color: C.white, flex: 1, marginRight: 10 },
-  modalInput: {
-    backgroundColor: C.cardAlt,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    height: 46,
-    color: C.white,
-    fontSize: 13.5,
-  },
   catRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  catPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 10,
-    backgroundColor: C.cardAlt,
-    borderWidth: 1,
-    borderColor: C.border,
-  },
-  catPillText: { fontSize: 11, fontWeight: '700', color: C.textMuted },
-  submitBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: C.blue,
-    height: 48,
-    borderRadius: 14,
-    marginTop: 4,
-  },
-  submitBtnText: { color: C.white, fontSize: 14, fontWeight: '800' },
 });

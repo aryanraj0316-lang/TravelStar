@@ -15,19 +15,10 @@ import {
   Waves,
 } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Dimensions,
-  FlatList,
-  Image,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { Dimensions, FlatList, Image, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { C } from '@/theme/tokens';
+import { Card, ScreenEmpty, ScreenError, ScreenLoading } from '@/components/ui';
 
 interface HazardAlert {
   id: string;
@@ -107,7 +98,7 @@ function AlertCard({ alert }: { alert: HazardAlert }) {
   const sev = getSeverityStyle(alert.severity);
 
   return (
-    <View style={styles.alertCard}>
+    <Card style={styles.alertCard}>
       {/* Card Header Info */}
       <View style={styles.cardHeaderRow}>
         <View style={styles.cardCategoryWrap}>
@@ -161,7 +152,7 @@ function AlertCard({ alert }: { alert: HazardAlert }) {
         <Clock size={11} color={C.textMuted} />
         <Text style={styles.cardTimeText}>Issued {alert.time}</Text>
       </View>
-    </View>
+    </Card>
   );
 }
 
@@ -280,20 +271,11 @@ export default function MonsoonAdvisoryScreen() {
         }
         ListEmptyComponent={
           alerts === null && !loadError ? (
-            <View style={styles.emptyContainer}>
-              <ActivityIndicator color={C.blue} />
-            </View>
+            <ScreenLoading label="Loading hazard alerts…" />
           ) : loadError ? (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>Couldn&apos;t load hazard alerts.</Text>
-              <TouchableOpacity onPress={loadAlerts} activeOpacity={0.8} style={{ marginTop: 12 }}>
-                <Text style={[styles.emptyText, { color: C.blue, fontWeight: '700' }]}>Retry</Text>
-              </TouchableOpacity>
-            </View>
+            <ScreenError message="Couldn't load hazard alerts." onRetry={loadAlerts} />
           ) : (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>No active alerts found in this category.</Text>
-            </View>
+            <ScreenEmpty title="No active alerts" message="No active alerts found in this category." />
           )
         }
         ListFooterComponent={
@@ -439,10 +421,6 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   alertCard: {
-    backgroundColor: C.card,
-    borderRadius: 20,
-    borderWidth: 1.2,
-    borderColor: C.border,
     padding: 18,
   },
   cardHeaderRow: {
@@ -610,14 +588,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: C.red,
-  },
-  emptyContainer: {
-    paddingVertical: 40,
-    alignItems: 'center',
-  },
-  emptyText: {
-    fontSize: 13,
-    color: C.textMuted,
   },
   alertImageContainer: {
     height: 130,

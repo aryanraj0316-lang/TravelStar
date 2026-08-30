@@ -2,10 +2,8 @@ import { useQuery } from '@tanstack/react-query';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
-  AlertCircle,
   ArrowLeft,
   Award,
-  ChevronRight,
   Coffee,
   Compass,
   Globe,
@@ -18,23 +16,13 @@ import {
   X,
 } from 'lucide-react-native';
 import { useState } from 'react';
-import {
-  ActivityIndicator,
-  Dimensions,
-  Image,
-  Modal,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { Dimensions, Image, Modal, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { queryKeys } from '@/lib/query-keys';
 import { apiService } from '@/services/api';
 import { C } from '@/theme/tokens';
+import { Button, Card, ScreenEmpty, ScreenError, ScreenLoading } from '@/components/ui';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -108,10 +96,7 @@ export default function DestinationDetailsScreen() {
       <SafeAreaView edges={['left', 'right']} style={styles.container}>
         <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
         {renderHeader('Destination')}
-        <View style={styles.stateWrap}>
-          <ActivityIndicator size="large" color={C.blue} />
-          <Text style={styles.stateText}>Loading destination…</Text>
-        </View>
+        <ScreenLoading label="Loading destination…" />
       </SafeAreaView>
     );
   }
@@ -126,25 +111,14 @@ export default function DestinationDetailsScreen() {
       <SafeAreaView edges={['left', 'right']} style={styles.container}>
         <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
         {renderHeader('Destination')}
-        <View style={styles.stateWrap}>
-          {notFound ? (
-            <Compass size={56} color={C.textMuted} strokeWidth={1.3} />
-          ) : (
-            <AlertCircle size={56} color={C.red} strokeWidth={1.4} />
-          )}
-          <Text style={styles.stateText}>
-            {notFound
-              ? "We couldn't find that destination."
-              : error instanceof Error
-                ? error.message
-                : 'Could not load this destination.'}
-          </Text>
-          {!notFound && (
-            <TouchableOpacity activeOpacity={0.85} style={styles.retryBtn} onPress={() => refetch()}>
-              <Text style={styles.retryBtnText}>Retry</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+        {notFound ? (
+          <ScreenEmpty title="Destination not found" message="We couldn't find that destination." />
+        ) : (
+          <ScreenError
+            message={error instanceof Error ? error.message : 'Could not load this destination.'}
+            onRetry={() => refetch()}
+          />
+        )}
       </SafeAreaView>
     );
   }
@@ -188,13 +162,13 @@ export default function DestinationDetailsScreen() {
               <Text style={styles.sectionTitle}>Special Attractions & Specialties</Text>
               <View style={styles.specialtiesGrid}>
                 {destination.specialties.map((spec, i) => (
-                  <View key={i} style={styles.specialtyCard}>
+                  <Card key={i} style={styles.specialtyCard}>
                     <View style={styles.specialtyIconBox}>{getSpecialtyIcon(spec.icon)}</View>
                     <View style={styles.specialtyInfo}>
                       <Text style={styles.specialtyTitle}>{spec.title}</Text>
                       <Text style={styles.specialtyDesc}>{spec.desc}</Text>
                     </View>
-                  </View>
+                  </Card>
                 ))}
               </View>
             </View>
@@ -236,22 +210,13 @@ export default function DestinationDetailsScreen() {
       {/* Sticky CTA */}
       <View style={styles.stickyCtaWrap}>
         <LinearGradient colors={['#0C1020', C.bg]} style={styles.ctaBackgroundGlow} />
-        <TouchableOpacity
-          style={styles.ctaButton}
-          activeOpacity={0.85}
+        <Button
+          label="Plan a Trip Here"
           onPress={() => router.navigate('/create')}
-        >
-          <LinearGradient
-            colors={['#0044CC', '#0066FF']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.ctaGradient}
-          >
-            <MapPinned size={15} color={C.white} strokeWidth={2.4} />
-            <Text style={styles.ctaBtnText}>Plan a Trip Here</Text>
-            <ChevronRight size={16} color={C.white} strokeWidth={2.5} />
-          </LinearGradient>
-        </TouchableOpacity>
+          icon={<MapPinned size={15} color={C.white} strokeWidth={2.4} />}
+          fullWidth
+          style={styles.ctaButton}
+        />
       </View>
 
       {/* Image zoom viewer */}
@@ -326,31 +291,6 @@ const styles = StyleSheet.create({
     marginHorizontal: 10,
     letterSpacing: 0.3,
   },
-  stateWrap: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 16,
-    paddingHorizontal: 40,
-  },
-  stateText: {
-    color: C.textSec,
-    fontSize: 14,
-    fontWeight: '600',
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  retryBtn: {
-    backgroundColor: C.blue,
-    paddingHorizontal: 22,
-    paddingVertical: 10,
-    borderRadius: 12,
-  },
-  retryBtnText: {
-    color: C.white,
-    fontSize: 13,
-    fontWeight: '700',
-  },
   scrollContent: {
     paddingBottom: 120,
   },
@@ -423,11 +363,6 @@ const styles = StyleSheet.create({
   },
   specialtyCard: {
     flexDirection: 'row',
-    backgroundColor: C.card,
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1.2,
-    borderColor: C.border,
     alignItems: 'center',
     gap: 14,
   },
@@ -504,26 +439,11 @@ const styles = StyleSheet.create({
     opacity: 0.95,
   },
   ctaButton: {
-    borderRadius: 24,
-    overflow: 'hidden',
     shadowColor: C.blue,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.35,
     shadowRadius: 18,
     elevation: 8,
-  },
-  ctaGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    gap: 8,
-  },
-  ctaBtnText: {
-    fontSize: 14.5,
-    fontWeight: '800',
-    color: C.white,
-    letterSpacing: 0.2,
   },
   zoomModalContainer: {
     flex: 1,
