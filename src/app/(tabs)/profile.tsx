@@ -22,7 +22,6 @@ import {
   MapPin,
   Maximize2,
   Pencil,
-  QrCode,
   Trash2,
   X,
 } from 'lucide-react-native';
@@ -34,9 +33,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
-  useColorScheme,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -46,6 +43,7 @@ import { registerForPushNotifications, unregisterPushNotifications } from '@/lib
 import { toast, errorToastMessage, showAlert, useConfirm } from '@/lib/feedback';
 import { uploadFileToUrl } from '@/lib/upload';
 import { C } from '@/theme/tokens';
+import { Button, Chip, Input, Sheet } from '@/components/ui';
 
 // Safe dynamic import to prevent native app crash if module is unlinked in old APK
 let ImagePicker: any = null;
@@ -70,7 +68,6 @@ function ProfileScreen() {
   }, []);
   const router = useRouter();
   const navigation = useNavigation();
-  const isDark = useColorScheme() === 'dark';
   const {
     profile,
     updateProfile,
@@ -353,9 +350,14 @@ function ProfileScreen() {
     }
   };
 
-  // Ticket Modal state
-  const [selectedTicket] = useState<any>(null);
-  const [showTicketModal, setShowTicketModal] = useState(false);
+  // "Digital Ticket & QR Code" modal removed rather than kept (same
+  // convention as the "Share Profile" removal below): `selectedTicket`
+  // only ever destructured its getter, never a setter, so it was
+  // permanently null, and nothing in this file ever called
+  // `setShowTicketModal(true)` — the modal's `{selectedTicket && (...)}`
+  // guard could never render. It was unreachable dead code presenting a
+  // fake "BOARDING PASS" with a "Download Pass (PDF)" button that only
+  // ever showed a success toast and saved nothing.
 
   // Handlers
   const handleSaveProfile = () => {
@@ -778,32 +780,30 @@ function ProfileScreen() {
                 This permanently removes your profile, trips you organize, join requests, messages, and expenses. It
                 cannot be undone. Enter your password to confirm.
               </Text>
-              <TextInput
-                style={styles.deleteInput}
+              <Input
                 placeholder="Current password"
-                placeholderTextColor="#7E8494"
                 secureTextEntry
                 value={deletePassword}
                 onChangeText={setDeletePassword}
                 accessibilityLabel="Current password"
               />
               <View style={styles.deleteBtnRow}>
-                <TouchableOpacity
-                  style={styles.deleteCancelBtn}
+                <Button
+                  label="Cancel"
+                  variant="secondary"
+                  style={{ flex: 1 }}
                   onPress={() => {
                     setShowDeleteModal(false);
                     setDeletePassword('');
                   }}
-                >
-                  <Text style={styles.deleteCancelText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.deleteConfirmBtn, (deleting || deletePassword.length === 0) && { opacity: 0.5 }]}
+                />
+                <Button
+                  label={deleting ? 'Deleting…' : 'Delete forever'}
+                  variant="destructive"
+                  style={{ flex: 1 }}
                   disabled={deleting || deletePassword.length === 0}
                   onPress={handleDeleteAccount}
-                >
-                  <Text style={styles.deleteConfirmText}>{deleting ? 'Deleting…' : 'Delete forever'}</Text>
-                </TouchableOpacity>
+                />
               </View>
             </View>
           </View>
@@ -815,294 +815,146 @@ function ProfileScreen() {
       {/* ════════════════════════════════════════════════
           EDIT PROFILE MODAL
           ════════════════════════════════════════════════ */}
-      <Modal
-        visible={showEditModal}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowEditModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <TouchableOpacity style={StyleSheet.absoluteFill} onPress={() => setShowEditModal(false)} />
-          <View style={[styles.modalSheet, { backgroundColor: isDark ? '#111424' : '#FFFFFF' }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalSheetTitle, { color: isDark ? '#FFF' : '#0F172A' }]}>Edit Profile Details</Text>
-              <TouchableOpacity onPress={() => setShowEditModal(false)}>
-                <X size={20} color={isDark ? '#FFF' : '#000'} />
-              </TouchableOpacity>
-            </View>
+      <Sheet visible={showEditModal} onClose={() => setShowEditModal(false)} title="Edit Profile Details">
+        {/* Profile Photo Selector Section */}
+        <View style={styles.photoPickerSection}>
+          <Text style={styles.inputLabel}>Profile Photo</Text>
 
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
-              {/* Profile Photo Selector Section */}
-              <View style={styles.photoPickerSection}>
-                <Text style={styles.inputLabel}>Profile Photo</Text>
+          {/* Large Preview with Interactive Tap */}
+          <TouchableOpacity
+            activeOpacity={0.8}
+            style={styles.avatarPreviewWrap}
+            onPress={pickImageFromDevice}
+            disabled={avatarUploading}
+          >
+            <Image source={{ uri: editAvatar }} style={styles.avatarPreviewImage} />
+            {avatarUploading ? (
+              <View style={styles.avatarUploadingOverlay}>
+                <ActivityIndicator color="#FFF" />
+              </View>
+            ) : (
+              <View style={styles.cameraIconBadge}>
+                <Camera size={12} color="#FFF" />
+              </View>
+            )}
+          </TouchableOpacity>
 
-                {/* Large Preview with Interactive Tap */}
+          {/* Device Pick & Camera Buttons */}
+          <View style={styles.devicePickRow}>
+            <TouchableOpacity
+              style={styles.devicePickBtn}
+              activeOpacity={0.8}
+              onPress={pickImageFromDevice}
+              disabled={avatarUploading}
+            >
+              <ImageIcon size={15} color="#0066FF" />
+              <Text style={styles.devicePickBtnText}>From Gallery</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.devicePickBtn}
+              activeOpacity={0.8}
+              onPress={takePhotoWithCamera}
+              disabled={avatarUploading}
+            >
+              <Camera size={15} color="#0066FF" />
+              <Text style={styles.devicePickBtnText}>Take Photo</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Preset Avatars Row */}
+          <Text style={{ fontSize: 11, color: '#7E8494', marginTop: 12, marginBottom: 8, alignSelf: 'flex-start' }}>
+            Or Choose from Preset Avatars:
+          </Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 10, paddingVertical: 4 }}
+          >
+            {AVATAR_PRESETS.map((presetUrl, idx) => {
+              const isSelected = editAvatar === presetUrl;
+              return (
                 <TouchableOpacity
+                  key={idx}
                   activeOpacity={0.8}
-                  style={styles.avatarPreviewWrap}
-                  onPress={pickImageFromDevice}
-                  disabled={avatarUploading}
+                  onPress={() => setEditAvatar(presetUrl)}
+                  style={[styles.presetAvatarTile, isSelected && styles.presetAvatarTileSelected]}
                 >
-                  <Image source={{ uri: editAvatar }} style={styles.avatarPreviewImage} />
-                  {avatarUploading ? (
-                    <View style={styles.avatarUploadingOverlay}>
-                      <ActivityIndicator color="#FFF" />
-                    </View>
-                  ) : (
-                    <View style={styles.cameraIconBadge}>
-                      <Camera size={12} color="#FFF" />
+                  <Image source={{ uri: presetUrl }} style={styles.presetAvatarImage} />
+                  {isSelected && (
+                    <View style={styles.presetSelectedCheck}>
+                      <Check size={10} color="#FFF" strokeWidth={3} />
                     </View>
                   )}
                 </TouchableOpacity>
-
-                {/* Device Pick & Camera Buttons */}
-                <View style={styles.devicePickRow}>
-                  <TouchableOpacity
-                    style={styles.devicePickBtn}
-                    activeOpacity={0.8}
-                    onPress={pickImageFromDevice}
-                    disabled={avatarUploading}
-                  >
-                    <ImageIcon size={15} color="#0066FF" />
-                    <Text style={styles.devicePickBtnText}>From Gallery</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.devicePickBtn}
-                    activeOpacity={0.8}
-                    onPress={takePhotoWithCamera}
-                    disabled={avatarUploading}
-                  >
-                    <Camera size={15} color="#0066FF" />
-                    <Text style={styles.devicePickBtnText}>Take Photo</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Preset Avatars Row */}
-                <Text
-                  style={{ fontSize: 11, color: '#7E8494', marginTop: 12, marginBottom: 8, alignSelf: 'flex-start' }}
-                >
-                  Or Choose from Preset Avatars:
-                </Text>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={{ gap: 10, paddingVertical: 4 }}
-                >
-                  {AVATAR_PRESETS.map((presetUrl, idx) => {
-                    const isSelected = editAvatar === presetUrl;
-                    return (
-                      <TouchableOpacity
-                        key={idx}
-                        activeOpacity={0.8}
-                        onPress={() => setEditAvatar(presetUrl)}
-                        style={[styles.presetAvatarTile, isSelected && styles.presetAvatarTileSelected]}
-                      >
-                        <Image source={{ uri: presetUrl }} style={styles.presetAvatarImage} />
-                        {isSelected && (
-                          <View style={styles.presetSelectedCheck}>
-                            <Check size={10} color="#FFF" strokeWidth={3} />
-                          </View>
-                        )}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-              </View>
-
-              <Text style={styles.inputLabel}>Full Name</Text>
-              <TextInput
-                style={[
-                  styles.modalInput,
-                  { color: isDark ? '#FFF' : '#000', borderColor: isDark ? '#262940' : '#CBD5E1' },
-                ]}
-                value={editName}
-                onChangeText={setEditName}
-                placeholder="Enter full name"
-                placeholderTextColor="#888"
-              />
-
-              {/* Gender Selection Section */}
-              <Text style={styles.inputLabel}>Gender</Text>
-              <View style={styles.genderWrap}>
-                {[
-                  { label: 'Male', icon: '👨' },
-                  { label: 'Female', icon: '👩' },
-                  { label: 'Non-Binary', icon: '✨' },
-                  { label: 'Private', icon: '🔒' },
-                ].map((g) => {
-                  const isSelected = editGender === g.label;
-                  return (
-                    <TouchableOpacity
-                      key={g.label}
-                      activeOpacity={0.8}
-                      onPress={() => setEditGender(g.label)}
-                      style={[
-                        styles.genderChip,
-                        isSelected && styles.genderChipSelected,
-                        !isSelected && { backgroundColor: isDark ? '#1A1D30' : '#E2E8F0', borderColor: 'transparent' },
-                      ]}
-                    >
-                      <Text style={{ fontSize: 13 }}>{g.icon}</Text>
-                      <Text
-                        style={[
-                          styles.genderChipText,
-                          isSelected && styles.genderChipTextSelected,
-                          !isSelected && { color: isDark ? '#CBD5E1' : '#475569' },
-                        ]}
-                      >
-                        {g.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
-              <Text style={styles.inputLabel}>Bio / Traveler Tagline</Text>
-              <TextInput
-                style={[
-                  styles.modalInput,
-                  { color: isDark ? '#FFF' : '#000', borderColor: isDark ? '#262940' : '#CBD5E1', height: 70 },
-                ]}
-                value={editBio}
-                onChangeText={setEditBio}
-                multiline
-                placeholder="Share your travel motto"
-                placeholderTextColor="#888"
-              />
-
-              <Text style={styles.inputLabel}>Mobile Phone</Text>
-              <TextInput
-                style={[
-                  styles.modalInput,
-                  { color: isDark ? '#FFF' : '#000', borderColor: isDark ? '#262940' : '#CBD5E1' },
-                ]}
-                value={editPhone}
-                onChangeText={setEditPhone}
-                keyboardType="phone-pad"
-              />
-
-              <Text style={styles.inputLabel}>Emergency SOS Contact</Text>
-              <TextInput
-                style={[
-                  styles.modalInput,
-                  { color: isDark ? '#FFF' : '#000', borderColor: isDark ? '#262940' : '#CBD5E1' },
-                ]}
-                value={editEmergencyPhone}
-                onChangeText={setEditEmergencyPhone}
-                keyboardType="phone-pad"
-              />
-
-              <Text style={styles.inputLabel}>Languages Spoken</Text>
-              <TextInput
-                style={[
-                  styles.modalInput,
-                  { color: isDark ? '#FFF' : '#000', borderColor: isDark ? '#262940' : '#CBD5E1' },
-                ]}
-                value={editLanguages}
-                onChangeText={setEditLanguages}
-              />
-
-              <Text style={styles.inputLabel}>Travel & Adventure Styles</Text>
-              <TextInput
-                style={[
-                  styles.modalInput,
-                  { color: isDark ? '#FFF' : '#000', borderColor: isDark ? '#262940' : '#CBD5E1' },
-                ]}
-                value={editStyles}
-                onChangeText={setEditStyles}
-              />
-
-              <TouchableOpacity style={styles.saveModalBtn} onPress={handleSaveProfile}>
-                <Text style={styles.saveModalBtnText}>Save Profile Changes</Text>
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
+              );
+            })}
+          </ScrollView>
         </View>
-      </Modal>
 
-      {/* ════════════════════════════════════════════════
-          DIGITAL TICKET & QR CODE MODAL
-          ════════════════════════════════════════════════ */}
-      <Modal
-        visible={showTicketModal}
-        animationType="fade"
-        transparent={true}
-        onRequestClose={() => setShowTicketModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <TouchableOpacity style={StyleSheet.absoluteFill} onPress={() => setShowTicketModal(false)} />
-          {selectedTicket && (
-            <View style={[styles.ticketCardModal, { backgroundColor: isDark ? '#111424' : '#FFFFFF' }]}>
-              <View style={styles.ticketHeader}>
-                <Text style={styles.ticketBadge}>BOARDING PASS</Text>
-                <TouchableOpacity onPress={() => setShowTicketModal(false)}>
-                  <X size={20} color={isDark ? '#FFF' : '#000'} />
-                </TouchableOpacity>
-              </View>
+        <Input label="Full Name" value={editName} onChangeText={setEditName} placeholder="Enter full name" />
 
-              <Text style={[styles.ticketTitle, { color: isDark ? '#FFF' : '#0F172A' }]}>{selectedTicket.title}</Text>
-              <Text style={{ fontSize: 12, color: '#0066FF', fontWeight: '700', marginTop: 4 }}>
-                Ticket Code: {selectedTicket.ticketCode}
-              </Text>
-
-              {/* Route */}
-              <View style={styles.ticketRouteRow}>
-                {selectedTicket.route.map((city: string, idx: number) => (
-                  <React.Fragment key={city}>
-                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#0066FF' }}>{city}</Text>
-                    {idx < selectedTicket.route.length - 1 && (
-                      <Text style={{ color: '#888', marginHorizontal: 4 }}>➔</Text>
-                    )}
-                  </React.Fragment>
-                ))}
-              </View>
-
-              {/* QR Code Graphic placeholder */}
-              <View style={styles.qrCodeGraphic}>
-                <QrCode size={110} color="#0F172A" />
-                <Text style={{ fontSize: 10, color: '#475569', marginTop: 8 }}>Scan at Platform / Meeting Point</Text>
-              </View>
-
-              <View style={styles.ticketDetailsGrid}>
-                <View style={styles.ticketMetaCell}>
-                  <Text style={styles.metaLabel}>Passenger</Text>
-                  <Text style={[styles.metaVal, { color: isDark ? '#FFF' : '#0F172A' }]}>{profile.name}</Text>
-                </View>
-                <View style={styles.ticketMetaCell}>
-                  <Text style={styles.metaLabel}>Seats</Text>
-                  <Text style={[styles.metaVal, { color: isDark ? '#FFF' : '#0F172A' }]}>
-                    {selectedTicket.seats} Confirmed
-                  </Text>
-                </View>
-                <View style={styles.ticketMetaCell}>
-                  <Text style={styles.metaLabel}>Meeting Point</Text>
-                  <Text style={[styles.metaVal, { color: isDark ? '#FFF' : '#0F172A' }]}>
-                    {selectedTicket.meetingPoint}
-                  </Text>
-                </View>
-                <View style={styles.ticketMetaCell}>
-                  <Text style={styles.metaLabel}>Organizer</Text>
-                  <Text style={[styles.metaVal, { color: isDark ? '#FFF' : '#0F172A' }]}>
-                    {selectedTicket.organizer}
-                  </Text>
-                </View>
-              </View>
-
-              <TouchableOpacity
-                style={styles.downloadTicketBtn}
-                onPress={() => {
-                  toast('📥 Ticket Downloaded — Digital Pass saved to phone gallery!', 'success');
-                  setShowTicketModal(false);
-                }}
-              >
-                <Download size={16} color="#FFF" />
-                <Text style={styles.downloadTicketBtnText}>Download Pass (PDF)</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+        {/* Gender Selection Section */}
+        <Text style={styles.inputLabel}>Gender</Text>
+        <View style={styles.genderWrap}>
+          {[
+            { label: 'Male', icon: '👨' },
+            { label: 'Female', icon: '👩' },
+            { label: 'Non-Binary', icon: '✨' },
+            { label: 'Private', icon: '🔒' },
+          ].map((g) => (
+            <Chip
+              key={g.label}
+              label={g.label}
+              icon={<Text style={{ fontSize: 13 }}>{g.icon}</Text>}
+              selected={editGender === g.label}
+              onPress={() => setEditGender(g.label)}
+            />
+          ))}
         </View>
-      </Modal>
+
+        <Input
+          label="Bio / Traveler Tagline"
+          value={editBio}
+          onChangeText={setEditBio}
+          multiline
+          placeholder="Share your travel motto"
+          containerStyle={styles.editFieldGap}
+        />
+        <Input
+          label="Mobile Phone"
+          value={editPhone}
+          onChangeText={setEditPhone}
+          keyboardType="phone-pad"
+          containerStyle={styles.editFieldGap}
+        />
+        <Input
+          label="Emergency SOS Contact"
+          value={editEmergencyPhone}
+          onChangeText={setEditEmergencyPhone}
+          keyboardType="phone-pad"
+          containerStyle={styles.editFieldGap}
+        />
+        <Input
+          label="Languages Spoken"
+          value={editLanguages}
+          onChangeText={setEditLanguages}
+          containerStyle={styles.editFieldGap}
+        />
+        <Input
+          label="Travel & Adventure Styles"
+          value={editStyles}
+          onChangeText={setEditStyles}
+          containerStyle={styles.editFieldGap}
+        />
+
+        <Button
+          label="Save Profile Changes"
+          onPress={handleSaveProfile}
+          fullWidth
+          style={styles.saveModalBtnSpacing}
+        />
+      </Sheet>
 
       <Modal visible={showAuthModal} animationType="slide">
         <View style={{ flex: 1, backgroundColor: '#050710' }}>
@@ -1449,28 +1301,6 @@ const styles = StyleSheet.create({
     color: C.white,
     textAlign: 'center',
   },
-  userHandle: {
-    fontSize: 11,
-    color: '#CBD5E1',
-    marginTop: 2,
-    textAlign: 'center',
-  },
-  roleCap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255, 179, 0, 0.2)',
-    paddingVertical: 3,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-    gap: 4,
-    marginTop: 6,
-  },
-  roleCapText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#FFB300',
-  },
   userBio: {
     fontSize: 11,
     color: '#8A92A6',
@@ -1480,392 +1310,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
 
-  // Stats Row
-  statsRow: {
-    flexDirection: 'row',
-    marginHorizontal: 16,
-    marginTop: 12,
-    paddingVertical: 12,
-    borderRadius: 16,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'space-around',
-  },
-  statItem: {
-    alignItems: 'center',
-  },
-  statValue: {
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  statLabel: {
-    fontSize: 10,
-    color: C.textMuted,
-    marginTop: 2,
-  },
-  statDivider: {
-    width: 1,
-    height: 24,
-    backgroundColor: 'rgba(148, 163, 184, 0.2)',
-  },
-
-  // Tab bar
-  sectionTabs: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 8,
-  },
-  tabButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 20,
-    gap: 6,
-  },
-  tabButtonActive: {
-    backgroundColor: C.blue,
-  },
-  tabText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  tabTextActive: {
-    color: '#FFF',
-  },
-  tabContentContainer: {
-    paddingHorizontal: 16,
-  },
-
-  // Cards
-  innerCard: {
-    padding: 16,
-    borderRadius: 16,
-  },
-  cardTitle: {
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-  },
-  cardHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  completionHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  completionSub: {
-    fontSize: 11,
-    color: C.textMuted,
-    marginTop: 2,
-  },
-  completionPercent: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: C.blue,
-  },
-  progressTrack: {
-    height: 6,
-    width: '100%',
-    backgroundColor: 'rgba(0, 102, 255, 0.15)',
-    borderRadius: 3,
-    marginTop: 10,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: C.blue,
-    borderRadius: 3,
-  },
-
-  // Verified & Pending Rows
-  verifiedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-    padding: 12,
-    borderRadius: 12,
-    marginTop: 6,
-  },
-  verifiedMsg: {
-    color: C.green,
-    fontWeight: '700',
-    fontSize: 13,
-  },
-  pendingRow: {
-    backgroundColor: 'rgba(245, 158, 11, 0.1)',
-    padding: 12,
-    borderRadius: 12,
-    marginTop: 6,
-  },
-  textInput: {
-    height: 42,
-    borderRadius: 10,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    fontSize: 13,
-    marginBottom: 10,
-  },
-  verifyBtn: {
-    backgroundColor: C.blue,
-    height: 40,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  verifyBtnText: {
-    color: '#FFF',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-
-  // Preferences Grid
-  prefGridItem: {
-    marginTop: 10,
-    paddingBottom: 8,
-    borderBottomWidth: 0.5,
-    borderBottomColor: 'rgba(148, 163, 184, 0.2)',
-  },
-  prefLabel: {
-    fontSize: 10,
-    color: C.textMuted,
-    fontWeight: '600',
-  },
-  prefVal: {
-    fontSize: 13,
-    fontWeight: '700',
-    marginTop: 2,
-  },
-
-  // History Tab
-  historyFilterRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 12,
-  },
-  historyFilterChip: {
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-    borderRadius: 16,
-  },
-  historyFilterChipActive: {
-    backgroundColor: C.blue,
-  },
-  historyFilterText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: C.textMuted,
-  },
-  historyFilterTextActive: {
-    color: '#FFF',
-  },
-  historyCard: {
-    padding: 14,
-    marginBottom: 12,
-    borderRadius: 16,
-  },
-  historyCardHeader: {
-    flexDirection: 'row',
-  },
-  historyImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 10,
-  },
-  statusBadgeRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  statusPill: {
-    paddingVertical: 2,
-    paddingHorizontal: 8,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
-  statusPillText: {
-    fontSize: 9,
-    fontWeight: '800',
-  },
-  bookingIdText: {
-    fontSize: 10,
-    color: C.textMuted,
-    fontWeight: '600',
-  },
-  historyTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    marginTop: 4,
-  },
-  historyDate: {
-    fontSize: 10,
-    color: C.textMuted,
-    marginTop: 2,
-  },
-  routeDiagramRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 10,
-    flexWrap: 'wrap',
-    backgroundColor: 'rgba(0,102,255,0.05)',
-    padding: 8,
-    borderRadius: 8,
-  },
-  routeCityText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  historyFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderTopWidth: 0.5,
-    borderTopColor: 'rgba(148, 163, 184, 0.2)',
-    paddingTop: 10,
-    marginTop: 4,
-  },
-  viewTicketBtn: {
-    backgroundColor: C.blue,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    gap: 6,
-  },
-  viewTicketBtnText: {
-    color: '#FFF',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-
-  // Wallet
-  txItem: {
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 8,
-  },
-  txRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-
-  // Dashboard Tab
-  roleChipsWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  roleChip: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 14,
-  },
-  roleChipActive: {
-    backgroundColor: C.blue,
-  },
-  roleChipText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: C.textMuted,
-  },
-  roleChipTextActive: {
-    color: '#FFF',
-  },
-  dashboardMetricRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 12,
-  },
-  metricItem: {
-    flex: 1,
-    backgroundColor: 'rgba(0,102,255,0.06)',
-    padding: 12,
-    borderRadius: 12,
-  },
-  metricValue: {
-    fontSize: 16,
-    fontWeight: '800',
-    marginTop: 4,
-  },
-  priceSettings: {
-    marginTop: 8,
-  },
-  rateInputs: {
-    flexDirection: 'row',
-    marginBottom: 12,
-  },
-  label: {
-    fontSize: 10,
-    color: C.textMuted,
-    marginBottom: 4,
-  },
-  organizerActions: {
-    gap: 8,
-    marginTop: 8,
-  },
-  dashboardBtn: {
-    backgroundColor: C.blue,
-    height: 40,
-    borderRadius: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  dashboardBtnText: {
-    color: '#FFF',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  familyInfoCard: {
-    backgroundColor: 'rgba(0, 102, 255, 0.08)',
-    padding: 12,
-    borderRadius: 12,
-  },
-  adminGrid: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 12,
-  },
-  adminCell: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: 'rgba(0,0,0,0.03)',
-  },
-  adminActions: {
-    gap: 8,
-  },
-  bookingStatusItem: {
-    padding: 12,
-    borderRadius: 10,
-    backgroundColor: 'rgba(16, 185, 129, 0.08)',
-  },
-
   // Settings
-  settingsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 0.5,
-    borderBottomColor: 'rgba(148, 163, 184, 0.2)',
-  },
-  settingsRowText: {
-    fontSize: 13,
-    fontWeight: '600',
-    marginLeft: 10,
-    flex: 1,
-  },
-  settingsToggleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
   switchTrack: {
     width: 44,
     height: 24,
@@ -1885,45 +1330,8 @@ const styles = StyleSheet.create({
   switchThumbOff: {
     alignSelf: 'flex-start',
   },
-  logoutBtn: {
-    backgroundColor: C.red,
-    height: 48,
-    borderRadius: 24,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginTop: 16,
-  },
-  logoutBtnText: {
-    color: '#FFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
 
   // Modals
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    justifyContent: 'flex-end',
-  },
-  modalSheet: {
-    width: '100%',
-    maxHeight: '85%',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 20,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  modalSheetTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-  },
   inputLabel: {
     fontSize: 11,
     fontWeight: '700',
@@ -1931,104 +1339,11 @@ const styles = StyleSheet.create({
     marginTop: 10,
     marginBottom: 4,
   },
-  modalInput: {
-    height: 42,
-    borderRadius: 10,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    fontSize: 13,
+  editFieldGap: {
+    marginTop: 10,
   },
-  saveModalBtn: {
-    backgroundColor: C.blue,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
+  saveModalBtnSpacing: {
     marginTop: 20,
-  },
-  saveModalBtnText: {
-    color: '#FFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-
-  // Ticket Modal
-  ticketCardModal: {
-    width: '90%',
-    alignSelf: 'center',
-    marginBottom: 'auto',
-    marginTop: 'auto',
-    borderRadius: 24,
-    padding: 20,
-  },
-  ticketHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  ticketBadge: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: C.blue,
-    backgroundColor: 'rgba(0,102,255,0.12)',
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-  },
-  ticketTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    marginTop: 12,
-  },
-  ticketRouteRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 6,
-    flexWrap: 'wrap',
-  },
-  qrCodeGraphic: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFF',
-    padding: 16,
-    borderRadius: 16,
-    marginVertical: 16,
-  },
-  ticketDetailsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginBottom: 16,
-  },
-  ticketMetaCell: {
-    width: '47%',
-    backgroundColor: 'rgba(0,0,0,0.04)',
-    padding: 10,
-    borderRadius: 10,
-  },
-  metaLabel: {
-    fontSize: 9,
-    color: C.textMuted,
-    fontWeight: '600',
-  },
-  metaVal: {
-    fontSize: 12,
-    fontWeight: '700',
-    marginTop: 2,
-  },
-  downloadTicketBtn: {
-    backgroundColor: C.blue,
-    height: 44,
-    borderRadius: 22,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  downloadTicketBtnText: {
-    color: '#FFF',
-    fontSize: 13,
-    fontWeight: '700',
   },
 
   // Photo Picker inside Edit Modal
@@ -2042,27 +1357,6 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
     marginVertical: 8,
-  },
-  genderChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 20,
-    borderWidth: 1.5,
-    gap: 6,
-  },
-  genderChipSelected: {
-    backgroundColor: C.blue,
-    borderColor: C.blue,
-  },
-  genderChipText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  genderChipTextSelected: {
-    color: '#FFF',
-    fontWeight: '700',
   },
   avatarPreviewWrap: {
     position: 'relative',
@@ -2289,44 +1583,10 @@ const styles = StyleSheet.create({
     color: '#8A92A6',
     lineHeight: 18,
   },
-  deleteInput: {
-    backgroundColor: C.border,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    height: 46,
-    color: C.white,
-    fontSize: 13.5,
-  },
   deleteBtnRow: {
     flexDirection: 'row',
     gap: 10,
     marginTop: 4,
-  },
-  deleteCancelBtn: {
-    flex: 1,
-    height: 44,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-  },
-  deleteCancelText: {
-    color: C.white,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  deleteConfirmBtn: {
-    flex: 1,
-    height: 44,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FF453A',
-  },
-  deleteConfirmText: {
-    color: C.white,
-    fontSize: 13,
-    fontWeight: '800',
   },
 });
 
