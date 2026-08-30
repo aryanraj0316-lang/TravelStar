@@ -12,7 +12,6 @@ import { BlurView } from 'expo-blur';
 import {
   BadgePercent,
   Bell,
-  AlertCircle,
   Bike,
   Bus,
   Calendar,
@@ -49,12 +48,12 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  useColorScheme,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { eventBus } from '@/services/event-bus';
 import { C } from '@/theme/tokens';
+import { ScreenEmpty, ScreenError, ScreenLoading } from '@/components/ui';
 
 // Category definitions matching the screenshot
 const CATEGORIES = [
@@ -118,42 +117,20 @@ const deriveTransport = (trip: any): string => {
   return 'AC Transport';
 };
 
-// Color theme system matching dark/light mode
-const DARK = {
-  bg: '#000000',
-  card: '#111322',
-  cardBorder: '#1A1D30',
-  searchBg: '#111322',
-  chipBg: '#111322',
-  chipActive: '#0066FF',
-  text: '#FFFFFF',
-  textSecondary: '#7E8494',
-  accent: '#0066FF',
-  accentLight: 'rgba(0, 102, 255, 0.08)',
-  routeColor: '#0066FF',
-  priceColor: '#0066FF',
-  divider: '#1A1D30',
-  heartBg: 'rgba(0,0,0,0.4)',
-  capsuleBg: '#1B1E30',
-};
-
-const LIGHT = {
-  bg: '#F5F6FA',
-  card: '#FFFFFF',
-  cardBorder: '#E1E4ED',
-  searchBg: '#FFFFFF',
-  chipBg: '#FFFFFF',
-  chipActive: '#0066FF',
-  text: '#000000',
-  textSecondary: '#6B7280',
-  accent: '#0066FF',
-  accentLight: 'rgba(0, 102, 255, 0.08)',
-  routeColor: '#0066FF',
-  priceColor: '#0066FF',
-  divider: '#E1E4ED',
-  heartBg: 'rgba(255,255,255,0.7)',
-  capsuleBg: '#EEF1F6',
-};
+// This screen used to carry its own local DARK/LIGHT palette pair and a
+// `useColorScheme()`-driven light-mode branch, in parallel with the real
+// design tokens (docs/REMEDIATION.md §9.1) that every other migrated screen
+// already reads from '@/theme/tokens'. Two bugs came with that duplication:
+// it was exactly the "same idea styled a dozen different ways" problem
+// tokens.ts exists to close (missed by that pass because this file's local
+// object was named `DARK`/`LIGHT`, not `const C = {...}`), and this app is
+// dark-only by design (§1.3) — the LIGHT branch was dead UI nobody could
+// reach, kept alive as real code. It also reused a single #0066FF for both
+// fills/borders (fine at 3:1) and body text (fails AA at 4.13:1) in the
+// same places tokens.ts's blue/blueText split exists to prevent. Removed;
+// the component now reads the real `C` import from '@/theme/tokens' like
+// every other screen, splitting former `accent` usages into `C.blue` for
+// fills/borders/large glyphs and `C.blueText` for text/small icons.
 
 // One search result. This is the app's main browse list, and the card is
 // expensive: a cover image, two gradients, an optional BlurView and ~20
@@ -168,8 +145,6 @@ const LIGHT = {
 // skips optimizing the component entirely.
 function TripResultCard({
   trip,
-  C,
-  isDark,
   isLiked,
   isMyTrip,
   isRequested,
@@ -177,8 +152,6 @@ function TripResultCard({
   onOpenTrip,
 }: {
   trip: Trip;
-  C: typeof DARK;
-  isDark: boolean;
   isLiked: boolean;
   isMyTrip: boolean;
   isRequested: boolean;
@@ -203,11 +176,11 @@ function TripResultCard({
       activeOpacity={isMyTrip ? 1 : 0.85}
       disabled={isMyTrip}
       onPress={() => onOpenTrip(trip)}
-      style={[styles.tripCard, { backgroundColor: C.card, borderColor: C.cardBorder }, isMyTrip && { opacity: 0.65 }]}
+      style={[styles.tripCard, { backgroundColor: C.card, borderColor: C.border }, isMyTrip && { opacity: 0.65 }]}
     >
       {isMyTrip && (
         <LinearGradient
-          colors={isDark ? ['#141629', '#101220', '#0A0B14'] : ['#F2F5FA', '#FAFBFD', '#FFFFFF']}
+          colors={['#141629', '#101220', '#0A0B14']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={[StyleSheet.absoluteFill, { borderRadius: 16 }]}
@@ -224,7 +197,7 @@ function TripResultCard({
         />
         {/* Pill Badge */}
         {isMyTrip ? (
-          <View style={[styles.tripBadge, { backgroundColor: C.accent }]}>
+          <View style={[styles.tripBadge, { backgroundColor: C.blue }]}>
             <Text style={[styles.tripBadgeText, { color: '#FFF', fontWeight: '800' }]}>Yours</Text>
           </View>
         ) : (
@@ -237,7 +210,7 @@ function TripResultCard({
         {/* Heart button */}
         {!isMyTrip && (
           <TouchableOpacity
-            style={[styles.heartBtn, { backgroundColor: C.heartBg }]}
+            style={[styles.heartBtn, { backgroundColor: 'rgba(0,0,0,0.4)' }]}
             onPress={() => onToggleLike(trip.id)}
           >
             <Heart size={14} color={isLiked ? '#FF3B30' : '#FFF'} fill={isLiked ? '#FF3B30' : 'transparent'} />
@@ -249,7 +222,7 @@ function TripResultCard({
       <View style={styles.tripContent}>
         {/* Title and Verified badge */}
         <View style={styles.tripHeaderRow}>
-          <Text style={[styles.tripName, { color: C.text }]} numberOfLines={3}>
+          <Text style={[styles.tripName, { color: C.white }]} numberOfLines={3}>
             {trip.name}
           </Text>
         </View>
@@ -258,13 +231,13 @@ function TripResultCard({
           <View
             style={[
               styles.verifiedBadge,
-              { backgroundColor: isMyTrip ? C.capsuleBg : C.accentLight, marginTop: 0, marginBottom: 0 },
+              { backgroundColor: isMyTrip ? C.cardAlt : C.accentLight, marginTop: 0, marginBottom: 0 },
             ]}
           >
-            <Check size={9} color={isMyTrip ? C.textSecondary : C.accent} strokeWidth={3} />
-            <Text style={[styles.verifiedText, { color: isMyTrip ? C.textSecondary : C.accent }]}>Verified Route</Text>
+            <Check size={9} color={isMyTrip ? C.textSec : C.blueText} strokeWidth={3} />
+            <Text style={[styles.verifiedText, { color: isMyTrip ? C.textSec : C.blueText }]}>Verified Route</Text>
           </View>
-          <Text style={{ fontSize: 9.5, fontWeight: '600', color: isMyTrip ? C.textSecondary : '#10B981' }}>
+          <Text style={{ fontSize: 9.5, fontWeight: '600', color: isMyTrip ? C.textSec : C.greenText }}>
             {trip.availableSeats ?? 0} left
           </Text>
         </View>
@@ -273,8 +246,8 @@ function TripResultCard({
         <View style={styles.routeCities}>
           {displayCities.map((city: string, i: number) => (
             <React.Fragment key={city}>
-              <Text style={[styles.cityText, { color: isMyTrip ? C.textSecondary : C.routeColor }]}>{city}</Text>
-              {i < displayCities.length - 1 && <Text style={[styles.routeArrow, { color: C.textSecondary }]}>→</Text>}
+              <Text style={[styles.cityText, { color: isMyTrip ? C.textSec : C.blueText }]}>{city}</Text>
+              {i < displayCities.length - 1 && <Text style={[styles.routeArrow, { color: C.textSec }]}>→</Text>}
             </React.Fragment>
           ))}
         </View>
@@ -282,33 +255,33 @@ function TripResultCard({
         {/* 2x2 grid of pill capsules */}
         <View style={styles.capsulesContainer}>
           <View style={styles.capsulesRow}>
-            <View style={[styles.capsule, { backgroundColor: C.capsuleBg }]}>
-              <MapPin size={9} color={C.textSecondary} />
-              <Text style={[styles.capsuleText, { color: C.textSecondary }]} numberOfLines={1}>
+            <View style={[styles.capsule, { backgroundColor: C.cardAlt }]}>
+              <MapPin size={9} color={C.textSec} />
+              <Text style={[styles.capsuleText, { color: C.textSec }]} numberOfLines={1}>
                 {displayMeeting}
               </Text>
             </View>
-            <View style={[styles.capsule, { backgroundColor: C.capsuleBg }]}>
-              <Calendar size={9} color={C.textSecondary} />
-              <Text style={[styles.capsuleText, { color: C.textSecondary }]} numberOfLines={1}>
+            <View style={[styles.capsule, { backgroundColor: C.cardAlt }]}>
+              <Calendar size={9} color={C.textSec} />
+              <Text style={[styles.capsuleText, { color: C.textSec }]} numberOfLines={1}>
                 {displayDate}
               </Text>
             </View>
           </View>
           <View style={styles.capsulesRow}>
-            <View style={[styles.capsule, { backgroundColor: C.capsuleBg }]}>
-              <Clock size={9} color={C.textSecondary} />
-              <Text style={[styles.capsuleText, { color: C.textSecondary }]} numberOfLines={1}>
+            <View style={[styles.capsule, { backgroundColor: C.cardAlt }]}>
+              <Clock size={9} color={C.textSec} />
+              <Text style={[styles.capsuleText, { color: C.textSec }]} numberOfLines={1}>
                 {duration}
               </Text>
             </View>
-            <View style={[styles.capsule, { backgroundColor: C.capsuleBg }]}>
+            <View style={[styles.capsule, { backgroundColor: C.cardAlt }]}>
               {trip.name.toLowerCase().includes('bike') ? (
-                <Bike size={9} color={C.textSecondary} />
+                <Bike size={9} color={C.textSec} />
               ) : (
-                <Bus size={9} color={C.textSecondary} />
+                <Bus size={9} color={C.textSec} />
               )}
-              <Text style={[styles.capsuleText, { color: C.textSecondary }]} numberOfLines={1}>
+              <Text style={[styles.capsuleText, { color: C.textSec }]} numberOfLines={1}>
                 {transport}
               </Text>
             </View>
@@ -316,15 +289,15 @@ function TripResultCard({
         </View>
 
         {/* Price and Action Button row */}
-        <View style={[styles.priceRow, { borderTopColor: C.divider }]}>
+        <View style={[styles.priceRow, { borderTopColor: C.border }]}>
           <View style={{ flex: 1, marginRight: 4 }}>
-            <Text style={[styles.priceLabel, { color: C.textSecondary }]} numberOfLines={1}>
+            <Text style={[styles.priceLabel, { color: C.textSec }]} numberOfLines={1}>
               Full Trip Cost
             </Text>
-            <Text style={[styles.priceAmount, { color: isMyTrip ? C.textSecondary : C.priceColor }]} numberOfLines={1}>
+            <Text style={[styles.priceAmount, { color: isMyTrip ? C.textSec : C.blueText }]} numberOfLines={1}>
               ₹{displayPrice}
             </Text>
-            <Text style={[styles.pricePer, { color: C.textSecondary, marginTop: -2 }]} numberOfLines={1}>
+            <Text style={[styles.pricePer, { color: C.textSec, marginTop: -2 }]} numberOfLines={1}>
               per person
             </Text>
           </View>
@@ -334,13 +307,13 @@ function TripResultCard({
                 style={[
                   styles.myTripBadge,
                   {
-                    backgroundColor: isDark ? 'rgba(0, 102, 255, 0.12)' : 'rgba(0, 102, 255, 0.06)',
-                    borderColor: isDark ? 'rgba(0, 102, 255, 0.35)' : 'rgba(0, 102, 255, 0.22)',
+                    backgroundColor: 'rgba(0, 102, 255, 0.12)',
+                    borderColor: 'rgba(0, 102, 255, 0.35)',
                   },
                 ]}
               >
-                <Sparkles size={11} color={C.accent} style={{ marginRight: 4 }} />
-                <Text style={[styles.myTripBadgeText, { color: C.accent, fontWeight: '800' }]}>Your Creation</Text>
+                <Sparkles size={11} color={C.blueText} style={{ marginRight: 4 }} />
+                <Text style={[styles.myTripBadgeText, { color: C.blueText, fontWeight: '800' }]}>Your Creation</Text>
               </View>
             ) : isRequested ? (
               <View style={[styles.joinBtn, styles.joinBtnRequested]}>
@@ -362,12 +335,9 @@ function TripResultCard({
       </View>
       {isMyTrip && (
         <BlurView
-          intensity={isDark ? 55 : 45}
-          tint={isDark ? 'dark' : 'light'}
-          style={[
-            styles.myTripOverlay,
-            { backgroundColor: isDark ? 'rgba(10, 12, 22, 0.35)' : 'rgba(255, 255, 255, 0.4)' },
-          ]}
+          intensity={55}
+          tint="dark"
+          style={[styles.myTripOverlay, { backgroundColor: 'rgba(10, 12, 22, 0.35)' }]}
         />
       )}
     </TouchableOpacity>
@@ -382,9 +352,6 @@ function SearchScreen() {
   }, []);
   const router = useRouter();
   const navigation = useNavigation();
-  const scheme = useColorScheme();
-  const isDark = scheme === 'dark';
-  const C = isDark ? DARK : LIGHT;
   const lastScrollYRef = useRef(0);
   const navbarHiddenRef = useRef(false);
   const { profile, isLoggedIn, requestedTrips, reloadJoinRequests } = useApp();
@@ -625,12 +592,12 @@ function SearchScreen() {
       <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
         {/* ─── SEARCH INPUT AND BELL ─────────────────────────────── */}
         <View style={styles.searchBarRow}>
-          <View style={[styles.searchContainer, { backgroundColor: C.searchBg, borderColor: C.cardBorder }]}>
+          <View style={[styles.searchContainer, { backgroundColor: C.card, borderColor: C.cardBorder }]}>
             <Search size={20} color={C.textSecondary} />
             <TextInput
               placeholder="Search by state, city, guide..."
               placeholderTextColor={C.textSecondary}
-              style={[styles.searchInput, { color: C.text }]}
+              style={[styles.searchInput, { color: C.white }]}
               value={searchQuery}
               onChangeText={setSearchQuery}
             />
@@ -652,7 +619,7 @@ function SearchScreen() {
             </TouchableOpacity>
           </View>
           <TouchableOpacity
-            style={[styles.notifBtn, { backgroundColor: C.searchBg, borderColor: C.cardBorder }]}
+            style={[styles.notifBtn, { backgroundColor: C.card, borderColor: C.cardBorder }]}
             activeOpacity={0.7}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             onPress={() => router.push('/notifications')}
@@ -676,8 +643,8 @@ function SearchScreen() {
                   style={[
                     styles.chip,
                     {
-                      backgroundColor: isActive ? (isAllGradient ? 'transparent' : C.chipActive) : C.chipBg,
-                      borderColor: isActive ? (isAllGradient ? '#0A0B10' : C.chipActive) : C.cardBorder,
+                      backgroundColor: isActive ? (isAllGradient ? 'transparent' : C.blue) : C.card,
+                      borderColor: isActive ? (isAllGradient ? '#0A0B10' : C.blue) : C.cardBorder,
                       shadowColor: isAllGradient ? '#0055ff' : 'transparent',
                       shadowOffset: isAllGradient ? { width: 0, height: 2 } : { width: 0, height: 0 },
                       shadowOpacity: isAllGradient ? 0.35 : 0,
@@ -797,8 +764,6 @@ function SearchScreen() {
           renderItem={({ item }) => (
             <TripResultCard
               trip={item}
-              C={C}
-              isDark={isDark}
               isLiked={likedTrips.has(item.id)}
               isMyTrip={
                 isLoggedIn &&
@@ -882,35 +847,24 @@ function SearchScreen() {
           }
           ListEmptyComponent={
             tripsLoading ? (
-              <View style={[styles.emptyStateCard, { backgroundColor: C.card, borderColor: C.cardBorder }]}>
-                <ActivityIndicator color={C.accent} style={{ marginBottom: 12 }} />
-                <Text style={[styles.emptyStateSub, { color: C.textSecondary }]}>Finding trips for you…</Text>
-              </View>
+              <ScreenLoading label="Finding trips for you…" />
             ) : tripsError ? (
-              <View style={[styles.emptyStateCard, { backgroundColor: C.card, borderColor: C.cardBorder }]}>
-                <AlertCircle size={36} color="#FF3B30" style={{ marginBottom: 12 }} />
-                <Text style={[styles.emptyStateTitle, { color: C.text }]}>Couldn&apos;t Load Trips</Text>
-                <Text style={[styles.emptyStateSub, { color: C.textSecondary }]}>
-                  {tripsFetchError instanceof Error
+              <ScreenError
+                title="Couldn't Load Trips"
+                message={
+                  tripsFetchError instanceof Error
                     ? tripsFetchError.message
-                    : 'Please check your connection and try again.'}
-                </Text>
-                <TouchableOpacity style={styles.resetEmptyBtn} onPress={() => refetchTrips()}>
-                  <Text style={styles.resetEmptyBtnText}>Retry</Text>
-                </TouchableOpacity>
-              </View>
+                    : 'Please check your connection and try again.'
+                }
+                onRetry={() => refetchTrips()}
+              />
             ) : (
-              <View style={[styles.emptyStateCard, { backgroundColor: C.card, borderColor: C.cardBorder }]}>
-                <SlidersHorizontal size={36} color={C.textSecondary} style={{ marginBottom: 12 }} />
-                <Text style={[styles.emptyStateTitle, { color: C.text }]}>No Matching Trips Found</Text>
-                <Text style={[styles.emptyStateSub, { color: C.textSecondary }]}>
-                  No tour routes match your current search query or filter preferences. Try adjusting budget or
-                  resetting filters.
-                </Text>
-                <TouchableOpacity style={styles.resetEmptyBtn} onPress={resetFilters}>
-                  <Text style={styles.resetEmptyBtnText}>Reset Preferences</Text>
-                </TouchableOpacity>
-              </View>
+              <ScreenEmpty
+                title="No Matching Trips Found"
+                message="No tour routes match your current search query or filter preferences. Try adjusting budget or resetting filters."
+                actionLabel="Reset Preferences"
+                onAction={resetFilters}
+              />
             )
           }
           ListFooterComponent={
@@ -988,7 +942,7 @@ function SearchScreen() {
       >
         <View style={styles.modalOverlay}>
           <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setShowFilterModal(false)} />
-          <View style={[styles.filterSheet, { backgroundColor: isDark ? '#111322' : '#FFFFFF' }]}>
+          <View style={[styles.filterSheet, { backgroundColor: C.card }]}>
             {/* Header */}
             <View style={[styles.filterHeader, { borderBottomColor: C.divider }]}>
               <View style={styles.filterTitleRow}>
@@ -1011,7 +965,7 @@ function SearchScreen() {
                   onPress={() => setShowFilterModal(false)}
                   style={[
                     styles.closeIconBtn,
-                    { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)' },
+                    { backgroundColor: 'rgba(255,255,255,0.08)' },
                   ]}
                 >
                   <X size={18} color={C.text} />
@@ -1038,7 +992,7 @@ function SearchScreen() {
                         style={[
                           styles.filterSelectChip,
                           {
-                            backgroundColor: isSelected ? C.accent : isDark ? '#1A1D30' : '#F0F2F6',
+                            backgroundColor: isSelected ? C.blue : C.border,
                             borderColor: isSelected ? C.accent : C.cardBorder,
                           },
                         ]}
@@ -1076,7 +1030,7 @@ function SearchScreen() {
                         style={[
                           styles.filterSelectChip,
                           {
-                            backgroundColor: isSelected ? C.accent : isDark ? '#1A1D30' : '#F0F2F6',
+                            backgroundColor: isSelected ? C.blue : C.border,
                             borderColor: isSelected ? C.accent : C.cardBorder,
                           },
                         ]}
@@ -1108,7 +1062,7 @@ function SearchScreen() {
                         style={[
                           styles.filterSelectChip,
                           {
-                            backgroundColor: isSelected ? C.accent : isDark ? '#1A1D30' : '#F0F2F6',
+                            backgroundColor: isSelected ? C.blue : C.border,
                             borderColor: isSelected ? C.accent : C.cardBorder,
                           },
                         ]}
@@ -1139,7 +1093,7 @@ function SearchScreen() {
                         style={[
                           styles.filterSelectChip,
                           {
-                            backgroundColor: isSelected ? C.accent : isDark ? '#1A1D30' : '#F0F2F6',
+                            backgroundColor: isSelected ? C.blue : C.border,
                             borderColor: isSelected ? C.accent : C.cardBorder,
                           },
                         ]}
@@ -1160,7 +1114,7 @@ function SearchScreen() {
                 {/* Switch 1: Verified Hosts Only */}
                 <TouchableOpacity
                   activeOpacity={0.8}
-                  style={[styles.prefToggleRow, { backgroundColor: isDark ? '#1A1D30' : '#F0F2F6' }]}
+                  style={[styles.prefToggleRow, { backgroundColor: C.border }]}
                   onPress={() => setVerifiedOnly(!verifiedOnly)}
                 >
                   <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
@@ -1175,7 +1129,7 @@ function SearchScreen() {
                   <View
                     style={[
                       styles.toggleTrack,
-                      verifiedOnly ? { backgroundColor: C.accent } : { backgroundColor: 'rgba(120,120,128,0.3)' },
+                      verifiedOnly ? { backgroundColor: C.blue } : { backgroundColor: 'rgba(120,120,128,0.3)' },
                     ]}
                   >
                     <View style={[styles.toggleCircle, verifiedOnly ? styles.circleOn : styles.circleOff]} />
@@ -1185,7 +1139,7 @@ function SearchScreen() {
                 {/* Switch 2: Local Guide Included */}
                 <TouchableOpacity
                   activeOpacity={0.8}
-                  style={[styles.prefToggleRow, { backgroundColor: isDark ? '#1A1D30' : '#F0F2F6', marginTop: 8 }]}
+                  style={[styles.prefToggleRow, { backgroundColor: C.border, marginTop: 8 }]}
                   onPress={() => setGuideRequired(!guideRequired)}
                 >
                   <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
@@ -1210,7 +1164,7 @@ function SearchScreen() {
                 {/* Switch 3: Midway Segment Join Option */}
                 <TouchableOpacity
                   activeOpacity={0.8}
-                  style={[styles.prefToggleRow, { backgroundColor: isDark ? '#1A1D30' : '#F0F2F6', marginTop: 8 }]}
+                  style={[styles.prefToggleRow, { backgroundColor: C.border, marginTop: 8 }]}
                   onPress={() => setMidwayOnly(!midwayOnly)}
                 >
                   <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
@@ -1878,39 +1832,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: 'rgba(255, 59, 48, 0.1)',
   },
-  emptyStateCard: {
-    padding: 24,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    marginVertical: 16,
-  },
   loadMoreRow: {
     paddingVertical: 20,
     alignItems: 'center',
-  },
-  emptyStateTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  emptyStateSub: {
-    fontSize: 13,
-    textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 16,
-  },
-  resetEmptyBtn: {
-    backgroundColor: C.blue,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 20,
-  },
-  resetEmptyBtnText: {
-    color: '#FFF',
-    fontSize: 13,
-    fontWeight: '600',
   },
   resetInlineBtn: {
     paddingVertical: 4,
