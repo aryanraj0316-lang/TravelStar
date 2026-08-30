@@ -17,6 +17,7 @@ import {
   Info,
 } from 'lucide-react-native';
 import { C } from '@/theme/tokens';
+import { Card } from '@/components/ui';
 
 
 export default function AboutScreen() {
@@ -52,14 +53,14 @@ export default function AboutScreen() {
         </View>
 
         {/* Short Mission description */}
-        <View style={styles.card}>
+        <Card style={{ marginBottom: 24 }}>
           <Text style={styles.descriptionText}>
             TravelStar is a unified travel companion designed to organize group trips, track shared expenses, hire verified local guides, and ensure traveler safety with an active SOS network.
           </Text>
-        </View>
+        </Card>
 
         {/* Minimal Legal Resource links */}
-        <View style={styles.legalList}>
+        <Card style={styles.legalList}>
           <TouchableOpacity
             activeOpacity={0.7}
             style={styles.legalRow}
@@ -96,7 +97,7 @@ export default function AboutScreen() {
               <Text style={styles.legalLabelText}>Third-Party Licenses</Text>
             </View>
           </TouchableOpacity>
-        </View>
+        </Card>
 
         <Text style={styles.copyrightText}>© 2026 TravelStar Technologies Pvt Ltd</Text>
 
@@ -160,14 +161,6 @@ const styles = StyleSheet.create({
     color: C.textSec,
     marginTop: 4,
   },
-  card: {
-    backgroundColor: C.card,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: C.border,
-    padding: 16,
-    marginBottom: 24,
-  },
   descriptionText: {
     fontSize: 12,
     lineHeight: 18,
@@ -175,10 +168,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   legalList: {
-    backgroundColor: C.card,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: C.border,
+    padding: 0,
     marginBottom: 32,
   },
   legalRow: {

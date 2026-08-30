@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ArrowLeft } from 'lucide-react-native';
 import { C } from '@/theme/tokens';
+import { Card } from '@/components/ui';
 
 
 // Legal content authorship is REMEDIATION.md Phase 12 scope (Legal,
@@ -25,13 +26,13 @@ export default function TermsScreen() {
         <View style={{ width: 36 }} />
       </View>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.card}>
+        <Card>
           <Text style={styles.pendingText}>
             TravelStar&apos;s Terms of Service have not been finalized yet. This
             screen is a real, working placeholder — legal content is being
             drafted and reviewed separately from this build.
           </Text>
-        </View>
+        </Card>
       </ScrollView>
     </SafeAreaView>
   );
@@ -58,12 +59,5 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontSize: 16, fontWeight: '800', color: C.white },
   scrollContent: { padding: 16 },
-  card: {
-    backgroundColor: C.card,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: C.border,
-    padding: 16,
-  },
   pendingText: { fontSize: 13, lineHeight: 20, color: C.textSec },
 });

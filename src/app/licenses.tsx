@@ -1,14 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import {
-  FlatList,
-  Linking,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { FlatList, Linking, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ArrowLeft, ExternalLink, Search } from 'lucide-react-native';
@@ -17,6 +8,7 @@ import licensesData from '@/data/licenses.json';
 import { logger } from '@/lib/logger';
 import { toast } from '@/lib/feedback';
 import { C } from '@/theme/tokens';
+import { Input } from '@/components/ui';
 
 
 interface LicenseEntry {
@@ -63,16 +55,13 @@ export default function LicensesScreen() {
         <View style={{ width: 36 }} />
       </View>
 
-      <View style={styles.searchWrap}>
-        <Search size={15} color={C.textMuted} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search packages or licenses"
-          placeholderTextColor={C.textMuted}
-          value={query}
-          onChangeText={setQuery}
-        />
-      </View>
+      <Input
+        icon={<Search size={15} color={C.textMuted} />}
+        placeholder="Search packages or licenses"
+        value={query}
+        onChangeText={setQuery}
+        containerStyle={styles.searchWrap}
+      />
 
       <Text style={styles.countText}>
         {entries.length} open-source packages · generated {new Date(generatedAt).toLocaleDateString()}
@@ -130,22 +119,8 @@ const styles = StyleSheet.create({
     color: C.white,
   },
   searchWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
     marginHorizontal: 16,
     marginTop: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    backgroundColor: C.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: C.border,
-  },
-  searchInput: {
-    flex: 1,
-    color: C.white,
-    fontSize: 13,
   },
   countText: {
     fontSize: 11,

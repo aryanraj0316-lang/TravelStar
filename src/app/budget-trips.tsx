@@ -7,7 +7,6 @@ import { useQuery } from '@tanstack/react-query';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import {
-  ActivityIndicator,
   FlatList,
   Image,
   RefreshControl,
@@ -20,18 +19,9 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import {
-  AlertCircle,
-  ArrowLeft,
-  Briefcase,
-  Calendar,
-  Compass,
-  IndianRupee,
-  MapPin,
-  User,
-  Users,
-} from 'lucide-react-native';
+import { ArrowLeft, Briefcase, Calendar, Compass, IndianRupee, MapPin, User, Users } from 'lucide-react-native';
 import { C } from '@/theme/tokens';
+import { Chip, ScreenEmpty, ScreenError, ScreenLoading } from '@/components/ui';
 
 // docs/REMEDIATION.md §8.15: this screen used to map real DB trips onto a
 // hardcoded BUDGET_TRIPS_DATA array by id (trip-1 -> bt-3, ...), hardcode
@@ -236,18 +226,9 @@ export default function BudgetTripsScreen() {
           />
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.presetRow}>
-          {PRESET_BUDGETS.map((b) => {
-            const active = maxBudget === b;
-            return (
-              <TouchableOpacity
-                key={b}
-                style={[styles.presetPill, active && styles.presetPillActive]}
-                onPress={() => selectPreset(b)}
-              >
-                <Text style={[styles.presetText, active && styles.presetTextActive]}>≤ ₹{(b / 1000).toFixed(0)}k</Text>
-              </TouchableOpacity>
-            );
-          })}
+          {PRESET_BUDGETS.map((b) => (
+            <Chip key={b} label={`≤ ₹${(b / 1000).toFixed(0)}k`} selected={maxBudget === b} onPress={() => selectPreset(b)} />
+          ))}
         </ScrollView>
       </View>
 
@@ -262,36 +243,23 @@ export default function BudgetTripsScreen() {
         ).map(({ key, label, Icon }) => {
           const active = orgFilter === key;
           return (
-            <TouchableOpacity
+            <Chip
               key={key}
-              style={[styles.orgTab, active && styles.orgTabActive]}
+              label={label}
+              selected={active}
               onPress={() => setOrgFilter(key)}
-            >
-              <Icon size={13} color={active ? C.white : C.textSec} />
-              <Text style={[styles.orgTabText, active && styles.orgTabTextActive]}>{label}</Text>
-            </TouchableOpacity>
+              icon={<Icon size={13} color={active ? C.white : C.textSec} />}
+            />
           );
         })}
       </ScrollView>
 
       {isLoading ? (
-        <View style={styles.stateWrap}>
-          <ActivityIndicator size="large" color={C.blue} />
-          <Text style={styles.stateText}>Loading trips…</Text>
-        </View>
+        <ScreenLoading label="Loading trips…" />
       ) : isError ? (
-        <View style={styles.stateWrap}>
-          <AlertCircle size={52} color={C.rose} strokeWidth={1.4} />
-          <Text style={styles.stateText}>{error instanceof Error ? error.message : 'Could not load trips.'}</Text>
-          <TouchableOpacity style={styles.retryBtn} onPress={() => refetch()}>
-            <Text style={styles.retryBtnText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
+        <ScreenError message={error instanceof Error ? error.message : 'Could not load trips.'} onRetry={() => refetch()} />
       ) : visibleTrips.length === 0 ? (
-        <View style={styles.stateWrap}>
-          <Compass size={54} color={C.textMuted} strokeWidth={1.2} />
-          <Text style={styles.stateText}>No trips under ₹{maxBudget.toLocaleString('en-IN')} right now.</Text>
-        </View>
+        <ScreenEmpty title="No trips found" message={`No trips under ₹${maxBudget.toLocaleString('en-IN')} right now.`} />
       ) : (
         <FlatList
           data={visibleTrips}
@@ -376,36 +344,7 @@ const styles = StyleSheet.create({
   },
   textInput: { flex: 1, color: C.white, fontSize: 14, fontWeight: '700' },
   presetRow: { flexDirection: 'row', gap: 8, paddingVertical: 2 },
-  presetPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 10,
-    backgroundColor: C.cardAlt,
-    borderWidth: 1,
-    borderColor: C.border,
-  },
-  presetPillActive: { backgroundColor: C.blue, borderColor: C.blue },
-  presetText: { fontSize: 11, fontWeight: '700', color: C.textSec },
-  presetTextActive: { color: C.white },
   orgTabsRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingVertical: 12 },
-  orgTab: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: C.card,
-    borderWidth: 1,
-    borderColor: C.border,
-  },
-  orgTabActive: { backgroundColor: C.blue, borderColor: C.blue },
-  orgTabText: { fontSize: 11, fontWeight: '700', color: C.textSec },
-  orgTabTextActive: { color: C.white },
-  stateWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, paddingHorizontal: 40 },
-  stateText: { color: C.textSec, fontSize: 13.5, fontWeight: '600', textAlign: 'center', lineHeight: 19 },
-  retryBtn: { backgroundColor: C.blue, paddingHorizontal: 22, paddingVertical: 10, borderRadius: 12 },
-  retryBtnText: { color: C.white, fontSize: 13, fontWeight: '700' },
   listContent: { paddingHorizontal: 16, paddingTop: 4 },
   listHeader: { fontSize: 12, fontWeight: '700', color: C.textSec, marginBottom: 12 },
   tripCard: {
