@@ -2178,13 +2178,37 @@ partial, exactly what's blocking full completion.
       Translations in `hi.json` are model-written, not reviewed by a
       native speaker or professional translator — flagged honestly in
       every commit that touches them, not presented as verified.
-      Remaining: ~28 screens/components still need this same combined
-      pass (touch target sizing — §9.3's other concrete ask, ~100
-      elements under 44×44 — not yet started on any screen; too easy to
-      break layout to bulk-script like fontSize was). §9.5 (hotlinked
-      images) not started — hard-blocked on real licensed imagery, which
-      only the user can provide; the object-storage/caching pipeline
-      itself could still be built ahead of that. This is large enough
+      Continued same session: **auth.tsx** (9c5527a), **forgot-
+      password.tsx + reset-password.tsx** (52128ac — also found and fixed
+      the same "filter regex-parses translated display text" class of bug
+      search.tsx had, this time n/a since neither screen filters on
+      formatted text, but both screens' Input labels/placeholders and
+      every toast/alert string extracted), **bookings.tsx** (e5924d8 —
+      also found and fixed a real display bug: booking dates were shown
+      as raw unformatted ISO strings instead of routing through
+      formatDateRange(), and the budget line was hand-rolling
+      `₹${n.toLocaleString('en-IN')}` instead of using formatINR() — both
+      exactly what §9.4's locale-aware formatting asks for), **about.tsx**
+      (1a17bfd), **support.tsx + licenses.tsx** (b183db5), and **legal/
+      privacy.tsx + legal/terms.tsx** (54aced6). 10 screens/components
+      fully done now (home-screen.tsx, search.tsx, auth.tsx, forgot-
+      password.tsx, reset-password.tsx, bookings.tsx, about.tsx,
+      support.tsx, licenses.tsx, legal/privacy.tsx, legal/terms.tsx —
+      that's 11, tracker undercounted; see individual commits for the
+      accurate list). Each verified `tsc --noEmit` clean and `eslint`
+      diffed against baseline (no new issues) before committing.
+      Remaining: ~18 more screens/components need this same combined
+      pass, including the large ones (chat.tsx 5388 lines, travel-
+      guide.tsx 3713, create.tsx 3405, map.tsx 2359, map.web.tsx 1952,
+      profile.tsx 2337, group-organizer.tsx 2250) which have not been
+      started yet and will each need substantial dedicated passes.
+      Touch target sizing — §9.3's other concrete ask, ~100 elements
+      under 44×44 — not yet started on any screen; too easy to break
+      layout to bulk-script like fontSize was, needs the same per-screen
+      care. §9.5 (hotlinked images) not started — hard-blocked on real
+      licensed imagery, which only the user can provide; the object-
+      storage/caching pipeline itself could still be built ahead of that.
+      This is large enough
       that it will span many more commits.
 - [ ] Phase 10 — Performance (in progress — the list-virtualization and
       backend caching/pooling items done; bundle analysis, code-splitting,
