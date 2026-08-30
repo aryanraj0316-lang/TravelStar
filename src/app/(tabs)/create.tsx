@@ -46,7 +46,6 @@ import {
   StatusBar,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -54,6 +53,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import { eventBus } from '@/services/event-bus';
 import { C } from '@/theme/tokens';
+import { Input, ScreenEmpty } from '@/components/ui';
 
 // Coordinates registry for Indian cities
 const CITY_COORDS: Record<string, { latitude: number; longitude: number }> = {
@@ -915,34 +915,24 @@ function CreateTripScreen() {
                 <Text style={styles.sectionTitle}>Basic Trip Overview</Text>
               </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>TRIP NAME *</Text>
-                <View style={styles.inputWrapper}>
-                  <Compass size={17} color={C.blue} style={styles.inputIcon} />
-                  <TextInput
-                    placeholder="e.g. Royal Rajasthan Grand Expedition"
-                    placeholderTextColor={C.textMuted}
-                    style={styles.textInput}
-                    value={tripName}
-                    onChangeText={setTripName}
-                  />
-                </View>
-              </View>
+              <Input
+                label="TRIP NAME *"
+                placeholder="e.g. Royal Rajasthan Grand Expedition"
+                value={tripName}
+                onChangeText={setTripName}
+                icon={<Compass size={17} color={C.blue} />}
+                containerStyle={styles.inputGroup}
+              />
 
               {/* Short Description (Merged feature) */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>SHORT DESCRIPTION</Text>
-                <View style={styles.inputWrapper}>
-                  <ImageIcon size={17} color={C.blue} style={styles.inputIcon} />
-                  <TextInput
-                    placeholder="e.g. Exploring Grand Palaces, Desert camping & Camel safari"
-                    placeholderTextColor={C.textMuted}
-                    style={styles.textInput}
-                    value={shortDesc}
-                    onChangeText={setShortDesc}
-                  />
-                </View>
-              </View>
+              <Input
+                label="SHORT DESCRIPTION"
+                placeholder="e.g. Exploring Grand Palaces, Desert camping & Camel safari"
+                value={shortDesc}
+                onChangeText={setShortDesc}
+                icon={<ImageIcon size={17} color={C.blue} />}
+                containerStyle={styles.inputGroup}
+              />
 
               {/* 2. ROUTE SEQUENCE & QUICK ADD CHIPS */}
               <View style={styles.sectionHeaderRow}>
@@ -953,18 +943,14 @@ function CreateTripScreen() {
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>CITIES & STOPS (COMMA SEPARATED) *</Text>
-                <View style={styles.inputWrapper}>
-                  <MapPin size={17} color={C.green} style={styles.inputIcon} />
-                  <TextInput
-                    placeholder="e.g. Delhi, Agra, Jaipur, Udaipur"
-                    placeholderTextColor={C.textMuted}
-                    style={styles.textInput}
-                    value={citiesInput}
-                    onChangeText={setCitiesInput}
-                  />
-                </View>
-                <Text style={styles.helperText}>Order matters! Travelers can join midway along any segment.</Text>
+                <Input
+                  label="CITIES & STOPS (COMMA SEPARATED) *"
+                  placeholder="e.g. Delhi, Agra, Jaipur, Udaipur"
+                  value={citiesInput}
+                  onChangeText={setCitiesInput}
+                  icon={<MapPin size={17} color={C.green} />}
+                  hint="Order matters! Travelers can join midway along any segment."
+                />
 
                 {/* Live Interactive Route Flow Card */}
                 {parsedCities.length > 0 && (
@@ -1089,65 +1075,45 @@ function CreateTripScreen() {
               </View>
 
               <View style={styles.gridRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>BUDGET PER PERSON (₹) *</Text>
-                  <View style={styles.inputWrapper}>
-                    <IndianRupee size={16} color={C.amber} style={styles.inputIcon} />
-                    <TextInput
-                      placeholder="e.g. 14500"
-                      placeholderTextColor={C.textMuted}
-                      keyboardType="numeric"
-                      style={styles.textInput}
-                      value={budget}
-                      onChangeText={setBudget}
-                    />
-                  </View>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>TOTAL SLOTS *</Text>
-                  <View style={styles.inputWrapper}>
-                    <Users size={16} color={C.amber} style={styles.inputIcon} />
-                    <TextInput
-                      placeholder="e.g. 12"
-                      placeholderTextColor={C.textMuted}
-                      keyboardType="numeric"
-                      style={styles.textInput}
-                      value={totalSeats}
-                      onChangeText={setTotalSeats}
-                    />
-                  </View>
-                </View>
+                <Input
+                  label="BUDGET PER PERSON (₹) *"
+                  placeholder="e.g. 14500"
+                  keyboardType="numeric"
+                  value={budget}
+                  onChangeText={setBudget}
+                  icon={<IndianRupee size={16} color={C.amber} />}
+                  containerStyle={{ flex: 1 }}
+                />
+                <Input
+                  label="TOTAL SLOTS *"
+                  placeholder="e.g. 12"
+                  keyboardType="numeric"
+                  value={totalSeats}
+                  onChangeText={setTotalSeats}
+                  icon={<Users size={16} color={C.amber} />}
+                  containerStyle={{ flex: 1 }}
+                />
               </View>
 
               {/* Transport Mode (Merged feature) */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>TRANSPORTATION MODE</Text>
-                <View style={styles.inputWrapper}>
-                  <Car size={16} color={C.blue} style={styles.inputIcon} />
-                  <TextInput
-                    placeholder="e.g. AC SUV / Sedan / Luxury Coach"
-                    placeholderTextColor={C.textMuted}
-                    style={styles.textInput}
-                    value={transportMode}
-                    onChangeText={setTransportMode}
-                  />
-                </View>
-              </View>
+              <Input
+                label="TRANSPORTATION MODE"
+                placeholder="e.g. AC SUV / Sedan / Luxury Coach"
+                value={transportMode}
+                onChangeText={setTransportMode}
+                icon={<Car size={16} color={C.blue} />}
+                containerStyle={styles.inputGroup}
+              />
 
               {/* PICKUP / MEETING POINT */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>PICKUP / MEETING POINT</Text>
-                <View style={styles.inputWrapper}>
-                  <Navigation size={16} color={C.blue} style={styles.inputIcon} />
-                  <TextInput
-                    placeholder="e.g. Terminal 3 Exit Gate 4 or New Delhi Railway Station"
-                    placeholderTextColor={C.textMuted}
-                    style={styles.textInput}
-                    value={meetingPoint}
-                    onChangeText={setMeetingPoint}
-                  />
-                </View>
-              </View>
+              <Input
+                label="PICKUP / MEETING POINT"
+                placeholder="e.g. Terminal 3 Exit Gate 4 or New Delhi Railway Station"
+                value={meetingPoint}
+                onChangeText={setMeetingPoint}
+                icon={<Navigation size={16} color={C.blue} />}
+                containerStyle={styles.inputGroup}
+              />
 
               {/* MEETING DATE & TIME */}
               <View style={styles.gridRow}>
@@ -1164,19 +1130,14 @@ function CreateTripScreen() {
                     </Text>
                   </TouchableOpacity>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>MEETING TIME *</Text>
-                  <View style={styles.inputWrapper}>
-                    <Clock size={16} color={C.amber} style={styles.inputIcon} />
-                    <TextInput
-                      placeholder="e.g. 10:00 AM"
-                      placeholderTextColor={C.textMuted}
-                      style={styles.textInput}
-                      value={meetingTime}
-                      onChangeText={setMeetingTime}
-                    />
-                  </View>
-                </View>
+                <Input
+                  label="MEETING TIME *"
+                  placeholder="e.g. 10:00 AM"
+                  value={meetingTime}
+                  onChangeText={setMeetingTime}
+                  icon={<Clock size={16} color={C.amber} />}
+                  containerStyle={{ flex: 1 }}
+                />
               </View>
 
               {/* 6. INCLUDED SERVICES */}
@@ -1602,13 +1563,10 @@ function CreateTripScreen() {
                 const myTrips = trips.filter((t) => !!(profile && profile.id && t.creatorId === profile.id));
                 if (myTrips.length === 0) {
                   return (
-                    <View style={styles.emptyCreations}>
-                      <Sparkles size={36} color="#7E8494" style={{ marginBottom: 12 }} />
-                      <Text style={styles.emptyCreationsTitle}>No Creations Yet</Text>
-                      <Text style={styles.emptyCreationsSub}>
-                        Use the Plan tab to publish your first group tour route itinerary.
-                      </Text>
-                    </View>
+                    <ScreenEmpty
+                      title="No Creations Yet"
+                      message="Use the Plan tab to publish your first group tour route itinerary."
+                    />
                   );
                 }
 
@@ -3024,25 +2982,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.06)',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  emptyCreations: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingBottom: 60,
-  },
-  emptyCreationsTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#F8FAFC',
-    marginBottom: 6,
-  },
-  emptyCreationsSub: {
-    fontSize: 12,
-    color: C.textMuted,
-    textAlign: 'center',
-    lineHeight: 18,
-    paddingHorizontal: 32,
   },
   creationsListScroll: {
     paddingBottom: 40,
