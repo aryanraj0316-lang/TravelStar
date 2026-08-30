@@ -2197,11 +2197,30 @@ partial, exactly what's blocking full completion.
       that's 11, tracker undercounted; see individual commits for the
       accurate list). Each verified `tsc --noEmit` clean and `eslint`
       diffed against baseline (no new issues) before committing.
-      Remaining: ~18 more screens/components need this same combined
+      Continued: **notifications.tsx** (4880e24 — also fixed the same
+      raw-ISO-date display bug), **budget-tracker.tsx** (4e28ef9,
+      i18n-only — accessibility was already present), **budget-trips.tsx**
+      (4add6be — same raw-date bug fixed again), **monsoon-advisory.tsx**
+      (40d75cf), **nearby-trips.tsx** (108806a — same raw-date bug fixed
+      again), **destination-details.tsx** (aa64407 — first screen this
+      pass with zero pre-existing accessibility props), **stories.tsx**
+      (ffa30b2), **TripDetailModal.tsx** (0d9af85 — shared by
+      budget-trips.tsx/nearby-trips.tsx/search.tsx's join flow, so this
+      one pass covers all three; also fixed the raw-date bug a fourth
+      time), and **InAppNotificationBanner.tsx** (7898689). 20
+      screens/components fully done now. The raw-ISO-date-instead-of-
+      formatDateRange()/formatDate() bug has now recurred in
+      bookings.tsx, notifications.tsx, budget-trips.tsx, nearby-trips.tsx,
+      and TripDetailModal.tsx — five independent screens built the exact
+      same way, worth a lint rule or shared `<DateRange>` component
+      rather than continuing to catch it screen-by-screen.
+      Remaining: ~8 more screens/components need this same combined
       pass, including the large ones (chat.tsx 5388 lines, travel-
       guide.tsx 3713, create.tsx 3405, map.tsx 2359, map.web.tsx 1952,
-      profile.tsx 2337, group-organizer.tsx 2250) which have not been
-      started yet and will each need substantial dedicated passes.
+      profile.tsx 2337 — language switcher already wired, rest of screen
+      not yet extracted — group-organizer.tsx 2250) which have not been
+      started yet (profile.tsx partially) and will each need substantial
+      dedicated passes.
       Touch target sizing — §9.3's other concrete ask, ~100 elements
       under 44×44 — not yet started on any screen; too easy to break
       layout to bulk-script like fontSize was, needs the same per-screen
