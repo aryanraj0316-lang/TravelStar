@@ -255,7 +255,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   locTitle: { fontSize: 12, fontWeight: '700', color: C.white },
-  locSub: { fontSize: 10.5, color: C.textSec, lineHeight: 15 },
+  locSub: { fontSize: 12, color: C.textSec, lineHeight: 15 },
   locBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -267,7 +267,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(59,130,246,0.3)',
   },
-  locBtnText: { fontSize: 10.5, fontWeight: '700', color: C.blue },
+  locBtnText: { fontSize: 12, fontWeight: '700', color: C.blue },
   scrollContent: { paddingHorizontal: 16, paddingTop: 8 },
   tripCard: {
     backgroundColor: C.card,
@@ -291,7 +291,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 9,
   },
-  distBadgeText: { fontSize: 10, fontWeight: '800', color: C.white },
+  distBadgeText: { fontSize: 12, fontWeight: '800', color: C.white },
   tripBody: { padding: 14, gap: 7 },
   tripTitle: { fontSize: 14.5, fontWeight: '800', color: C.white },
   tripRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
@@ -301,7 +301,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  tripMetaText: { fontSize: 11, color: C.textMuted, fontWeight: '600' },
+  tripMetaText: { fontSize: 12, color: C.textMuted, fontWeight: '600' },
   tripPrice: { fontSize: 13.5, fontWeight: '800', color: C.amber },
-  tripDates: { fontSize: 10.5, color: C.textMuted },
+  tripDates: { fontSize: 12, color: C.textMuted },
 });

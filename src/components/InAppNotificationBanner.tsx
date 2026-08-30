@@ -168,7 +168,7 @@ const styles = StyleSheet.create({
   },
   tapHint: {
     color: C.green,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
 });

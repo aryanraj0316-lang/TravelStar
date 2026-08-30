@@ -323,7 +323,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   ratingBadgeText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '800',
     color: C.orange,
   },
@@ -385,7 +385,7 @@ const styles = StyleSheet.create({
     color: C.white,
   },
   specialtyDesc: {
-    fontSize: 11,
+    fontSize: 12,
     color: C.textSec,
     marginTop: 2,
     lineHeight: 14.5,
@@ -419,7 +419,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.15)',
   },
   hdIndicatorText: {
-    fontSize: 7.5,
+    fontSize: 12,
     color: C.white,
     fontWeight: '800',
     letterSpacing: 0.5,

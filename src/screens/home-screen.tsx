@@ -765,7 +765,7 @@ function HomeScreen() {
                 activeOpacity={0.8}
                 onPress={() => router.push('/auth')}
               >
-                <Text style={{ fontSize: 11, fontWeight: '700', color: '#60A5FA', marginRight: 4 }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#60A5FA', marginRight: 4 }}>
                   Login / Sign Up
                 </Text>
                 <ChevronRight size={12} color="#60A5FA" />
@@ -1119,7 +1119,7 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   tripBadgeText: {
-    fontSize: 8.5,
+    fontSize: 12,
     fontWeight: '700',
     color: '#FFF',
   },
@@ -1150,7 +1150,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   verifiedText: {
-    fontSize: 8,
+    fontSize: 12,
     fontWeight: '700',
     color: C.blue,
   },
@@ -1160,12 +1160,12 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   cityText: {
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '700',
     color: C.blue,
   },
   routeArrow: {
-    fontSize: 9,
+    fontSize: 12,
     color: C.textMuted,
     marginHorizontal: 2,
   },
@@ -1185,7 +1185,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   capsuleText: {
-    fontSize: 8,
+    fontSize: 12,
     fontWeight: '600',
     color: C.textMuted,
     flex: 1,
@@ -1200,7 +1200,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   priceLabel: {
-    fontSize: 8,
+    fontSize: 12,
     fontWeight: '600',
     color: C.textMuted,
   },
@@ -1219,7 +1219,7 @@ const styles = StyleSheet.create({
   },
   joinBtnText: {
     color: '#FFF',
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
   },
 
@@ -1334,7 +1334,7 @@ const styles = StyleSheet.create({
     color: C.white,
   },
   roleSub: {
-    fontSize: 10,
+    fontSize: 12,
     color: 'rgba(255,255,255,0.55)',
     marginTop: 1,
   },
@@ -1388,7 +1388,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.2)',
   },
   quickLabel: {
-    fontSize: 9.5,
+    fontSize: 12,
     fontWeight: '600',
     color: C.white,
     textAlign: 'center',
@@ -1405,7 +1405,7 @@ const styles = StyleSheet.create({
     borderColor: '#0F1224',
   },
   newBadgeGoldText: {
-    fontSize: 7,
+    fontSize: 12,
     fontWeight: '800',
     color: '#111827',
   },
@@ -1440,7 +1440,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   placeText: {
-    fontSize: 10,
+    fontSize: 12,
     color: 'rgba(255,255,255,0.75)',
     fontWeight: '500',
   },
@@ -1461,7 +1461,7 @@ const styles = StyleSheet.create({
     marginTop: -6,
   },
   aqiText: {
-    fontSize: 10,
+    fontSize: 12,
     color: C.green,
     marginTop: 2,
   },
@@ -1471,7 +1471,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   weatherDetail: {
-    fontSize: 9,
+    fontSize: 12,
     color: 'rgba(255,255,255,0.55)',
   },
   badgeLive: {
@@ -1492,7 +1492,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.red,
   },
   liveText: {
-    fontSize: 8,
+    fontSize: 12,
     fontWeight: '800',
     color: C.red,
     letterSpacing: 0.5,
@@ -1529,13 +1529,13 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   alertTitle: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: C.white,
     marginTop: 1,
   },
   alertDesc: {
-    fontSize: 9,
+    fontSize: 12,
     color: C.textSec,
     lineHeight: 11,
   },
@@ -1546,7 +1546,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   alertLinkText: {
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '600',
     color: C.blue,
   },
@@ -1573,7 +1573,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.green,
   },
   tripLiveText: {
-    fontSize: 7,
+    fontSize: 12,
     fontWeight: '800',
     color: C.green,
     letterSpacing: 0.3,
@@ -1622,7 +1622,7 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   timerText: {
-    fontSize: 8.5,
+    fontSize: 12,
     fontWeight: '700',
     color: C.orange,
   },
@@ -1694,13 +1694,13 @@ const styles = StyleSheet.create({
     borderColor: C.bg,
   },
   reelBadgeText: {
-    fontSize: 7,
+    fontSize: 12,
     fontWeight: '800',
     color: C.white,
   },
   storyName: {
     marginTop: 6,
-    fontSize: 11,
+    fontSize: 12,
     color: C.textSec,
     fontWeight: '500',
   },
@@ -1770,7 +1770,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   trendingTags: {
-    fontSize: 10,
+    fontSize: 12,
     color: 'rgba(255,255,255,0.65)',
     marginBottom: 4,
   },
@@ -1834,7 +1834,7 @@ const styles = StyleSheet.create({
     marginBottom: 3,
   },
   aiSub: {
-    fontSize: 10,
+    fontSize: 12,
     color: C.textSec,
   },
   aiBtn: {
@@ -1843,7 +1843,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   aiBtnText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: C.white,
   },

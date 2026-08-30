@@ -157,7 +157,7 @@ const styles = StyleSheet.create({
     color: C.white,
   },
   versionText: {
-    fontSize: 11,
+    fontSize: 12,
     color: C.textSec,
     marginTop: 4,
   },
@@ -185,7 +185,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.border,
   },
   copyrightText: {
-    fontSize: 9,
+    fontSize: 12,
     color: C.textMuted,
     textAlign: 'center',
   },

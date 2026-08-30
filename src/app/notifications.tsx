@@ -330,7 +330,7 @@ export default function NotificationsScreen() {
                   </View>
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-                  <Text style={{ fontSize: 11, color: C.blue, fontWeight: '700' }}>Tap to open group chat</Text>
+                  <Text style={{ fontSize: 12, color: C.blue, fontWeight: '700' }}>Tap to open group chat</Text>
                   <ChevronRight size={12} color={C.blue} style={{ marginLeft: 2 }} />
                 </View>
               </TouchableOpacity>
@@ -537,7 +537,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   unreadBadgeText: {
-    fontSize: 8.5,
+    fontSize: 12,
     fontWeight: '900',
     color: C.white,
   },
@@ -627,7 +627,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.red,
   },
   liveNewsText: {
-    fontSize: 8,
+    fontSize: 12,
     fontWeight: '900',
     color: C.red,
     letterSpacing: 0.5,
@@ -665,7 +665,7 @@ const styles = StyleSheet.create({
     color: C.white,
   },
   hazardLocation: {
-    fontSize: 10.5,
+    fontSize: 12,
     color: C.textSec,
     marginTop: 1,
   },
@@ -679,13 +679,13 @@ const styles = StyleSheet.create({
     borderRadius: 5,
   },
   severityText: {
-    fontSize: 8,
+    fontSize: 12,
     fontWeight: '900',
     color: C.white,
     letterSpacing: 0.4,
   },
   hazardTime: {
-    fontSize: 9.5,
+    fontSize: 12,
     color: C.textMuted,
   },
   hazardDesc: {
@@ -708,7 +708,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   affectedRouteText: {
-    fontSize: 10.5,
+    fontSize: 12,
     color: C.textSec,
     fontWeight: '500',
   },
@@ -718,7 +718,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   altRouteBtnText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
     color: C.white,
   },
@@ -747,7 +747,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   statusBadgeText: {
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '900',
     color: C.white,
     letterSpacing: 0.5,
@@ -764,7 +764,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(245,158,11,0.4)',
   },
   timerBadgeText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
     color: C.orange,
   },

@@ -394,13 +394,13 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   badgeText: {
-    fontSize: 9.5,
+    fontSize: 12,
     fontWeight: '800',
     letterSpacing: 0.5,
   },
   bookingIdText: {
     color: C.textSec,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
   },
   cardDetails: {
@@ -441,7 +441,7 @@ const styles = StyleSheet.create({
   },
   footerLabel: {
     color: C.textMuted,
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '600',
   },
   footerValue: {

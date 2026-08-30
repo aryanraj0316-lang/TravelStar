@@ -407,11 +407,11 @@ const styles = StyleSheet.create({
   tripChips: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingBottom: 12 },
   scrollContent: { paddingHorizontal: 16, paddingTop: 4 },
   summaryCard: { borderRadius: 20, padding: 18, gap: 6, marginBottom: 16 },
-  summaryLabel: { fontSize: 10, fontWeight: '800', color: C.textSec, letterSpacing: 1 },
+  summaryLabel: { fontSize: 12, fontWeight: '800', color: C.textSec, letterSpacing: 1 },
   summaryValue: { fontSize: 30, fontWeight: '900', color: C.white },
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
   summaryCol: { gap: 3 },
-  summaryColLabel: { fontSize: 10, color: C.textMuted, fontWeight: '600' },
+  summaryColLabel: { fontSize: 12, color: C.textMuted, fontWeight: '600' },
   summaryColValue: { fontSize: 13, fontWeight: '800', color: C.white },
   section: { marginBottom: 20 },
   // The "Expenses" heading sits in the FlatList header rather than inside a
@@ -426,7 +426,7 @@ const styles = StyleSheet.create({
   },
   balanceAvatar: { width: 34, height: 34, borderRadius: 17 },
   balanceName: { fontSize: 12.5, fontWeight: '700', color: C.white },
-  balanceSub: { fontSize: 10.5, color: C.textMuted },
+  balanceSub: { fontSize: 12, color: C.textMuted },
   balanceNet: { fontSize: 13, fontWeight: '800' },
   emptyExpenses: { fontSize: 12, color: C.textMuted, fontStyle: 'italic' },
   expenseRow: {
@@ -438,7 +438,7 @@ const styles = StyleSheet.create({
   },
   expenseIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   expenseTitle: { fontSize: 13, fontWeight: '700', color: C.white },
-  expenseSub: { fontSize: 10, color: C.textMuted, marginTop: 2 },
+  expenseSub: { fontSize: 12, color: C.textMuted, marginTop: 2 },
   expenseAmount: { fontSize: 13.5, fontWeight: '800', color: C.white },
   deleteBtn: { padding: 6 },
   fab: {

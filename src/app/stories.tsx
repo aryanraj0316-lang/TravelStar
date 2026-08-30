@@ -331,7 +331,7 @@ const styles = StyleSheet.create({
   },
   locationText: {
     color: 'rgba(255,255,255,0.7)',
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '600',
   },
   closeBtn: {

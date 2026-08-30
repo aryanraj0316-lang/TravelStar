@@ -123,7 +123,7 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   countText: {
-    fontSize: 11,
+    fontSize: 12,
     color: C.textMuted,
     marginHorizontal: 16,
     marginTop: 10,
@@ -146,7 +146,7 @@ const styles = StyleSheet.create({
     color: C.white,
   },
   rowMeta: {
-    fontSize: 11,
+    fontSize: 12,
     color: C.textSec,
     marginTop: 2,
   },

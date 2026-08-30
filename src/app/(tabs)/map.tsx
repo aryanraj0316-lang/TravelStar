@@ -1151,7 +1151,7 @@ function MapScreen() {
             activeOpacity={0.85}
           >
             <ShieldAlert size={18} color="#FFF" />
-            <Text style={{ color: '#FFF', fontSize: 7, fontWeight: '900', marginTop: 1 }}>SOS</Text>
+            <Text style={{ color: '#FFF', fontSize: 12, fontWeight: '900', marginTop: 1 }}>SOS</Text>
           </TouchableOpacity>
         </View>
 
@@ -1599,7 +1599,7 @@ const styles = StyleSheet.create({
   },
   dropdownTriggerText: {
     color: '#FFF',
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.3,
   },
@@ -1647,7 +1647,7 @@ const styles = StyleSheet.create({
   },
   dropdownOptionText: {
     color: '#8B949E',
-    fontSize: 9.5,
+    fontSize: 12,
     fontWeight: '600',
   },
   dropdownOptionTextActive: {
@@ -1679,7 +1679,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#10B981',
   },
   statusPillText: {
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '700',
     color: '#C9D1D9',
   },
@@ -1765,7 +1765,7 @@ const styles = StyleSheet.create({
   },
   bottomCardSub: {
     color: '#8B949E',
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '600',
     marginTop: 1,
   },
@@ -1779,7 +1779,7 @@ const styles = StyleSheet.create({
   },
   etaBadgeText: {
     color: '#58A6FF',
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '800',
   },
   routeProgressBg: {
@@ -1804,12 +1804,12 @@ const styles = StyleSheet.create({
   },
   bottomStatLabel: {
     color: '#484F58',
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '600',
   },
   bottomStatVal: {
     color: '#C9D1D9',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
   bottomStatDivider: {
@@ -1955,7 +1955,7 @@ const styles = StyleSheet.create({
     borderColor: '#10B981',
   },
   segmentTabText: {
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '700',
     color: '#8B949E',
   },
@@ -1988,7 +1988,7 @@ const styles = StyleSheet.create({
   },
   legDetailBadgeText: {
     color: '#C9D1D9',
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
   },
   pitStopsContainer: {
@@ -2001,7 +2001,7 @@ const styles = StyleSheet.create({
   },
   pitStopsTitle: {
     color: '#8B949E',
-    fontSize: 9.5,
+    fontSize: 12,
     fontWeight: '700',
     marginBottom: 4,
   },
@@ -2013,7 +2013,7 @@ const styles = StyleSheet.create({
   },
   pitStopText: {
     color: '#C9D1D9',
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '600',
   },
   legActionsRow: {
@@ -2047,7 +2047,7 @@ const styles = StyleSheet.create({
   },
   startNavBtnText: {
     color: '#FFF',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
   },
   navFab: {
@@ -2096,7 +2096,7 @@ const styles = StyleSheet.create({
   },
   navOverlaySub: {
     color: '#8B949E',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     marginTop: 1,
   },
@@ -2130,13 +2130,13 @@ const styles = StyleSheet.create({
   },
   stepInstruction: {
     color: '#C9D1D9',
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '600',
     lineHeight: 16,
   },
   stepDistance: {
     color: '#8B949E',
-    fontSize: 9.5,
+    fontSize: 12,
     fontWeight: '700',
     marginTop: 1,
   },
@@ -2195,7 +2195,7 @@ const styles = StyleSheet.create({
   },
   itineraryToggleText: {
     color: '#0066FF',
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '800',
   },
   itineraryList: {
@@ -2218,7 +2218,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#10B981',
   },
   itineraryItemText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     color: '#8B949E',
   },
@@ -2259,7 +2259,7 @@ const styles = StyleSheet.create({
   },
   statsGridVal: {
     color: '#C9D1D9',
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
   },
   statsGridDivider: {
@@ -2272,7 +2272,7 @@ const styles = StyleSheet.create({
   },
   compactDetailsText: {
     color: '#8B949E',
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '600',
   },
   compactDetailsLabel: {
@@ -2287,12 +2287,12 @@ const styles = StyleSheet.create({
   },
   segmentLegTitle: {
     color: '#10B981',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
   },
   segmentRoadText: {
     color: '#8B949E',
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '600',
   },
   dbDetailsContainer: {
@@ -2305,14 +2305,14 @@ const styles = StyleSheet.create({
   },
   dbDetailsText: {
     color: '#C9D1D9',
-    fontSize: 9.5,
+    fontSize: 12,
     fontWeight: '600',
   },
   dbDetailsLabel: {
     color: '#8B949E',
     fontWeight: '800',
     textTransform: 'uppercase',
-    fontSize: 9,
+    fontSize: 12,
     letterSpacing: 0.3,
   },
   dbMetaRow: {
@@ -2335,7 +2335,7 @@ const styles = StyleSheet.create({
   },
   facilityChipText: {
     color: '#10B981',
-    fontSize: 8.5,
+    fontSize: 12,
     fontWeight: '800',
   },
   collapseGradientBtn: {

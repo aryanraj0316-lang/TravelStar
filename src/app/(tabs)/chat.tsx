@@ -2943,7 +2943,7 @@ function ChatScreen() {
                         <Text style={styles.controlTitle}>Live Location Pinging</Text>
                         <Text style={styles.controlDesc}>Sends background telemetry updates</Text>
                       </View>
-                      <Text style={{ fontSize: 10, fontWeight: '700', color: '#0066FF', letterSpacing: 0.5 }}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#0066FF', letterSpacing: 0.5 }}>
                         ACTIVE
                       </Text>
                     </View>
@@ -3175,7 +3175,7 @@ const styles = StyleSheet.create({
   },
   dmMemberBtnText: {
     color: '#FFF',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.3,
   },
@@ -3235,7 +3235,7 @@ const styles = StyleSheet.create({
   },
   filterPillText: {
     color: C.textSec,
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   filterPillTextSelected: {
@@ -3253,7 +3253,7 @@ const styles = StyleSheet.create({
   },
   safetyTickerText: {
     color: '#FFF',
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '800',
   },
 
@@ -3312,7 +3312,7 @@ const styles = StyleSheet.create({
   },
   roomTimeText: {
     color: C.textMuted,
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '600',
   },
   roomSnippetRow: {
@@ -3343,7 +3343,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(139, 92, 246, 0.12)',
   },
   inboxTagText: {
-    fontSize: 8.5,
+    fontSize: 12,
     fontWeight: '800',
     color: '#FFF',
   },
@@ -3357,7 +3357,7 @@ const styles = StyleSheet.create({
   },
   unreadBadgeText: {
     color: '#FFF',
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '900',
   },
 
@@ -3399,7 +3399,7 @@ const styles = StyleSheet.create({
   },
   roomHeaderStatusText: {
     color: C.textSec,
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '600',
   },
   activityStatusRow: {
@@ -3464,7 +3464,7 @@ const styles = StyleSheet.create({
   },
   sosBannerBtnText: {
     color: '#FFF',
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '800',
   },
 
@@ -3541,7 +3541,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.border,
   },
   timelineCityText: {
-    fontSize: 9.5,
+    fontSize: 12,
     marginTop: 4,
     textAlign: 'center',
     fontWeight: '600',
@@ -3566,13 +3566,13 @@ const styles = StyleSheet.create({
   },
   meetingTitle: {
     color: C.yellow,
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '800',
     marginRight: 4,
   },
   meetingLocation: {
     color: '#FFF',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     flex: 1,
   },
@@ -3584,7 +3584,7 @@ const styles = StyleSheet.create({
   },
   budgetLabel: {
     color: C.textSec,
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '700',
     marginBottom: 2,
   },
@@ -3605,7 +3605,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   settingsOutlineBtnText: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '800',
   },
 
@@ -3625,12 +3625,12 @@ const styles = StyleSheet.create({
   },
   miniPollSubText: {
     color: C.textMuted,
-    fontSize: 9.5,
+    fontSize: 12,
     marginTop: 2,
   },
   noActiveLabel: {
     color: C.textMuted,
-    fontSize: 11.5,
+    fontSize: 12,
     textAlign: 'center',
     marginVertical: 10,
   },
@@ -3666,18 +3666,18 @@ const styles = StyleSheet.create({
   },
   guideSettingsRatingText: {
     color: C.yellow,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
     marginLeft: 3,
   },
   guideSettingsLangText: {
     color: C.textSec,
-    fontSize: 10.5,
+    fontSize: 12,
     marginLeft: 4,
   },
   guideSettingsExpertise: {
     color: C.textMuted,
-    fontSize: 10,
+    fontSize: 12,
     marginTop: 2,
   },
 
@@ -3701,7 +3701,7 @@ const styles = StyleSheet.create({
   },
   controlDesc: {
     color: C.textMuted,
-    fontSize: 10,
+    fontSize: 12,
     marginTop: 1,
   },
   pingerActiveDot: {
@@ -3721,7 +3721,7 @@ const styles = StyleSheet.create({
   },
   settingsSOSBtnText: {
     color: '#FFF',
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '800',
     letterSpacing: 0.5,
   },
@@ -3736,7 +3736,7 @@ const styles = StyleSheet.create({
   },
   armedLabel: {
     color: '#FFF',
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '800',
   },
   armedTimer: {
@@ -3753,7 +3753,7 @@ const styles = StyleSheet.create({
   },
   armedCancelText: {
     color: '#FFF',
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '800',
   },
 
@@ -3768,7 +3768,7 @@ const styles = StyleSheet.create({
   },
   dateText: {
     color: C.textMuted,
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   messageRow: {
@@ -3839,7 +3839,7 @@ const styles = StyleSheet.create({
     borderColor: C.green,
   },
   rolePillText: {
-    fontSize: 8.5,
+    fontSize: 12,
     fontWeight: '800',
     color: '#FFF',
   },
@@ -3879,7 +3879,7 @@ const styles = StyleSheet.create({
   },
   timestampTextMe: {
     color: 'rgba(255, 255, 255, 0.65)',
-    fontSize: 8.5,
+    fontSize: 12,
     alignSelf: 'flex-end',
     marginTop: 4,
   },
@@ -3922,13 +3922,13 @@ const styles = StyleSheet.create({
   },
   translateText: {
     color: C.blueGlow,
-    fontSize: 9.5,
+    fontSize: 12,
     fontWeight: '800',
     marginLeft: 4,
   },
   timestampText: {
     color: C.textMuted,
-    fontSize: 8.5,
+    fontSize: 12,
     alignSelf: 'flex-end',
     marginTop: 4,
   },
@@ -3988,12 +3988,12 @@ const styles = StyleSheet.create({
   },
   pollOptionPercent: {
     color: C.orange,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
   pollFooter: {
     color: C.textMuted,
-    fontSize: 9,
+    fontSize: 12,
     alignSelf: 'flex-end',
     marginTop: 2,
   },
@@ -4014,7 +4014,7 @@ const styles = StyleSheet.create({
   },
   expenseHeaderTitle: {
     color: C.green,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
     marginLeft: 4,
     textTransform: 'uppercase',
@@ -4041,12 +4041,12 @@ const styles = StyleSheet.create({
   },
   expenseShareText: {
     color: C.textSec,
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '600',
   },
   expenseCostHead: {
     color: C.green,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
   },
 
@@ -4066,7 +4066,7 @@ const styles = StyleSheet.create({
   },
   locationCardTitle: {
     color: C.blueGlow,
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '800',
     marginLeft: 6,
   },
@@ -4108,7 +4108,7 @@ const styles = StyleSheet.create({
   },
   coordsText: {
     color: C.textMuted,
-    fontSize: 8.5,
+    fontSize: 12,
     position: 'absolute',
     bottom: 6,
   },
@@ -4123,7 +4123,7 @@ const styles = StyleSheet.create({
   },
   locationActionText: {
     color: C.blueGlow,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
   },
 
@@ -4172,7 +4172,7 @@ const styles = StyleSheet.create({
   },
   voiceDuration: {
     color: C.textSec,
-    fontSize: 10,
+    fontSize: 12,
     marginLeft: 10,
     fontWeight: '700',
   },
@@ -4199,7 +4199,7 @@ const styles = StyleSheet.create({
   },
   imageCardDesc: {
     color: '#E2E8F0',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     flex: 1,
   },
@@ -4236,7 +4236,7 @@ const styles = StyleSheet.create({
   },
   sosAlertCoords: {
     color: 'rgba(255,255,255,0.7)',
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '600',
     marginTop: 6,
   },
@@ -4253,7 +4253,7 @@ const styles = StyleSheet.create({
   },
   sosAlertBtnText: {
     color: '#FFF',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
   },
 
@@ -4268,7 +4268,7 @@ const styles = StyleSheet.create({
   },
   typingText: {
     color: C.textMuted,
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '600',
   },
 
@@ -4293,12 +4293,12 @@ const styles = StyleSheet.create({
   },
   safetyStatusDesc: {
     color: C.textSec,
-    fontSize: 10.5,
+    fontSize: 12,
     marginTop: 2,
   },
   safetySectionLabel: {
     color: C.textSec,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
     textTransform: 'uppercase',
     marginBottom: 10,
@@ -4328,7 +4328,7 @@ const styles = StyleSheet.create({
   },
   sosNotice: {
     color: C.textMuted,
-    fontSize: 11,
+    fontSize: 12,
     lineHeight: 16,
     textAlign: 'center',
     marginBottom: 20,
@@ -4420,7 +4420,7 @@ const styles = StyleSheet.create({
   },
   attachLabel: {
     color: C.textSec,
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
   },
 
@@ -4478,7 +4478,7 @@ const styles = StyleSheet.create({
   },
   settingsTripDates: {
     color: C.textSec,
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '600',
     marginTop: 4,
   },
@@ -4521,7 +4521,7 @@ const styles = StyleSheet.create({
   },
   modalInfoNotice: {
     color: C.textMuted,
-    fontSize: 9.5,
+    fontSize: 12,
     marginTop: 8,
     fontStyle: 'italic',
   },
@@ -4556,7 +4556,7 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   replyPreviewSenderName: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
     color: C.blueGlow,
     marginBottom: 2,
@@ -4580,12 +4580,12 @@ const styles = StyleSheet.create({
   bubbleReplySenderMe: {
     color: '#FFF',
     fontWeight: '800',
-    fontSize: 10.5,
+    fontSize: 12,
     marginBottom: 1,
   },
   bubbleReplyContentMe: {
     color: 'rgba(255, 255, 255, 0.8)',
-    fontSize: 11,
+    fontSize: 12,
   },
   bubbleReplyHeaderOther: {
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
@@ -4599,12 +4599,12 @@ const styles = StyleSheet.create({
   bubbleReplySenderOther: {
     color: C.blueGlow,
     fontWeight: '800',
-    fontSize: 10.5,
+    fontSize: 12,
     marginBottom: 1,
   },
   bubbleReplyContentOther: {
     color: C.textSec,
-    fontSize: 11,
+    fontSize: 12,
   },
 
   // Long Press Options Modal Styles
@@ -4643,7 +4643,7 @@ const styles = StyleSheet.create({
   },
   optionsHeaderSubText: {
     color: C.textSec,
-    fontSize: 11.5,
+    fontSize: 12,
     fontStyle: 'italic',
   },
   optionsDivider: {
@@ -4716,7 +4716,7 @@ const styles = StyleSheet.create({
   },
   memberRoleText: {
     color: C.textMuted,
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 1,
   },
   roleBadge: {
@@ -4739,7 +4739,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(148, 163, 184, 0.2)',
   },
   roleBadgeText: {
-    fontSize: 8.5,
+    fontSize: 12,
     fontWeight: '800',
     letterSpacing: 0.5,
   },
@@ -4757,7 +4757,7 @@ const styles = StyleSheet.create({
   },
   telemetryTitle: {
     color: C.purple,
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '800',
     letterSpacing: 1,
   },
@@ -4771,7 +4771,7 @@ const styles = StyleSheet.create({
   },
   telemetryStatusText: {
     color: C.purple,
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '800',
     letterSpacing: 0.5,
   },
@@ -4807,7 +4807,7 @@ const styles = StyleSheet.create({
   },
   telemetryMetaLbl: {
     color: C.textMuted,
-    fontSize: 9.5,
+    fontSize: 12,
     fontWeight: '600',
     marginTop: 2,
   },
@@ -4823,7 +4823,7 @@ const styles = StyleSheet.create({
   },
   telemetryFooterText: {
     color: C.purple,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
   },
   settingsAbsoluteCloseBtn: {
@@ -4928,7 +4928,7 @@ const styles = StyleSheet.create({
   },
   groupUpdateDescText: {
     color: C.textSec,
-    fontSize: 11,
+    fontSize: 12,
     lineHeight: 15,
   },
   groupUpdateRight: {
@@ -4946,7 +4946,7 @@ const styles = StyleSheet.create({
   },
   groupUpdateViewBtnText: {
     color: '#FFF',
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '600',
   },
   groupUpdateCloseBtn: {
@@ -4979,7 +4979,7 @@ const styles = StyleSheet.create({
   },
   statsTitle: {
     color: '#E2E8F0',
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '800',
     letterSpacing: 1.2,
   },
@@ -4993,7 +4993,7 @@ const styles = StyleSheet.create({
   },
   statsStatusText: {
     color: C.greenText,
-    fontSize: 8.5,
+    fontSize: 12,
     fontWeight: '800',
     letterSpacing: 0.5,
   },
@@ -5008,7 +5008,7 @@ const styles = StyleSheet.create({
   },
   statsValLabel: {
     color: C.textMuted,
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '600',
     marginBottom: 3,
   },
@@ -5026,7 +5026,7 @@ const styles = StyleSheet.create({
   },
   statsFooterText: {
     color: '#C084FC',
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '600',
     flex: 1,
   },
@@ -5100,7 +5100,7 @@ const styles = StyleSheet.create({
   },
   verticalTimelineDayText: {
     color: C.blue,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
     backgroundColor: 'rgba(0, 102, 255, 0.1)',
     paddingHorizontal: 6,
@@ -5115,7 +5115,7 @@ const styles = StyleSheet.create({
   },
   verticalTimelineDesc: {
     color: C.textMuted,
-    fontSize: 11.5,
+    fontSize: 12,
     lineHeight: 16,
   },
 
@@ -5196,12 +5196,12 @@ const styles = StyleSheet.create({
   },
   docSubText: {
     color: C.textMuted,
-    fontSize: 11,
+    fontSize: 12,
     marginBottom: 2,
   },
   docDateText: {
     color: C.textMuted,
-    fontSize: 9,
+    fontSize: 12,
   },
   docItemRight: {
     flexDirection: 'row',
@@ -5215,7 +5215,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   docStatusText: {
-    fontSize: 8.5,
+    fontSize: 12,
     fontWeight: '800',
   },
   docDeleteBtn: {
@@ -5260,7 +5260,7 @@ const styles = StyleSheet.create({
   },
   memberTabRoleText: {
     color: C.textMuted,
-    fontSize: 10.5,
+    fontSize: 12,
     marginTop: 1,
   },
   memberTabCardRight: {
@@ -5275,7 +5275,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   memberRoleBadgeText: {
-    fontSize: 8,
+    fontSize: 12,
     fontWeight: '800',
     letterSpacing: 0.5,
   },

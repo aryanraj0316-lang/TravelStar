@@ -863,7 +863,7 @@ function ProfileScreen() {
           </View>
 
           {/* Preset Avatars Row */}
-          <Text style={{ fontSize: 11, color: '#7E8494', marginTop: 12, marginBottom: 8, alignSelf: 'flex-start' }}>
+          <Text style={{ fontSize: 12, color: '#7E8494', marginTop: 12, marginBottom: 8, alignSelf: 'flex-start' }}>
             Or Choose from Preset Avatars:
           </Text>
           <ScrollView
@@ -1160,7 +1160,7 @@ const styles = StyleSheet.create({
     marginTop: -8,
   },
   sectionHeader: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '800',
     color: C.textMuted,
     marginTop: 22,
@@ -1302,7 +1302,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   userBio: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#8A92A6',
     marginTop: 8,
     textAlign: 'center',
@@ -1333,7 +1333,7 @@ const styles = StyleSheet.create({
 
   // Modals
   inputLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: C.textMuted,
     marginTop: 10,
@@ -1502,7 +1502,7 @@ const styles = StyleSheet.create({
     color: '#FFF',
   },
   savedPlaceLocation: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#8A92A6',
     marginTop: 4,
   },
@@ -1519,7 +1519,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   profileDetailLabel: {
-    fontSize: 10,
+    fontSize: 12,
     color: '#8A92A6',
     fontWeight: '800',
     letterSpacing: 0.5,

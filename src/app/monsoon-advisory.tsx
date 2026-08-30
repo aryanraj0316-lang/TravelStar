@@ -349,7 +349,7 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   liveBadgeText: {
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '800',
     color: C.orange,
     letterSpacing: 0.6,
@@ -381,7 +381,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   introDesc: {
-    fontSize: 11.5,
+    fontSize: 12,
     color: C.textSec,
     lineHeight: 16,
   },
@@ -410,7 +410,7 @@ const styles = StyleSheet.create({
     borderColor: C.red,
   },
   filterTabText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.2,
   },
@@ -443,7 +443,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   categoryLabel: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '800',
     color: C.white,
     letterSpacing: 0.3,
@@ -455,7 +455,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   locationText: {
-    fontSize: 10.5,
+    fontSize: 12,
     color: C.textSec,
     fontWeight: '600',
     maxWidth: SCREEN_WIDTH * 0.45,
@@ -467,7 +467,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   severityBadgeText: {
-    fontSize: 9.5,
+    fontSize: 12,
     fontWeight: '800',
     letterSpacing: 0.5,
   },
@@ -493,7 +493,7 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   routeHeader: {
-    fontSize: 9.5,
+    fontSize: 12,
     fontWeight: '700',
     color: C.textMuted,
     textTransform: 'uppercase',
@@ -548,7 +548,7 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
   cardTimeText: {
-    fontSize: 10.5,
+    fontSize: 12,
     color: C.textMuted,
     fontWeight: '600',
   },
@@ -580,12 +580,12 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   emergencySub: {
-    fontSize: 11,
+    fontSize: 12,
     color: C.textSec,
     marginBottom: 6,
   },
   emergencyNumbers: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: C.red,
   },

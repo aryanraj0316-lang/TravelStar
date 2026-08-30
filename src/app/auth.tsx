@@ -422,7 +422,7 @@ const styles = StyleSheet.create({
     color: C.blueText,
   },
   roleSub: {
-    fontSize: 10,
+    fontSize: 12,
     color: C.textMuted,
   },
   card: {

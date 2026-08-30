@@ -1202,7 +1202,7 @@ export default function TravelGuideScreen() {
                     disabled={mediaUploading}
                   >
                     <Video size={24} color={selectedVideoUri ? C.green : C.blueGlow} style={{ alignSelf: 'center' }} />
-                    <Text style={{ fontSize: 9, color: C.textSec, marginTop: 4, textAlign: 'center' }}>
+                    <Text style={{ fontSize: 12, color: C.textSec, marginTop: 4, textAlign: 'center' }}>
                       {selectedVideoUri ? 'Video Selected' : 'Pick Video'}
                     </Text>
                   </TouchableOpacity>
@@ -1227,7 +1227,7 @@ export default function TravelGuideScreen() {
                   ) : (
                     <>
                       <ImageIcon size={24} color={C.blueGlow} style={{ alignSelf: 'center' }} />
-                      <Text style={{ fontSize: 9, color: C.textSec, marginTop: 4, textAlign: 'center' }}>
+                      <Text style={{ fontSize: 12, color: C.textSec, marginTop: 4, textAlign: 'center' }}>
                         {uploadCategory === 'STORY' ? 'Pick Cover Photo' : 'Pick Thumbnail'}
                       </Text>
                     </>
@@ -1750,7 +1750,7 @@ export default function TravelGuideScreen() {
               >
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.walletLabel, { fontSize: 10 }]}>BROADCAST STATUS</Text>
+                    <Text style={[styles.walletLabel, { fontSize: 12 }]}>BROADCAST STATUS</Text>
                     <Text
                       style={[
                         styles.leadName,
@@ -1802,11 +1802,11 @@ export default function TravelGuideScreen() {
                       gap: 4,
                     }}
                   >
-                    <Text style={[styles.descSec, { fontSize: 11 }]}>Current GPS Coordinates:</Text>
+                    <Text style={[styles.descSec, { fontSize: 12 }]}>Current GPS Coordinates:</Text>
                     <Text style={{ color: C.white, fontSize: 13, fontWeight: '700' }}>
                       Lat: {liveStatus.location.latitude.toFixed(6)} • Lon: {liveStatus.location.longitude.toFixed(6)}
                     </Text>
-                    <Text style={[styles.descSec, { fontSize: 10 }]}>
+                    <Text style={[styles.descSec, { fontSize: 12 }]}>
                       Updated: {new Date(liveStatus.location.updatedAt).toLocaleTimeString()}
                     </Text>
                   </View>
@@ -1824,10 +1824,10 @@ export default function TravelGuideScreen() {
                     }}
                   >
                     <Text style={{ color: C.blueGlow, fontSize: 12, fontWeight: '700' }}>Guiding Booking Ongoing</Text>
-                    <Text style={[styles.descSec, { fontSize: 11, marginTop: 2 }]}>
+                    <Text style={[styles.descSec, { fontSize: 12, marginTop: 2 }]}>
                       Booking ID: {liveStatus.activeGuiding.bookingId}
                     </Text>
-                    <Text style={[styles.descSec, { fontSize: 11 }]}>Revenue: ₹{liveStatus.activeGuiding.amount}</Text>
+                    <Text style={[styles.descSec, { fontSize: 12 }]}>Revenue: ₹{liveStatus.activeGuiding.amount}</Text>
                   </View>
                 )}
               </LinearGradient>
@@ -2093,7 +2093,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.3,
   },
   headerSub: {
-    fontSize: 11,
+    fontSize: 12,
     color: C.textSec,
   },
   badgeOfficialGradient: {
@@ -2109,7 +2109,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
   },
   badgeOfficialText: {
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '900',
     color: C.white,
     letterSpacing: 0.4,
@@ -2144,7 +2144,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
   },
   tabLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
 
@@ -2158,12 +2158,12 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
   },
   descSec: {
-    fontSize: 11.5,
+    fontSize: 12,
     color: C.textSec,
     marginBottom: 14,
   },
   sectionLabelInline: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '800',
     color: C.white,
     marginTop: 18,
@@ -2202,7 +2202,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   walletLabel: {
-    fontSize: 9.5,
+    fontSize: 12,
     fontWeight: '900',
     color: C.textMuted,
     letterSpacing: 0.8,
@@ -2259,7 +2259,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.06)',
   },
   statLabel: {
-    fontSize: 9.5,
+    fontSize: 12,
     color: C.textSec,
     marginBottom: 4,
     fontWeight: '600',
@@ -2289,7 +2289,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   chartBarValue: {
-    fontSize: 8,
+    fontSize: 12,
     color: C.textSec,
     fontWeight: '700',
     marginBottom: 4,
@@ -2299,7 +2299,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   chartDayText: {
-    fontSize: 8.5,
+    fontSize: 12,
     color: C.textMuted,
     marginTop: 6,
     fontWeight: '700',
@@ -2331,7 +2331,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.rose,
   },
   liveLabel: {
-    fontSize: 8.5,
+    fontSize: 12,
     fontWeight: '900',
     color: C.rose,
   },
@@ -2397,7 +2397,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   leadDestination: {
-    fontSize: 11,
+    fontSize: 12,
     color: C.textSec,
     fontWeight: '600',
     maxWidth: '92%',
@@ -2411,7 +2411,7 @@ const styles = StyleSheet.create({
     color: C.greenGlow,
   },
   leadDays: {
-    fontSize: 10,
+    fontSize: 12,
     color: C.textMuted,
     marginTop: 2,
     fontWeight: '700',
@@ -2433,7 +2433,7 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
   dateLabel: {
-    fontSize: 10.5,
+    fontSize: 12,
     color: C.textMuted,
     fontWeight: '700',
   },
@@ -2446,7 +2446,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   applyLeadBtnText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
     color: C.blueGlow,
   },
@@ -2462,7 +2462,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(16,185,129,0.25)',
   },
   quoteSentTagText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
     color: C.greenGlow,
   },
@@ -2481,12 +2481,12 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   quoteInputLabel: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '800',
     color: C.white,
   },
   quoteDurationBadge: {
-    fontSize: 9.5,
+    fontSize: 12,
     fontWeight: '900',
     color: C.blueGlow,
     backgroundColor: 'rgba(0,102,255,0.12)',
@@ -2495,7 +2495,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   quoteSchedulePreview: {
-    fontSize: 11,
+    fontSize: 12,
     color: C.textSec,
     backgroundColor: 'rgba(255,255,255,0.02)',
     padding: 10,
@@ -2615,11 +2615,11 @@ const styles = StyleSheet.create({
     shadowRadius: 5,
   },
   selectorLabelText: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '800',
   },
   formInputLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
     color: C.textSec,
     marginTop: 14,
@@ -2726,7 +2726,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.1)',
   },
   badgeCategoryText: {
-    fontSize: 7.5,
+    fontSize: 12,
     fontWeight: '900',
     color: C.white,
   },
@@ -2745,7 +2745,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   uploadCardLocText: {
-    fontSize: 10,
+    fontSize: 12,
     color: C.textSec,
     fontWeight: '600',
   },
@@ -2756,7 +2756,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   uploadCardLikes: {
-    fontSize: 9.5,
+    fontSize: 12,
     color: C.greenGlow,
     fontWeight: '700',
   },
@@ -2784,7 +2784,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.03)',
   },
   plannerSubTabLabel: {
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '800',
   },
   plannerSubTabIndicator: {
@@ -2835,7 +2835,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   timelineNodeText: {
-    fontSize: 9.5,
+    fontSize: 12,
     fontWeight: '900',
     color: C.white,
   },
@@ -2854,7 +2854,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   dayActivitiesText: {
-    fontSize: 11.5,
+    fontSize: 12,
     color: C.textSec,
     lineHeight: 17,
     fontWeight: '500',
@@ -2932,7 +2932,7 @@ const styles = StyleSheet.create({
     shadowRadius: 5,
   },
   modeTileLabel: {
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '800',
   },
   estimateBtn: {
@@ -2966,7 +2966,7 @@ const styles = StyleSheet.create({
   estimationResultText: {
     flex: 1,
     color: C.white,
-    fontSize: 11.5,
+    fontSize: 12,
     lineHeight: 17,
     fontWeight: '500',
   },
@@ -3003,7 +3003,7 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   budgetResultTitle: {
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '900',
     color: C.textMuted,
     letterSpacing: 0.6,
@@ -3015,7 +3015,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   budgetResultSubtitle: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
     color: C.white,
     marginTop: 14,
@@ -3030,12 +3030,12 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   breakdownName: {
-    fontSize: 10.5,
+    fontSize: 12,
     color: C.textSec,
     fontWeight: '600',
   },
   breakdownPct: {
-    fontSize: 10.5,
+    fontSize: 12,
     color: C.white,
     fontWeight: '800',
   },
@@ -3071,7 +3071,7 @@ const styles = StyleSheet.create({
     borderColor: C.blue,
   },
   accomSelectLabel: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '800',
   },
   stayCard: {
@@ -3104,7 +3104,7 @@ const styles = StyleSheet.create({
     color: C.white,
   },
   stayRating: {
-    fontSize: 10.5,
+    fontSize: 12,
     color: C.amberGlow,
     fontWeight: '800',
   },
@@ -3115,7 +3115,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   stayLocText: {
-    fontSize: 11,
+    fontSize: 12,
     color: C.textSec,
     fontWeight: '500',
   },
@@ -3140,7 +3140,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   bookingLinkText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '800',
     color: C.blueGlow,
   },
@@ -3166,7 +3166,7 @@ const styles = StyleSheet.create({
     borderColor: C.blue,
   },
   weatherCityText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
   },
   weatherLiveCard: {
@@ -3232,12 +3232,12 @@ const styles = StyleSheet.create({
     padding: 10,
   },
   weatherDetailLabel: {
-    fontSize: 9.5,
+    fontSize: 12,
     color: C.textMuted,
     fontWeight: '700',
   },
   weatherDetailValue: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
     color: C.white,
     marginTop: 1,
@@ -3256,7 +3256,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   aqiTitle: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '900',
     color: C.textMuted,
     letterSpacing: 0.5,
@@ -3267,7 +3267,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   aqiBadgeText: {
-    fontSize: 8.5,
+    fontSize: 12,
     fontWeight: '900',
     color: '#04060f',
   },
@@ -3283,7 +3283,7 @@ const styles = StyleSheet.create({
   },
   aqiDescText: {
     flex: 1,
-    fontSize: 11.5,
+    fontSize: 12,
     color: C.textSec,
     lineHeight: 16,
     fontWeight: '500',
@@ -3317,7 +3317,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   forecastCondText: {
-    fontSize: 11,
+    fontSize: 12,
     color: C.textSec,
     fontWeight: '600',
   },
@@ -3355,16 +3355,16 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   safetyAlertBadgeText: {
-    fontSize: 8.5,
+    fontSize: 12,
     fontWeight: '900',
   },
   safetyAlertLocation: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
     color: C.white,
   },
   safetyAlertMessage: {
-    fontSize: 11.5,
+    fontSize: 12,
     color: C.textSec,
     lineHeight: 16,
     fontWeight: '500',
@@ -3394,7 +3394,7 @@ const styles = StyleSheet.create({
     color: C.white,
   },
   contactDesc: {
-    fontSize: 10.5,
+    fontSize: 12,
     color: C.textSec,
     marginTop: 1,
     fontWeight: '500',
@@ -3410,7 +3410,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   callActionBtnText: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '900',
   },
   facilitiesRow: {
@@ -3433,7 +3433,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   facilityTitle: {
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '800',
     color: C.textSec,
   },
@@ -3443,13 +3443,13 @@ const styles = StyleSheet.create({
     color: C.white,
   },
   facilityDist: {
-    fontSize: 10.5,
+    fontSize: 12,
     color: C.greenGlow,
     fontWeight: '700',
     marginTop: 2,
   },
   facilityLoc: {
-    fontSize: 10,
+    fontSize: 12,
     color: C.textMuted,
     marginTop: 2,
     fontWeight: '600',
@@ -3466,7 +3466,7 @@ const styles = StyleSheet.create({
   },
   facilityNavBtnText: {
     color: C.blueGlow,
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '800',
   },
 
@@ -3512,17 +3512,17 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.04)',
   },
   modalBalanceLabel: {
-    fontSize: 11,
+    fontSize: 12,
     color: C.textSec,
     fontWeight: '700',
   },
   modalBalanceVal: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '900',
     color: C.greenGlow,
   },
   modalInputLabel: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '800',
     color: C.white,
     marginTop: 14,

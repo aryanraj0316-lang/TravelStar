@@ -805,7 +805,7 @@ export default function GroupOrganizerScreen() {
                     there is no real rating system for trips (§8.14, not
                     built). Seats-left is real. */}
                     <View style={styles.tripDetailsMetaRow}>
-                      <Text style={{ fontSize: 9.5, fontWeight: '600', color: '#10B981' }}>
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: '#10B981' }}>
                         {currentTour.maxSize - currentTour.currentSize} left
                       </Text>
                     </View>
@@ -1333,7 +1333,7 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   tripBadgeText: {
-    fontSize: 8.5,
+    fontSize: 12,
     fontWeight: '700',
     color: '#FFF',
   },
@@ -1360,7 +1360,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   cityText: {
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '700',
     color: C.blue,
   },
@@ -1380,7 +1380,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   capsuleText: {
-    fontSize: 8.5,
+    fontSize: 12,
     fontWeight: '600',
     color: '#a2a9c3',
     flex: 1,
@@ -1395,7 +1395,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   priceLabel: {
-    fontSize: 8,
+    fontSize: 12,
     fontWeight: '600',
     color: C.textMuted,
   },
@@ -1414,7 +1414,7 @@ const styles = StyleSheet.create({
   },
   joinBtnText: {
     color: '#FFF',
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
   },
 
@@ -1452,7 +1452,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.3,
   },
   headerSub: {
-    fontSize: 11,
+    fontSize: 12,
     color: C.textSec,
   },
   badgeOfficialGradient: {
@@ -1468,7 +1468,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
   },
   badgeOfficialText: {
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '900',
     color: C.white,
     letterSpacing: 0.4,
@@ -1503,7 +1503,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
   },
   tabLabel: {
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '700',
   },
 
@@ -1513,7 +1513,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   dropdownLabel: {
-    fontSize: 8.5,
+    fontSize: 12,
     fontWeight: '900',
     color: C.textMuted,
     letterSpacing: 0.5,
@@ -1537,7 +1537,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(139,92,246,0.12)',
   },
   dropdownTripText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
   },
 
@@ -1551,12 +1551,12 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
   },
   descSec: {
-    fontSize: 11.5,
+    fontSize: 12,
     color: C.textSec,
     marginBottom: 14,
   },
   sectionLabelInline: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '800',
     color: C.white,
     marginTop: 18,
@@ -1587,7 +1587,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   metricLabel: {
-    fontSize: 9.5,
+    fontSize: 12,
     color: C.textSec,
     fontWeight: '700',
   },
@@ -1617,7 +1617,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.06)',
   },
   subStatLabel: {
-    fontSize: 9.5,
+    fontSize: 12,
     color: C.textSec,
     fontWeight: '700',
     marginBottom: 4,
@@ -1643,12 +1643,12 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   checkInProgressText: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '800',
     color: C.white,
   },
   checkInProgressValue: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '900',
     color: C.greenGlow,
   },
@@ -1695,7 +1695,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   roleBadgeText: {
-    fontSize: 7.5,
+    fontSize: 12,
     fontWeight: '900',
     color: C.white,
   },
@@ -1725,7 +1725,7 @@ const styles = StyleSheet.create({
     borderColor: C.greenGlow,
   },
   memberActionToggleBtnLabel: {
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '800',
   },
   tripManagerConfigBox: {
@@ -1746,7 +1746,7 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   tripFieldLabel: {
-    fontSize: 11.5,
+    fontSize: 12,
     color: C.textSec,
     fontWeight: '700',
   },
@@ -1761,7 +1761,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   statusBadgeText: {
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '900',
     color: C.white,
   },
@@ -1821,7 +1821,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.03)',
   },
   plannerSubTabLabel: {
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '800',
   },
   plannerSubTabIndicator: {
@@ -1870,7 +1870,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   dayNumber: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '900',
     color: C.blueGlow,
     backgroundColor: 'rgba(0,102,255,0.12)',
@@ -1885,7 +1885,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   dayActivitiesText: {
-    fontSize: 11.5,
+    fontSize: 12,
     color: C.textSec,
     lineHeight: 17,
     fontWeight: '500',
@@ -1951,7 +1951,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   allocButtonText: {
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '800',
     color: C.blueGlow,
   },
@@ -1984,7 +1984,7 @@ const styles = StyleSheet.create({
   },
   emptyRequestsText: {
     flex: 1,
-    fontSize: 11,
+    fontSize: 12,
     color: C.textSec,
     fontWeight: '600',
   },
@@ -2011,7 +2011,7 @@ const styles = StyleSheet.create({
     color: C.white,
   },
   reqMsg: {
-    fontSize: 10.5,
+    fontSize: 12,
     color: C.textSec,
     marginTop: 2,
     fontStyle: 'italic',
@@ -2036,7 +2036,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(239,68,68,0.25)',
   },
   reqBtnRejectText: {
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '800',
     color: C.roseGlow,
   },
@@ -2044,7 +2044,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.green,
   },
   reqBtnApproveText: {
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '800',
     color: C.white,
   },
@@ -2070,12 +2070,12 @@ const styles = StyleSheet.create({
     color: C.white,
   },
   announceCardDate: {
-    fontSize: 9.5,
+    fontSize: 12,
     color: C.textMuted,
     fontWeight: '700',
   },
   announceCardContent: {
-    fontSize: 11.5,
+    fontSize: 12,
     color: C.textSec,
     lineHeight: 16,
     fontWeight: '500',
@@ -2100,7 +2100,7 @@ const styles = StyleSheet.create({
   },
   announceBtnText: {
     color: C.white,
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '800',
   },
 
@@ -2144,7 +2144,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   formInputLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
     color: C.textSec,
     marginTop: 14,

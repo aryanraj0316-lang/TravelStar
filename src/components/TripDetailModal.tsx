@@ -169,7 +169,7 @@ export default function TripDetailModal({
                     <Text style={styles.modalOrganizerName}>{organizerName}</Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
                       <Shield size={11} color={C.accent} style={{ marginRight: 4 }} />
-                      <Text style={{ fontSize: 10, color: C.textSecondary }}>Background-Verified Organizer</Text>
+                      <Text style={{ fontSize: 12, color: C.textSecondary }}>Background-Verified Organizer</Text>
                     </View>
                   </View>
                 </View>
@@ -180,7 +180,7 @@ export default function TripDetailModal({
                   <View style={styles.detailCardHalf}>
                     <Calendar size={14} color={C.accent} />
                     <View style={{ marginLeft: 6 }}>
-                      <Text style={{ fontSize: 9, color: C.textSecondary, fontWeight: '700' }}>START DATE</Text>
+                      <Text style={{ fontSize: 12, color: C.textSecondary, fontWeight: '700' }}>START DATE</Text>
                       <Text style={styles.detailCardVal}>{trip.startDate}</Text>
                     </View>
                   </View>
@@ -188,7 +188,7 @@ export default function TripDetailModal({
                   <View style={styles.detailCardHalf}>
                     <Calendar size={14} color={C.accent} />
                     <View style={{ marginLeft: 6 }}>
-                      <Text style={{ fontSize: 9, color: C.textSecondary, fontWeight: '700' }}>END DATE</Text>
+                      <Text style={{ fontSize: 12, color: C.textSecondary, fontWeight: '700' }}>END DATE</Text>
                       <Text style={styles.detailCardVal}>{trip.endDate || trip.startDate}</Text>
                     </View>
                   </View>
@@ -200,7 +200,7 @@ export default function TripDetailModal({
                   {trip.cities && trip.cities.map((city: string, i: number) => (
                     <View key={city} style={styles.itineraryCityCard}>
                       <Text style={styles.itineraryCityText}>{city}</Text>
-                      <Text style={{ fontSize: 9, color: C.textSecondary }}>City #{i + 1}</Text>
+                      <Text style={{ fontSize: 12, color: C.textSecondary }}>City #{i + 1}</Text>
                     </View>
                   ))}
                 </View>
@@ -213,7 +213,7 @@ export default function TripDetailModal({
                     <Text style={styles.meetingPointValText}>
                       {trip.meetingPoint || 'Central Assembly Point'}
                     </Text>
-                    <Text style={{ fontSize: 9.5, color: C.textSecondary, marginTop: 2 }}>
+                    <Text style={{ fontSize: 12, color: C.textSecondary, marginTop: 2 }}>
                       Please arrive at the assembly point 30 minutes before time.
                     </Text>
                   </View>
@@ -251,7 +251,7 @@ export default function TripDetailModal({
                 <View style={[styles.toggleRow, { marginTop: 14 }]}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.toggleLabel}>Family Connect Midway Join</Text>
-                    <Text style={{ fontSize: 10, color: C.textSecondary }}>
+                    <Text style={{ fontSize: 12, color: C.textSecondary }}>
                       Already at a midway stop? Join from there and pay only for remaining cities!
                     </Text>
                   </View>
@@ -333,7 +333,7 @@ export default function TripDetailModal({
                       <Text style={{ fontSize: 12, color: C.textSecondary }}>Automatic Price Adjustment</Text>
                       <Text style={{ fontSize: 16, fontWeight: '700', color: '#2ECC71' }}>
                         ₹{calculateMidwayPrice(trip)}{' '}
-                        <Text style={{ fontSize: 11, color: C.textSecondary }}>(vs ₹{price})</Text>
+                        <Text style={{ fontSize: 12, color: C.textSecondary }}>(vs ₹{price})</Text>
                       </Text>
                     </View>
                   </View>
@@ -473,7 +473,7 @@ const styles = StyleSheet.create({
   },
   viewOnMapHeaderBtnText: {
     color: '#FFF',
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   closeBtn: {
@@ -505,7 +505,7 @@ const styles = StyleSheet.create({
     color: '#F8FAFC',
   },
   formSectionTitle: {
-    fontSize: 10,
+    fontSize: 12,
     letterSpacing: 1,
     fontWeight: '700',
     color: C.textSec,
@@ -581,7 +581,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   inclusionText: {
-    fontSize: 10.5,
+    fontSize: 12,
     color: '#F8FAFC',
     fontWeight: '600',
   },
@@ -635,14 +635,14 @@ const styles = StyleSheet.create({
     borderColor: '#1E2340',
   },
   midwaySectionTitle: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
     color: C.blueText,
     letterSpacing: 1,
     marginBottom: 10,
   },
   fieldLabel: {
-    fontSize: 10,
+    fontSize: 12,
     color: C.textSec,
     marginBottom: 4,
   },
@@ -660,7 +660,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.blueText,
   },
   citySelectChipText: {
-    fontSize: 11,
+    fontSize: 12,
   },
   priceCalcRow: {
     flexDirection: 'row',
@@ -683,7 +683,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   pricingBarLabel: {
-    fontSize: 10,
+    fontSize: 12,
     color: C.textSec,
   },
   pricingBarAmountRow: {
@@ -759,7 +759,7 @@ const styles = StyleSheet.create({
     color: C.green,
   },
   requestedStatusSub: {
-    fontSize: 10,
+    fontSize: 12,
     marginTop: 2,
   },
   cancelRequestBtn: {

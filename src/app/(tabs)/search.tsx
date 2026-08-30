@@ -237,7 +237,7 @@ function TripResultCard({
             <Check size={9} color={isMyTrip ? C.textSec : C.blueText} strokeWidth={3} />
             <Text style={[styles.verifiedText, { color: isMyTrip ? C.textSec : C.blueText }]}>Verified Route</Text>
           </View>
-          <Text style={{ fontSize: 9.5, fontWeight: '600', color: isMyTrip ? C.textSec : C.greenText }}>
+          <Text style={{ fontSize: 12, fontWeight: '600', color: isMyTrip ? C.textSec : C.greenText }}>
             {trip.availableSeats ?? 0} left
           </Text>
         </View>
@@ -747,7 +747,7 @@ function SearchScreen() {
               )}
               <TouchableOpacity style={styles.clearAllPill} onPress={resetFilters}>
                 <RotateCcw size={12} color="#FF3B30" />
-                <Text style={{ fontSize: 11, fontWeight: '600', color: '#FF3B30', marginLeft: 4 }}>Clear All</Text>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: '#FF3B30', marginLeft: 4 }}>Clear All</Text>
               </TouchableOpacity>
             </ScrollView>
           </View>
@@ -1231,7 +1231,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
   },
   myTripBadgeText: {
-    fontSize: 9.5,
+    fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.2,
   },
@@ -1340,12 +1340,12 @@ const styles = StyleSheet.create({
     marginBottom: 0,
   },
   quickLabel: {
-    fontSize: 9.5,
+    fontSize: 12,
     fontWeight: '700',
     textAlign: 'center',
   },
   quickSub: {
-    fontSize: 8,
+    fontSize: 12,
     textAlign: 'center',
   },
 
@@ -1357,7 +1357,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   sectionTitle: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
     letterSpacing: 1.2,
   },
@@ -1405,7 +1405,7 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   tripBadgeText: {
-    fontSize: 9.5,
+    fontSize: 12,
     fontWeight: '700',
     color: '#FFF',
   },
@@ -1449,7 +1449,7 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   verifiedText: {
-    fontSize: 8.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   routeCities: {
@@ -1459,11 +1459,11 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   cityText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
   routeArrow: {
-    fontSize: 10,
+    fontSize: 12,
     marginHorizontal: 3,
   },
   capsulesContainer: {
@@ -1484,7 +1484,7 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   capsuleText: {
-    fontSize: 8.5,
+    fontSize: 12,
     fontWeight: '600',
     flex: 1,
   },
@@ -1497,7 +1497,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 0.5,
   },
   priceLabel: {
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '600',
     marginBottom: 1,
   },
@@ -1510,7 +1510,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   pricePer: {
-    fontSize: 9.5,
+    fontSize: 12,
     fontWeight: '600',
   },
   joinBtn: {
@@ -1525,7 +1525,7 @@ const styles = StyleSheet.create({
   },
   joinBtnText: {
     color: '#FFF',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
 
@@ -1573,12 +1573,12 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   trustLabel: {
-    fontSize: 8,
+    fontSize: 12,
     fontWeight: '700',
     textAlign: 'center',
   },
   trustSub: {
-    fontSize: 7,
+    fontSize: 12,
     textAlign: 'center',
   },
 
@@ -1652,7 +1652,7 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   formSectionTitle: {
-    fontSize: 10,
+    fontSize: 12,
     letterSpacing: 1,
     fontWeight: '700',
     marginBottom: 10,
@@ -1718,7 +1718,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   midwaySectionTitle: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
     letterSpacing: 1,
     marginBottom: 10,
@@ -1728,7 +1728,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   fieldLabel: {
-    fontSize: 10,
+    fontSize: 12,
     marginBottom: 4,
   },
   pickerBox: {
@@ -1798,7 +1798,7 @@ const styles = StyleSheet.create({
   },
   filterBadgeText: {
     color: '#FFF',
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: 'bold',
   },
   activeFilterTagsRow: {
@@ -1808,7 +1808,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   activeFilterLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     marginRight: 6,
   },
@@ -1821,7 +1821,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   filterTagText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
   },
   clearAllPill: {
@@ -1871,7 +1871,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   activeFilterCountText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     color: C.blue,
   },
@@ -1890,7 +1890,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   filterSectionTitle: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.8,
     marginBottom: 10,
@@ -1921,7 +1921,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   prefToggleSub: {
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 2,
   },
   filterFooter: {
@@ -1960,7 +1960,7 @@ const styles = StyleSheet.create({
     borderColor: C.blue,
   },
   citySelectChipText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '500',
   },
   modalOrganizerCard: {
@@ -2030,7 +2030,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   inclusionText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
   },
   joinBtnRequested: {
@@ -2072,7 +2072,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   requestedStatusSub: {
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '500',
   },
   cancelRequestBtn: {
@@ -2109,7 +2109,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   pricingBarLabel: {
-    fontSize: 9.5,
+    fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.4,
     textTransform: 'uppercase',

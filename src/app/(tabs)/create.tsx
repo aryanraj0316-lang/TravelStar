@@ -1921,7 +1921,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(245, 158, 11, 0.4)',
   },
   heroBadgeText: {
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '800',
     color: C.amber,
     letterSpacing: 0.5,
@@ -1961,7 +1961,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   stepBadgeText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
     color: C.white,
   },
@@ -1976,7 +1976,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   inputLabel: {
-    fontSize: 9.5,
+    fontSize: 12,
     fontWeight: '800',
     color: C.textSec,
     marginBottom: 6,
@@ -2002,7 +2002,7 @@ const styles = StyleSheet.create({
     padding: 0,
   },
   helperText: {
-    fontSize: 10,
+    fontSize: 12,
     color: C.textMuted,
     marginTop: 4,
     marginLeft: 2,
@@ -2016,7 +2016,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   chipHeaderLabel: {
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '800',
     color: C.amber,
     letterSpacing: 0.3,
@@ -2035,7 +2035,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(59, 130, 246, 0.25)',
   },
   quickDestText: {
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '600',
     color: C.white,
   },
@@ -2049,7 +2049,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(59, 130, 246, 0.25)',
   },
   routeFlowTitle: {
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '800',
     color: C.blue,
     marginBottom: 8,
@@ -2071,7 +2071,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(59, 130, 246, 0.3)',
   },
   cityPillText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     color: C.white,
   },
@@ -2112,7 +2112,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   amenityTitle: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     color: C.textSec,
   },
@@ -2121,7 +2121,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   amenitySub: {
-    fontSize: 8.5,
+    fontSize: 12,
     color: C.textMuted,
     marginTop: 1,
   },
@@ -2158,7 +2158,7 @@ const styles = StyleSheet.create({
     borderColor: C.blue,
   },
   privacyTitle: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: C.textSec,
     marginTop: 6,
@@ -2167,7 +2167,7 @@ const styles = StyleSheet.create({
     color: C.white,
   },
   privacySub: {
-    fontSize: 8.5,
+    fontSize: 12,
     color: C.textMuted,
     marginTop: 2,
     textAlign: 'center',
@@ -2244,7 +2244,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   weekDayText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: C.textSec,
     width: 32,
@@ -2338,7 +2338,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   galleryCardSub: {
-    fontSize: 9.5,
+    fontSize: 12,
     color: C.textMuted,
     lineHeight: 13,
   },
@@ -2352,7 +2352,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(16,185,129,0.12)',
   },
   galleryChevronText: {
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '800',
     color: C.blue,
   },
@@ -2371,7 +2371,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.06)',
   },
   coverDividerText: {
-    fontSize: 8.5,
+    fontSize: 12,
     fontWeight: '800',
     color: C.textMuted,
     paddingHorizontal: 12,
@@ -2393,7 +2393,7 @@ const styles = StyleSheet.create({
     borderColor: C.blue,
   },
   presetChipText: {
-    fontSize: 11,
+    fontSize: 12,
     color: C.textSec,
     fontWeight: '600',
   },
@@ -2413,7 +2413,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   galleryPickBtnText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
     color: C.white,
   },
@@ -2442,7 +2442,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   categoryChipText: {
-    fontSize: 11,
+    fontSize: 12,
     color: C.textSec,
     fontWeight: '600',
   },
@@ -2500,7 +2500,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.blueText,
   },
   tabText: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '600',
     color: C.textSec,
   },
@@ -2554,7 +2554,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   dayBadge: {
-    fontSize: 8.5,
+    fontSize: 12,
     fontWeight: '800',
     color: C.blueText,
     letterSpacing: 0.5,
@@ -2567,12 +2567,12 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   timelineTime: {
-    fontSize: 10,
+    fontSize: 12,
     color: C.amber,
     marginBottom: 6,
   },
   timelineDesc: {
-    fontSize: 11,
+    fontSize: 12,
     color: C.textSec,
     lineHeight: 15,
   },
@@ -2589,7 +2589,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   emptyTimelineSub: {
-    fontSize: 11,
+    fontSize: 12,
     color: C.textMuted,
     textAlign: 'center',
     lineHeight: 16,
@@ -2612,7 +2612,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   boxTitle: {
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '800',
     color: C.textSec,
     letterSpacing: 0.5,
@@ -2649,7 +2649,7 @@ const styles = StyleSheet.create({
     color: '#F8FAFC',
   },
   counterSubText: {
-    fontSize: 9,
+    fontSize: 12,
     color: C.textMuted,
     fontWeight: '700',
     marginTop: 2,
@@ -2673,7 +2673,7 @@ const styles = StyleSheet.create({
     borderColor: C.blueText,
   },
   categoryPillText: {
-    fontSize: 11,
+    fontSize: 12,
     color: C.textSec,
     fontWeight: '600',
   },
@@ -2717,7 +2717,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   creatorBadgeText: {
-    fontSize: 8,
+    fontSize: 12,
     fontWeight: '800',
     color: C.amber,
   },
@@ -2753,7 +2753,7 @@ const styles = StyleSheet.create({
     color: '#F8FAFC',
   },
   reqSub: {
-    fontSize: 10,
+    fontSize: 12,
     color: C.textMuted,
     marginTop: 1,
   },
@@ -2791,7 +2791,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   checklistSub: {
-    fontSize: 11,
+    fontSize: 12,
     color: C.textMuted,
     lineHeight: 15,
     marginBottom: 20,
@@ -2812,7 +2812,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(16,185,129,0.04)',
   },
   checkItemText: {
-    fontSize: 11.5,
+    fontSize: 12,
     color: C.textSec,
     fontWeight: '500',
     flex: 1,
@@ -2886,13 +2886,13 @@ const styles = StyleSheet.create({
     marginBottom: 2.5,
   },
   notificationAppName: {
-    fontSize: 8.5,
+    fontSize: 12,
     fontWeight: '800',
     color: C.textMuted,
     letterSpacing: 0.8,
   },
   notificationTime: {
-    fontSize: 9,
+    fontSize: 12,
     color: C.textMuted,
     fontWeight: '500',
     marginRight: 6,
@@ -2904,7 +2904,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   notificationDescText: {
-    fontSize: 10.5,
+    fontSize: 12,
     color: C.textSec,
     lineHeight: 14,
   },
@@ -2917,7 +2917,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(245, 158, 11, 0.3)',
   },
   notificationAlertPillText: {
-    fontSize: 9.5,
+    fontSize: 12,
     fontWeight: '800',
     color: C.amber,
     letterSpacing: 0.2,
@@ -2928,14 +2928,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   sectionDividerTitle: {
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '800',
     color: C.textSec,
     letterSpacing: 1.2,
     marginBottom: 4,
   },
   sectionDividerSub: {
-    fontSize: 10,
+    fontSize: 12,
     color: C.textMuted,
     lineHeight: 14,
   },
@@ -2971,7 +2971,7 @@ const styles = StyleSheet.create({
     color: '#F8FAFC',
   },
   creationsHeaderSub: {
-    fontSize: 11,
+    fontSize: 12,
     color: C.textMuted,
     marginTop: 2,
   },
@@ -3026,7 +3026,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(239, 68, 68, 0.4)',
   },
   requestNotifyText: {
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '800',
     color: C.red,
   },
@@ -3037,7 +3037,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   creationCategoryText: {
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '800',
     color: C.blueText,
   },
@@ -3047,7 +3047,7 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   creationRouteText: {
-    fontSize: 10.5,
+    fontSize: 12,
     color: C.textSec,
     flex: 1,
   },
@@ -3061,13 +3061,13 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   creationStatLabel: {
-    fontSize: 8.5,
+    fontSize: 12,
     fontWeight: '800',
     color: C.textMuted,
     letterSpacing: 0.3,
   },
   creationStatVal: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: '#F8FAFC',
   },
@@ -3102,7 +3102,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   detailBackBtnText: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '700',
     color: '#F8FAFC',
   },
@@ -3133,7 +3133,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   detailCategoryText: {
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '800',
     color: '#FFF',
     letterSpacing: 0.5,
@@ -3146,12 +3146,12 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   detailOrganizerText: {
-    fontSize: 11.5,
+    fontSize: 12,
     color: C.textMuted,
     marginBottom: 18,
   },
   detailSectionTitle: {
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '800',
     color: C.amber,
     letterSpacing: 0.8,
@@ -3179,12 +3179,12 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   detailCityText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     color: '#F8FAFC',
   },
   detailArrow: {
-    fontSize: 11,
+    fontSize: 12,
     color: C.textMuted,
   },
   detailStatsGrid: {
@@ -3201,7 +3201,7 @@ const styles = StyleSheet.create({
     borderColor: '#252D4A',
   },
   detailStatLabel: {
-    fontSize: 8.5,
+    fontSize: 12,
     fontWeight: '800',
     color: C.textMuted,
     letterSpacing: 0.4,
@@ -3229,7 +3229,7 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   detailMeetingSub: {
-    fontSize: 9.5,
+    fontSize: 12,
     color: C.textMuted,
     marginTop: 2,
   },
@@ -3250,7 +3250,7 @@ const styles = StyleSheet.create({
     borderColor: '#252D4A',
   },
   detailInclusionText: {
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '600',
     color: C.textSec,
   },
@@ -3279,7 +3279,7 @@ const styles = StyleSheet.create({
     color: '#F8FAFC',
   },
   detailReqSub: {
-    fontSize: 10,
+    fontSize: 12,
     color: C.textMuted,
     marginTop: 1,
   },
@@ -3294,7 +3294,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   detailAcceptText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: C.white,
   },
@@ -3307,7 +3307,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   detailRejectText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: C.red,
   },
@@ -3332,7 +3332,7 @@ const styles = StyleSheet.create({
   },
   viewOnMapHeaderBtnText: {
     color: '#FFF',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
 });

@@ -201,7 +201,7 @@ const styles = StyleSheet.create({
     color: C.white,
   },
   contactSubtitle: {
-    fontSize: 11,
+    fontSize: 12,
     color: C.textMuted,
     marginTop: 2,
   },

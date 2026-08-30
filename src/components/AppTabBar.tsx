@@ -259,7 +259,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   inactiveTabLabel: {
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '600',
     marginTop: 2,
     textAlign: 'center',
