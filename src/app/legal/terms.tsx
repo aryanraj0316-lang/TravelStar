@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -14,23 +15,28 @@ import { Card } from '@/components/ui';
 // drafted legal copy: it says what it is instead of pretending to be a
 // finished document.
 export default function TermsScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={C.bg} />
       <View style={styles.header}>
-        <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => router.back()}
+          style={styles.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel={t('legal.goBack')}
+        >
           <ArrowLeft size={18} color={C.white} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Terms of Service</Text>
+        <Text style={styles.headerTitle}>{t('legal.termsTitle')}</Text>
         <View style={{ width: 36 }} />
       </View>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <Card>
           <Text style={styles.pendingText}>
-            TravelStar&apos;s Terms of Service have not been finalized yet. This
-            screen is a real, working placeholder — legal content is being
-            drafted and reviewed separately from this build.
+            {t('legal.termsPending')}
           </Text>
         </Card>
       </ScrollView>

@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -11,23 +12,28 @@ import { Card } from '@/components/ui';
 // Policy content (including DPDP Act compliance, called out separately in
 // REMEDIATION.md §12) is Phase 12 scope.
 export default function PrivacyScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={C.bg} />
       <View style={styles.header}>
-        <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => router.back()}
+          style={styles.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel={t('legal.goBack')}
+        >
           <ArrowLeft size={18} color={C.white} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Privacy Policy</Text>
+        <Text style={styles.headerTitle}>{t('legal.privacyTitle')}</Text>
         <View style={{ width: 36 }} />
       </View>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <Card>
           <Text style={styles.pendingText}>
-            TravelStar&apos;s Privacy Policy has not been finalized yet. This
-            screen is a real, working placeholder — legal content is being
-            drafted and reviewed separately from this build.
+            {t('legal.privacyPending')}
           </Text>
         </Card>
       </ScrollView>

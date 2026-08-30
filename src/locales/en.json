@@ -320,5 +320,12 @@
     "noResultsFor": "No packages match \"{{query}}\".",
     "couldNotOpenLink": "Could not open that link.",
     "openRepository": "Open repository for {{name}}"
+  },
+  "legal": {
+    "goBack": "Go back",
+    "privacyTitle": "Privacy Policy",
+    "privacyPending": "TravelStar's Privacy Policy has not been finalized yet. This screen is a real, working placeholder — legal content is being drafted and reviewed separately from this build.",
+    "termsTitle": "Terms of Service",
+    "termsPending": "TravelStar's Terms of Service have not been finalized yet. This screen is a real, working placeholder — legal content is being drafted and reviewed separately from this build."
   }
 }
