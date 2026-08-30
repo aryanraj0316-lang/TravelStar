@@ -983,7 +983,7 @@ function MapScreen() {
               onPress={() => router.navigate('/')}
               activeOpacity={0.8}
             >
-              <ArrowLeft size={22} color="#000" strokeWidth={3} />
+              <ArrowLeft size={22} color="#FFF" strokeWidth={3} />
             </TouchableOpacity>
 
             {/* OPTION 1: ROUTE ITINERARY SELECTOR DROPDOWN */}
