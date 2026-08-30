@@ -424,5 +424,31 @@
     "inclusionMeals": "भोजन",
     "inclusionTransport": "परिवहन",
     "noInclusionsListed": "कोई शामिल सुविधा सूचीबद्ध नहीं"
+  },
+  "monsoonAdvisory": {
+    "goBack": "वापस जाएं",
+    "headerTitle": "मानसून सलाह",
+    "liveUpdates": "लाइव अपडेट",
+    "introTitle": "मानसून यात्रा सुरक्षा डेस्क",
+    "introDesc": "मौसम स्टेशनों और राज्य आपातकालीन परिचालन द्वारा तैयार किए गए वास्तविक समय के मार्ग खतरे और सुरक्षा सलाह। मार्ग योजना बनाने से पहले चेतावनी क्षेत्रों की जांच करें।",
+    "filterTabWithCount": "{{label}} ({{count}})",
+    "tabAll": "सभी",
+    "tabCritical": "गंभीर",
+    "tabWarning": "चेतावनी",
+    "tabAdvisory": "सलाह",
+    "categoryFloodRain": "बाढ़ और बारिश",
+    "categoryLandslide": "भूस्खलन",
+    "categoryCloudburst": "बादल फटना",
+    "categoryTrafficRush": "यातायात दबाव",
+    "affectedRouteHeader": "प्रभावित मार्ग",
+    "precautionsHeader": "सावधानियां और सुरक्षा दिशानिर्देश",
+    "issuedTime": "जारी किया गया {{time}}",
+    "loadingHazardAlerts": "खतरा अलर्ट लोड हो रहे हैं…",
+    "couldNotLoadHazardAlerts": "खतरा अलर्ट लोड नहीं हो सके।",
+    "noActiveAlertsTitle": "कोई सक्रिय अलर्ट नहीं",
+    "noActiveAlertsMessage": "इस श्रेणी में कोई सक्रिय अलर्ट नहीं मिला।",
+    "emergencyHelplineTitle": "राष्ट्रीय आपातकालीन हेल्पलाइन",
+    "emergencyHelplineSub": "भारी बाढ़, फंसे हुए वाहनों या बचाव अनुरोधों के लिए",
+    "emergencyHelplineNumbers": "NDRF डेस्क: 011-23438091 • टोल फ्री: 1078"
   }
 }

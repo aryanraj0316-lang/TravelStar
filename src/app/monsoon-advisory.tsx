@@ -15,6 +15,7 @@ import {
   Waves,
 } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Dimensions, FlatList, Image, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { C } from '@/theme/tokens';
@@ -33,13 +34,20 @@ interface HazardAlert {
   image: string;
 }
 
-// Human-readable labels for the AlertCategory enum values the API returns
-// (e.g. "FLOOD_RAIN") — see backend/prisma/schema.prisma.
-const CATEGORY_LABELS: Record<string, string> = {
-  FLOOD_RAIN: 'Flood & Rain',
-  LANDSLIDE: 'Landslide',
-  CLOUDBURST: 'Cloudburst',
-  TRAFFIC_RUSH: 'Traffic Rush',
+// Human-readable label keys for the AlertCategory enum values the API
+// returns (e.g. "FLOOD_RAIN") — see backend/prisma/schema.prisma.
+const CATEGORY_LABEL_KEYS: Record<string, string> = {
+  FLOOD_RAIN: 'monsoonAdvisory.categoryFloodRain',
+  LANDSLIDE: 'monsoonAdvisory.categoryLandslide',
+  CLOUDBURST: 'monsoonAdvisory.categoryCloudburst',
+  TRAFFIC_RUSH: 'monsoonAdvisory.categoryTrafficRush',
+};
+
+// Reuses notifications.tsx's severity keys — same Alert model, same enum.
+const SEVERITY_LABEL_KEYS: Record<string, string> = {
+  CRITICAL: 'notifications.severityCritical',
+  WARNING: 'notifications.severityWarning',
+  ADVISORY: 'notifications.severityAdvisory',
 };
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -95,7 +103,9 @@ function getSeverityStyle(severity: string) {
 // ScrollView + .map() that mounted and image-decoded every alert at once
 // (docs/REMEDIATION.md Phase 10).
 function AlertCard({ alert }: { alert: HazardAlert }) {
+  const { t } = useTranslation();
   const sev = getSeverityStyle(alert.severity);
+  const severityLabelKey = SEVERITY_LABEL_KEYS[alert.severity] ?? 'notifications.severityAdvisory';
 
   return (
     <Card style={styles.alertCard}>
@@ -104,7 +114,9 @@ function AlertCard({ alert }: { alert: HazardAlert }) {
         <View style={styles.cardCategoryWrap}>
           <View style={[styles.iconBox, { backgroundColor: sev.bg }]}>{getAlertIcon(alert.category)}</View>
           <View>
-            <Text style={styles.categoryLabel}>{CATEGORY_LABELS[alert.category] ?? alert.category}</Text>
+            <Text style={styles.categoryLabel}>
+              {CATEGORY_LABEL_KEYS[alert.category] ? t(CATEGORY_LABEL_KEYS[alert.category]) : alert.category}
+            </Text>
             <View style={styles.locationRow}>
               <MapPin size={10} color={C.textSec} />
               <Text style={styles.locationText} numberOfLines={1}>
@@ -114,8 +126,12 @@ function AlertCard({ alert }: { alert: HazardAlert }) {
           </View>
         </View>
 
-        <View style={[styles.severityBadge, { backgroundColor: sev.bg, borderColor: sev.border }]}>
-          <Text style={[styles.severityBadgeText, { color: sev.text }]}>{alert.severity}</Text>
+        <View
+          style={[styles.severityBadge, { backgroundColor: sev.bg, borderColor: sev.border }]}
+          accessibilityRole="text"
+          accessibilityLabel={t(severityLabelKey)}
+        >
+          <Text style={[styles.severityBadgeText, { color: sev.text }]}>{t(severityLabelKey)}</Text>
         </View>
       </View>
 
@@ -130,13 +146,13 @@ function AlertCard({ alert }: { alert: HazardAlert }) {
 
       {/* Highlighted Affected Route */}
       <View style={styles.routeWrap}>
-        <Text style={styles.routeHeader}>Affected Route कॉरिडोर</Text>
+        <Text style={styles.routeHeader}>{t('monsoonAdvisory.affectedRouteHeader')}</Text>
         <Text style={styles.routeName}>{alert.affectedRoute}</Text>
       </View>
 
       {/* Precautions Guidelines List */}
       <View style={styles.precautionsSection}>
-        <Text style={styles.precautionsHeader}>Precautions & Safety Guidelines</Text>
+        <Text style={styles.precautionsHeader}>{t('monsoonAdvisory.precautionsHeader')}</Text>
         {alert.precautions.map((precaution, idx) => (
           <View key={idx} style={styles.precautionItem}>
             <View style={styles.checkCircle}>
@@ -150,7 +166,7 @@ function AlertCard({ alert }: { alert: HazardAlert }) {
       {/* Alert Age / Timestamp Footer */}
       <View style={styles.cardFooter}>
         <Clock size={11} color={C.textMuted} />
-        <Text style={styles.cardTimeText}>Issued {alert.time}</Text>
+        <Text style={styles.cardTimeText}>{t('monsoonAdvisory.issuedTime', { time: alert.time })}</Text>
       </View>
     </Card>
   );
@@ -159,6 +175,7 @@ function AlertCard({ alert }: { alert: HazardAlert }) {
 const keyExtractor = (a: HazardAlert) => a.id;
 
 export default function MonsoonAdvisoryScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const [filter, setFilter] = useState<SeverityFilter>('ALL');
   const [alerts, setAlerts] = useState<HazardAlert[] | null>(null);
@@ -191,15 +208,21 @@ export default function MonsoonAdvisoryScreen() {
 
       {/* ─── Header ──────────────────────────────────────────────────────── */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} activeOpacity={0.8} onPress={() => router.back()}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          activeOpacity={0.8}
+          onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel={t('monsoonAdvisory.goBack')}
+        >
           <ArrowLeft size={20} color={C.white} />
         </TouchableOpacity>
 
         <View style={styles.headerTitleWrap}>
-          <Text style={styles.headerTitle}>Monsoon Advisory</Text>
+          <Text style={styles.headerTitle}>{t('monsoonAdvisory.headerTitle')}</Text>
           <View style={styles.liveBadge}>
             <View style={styles.livePulseDot} />
-            <Text style={styles.liveBadgeText}>LIVE UPDATES</Text>
+            <Text style={styles.liveBadgeText}>{t('monsoonAdvisory.liveUpdates')}</Text>
           </View>
         </View>
       </View>
@@ -225,43 +248,51 @@ export default function MonsoonAdvisoryScreen() {
             >
               <ShieldAlert size={24} color={C.orange} style={styles.introIcon} />
               <View style={styles.introTextWrap}>
-                <Text style={styles.introTitle}>Monsoon Travel Security Desk</Text>
-                <Text style={styles.introDesc}>
-                  Real-time route hazards and safety advisories curated by weather stations and state emergency
-                  operations. Check warning zones before route planning.
-                </Text>
+                <Text style={styles.introTitle}>{t('monsoonAdvisory.introTitle')}</Text>
+                <Text style={styles.introDesc}>{t('monsoonAdvisory.introDesc')}</Text>
               </View>
             </LinearGradient>
 
             {/* ─── Filter Tabs ─────────────────────────────────────────────────── */}
             <View style={styles.filterTabs}>
-              {(['ALL', 'CRITICAL', 'WARNING', 'ADVISORY'] as const).map((tab) => {
-                const isActive = filter === tab;
+              {(
+                [
+                  { key: 'ALL', labelKey: 'monsoonAdvisory.tabAll' },
+                  { key: 'CRITICAL', labelKey: 'monsoonAdvisory.tabCritical' },
+                  { key: 'WARNING', labelKey: 'monsoonAdvisory.tabWarning' },
+                  { key: 'ADVISORY', labelKey: 'monsoonAdvisory.tabAdvisory' },
+                ] as const
+              ).map((tab) => {
+                const isActive = filter === tab.key;
                 const count =
-                  tab === 'ALL' ? (alerts ?? []).length : (alerts ?? []).filter((a) => a.severity === tab).length;
+                  tab.key === 'ALL' ? (alerts ?? []).length : (alerts ?? []).filter((a) => a.severity === tab.key).length;
+                const label = t('monsoonAdvisory.filterTabWithCount', { label: t(tab.labelKey), count });
 
                 return (
                   <TouchableOpacity
-                    key={tab}
+                    key={tab.key}
                     activeOpacity={0.8}
-                    onPress={() => setFilter(tab)}
+                    onPress={() => setFilter(tab.key)}
                     style={[
                       styles.filterTabItem,
                       isActive && styles.filterTabItemActive,
-                      isActive && tab === 'CRITICAL' && styles.filterTabCriticalActive,
+                      isActive && tab.key === 'CRITICAL' && styles.filterTabCriticalActive,
                     ]}
+                    accessibilityRole="tab"
+                    accessibilityLabel={label}
+                    accessibilityState={{ selected: isActive }}
                   >
                     <Text
                       style={[
                         styles.filterTabText,
                         isActive && styles.filterTabTextActive,
-                        tab === 'CRITICAL' && { color: C.red },
-                        tab === 'WARNING' && { color: C.orange },
-                        tab === 'ADVISORY' && { color: C.blue },
+                        tab.key === 'CRITICAL' && { color: C.red },
+                        tab.key === 'WARNING' && { color: C.orange },
+                        tab.key === 'ADVISORY' && { color: C.blue },
                         isActive && { color: C.white },
                       ]}
                     >
-                      {tab.charAt(0) + tab.slice(1).toLowerCase()} ({count})
+                      {label}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -271,11 +302,14 @@ export default function MonsoonAdvisoryScreen() {
         }
         ListEmptyComponent={
           alerts === null && !loadError ? (
-            <ScreenLoading label="Loading hazard alerts…" />
+            <ScreenLoading label={t('monsoonAdvisory.loadingHazardAlerts')} />
           ) : loadError ? (
-            <ScreenError message="Couldn't load hazard alerts." onRetry={loadAlerts} />
+            <ScreenError message={t('monsoonAdvisory.couldNotLoadHazardAlerts')} onRetry={loadAlerts} />
           ) : (
-            <ScreenEmpty title="No active alerts" message="No active alerts found in this category." />
+            <ScreenEmpty
+              title={t('monsoonAdvisory.noActiveAlertsTitle')}
+              message={t('monsoonAdvisory.noActiveAlertsMessage')}
+            />
           )
         }
         ListFooterComponent={
@@ -291,9 +325,9 @@ export default function MonsoonAdvisoryScreen() {
                 <Phone size={20} color={C.red} />
               </View>
               <View style={styles.emergencyInfo}>
-                <Text style={styles.emergencyTitle}>National Emergency Helpline</Text>
-                <Text style={styles.emergencySub}>For heavy floods, stranded vehicles or rescue requests</Text>
-                <Text style={styles.emergencyNumbers}>NDRF desk: 011-23438091 • Toll Free: 1078</Text>
+                <Text style={styles.emergencyTitle}>{t('monsoonAdvisory.emergencyHelplineTitle')}</Text>
+                <Text style={styles.emergencySub}>{t('monsoonAdvisory.emergencyHelplineSub')}</Text>
+                <Text style={styles.emergencyNumbers}>{t('monsoonAdvisory.emergencyHelplineNumbers')}</Text>
               </View>
             </LinearGradient>
           </>

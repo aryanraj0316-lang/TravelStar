@@ -424,5 +424,31 @@
     "inclusionMeals": "meals",
     "inclusionTransport": "transport",
     "noInclusionsListed": "no inclusions listed"
+  },
+  "monsoonAdvisory": {
+    "goBack": "Go back",
+    "headerTitle": "Monsoon Advisory",
+    "liveUpdates": "LIVE UPDATES",
+    "introTitle": "Monsoon Travel Security Desk",
+    "introDesc": "Real-time route hazards and safety advisories curated by weather stations and state emergency operations. Check warning zones before route planning.",
+    "filterTabWithCount": "{{label}} ({{count}})",
+    "tabAll": "All",
+    "tabCritical": "Critical",
+    "tabWarning": "Warning",
+    "tabAdvisory": "Advisory",
+    "categoryFloodRain": "Flood & Rain",
+    "categoryLandslide": "Landslide",
+    "categoryCloudburst": "Cloudburst",
+    "categoryTrafficRush": "Traffic Rush",
+    "affectedRouteHeader": "Affected Route",
+    "precautionsHeader": "Precautions & Safety Guidelines",
+    "issuedTime": "Issued {{time}}",
+    "loadingHazardAlerts": "Loading hazard alerts…",
+    "couldNotLoadHazardAlerts": "Couldn't load hazard alerts.",
+    "noActiveAlertsTitle": "No active alerts",
+    "noActiveAlertsMessage": "No active alerts found in this category.",
+    "emergencyHelplineTitle": "National Emergency Helpline",
+    "emergencyHelplineSub": "For heavy floods, stranded vehicles or rescue requests",
+    "emergencyHelplineNumbers": "NDRF desk: 011-23438091 • Toll Free: 1078"
   }
 }
