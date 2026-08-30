@@ -2062,17 +2062,33 @@ partial, exactly what's blocking full completion.
       back button — evidently copy-pasted between the two files) — fixed
       the same way. No isDark violation here (this file never had one).
       Also not tokenized, same reasoning as map.web.tsx.
-      Remaining after nine slices: group-organizer.tsx, profile.tsx,
-      map.tsx, and map.web.tsx are done (map pair only for the isDark/
-      icon fixes above, not full tokenization — see those entries). 7
-      screens remain — stories.tsx (deliberately skipped), travel-guide.tsx
-      (3713 lines), and three `(tabs)/` screens (chat.tsx 5388 lines,
-      create.tsx 3405, index.tsx/home-screen — not yet audited this
-      round). Also flagged, not yet scoped as its own phase item: both map
-      screens' RN-chrome StyleSheets (not the Leaflet template strings)
-      are still raw hex literals rather than tokens.ts — a real §9.1 gap,
-      separate from the screen-migration list above. All remaining large
-      screens still each need their own careful pass; not attempted this
+      create.tsx (commit 451df44): the trip-creation form's 8 real text
+      fields (name, description, cities, budget, seats, transport mode,
+      meeting point, meeting time) all shared one hand-rolled shape —
+      leading icon + `TextInput` in a bordered `inputWrapper` — matching
+      `Input`'s icon slot closely (this screen's own wrapper was already
+      `cardAlt`/radius 14/height 48 vs Input's default `cardAlt`/radius
+      12/height 44 — a normalization, not a redesign). Converted onto
+      `Input`. Left alone on purpose: the 3 date-picker "fields" are
+      `TouchableOpacity`s styled to look the same but open a calendar —
+      not real text entry, not an `Input` candidate. The two "My
+      Creations"/"Creation Detail" modals are bespoke management
+      screens-as-modals (custom gradient chrome, stats grids, category
+      pills), not a form-in-a-sheet — left as plain `<Modal>`, not `Sheet`.
+      The first modal's "No Creations Yet" state converted onto
+      `ScreenEmpty`.
+      Remaining after this slice: group-organizer.tsx, profile.tsx,
+      map.tsx, map.web.tsx, and create.tsx are done (map pair only for the
+      isDark/icon fixes noted above, not full tokenization). 6 screens
+      remain — stories.tsx (deliberately skipped), travel-guide.tsx (3713
+      lines), chat.tsx (5388 lines), and index.tsx/home-screen (not yet
+      audited this round — already partially on the library per the first
+      slice's notes, extent unconfirmed). Also flagged, not yet scoped as
+      its own phase item: both map screens' RN-chrome StyleSheets (not the
+      Leaflet template strings) are still raw hex literals rather than
+      tokens.ts — a real §9.1 gap, separate from the screen-migration list
+      above. chat.tsx and travel-guide.tsx are the two largest remaining
+      screens and each need their own dedicated pass; not attempted this
       session beyond what's listed.
 - [ ] Phase 10 — Performance (in progress — the list-virtualization and
       backend caching/pooling items done; bundle analysis, code-splitting,
