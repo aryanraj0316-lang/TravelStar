@@ -688,6 +688,8 @@
     "closeLegDetails": "Close leg details",
     "closeDirections": "Close directions",
     "routeSelector": "Route selector",
-    "categorySelector": "Map category filter"
+    "categorySelector": "Map category filter",
+    "mapViewLabel": "MAP VIEW: {{label}}",
+    "iframeTitle": "Real World Map"
   }
 }
