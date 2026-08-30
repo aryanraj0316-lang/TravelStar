@@ -2263,8 +2263,15 @@ partial, exactly what's blocking full completion.
       studio tabs, both modals, and the creation detail drawer; the
       largest single locale namespace added this session). 25
       screens/components fully done now.
-      Remaining large screens: chat.tsx (5388 lines), travel-guide.tsx
-      (3713).
+      **travel-guide.tsx** now done too (2c4d4bd — full pass across
+      all 5 tabs; the largest single locale namespace added this
+      session). 26 screens/components fully done now. Found (not
+      fixed, flagged in the commit): a dead `itineraryDays`/
+      `handleAddDay` feature never rendered anywhere in this file's
+      JSX, and undisclosed hardcoded placeholder data (accommodations
+      listings, 5-day forecast) with no REMEDIATION.md comment
+      explaining it, unlike this file's other fabricated-data spots.
+      Remaining large screen: chat.tsx (5388 lines) — the last one.
       Touch target sizing — §9.3's other concrete ask, ~100 elements
       under 44×44 — not yet started on any screen; too easy to break
       layout to bulk-script like fontSize was, needs the same per-screen
