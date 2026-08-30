@@ -2044,13 +2044,36 @@ partial, exactly what's blocking full completion.
       modal's password field onto `Input`, its two buttons onto `Button`
       (kept as a custom centered `<Modal>`, not `Sheet`, since it's a
       confirm dialog rather than a bottom sheet).
-      Remaining after seven slices: group-organizer.tsx and profile.tsx
-      are done; 9 screens remain — stories.tsx (deliberately skipped),
-      travel-guide.tsx, and five `(tabs)/` screens (chat.tsx 5388 lines,
-      create.tsx 3405, map.tsx 2359 + map.web.tsx 1952 — map.web.tsx has
-      the same local-isDark pattern as search.tsx/profile.tsx, worth
-      checking first when that pair is done). All still each need their
-      own careful pass; not attempted this session beyond what's listed.
+      map.web.tsx (commit 730955f): had the same isDark/useColorScheme
+      violation as search.tsx/profile.tsx (5 spots — SafeAreaView bg, 4x
+      map zoom/recenter/locate control buttons) — removed, all read the
+      dark branch directly now. This file does NOT import
+      '@/theme/tokens' at all (unlike search.tsx/profile.tsx, which had
+      it and just shadowed it) — its ~470 lines of StyleSheet are raw hex
+      literals throughout. REMEDIATION.md's existing "the two map screens
+      keep their literals on purpose" note only covers the Leaflet HTML/
+      CSS template strings, not this RN chrome — full tokenization of
+      that chrome is a separate, larger pass, NOT done here. Drive-by fix
+      found while reading: the top-left back button had a hardcoded
+      `color="#000"` ArrowLeft icon on a fully transparent button over
+      this dark-only map — invisible. Fixed to white.
+      map.tsx (commit 0720d3b): the native sibling had the exact same
+      invisible-icon bug (same `color="#000"` on the same transparent
+      back button — evidently copy-pasted between the two files) — fixed
+      the same way. No isDark violation here (this file never had one).
+      Also not tokenized, same reasoning as map.web.tsx.
+      Remaining after nine slices: group-organizer.tsx, profile.tsx,
+      map.tsx, and map.web.tsx are done (map pair only for the isDark/
+      icon fixes above, not full tokenization — see those entries). 7
+      screens remain — stories.tsx (deliberately skipped), travel-guide.tsx
+      (3713 lines), and three `(tabs)/` screens (chat.tsx 5388 lines,
+      create.tsx 3405, index.tsx/home-screen — not yet audited this
+      round). Also flagged, not yet scoped as its own phase item: both map
+      screens' RN-chrome StyleSheets (not the Leaflet template strings)
+      are still raw hex literals rather than tokens.ts — a real §9.1 gap,
+      separate from the screen-migration list above. All remaining large
+      screens still each need their own careful pass; not attempted this
+      session beyond what's listed.
 - [ ] Phase 10 — Performance (in progress — the list-virtualization and
       backend caching/pooling items done; bundle analysis, code-splitting,
       and a measured TTI budget not started):
