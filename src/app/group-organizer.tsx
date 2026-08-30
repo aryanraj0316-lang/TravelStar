@@ -8,7 +8,6 @@ import {
   Text,
   StatusBar,
   TextInput,
-  Modal,
   Image,
   Dimensions,
   ActivityIndicator,
@@ -38,6 +37,7 @@ import {
 } from 'lucide-react-native';
 import { C } from '@/theme/tokens';
 import { showPrompt, toast, useConfirm } from '@/lib/feedback';
+import { Button, Input, Sheet } from '@/components/ui';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -1222,88 +1222,66 @@ export default function GroupOrganizerScreen() {
         <View style={{ height: 100 }} />
       </ScrollView>
 
-      {/* CREATE NEW TOUR MODAL */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={showCreateModal}
-        onRequestClose={() => setShowCreateModal(false)}
-      >
-        <View style={styles.modalBg}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Launch New Tour Group</Text>
-            <Text style={styles.modalDesc}>
-              Set up routing destinations, maximum capacities, pricing tiers, and generate group chats.
-            </Text>
+      {/* CREATE NEW TOUR SHEET */}
+      <Sheet visible={showCreateModal} onClose={() => setShowCreateModal(false)} title="Launch New Tour Group">
+        <Text style={styles.modalDesc}>
+          Set up routing destinations, maximum capacities, pricing tiers, and generate group chats.
+        </Text>
 
-            <Text style={styles.modalInputLabel}>Tour Group Name</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="e.g. Sikkim Rangers"
-              placeholderTextColor={C.textMuted}
-              value={newGroupName}
-              onChangeText={setNewGroupName}
-            />
+        <Input
+          label="Tour Group Name"
+          placeholder="e.g. Sikkim Rangers"
+          value={newGroupName}
+          onChangeText={setNewGroupName}
+          containerStyle={styles.modalFieldGap}
+        />
 
-            <Text style={styles.modalInputLabel}>Destination Target</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="e.g. Gangtok & Lachen"
-              placeholderTextColor={C.textMuted}
-              value={newDest}
-              onChangeText={setNewDest}
-            />
+        <Input
+          label="Destination Target"
+          placeholder="e.g. Gangtok & Lachen"
+          value={newDest}
+          onChangeText={setNewDest}
+          containerStyle={styles.modalFieldGap}
+        />
 
-            <View style={styles.modalInputRow}>
-              <View style={{ flex: 1, marginRight: 8 }}>
-                <Text style={styles.modalInputLabel}>Duration (Days)</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder="e.g. 5"
-                  placeholderTextColor={C.textMuted}
-                  keyboardType="numeric"
-                  value={newDuration}
-                  onChangeText={setNewDuration}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.modalInputLabel}>Max Capacity</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder="e.g. 12"
-                  placeholderTextColor={C.textMuted}
-                  keyboardType="numeric"
-                  value={newMaxSize}
-                  onChangeText={setNewMaxSize}
-                />
-              </View>
-            </View>
-
-            <Text style={styles.modalInputLabel}>Price Package Per Head (â‚¹)</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="e.g. 15000"
-              placeholderTextColor={C.textMuted}
-              keyboardType="numeric"
-              value={newPrice}
-              onChangeText={setNewPrice}
-            />
-
-            <View style={styles.modalActionRow}>
-              <TouchableOpacity
-                style={[styles.modalBtn, styles.modalBtnCancel]}
-                onPress={() => setShowCreateModal(false)}
-              >
-                <Text style={styles.modalBtnCancelText}>Cancel</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={[styles.modalBtn, styles.modalBtnConfirm]} onPress={handleCreateTour}>
-                <Text style={styles.modalBtnConfirmText}>Create Tour Group</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+        <View style={[styles.modalInputRow, styles.modalFieldGap]}>
+          <Input
+            label="Duration (Days)"
+            placeholder="e.g. 5"
+            keyboardType="numeric"
+            value={newDuration}
+            onChangeText={setNewDuration}
+            containerStyle={{ flex: 1, marginRight: 8 }}
+          />
+          <Input
+            label="Max Capacity"
+            placeholder="e.g. 12"
+            keyboardType="numeric"
+            value={newMaxSize}
+            onChangeText={setNewMaxSize}
+            containerStyle={{ flex: 1 }}
+          />
         </View>
-      </Modal>
+
+        <Input
+          label="Price Package Per Head (₹)"
+          placeholder="e.g. 15000"
+          keyboardType="numeric"
+          value={newPrice}
+          onChangeText={setNewPrice}
+          containerStyle={styles.modalFieldGap}
+        />
+
+        <View style={styles.modalActionRow}>
+          <Button
+            label="Cancel"
+            variant="secondary"
+            onPress={() => setShowCreateModal(false)}
+            style={{ flex: 1 }}
+          />
+          <Button label="Create Tour Group" onPress={handleCreateTour} style={{ flex: 1 }} />
+        </View>
+      </Sheet>
     </SafeAreaView>
   );
 }
@@ -2134,30 +2112,7 @@ const styles = StyleSheet.create({
 
   // QR checkins scanner
 
-  // Modal styling details
-  modalBg: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    width: SCREEN_WIDTH - 40,
-    backgroundColor: C.cardAlt,
-    borderRadius: 24,
-    padding: 20,
-    borderWidth: 1.5,
-    borderColor: C.border,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.5,
-    shadowRadius: 15,
-  },
-  modalTitle: {
-    fontSize: 16,
-    fontWeight: '900',
-    color: C.white,
-  },
+  // Create Tour sheet content (chrome itself now comes from <Sheet>)
   modalDesc: {
     fontSize: 12,
     color: C.textSec,
@@ -2165,57 +2120,16 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: '500',
   },
-  modalInputLabel: {
-    fontSize: 11.5,
-    fontWeight: '800',
-    color: C.white,
+  modalFieldGap: {
     marginTop: 14,
-    marginBottom: 6,
-  },
-  modalInput: {
-    backgroundColor: C.card,
-    borderWidth: 1.5,
-    borderColor: C.border,
-    borderRadius: 10,
-    height: 42,
-    paddingHorizontal: 12,
-    color: C.white,
-    fontSize: 14,
-    fontWeight: '600',
   },
   modalInputRow: {
     flexDirection: 'row',
-    marginBottom: 4,
   },
   modalActionRow: {
     flexDirection: 'row',
     gap: 10,
     marginTop: 22,
-  },
-  modalBtn: {
-    flex: 1,
-    height: 40,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalBtnCancel: {
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderWidth: 1.2,
-    borderColor: C.border,
-  },
-  modalBtnCancelText: {
-    color: C.textSec,
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  modalBtnConfirm: {
-    backgroundColor: C.blue,
-  },
-  modalBtnConfirmText: {
-    color: C.white,
-    fontSize: 13,
-    fontWeight: '800',
   },
 
   // Missing Style Definitions
