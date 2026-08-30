@@ -54,67 +54,113 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { eventBus } from '@/services/event-bus';
 import { C } from '@/theme/tokens';
 import { ScreenEmpty, ScreenError, ScreenLoading } from '@/components/ui';
+import { useTranslation } from 'react-i18next';
+import i18n from '@/lib/i18n';
 
-// Category definitions matching the screenshot
+// Category definitions matching the screenshot. `key` drives filter logic
+// (compared against trip.category/name text) and stays a stable English
+// literal; `labelKey` is what's shown, resolved via t() at render time —
+// these two are deliberately different now (docs/REMEDIATION.md §9.4).
 const CATEGORIES = [
-  { key: 'All', label: 'All', Icon: Grid2x2 },
-  { key: 'Religious', label: 'Religious', Icon: HomeIcon },
-  { key: 'Adventure', label: 'Adventure', Icon: Mountain },
-  { key: 'Family Friendly', label: 'Family Friendly', Icon: Users },
-  { key: 'Bike', label: 'Bike', Icon: Bike },
+  { key: 'All', labelKey: 'search.categoryAll', Icon: Grid2x2 },
+  { key: 'Religious', labelKey: 'search.categoryReligious', Icon: HomeIcon },
+  { key: 'Adventure', labelKey: 'search.categoryAdventure', Icon: Mountain },
+  { key: 'Family Friendly', labelKey: 'search.categoryFamilyFriendly', Icon: Users },
+  { key: 'Bike', labelKey: 'search.categoryBike', Icon: Bike },
 ];
+
+// Duration/transport filter codes stay stable English literals (drive
+// filter logic); these map each to its translated display label.
+const DURATION_LABEL_KEYS: Record<string, string> = {
+  ALL: 'search.durationAny',
+  SHORT: 'search.duration1to3',
+  MEDIUM: 'search.duration4to7',
+  LONG: 'search.duration8plus',
+};
+const TRANSPORT_LABEL_KEYS: Record<string, string> = {
+  ALL: 'search.transportAllModes',
+  BUS: 'search.transportBus',
+  BIKE: 'search.transportBike',
+};
 
 // Quick access grid items with vector icons
 const QUICK_ACCESS = [
-  { key: 'custom', label: 'Custom Trips', sub: 'Plan your own', Icon: Sparkles, color: '#FFB300' },
-  { key: 'nearby', label: 'Nearby Trips', sub: 'Around you', Icon: MapPin, color: '#0066FF' },
-  { key: 'budget', label: 'Budget Trips', sub: 'Best deals', Icon: Wallet, color: '#FFCC00' },
+  { key: 'custom', labelKey: 'search.quickCustomTrips', subKey: 'search.quickCustomTripsSub', Icon: Sparkles, color: '#FFB300' },
+  { key: 'nearby', labelKey: 'search.quickNearbyTrips', subKey: 'search.quickNearbyTripsSub', Icon: MapPin, color: '#0066FF' },
+  { key: 'budget', labelKey: 'search.quickBudgetTrips', subKey: 'search.quickBudgetTripsSub', Icon: Wallet, color: '#FFCC00' },
 ];
 
-// Helper: derive a badge from trip category or travelStyle (DB-driven)
-const getCategoryBadge = (trip: any): { label: string; color: string; bg: string } | null => {
+// Helper: derive a badge from trip category or travelStyle (DB-driven).
+// Plain functions, not components, so they use i18next's singleton
+// directly rather than the useTranslation() hook (same pattern as
+// datetime.ts).
+const getCategoryBadge = (trip: any): { labelKey: string; color: string; bg: string } | null => {
   const cat = (trip.category || trip.travelStyle || '').toLowerCase();
   if (cat.includes('religious') || cat.includes('spiritual'))
-    return { label: 'Popular', color: '#FFFFFF', bg: '#6C5CE7' };
-  if (cat.includes('adventure') || cat.includes('bike')) return { label: 'Adventure', color: '#FFFFFF', bg: '#2ECC71' };
-  if (cat.includes('nature') || cat.includes('scenic')) return { label: 'Scenic', color: '#FFFFFF', bg: '#00B894' };
-  if (cat.includes('heritage')) return { label: 'Heritage', color: '#FFFFFF', bg: '#E17055' };
-  if (cat.includes('family')) return { label: 'Family', color: '#FFFFFF', bg: '#0984E3' };
+    return { labelKey: 'search.badgePopular', color: '#FFFFFF', bg: '#6C5CE7' };
+  if (cat.includes('adventure') || cat.includes('bike')) return { labelKey: 'search.badgeAdventure', color: '#FFFFFF', bg: '#2ECC71' };
+  if (cat.includes('nature') || cat.includes('scenic')) return { labelKey: 'search.badgeScenic', color: '#FFFFFF', bg: '#00B894' };
+  if (cat.includes('heritage')) return { labelKey: 'search.badgeHeritage', color: '#FFFFFF', bg: '#E17055' };
+  if (cat.includes('family')) return { labelKey: 'search.badgeFamily', color: '#FFFFFF', bg: '#0984E3' };
   return null;
 };
 
 // Helper: format date string for display
 const formatTripDate = (dateStr: string | undefined): string => {
-  if (!dateStr) return 'TBD';
+  if (!dateStr) return i18n.t('search.dateTBD');
   try {
     const d = new Date(dateStr);
-    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    return d.toLocaleDateString(i18n.language === 'hi' ? 'hi-IN' : 'en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
   } catch {
     return dateStr;
   }
 };
 
+// Helper: raw day count from start/end dates. Kept separate from the
+// translated display string below — the duration filter used to regex-
+// parse the literal English word "Day" back out of computeDuration()'s
+// formatted output, which would have silently broken the moment that
+// output started rendering in Hindi (docs/REMEDIATION.md §9.4).
+const computeDurationDays = (startDate: string | undefined, endDate: string | undefined): number | null => {
+  if (!startDate || !endDate) return null;
+  try {
+    const diffMs = new Date(endDate).getTime() - new Date(startDate).getTime();
+    return Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)));
+  } catch {
+    return null;
+  }
+};
+
 // Helper: compute duration text from start/end dates
 const computeDuration = (startDate: string | undefined, endDate: string | undefined): string => {
-  if (!startDate || !endDate) return 'Multi-Day';
-  try {
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const diffMs = end.getTime() - start.getTime();
-    const days = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)));
-    const nights = Math.max(0, days - 1);
-    return `${nights} Night${nights !== 1 ? 's' : ''} / ${days} Day${days !== 1 ? 's' : ''}`;
-  } catch {
-    return 'Multi-Day';
-  }
+  const days = computeDurationDays(startDate, endDate);
+  if (days === null) return i18n.t('search.multiDay');
+  const nights = Math.max(0, days - 1);
+  return i18n.t('search.nightsAndDays', { count: nights, nights, days });
+};
+
+// Helper: a stable, untranslated transport code derived from trip name/
+// category — this is what the Transport Mode filter matches against.
+// Kept separate from the translated label below for the same reason as
+// computeDurationDays: matching substrings of translated display text is
+// exactly the kind of thing that silently breaks in a second language.
+const deriveTransportCode = (trip: any): 'BIKE' | 'BUS' | 'AC' => {
+  const name = (trip.name || '').toLowerCase();
+  if (name.includes('bike') || name.includes('expedition')) return 'BIKE';
+  if (name.includes('houseboat') || name.includes('backwaters')) return 'BUS';
+  return 'AC';
 };
 
 // Helper: derive transport label from trip name / category
 const deriveTransport = (trip: any): string => {
-  const name = (trip.name || '').toLowerCase();
-  if (name.includes('bike') || name.includes('expedition')) return 'Bike + Fuel + Stay';
-  if (name.includes('houseboat') || name.includes('backwaters')) return 'AC Bus + Houseboat';
-  return 'AC Transport';
+  switch (deriveTransportCode(trip)) {
+    case 'BIKE':
+      return i18n.t('search.transportBikeFuelStay');
+    case 'BUS':
+      return i18n.t('search.transportBusHouseboat');
+    default:
+      return i18n.t('search.transportAC');
+  }
 };
 
 // This screen used to carry its own local DARK/LIGHT palette pair and a
@@ -158,6 +204,7 @@ function TripResultCard({
   onToggleLike: (id: string) => void;
   onOpenTrip: (trip: Trip) => void;
 }) {
+  const { t } = useTranslation();
   // All display data comes from the trip object (populated from DB)
   const duration = computeDuration(trip.startDate, trip.endDate);
   const transport = deriveTransport(trip);
@@ -177,6 +224,9 @@ function TripResultCard({
       disabled={isMyTrip}
       onPress={() => onOpenTrip(trip)}
       style={[styles.tripCard, { backgroundColor: C.card, borderColor: C.border }, isMyTrip && { opacity: 0.65 }]}
+      accessibilityRole="button"
+      accessibilityLabel={trip.name}
+      accessibilityHint={t('search.tripCardHint')}
     >
       {isMyTrip && (
         <LinearGradient
@@ -198,12 +248,12 @@ function TripResultCard({
         {/* Pill Badge */}
         {isMyTrip ? (
           <View style={[styles.tripBadge, { backgroundColor: C.blue }]}>
-            <Text style={[styles.tripBadgeText, { color: '#FFF', fontWeight: '800' }]}>Yours</Text>
+            <Text style={[styles.tripBadgeText, { color: '#FFF', fontWeight: '800' }]}>{t('search.yours')}</Text>
           </View>
         ) : (
           badge && (
             <View style={[styles.tripBadge, { backgroundColor: badge.bg }]}>
-              <Text style={styles.tripBadgeText}>{badge.label}</Text>
+              <Text style={styles.tripBadgeText}>{t(badge.labelKey)}</Text>
             </View>
           )
         )}
@@ -212,6 +262,9 @@ function TripResultCard({
           <TouchableOpacity
             style={[styles.heartBtn, { backgroundColor: 'rgba(0,0,0,0.4)' }]}
             onPress={() => onToggleLike(trip.id)}
+            accessibilityRole="button"
+            accessibilityLabel={t('search.favoriteHint')}
+            accessibilityState={{ selected: isLiked }}
           >
             <Heart size={14} color={isLiked ? '#FF3B30' : '#FFF'} fill={isLiked ? '#FF3B30' : 'transparent'} />
           </TouchableOpacity>
@@ -235,10 +288,10 @@ function TripResultCard({
             ]}
           >
             <Check size={9} color={isMyTrip ? C.textSec : C.blueText} strokeWidth={3} />
-            <Text style={[styles.verifiedText, { color: isMyTrip ? C.textSec : C.blueText }]}>Verified Route</Text>
+            <Text style={[styles.verifiedText, { color: isMyTrip ? C.textSec : C.blueText }]}>{t('search.verifiedRoute')}</Text>
           </View>
           <Text style={{ fontSize: 12, fontWeight: '600', color: isMyTrip ? C.textSec : C.greenText }}>
-            {trip.availableSeats ?? 0} left
+            {t('search.seatsLeft', { count: trip.availableSeats ?? 0 })}
           </Text>
         </View>
 
@@ -292,13 +345,13 @@ function TripResultCard({
         <View style={[styles.priceRow, { borderTopColor: C.border }]}>
           <View style={{ flex: 1, marginRight: 4 }}>
             <Text style={[styles.priceLabel, { color: C.textSec }]} numberOfLines={1}>
-              Full Trip Cost
+              {t('search.fullTripCost')}
             </Text>
             <Text style={[styles.priceAmount, { color: isMyTrip ? C.textSec : C.blueText }]} numberOfLines={1}>
               ₹{displayPrice}
             </Text>
             <Text style={[styles.pricePer, { color: C.textSec, marginTop: -2 }]} numberOfLines={1}>
-              per person
+              {t('search.perPerson')}
             </Text>
           </View>
           <View style={{ gap: 4, flexShrink: 0, width: 120 }}>
@@ -313,19 +366,24 @@ function TripResultCard({
                 ]}
               >
                 <Sparkles size={11} color={C.blueText} style={{ marginRight: 4 }} />
-                <Text style={[styles.myTripBadgeText, { color: C.blueText, fontWeight: '800' }]}>Your Creation</Text>
+                <Text style={[styles.myTripBadgeText, { color: C.blueText, fontWeight: '800' }]}>{t('search.yourCreation')}</Text>
               </View>
             ) : isRequested ? (
               <View style={[styles.joinBtn, styles.joinBtnRequested]}>
                 <Check size={11} color="#2ECC71" style={{ marginRight: 4 }} />
                 <Text style={[styles.joinBtnText, styles.joinBtnRequestedText]} numberOfLines={1}>
-                  Requested
+                  {t('search.requested')}
                 </Text>
               </View>
             ) : (
-              <TouchableOpacity style={styles.joinBtn} onPress={() => onOpenTrip(trip)}>
+              <TouchableOpacity
+                style={styles.joinBtn}
+                onPress={() => onOpenTrip(trip)}
+                accessibilityRole="button"
+                accessibilityLabel={t('search.requestToJoin')}
+              >
                 <Text style={styles.joinBtnText} numberOfLines={1}>
-                  Request to Join
+                  {t('search.requestToJoin')}
                 </Text>
                 <ChevronRight size={11} color="#FFF" style={{ marginLeft: 2 }} />
               </TouchableOpacity>
@@ -347,6 +405,7 @@ function TripResultCard({
 const keyExtractor = (t: Trip) => t.id;
 
 function SearchScreen() {
+  const { t } = useTranslation();
   useEffect(() => {
     logger.log('Screen mounted: SearchScreen');
   }, []);
@@ -543,22 +602,15 @@ function SearchScreen() {
       }
 
       // Duration Filter — compute from dates
-      const duration = computeDuration(t.startDate, t.endDate);
-      const dayMatch = duration.match(/(\d+)\s*Day/);
-      const totalDays = dayMatch ? parseInt(dayMatch[1], 10) : 5;
+      const totalDays = computeDurationDays(t.startDate, t.endDate) ?? 5;
       if (selectedDuration === 'SHORT' && totalDays > 3) return false;
       if (selectedDuration === 'MEDIUM' && (totalDays < 4 || totalDays > 7)) return false;
       if (selectedDuration === 'LONG' && totalDays < 8) return false;
 
       // Transport Mode Filter
-      const transport = deriveTransport(t);
-      if (selectedTransport === 'BIKE' && !transport.toLowerCase().includes('bike')) return false;
-      if (
-        selectedTransport === 'BUS' &&
-        !transport.toLowerCase().includes('bus') &&
-        !transport.toLowerCase().includes('ac')
-      )
-        return false;
+      const transportCode = deriveTransportCode(t);
+      if (selectedTransport === 'BIKE' && transportCode !== 'BIKE') return false;
+      if (selectedTransport === 'BUS' && transportCode === 'BIKE') return false;
 
       // Midway Join Filter
       if (midwayOnly && t.cities.length < 3) return false;
@@ -595,11 +647,12 @@ function SearchScreen() {
           <View style={[styles.searchContainer, { backgroundColor: C.card, borderColor: C.cardBorder }]}>
             <Search size={20} color={C.textSecondary} />
             <TextInput
-              placeholder="Search by state, city, guide..."
+              placeholder={t('search.searchPlaceholder')}
               placeholderTextColor={C.textSecondary}
               style={[styles.searchInput, { color: C.white }]}
               value={searchQuery}
               onChangeText={setSearchQuery}
+              accessibilityLabel={t('search.searchPlaceholder')}
             />
             <TouchableOpacity
               style={[
@@ -609,6 +662,9 @@ function SearchScreen() {
               activeOpacity={0.7}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               onPress={() => setShowFilterModal(true)}
+              accessibilityRole="button"
+              accessibilityLabel={t('search.filtersLabel')}
+              accessibilityHint={activeFilterCount > 0 ? t('search.activeFilterCount', { count: activeFilterCount }) : undefined}
             >
               <SlidersHorizontal size={18} color={activeFilterCount > 0 ? C.accent : C.textSecondary} />
               {activeFilterCount > 0 && (
@@ -623,6 +679,9 @@ function SearchScreen() {
             activeOpacity={0.7}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             onPress={() => router.push('/notifications')}
+            accessibilityRole="button"
+            accessibilityLabel={t('search.notificationsLabel')}
+            accessibilityHint={hasUnreadNotifs ? t('home.notificationsUnreadHint') : undefined}
           >
             <Bell size={20} color={C.textSecondary} />
             {hasUnreadNotifs && <View style={styles.notifDot} />}
@@ -653,6 +712,9 @@ function SearchScreen() {
                       overflow: 'hidden',
                     },
                   ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={t(cat.labelKey)}
+                  accessibilityState={{ selected: isActive }}
                 >
                   {isAllGradient && (
                     <LinearGradient
@@ -664,7 +726,7 @@ function SearchScreen() {
                   )}
                   <cat.Icon size={14} color={isActive ? '#FFF' : C.textSecondary} style={{ zIndex: 1 }} />
                   <Text style={[styles.chipText, { color: isActive ? '#FFF' : C.textSecondary, zIndex: 1 }]}>
-                    {cat.label}
+                    {t(cat.labelKey)}
                   </Text>
                 </TouchableOpacity>
               );
@@ -675,12 +737,12 @@ function SearchScreen() {
         {/* ─── ACTIVE FILTER TAGS ROW ─────────────────────────── */}
         {activeFilterCount > 0 && (
           <View style={styles.activeFilterTagsRow}>
-            <Text style={[styles.activeFilterLabel, { color: C.textSecondary }]}>Filters:</Text>
+            <Text style={[styles.activeFilterLabel, { color: C.textSecondary }]}>{t('search.filtersColon')}</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
               {sortOption !== 'popularity' && (
                 <View style={[styles.filterTagPill, { backgroundColor: C.accentLight, borderColor: C.accent }]}>
-                  <Text style={[styles.filterTagText, { color: C.accent }]}>Sort: {sortOption.replace('_', ' ')}</Text>
-                  <TouchableOpacity onPress={() => setSortOption('popularity')}>
+                  <Text style={[styles.filterTagText, { color: C.accent }]}>{t('search.sortLabel', { value: sortOption.replace('_', ' ') })}</Text>
+                  <TouchableOpacity onPress={() => setSortOption('popularity')} accessibilityRole="button" accessibilityLabel={t('search.removeFilterHint')}>
                     <X size={12} color={C.accent} style={{ marginLeft: 4 }} />
                   </TouchableOpacity>
                 </View>
@@ -688,25 +750,25 @@ function SearchScreen() {
               {maxBudget < 50000 && (
                 <View style={[styles.filterTagPill, { backgroundColor: C.accentLight, borderColor: C.accent }]}>
                   <Text style={[styles.filterTagText, { color: C.accent }]}>
-                    Max ₹{maxBudget.toLocaleString('en-IN')}
+                    {t('search.maxBudget', { value: maxBudget.toLocaleString('en-IN') })}
                   </Text>
-                  <TouchableOpacity onPress={() => setMaxBudget(50000)}>
+                  <TouchableOpacity onPress={() => setMaxBudget(50000)} accessibilityRole="button" accessibilityLabel={t('search.removeFilterHint')}>
                     <X size={12} color={C.accent} style={{ marginLeft: 4 }} />
                   </TouchableOpacity>
                 </View>
               )}
               {selectedDuration !== 'ALL' && (
                 <View style={[styles.filterTagPill, { backgroundColor: C.accentLight, borderColor: C.accent }]}>
-                  <Text style={[styles.filterTagText, { color: C.accent }]}>Duration: {selectedDuration}</Text>
-                  <TouchableOpacity onPress={() => setSelectedDuration('ALL')}>
+                  <Text style={[styles.filterTagText, { color: C.accent }]}>{t('search.durationLabel', { value: t(DURATION_LABEL_KEYS[selectedDuration]) })}</Text>
+                  <TouchableOpacity onPress={() => setSelectedDuration('ALL')} accessibilityRole="button" accessibilityLabel={t('search.removeFilterHint')}>
                     <X size={12} color={C.accent} style={{ marginLeft: 4 }} />
                   </TouchableOpacity>
                 </View>
               )}
               {verifiedOnly && (
                 <View style={[styles.filterTagPill, { backgroundColor: C.accentLight, borderColor: C.accent }]}>
-                  <Text style={[styles.filterTagText, { color: C.accent }]}>Verified Organizers</Text>
-                  <TouchableOpacity onPress={() => setVerifiedOnly(false)}>
+                  <Text style={[styles.filterTagText, { color: C.accent }]}>{t('search.verifiedOrganizers')}</Text>
+                  <TouchableOpacity onPress={() => setVerifiedOnly(false)} accessibilityRole="button" accessibilityLabel={t('search.removeFilterHint')}>
                     <X size={12} color={C.accent} style={{ marginLeft: 4 }} />
                   </TouchableOpacity>
                 </View>
@@ -718,16 +780,16 @@ function SearchScreen() {
                     { backgroundColor: 'rgba(16, 185, 129, 0.15)', borderColor: '#10B981' },
                   ]}
                 >
-                  <Text style={[styles.filterTagText, { color: '#10B981' }]}>Guide Included</Text>
-                  <TouchableOpacity onPress={() => setGuideRequired(false)}>
+                  <Text style={[styles.filterTagText, { color: '#10B981' }]}>{t('search.guideIncludedFilter')}</Text>
+                  <TouchableOpacity onPress={() => setGuideRequired(false)} accessibilityRole="button" accessibilityLabel={t('search.removeFilterHint')}>
                     <X size={12} color="#10B981" style={{ marginLeft: 4 }} />
                   </TouchableOpacity>
                 </View>
               )}
               {selectedTransport !== 'ALL' && (
                 <View style={[styles.filterTagPill, { backgroundColor: C.accentLight, borderColor: C.accent }]}>
-                  <Text style={[styles.filterTagText, { color: C.accent }]}>Transport: {selectedTransport}</Text>
-                  <TouchableOpacity onPress={() => setSelectedTransport('ALL')}>
+                  <Text style={[styles.filterTagText, { color: C.accent }]}>{t('search.transportLabel', { value: t(TRANSPORT_LABEL_KEYS[selectedTransport]) })}</Text>
+                  <TouchableOpacity onPress={() => setSelectedTransport('ALL')} accessibilityRole="button" accessibilityLabel={t('search.removeFilterHint')}>
                     <X size={12} color={C.accent} style={{ marginLeft: 4 }} />
                   </TouchableOpacity>
                 </View>
@@ -739,15 +801,15 @@ function SearchScreen() {
                     { backgroundColor: 'rgba(245, 158, 11, 0.15)', borderColor: '#F59E0B' },
                   ]}
                 >
-                  <Text style={[styles.filterTagText, { color: '#F59E0B' }]}>Midway Join</Text>
-                  <TouchableOpacity onPress={() => setMidwayOnly(false)}>
+                  <Text style={[styles.filterTagText, { color: '#F59E0B' }]}>{t('search.midwayJoin')}</Text>
+                  <TouchableOpacity onPress={() => setMidwayOnly(false)} accessibilityRole="button" accessibilityLabel={t('search.removeFilterHint')}>
                     <X size={12} color="#F59E0B" style={{ marginLeft: 4 }} />
                   </TouchableOpacity>
                 </View>
               )}
-              <TouchableOpacity style={styles.clearAllPill} onPress={resetFilters}>
+              <TouchableOpacity style={styles.clearAllPill} onPress={resetFilters} accessibilityRole="button" accessibilityLabel={t('search.clearAll')}>
                 <RotateCcw size={12} color="#FF3B30" />
-                <Text style={{ fontSize: 12, fontWeight: '600', color: '#FF3B30', marginLeft: 4 }}>Clear All</Text>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: '#FF3B30', marginLeft: 4 }}>{t('search.clearAll')}</Text>
               </TouchableOpacity>
             </ScrollView>
           </View>
@@ -822,12 +884,14 @@ function SearchScreen() {
                         router.push('/budget-trips');
                       }
                     }}
+                    accessibilityRole="button"
+                    accessibilityLabel={t(item.labelKey)}
                   >
                     <View style={[styles.quickIconCircle, { backgroundColor: item.color + '15' }]}>
                       <item.Icon size={18} color={item.color} />
                     </View>
-                    <Text style={[styles.quickLabel, { color: C.text }]}>{item.label}</Text>
-                    <Text style={[styles.quickSub, { color: C.textSecondary }]}>{item.sub}</Text>
+                    <Text style={[styles.quickLabel, { color: C.text }]}>{t(item.labelKey)}</Text>
+                    <Text style={[styles.quickSub, { color: C.textSecondary }]}>{t(item.subKey)}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -835,11 +899,11 @@ function SearchScreen() {
               {/* ─── POPULARITY HEADER ───────────────────────────────── */}
               <View style={styles.sectionHeader}>
                 <Text style={[styles.sectionTitle, { color: C.textSecondary }]}>
-                  TRIPS BY POPULARITY ({filteredTrips.length} {filteredTrips.length === 1 ? 'TRIP' : 'TRIPS'})
+                  {t('search.tripsByPopularity', { count: filteredTrips.length })}
                 </Text>
                 {activeFilterCount > 0 && (
-                  <TouchableOpacity style={styles.resetInlineBtn} onPress={resetFilters}>
-                    <Text style={{ fontSize: 12, fontWeight: '600', color: '#FF3B30' }}>Reset Filters</Text>
+                  <TouchableOpacity style={styles.resetInlineBtn} onPress={resetFilters} accessibilityRole="button" accessibilityLabel={t('search.resetFilters')}>
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: '#FF3B30' }}>{t('search.resetFilters')}</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -847,22 +911,22 @@ function SearchScreen() {
           }
           ListEmptyComponent={
             tripsLoading ? (
-              <ScreenLoading label="Finding trips for you…" />
+              <ScreenLoading label={t('search.findingTrips')} />
             ) : tripsError ? (
               <ScreenError
-                title="Couldn't Load Trips"
+                title={t('search.couldNotLoadTrips')}
                 message={
                   tripsFetchError instanceof Error
                     ? tripsFetchError.message
-                    : 'Please check your connection and try again.'
+                    : t('search.checkConnection')
                 }
                 onRetry={() => refetchTrips()}
               />
             ) : (
               <ScreenEmpty
-                title="No Matching Trips Found"
-                message="No tour routes match your current search query or filter preferences. Try adjusting budget or resetting filters."
-                actionLabel="Reset Preferences"
+                title={t('search.noMatchingTrips')}
+                message={t('search.noMatchingTripsMessage')}
+                actionLabel={t('search.resetPreferences')}
                 onAction={resetFilters}
               />
             )
@@ -889,6 +953,8 @@ function SearchScreen() {
                       transform: [{ scale: 0.94 }],
                     },
                   ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('home.createATrip')}
                 />
               </View>
 
@@ -898,29 +964,29 @@ function SearchScreen() {
                   <View style={[styles.trustIcon, { backgroundColor: C.accentLight }]}>
                     <Shield size={16} color={C.accent} />
                   </View>
-                  <Text style={[styles.trustLabel, { color: C.text }]}>Verified Routes</Text>
-                  <Text style={[styles.trustSub, { color: C.textSecondary }]}>Safe & Trusted</Text>
+                  <Text style={[styles.trustLabel, { color: C.text }]}>{t('search.trustVerifiedRoutes')}</Text>
+                  <Text style={[styles.trustSub, { color: C.textSecondary }]}>{t('search.trustVerifiedRoutesSub')}</Text>
                 </View>
                 <View style={styles.trustItem}>
                   <View style={[styles.trustIcon, { backgroundColor: 'rgba(46, 204, 113, 0.08)' }]}>
                     <UserCheck size={16} color="#2ECC71" />
                   </View>
-                  <Text style={[styles.trustLabel, { color: C.text }]}>Expert Trip Leaders</Text>
-                  <Text style={[styles.trustSub, { color: C.textSecondary }]}>Experienced Guides</Text>
+                  <Text style={[styles.trustLabel, { color: C.text }]}>{t('search.trustExpertLeaders')}</Text>
+                  <Text style={[styles.trustSub, { color: C.textSecondary }]}>{t('search.trustExpertLeadersSub')}</Text>
                 </View>
                 <View style={styles.trustItem}>
                   <View style={[styles.trustIcon, { backgroundColor: 'rgba(255, 204, 0, 0.08)' }]}>
                     <BadgePercent size={16} color="#FFCC00" />
                   </View>
-                  <Text style={[styles.trustLabel, { color: C.text }]}>Best Price Guarantee</Text>
-                  <Text style={[styles.trustSub, { color: C.textSecondary }]}>No Hidden Costs</Text>
+                  <Text style={[styles.trustLabel, { color: C.text }]}>{t('search.trustBestPrice')}</Text>
+                  <Text style={[styles.trustSub, { color: C.textSecondary }]}>{t('search.trustBestPriceSub')}</Text>
                 </View>
                 <View style={styles.trustItem}>
                   <View style={[styles.trustIcon, { backgroundColor: 'rgba(108, 92, 231, 0.08)' }]}>
                     <Headphones size={16} color="#6C5CE7" />
                   </View>
-                  <Text style={[styles.trustLabel, { color: C.text }]}>24/7 Support</Text>
-                  <Text style={[styles.trustSub, { color: C.textSecondary }]}>We're Here</Text>
+                  <Text style={[styles.trustLabel, { color: C.text }]}>{t('search.trustSupport')}</Text>
+                  <Text style={[styles.trustSub, { color: C.textSecondary }]}>{t('search.trustSupportSub')}</Text>
                 </View>
               </View>
 
@@ -941,24 +1007,30 @@ function SearchScreen() {
         onRequestClose={() => setShowFilterModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setShowFilterModal(false)} />
+          <TouchableOpacity
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={() => setShowFilterModal(false)}
+            accessibilityRole="button"
+            accessibilityLabel={t('search.closeLabel')}
+          />
           <View style={[styles.filterSheet, { backgroundColor: C.card }]}>
             {/* Header */}
             <View style={[styles.filterHeader, { borderBottomColor: C.divider }]}>
               <View style={styles.filterTitleRow}>
                 <SlidersHorizontal size={20} color={C.accent} />
-                <Text style={[styles.filterSheetTitle, { color: C.text }]}>Filters & Preferences</Text>
+                <Text style={[styles.filterSheetTitle, { color: C.text }]}>{t('search.filtersAndPreferences')}</Text>
                 {activeFilterCount > 0 && (
                   <View style={styles.activeFilterCountBadge}>
-                    <Text style={styles.activeFilterCountText}>{activeFilterCount} active</Text>
+                    <Text style={styles.activeFilterCountText}>{t('search.activeCount', { count: activeFilterCount })}</Text>
                   </View>
                 )}
               </View>
 
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                 {activeFilterCount > 0 && (
-                  <TouchableOpacity onPress={resetFilters} activeOpacity={0.7}>
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: '#FF3B30' }}>Reset All</Text>
+                  <TouchableOpacity onPress={resetFilters} activeOpacity={0.7} accessibilityRole="button" accessibilityLabel={t('search.resetAll')}>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: '#FF3B30' }}>{t('search.resetAll')}</Text>
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity
@@ -967,6 +1039,8 @@ function SearchScreen() {
                     styles.closeIconBtn,
                     { backgroundColor: 'rgba(255,255,255,0.08)' },
                   ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('common.close')}
                 >
                   <X size={18} color={C.text} />
                 </TouchableOpacity>
@@ -976,13 +1050,13 @@ function SearchScreen() {
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.filterScrollContent}>
               {/* Section 1: SORT BY */}
               <View style={styles.filterSection}>
-                <Text style={[styles.filterSectionTitle, { color: C.textSecondary }]}>SORT RESULTS BY</Text>
+                <Text style={[styles.filterSectionTitle, { color: C.textSecondary }]}>{t('search.sortResultsBy')}</Text>
                 <View style={styles.filterChipsWrap}>
                   {[
-                    { key: 'popularity', label: 'Popularity: Low to High' },
-                    { key: 'price_low', label: 'Price: Low to High' },
-                    { key: 'price_high', label: 'Price: High to Low' },
-                    { key: 'rating', label: 'Highest Rated' },
+                    { key: 'popularity', labelKey: 'search.sortPopularity' },
+                    { key: 'price_low', labelKey: 'search.sortPriceLow' },
+                    { key: 'price_high', labelKey: 'search.sortPriceHigh' },
+                    { key: 'rating', labelKey: 'search.sortHighestRated' },
                   ].map((opt) => {
                     const isSelected = sortOption === opt.key;
                     return (
@@ -996,9 +1070,12 @@ function SearchScreen() {
                             borderColor: isSelected ? C.accent : C.cardBorder,
                           },
                         ]}
+                        accessibilityRole="button"
+                        accessibilityLabel={t(opt.labelKey)}
+                        accessibilityState={{ selected: isSelected }}
                       >
                         <Text style={[styles.filterSelectChipText, { color: isSelected ? '#FFF' : C.text }]}>
-                          {opt.label}
+                          {t(opt.labelKey)}
                         </Text>
                       </TouchableOpacity>
                     );
@@ -1009,18 +1086,18 @@ function SearchScreen() {
               {/* Section 2: MAXIMUM BUDGET */}
               <View style={styles.filterSection}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text style={[styles.filterSectionTitle, { color: C.textSecondary }]}>MAXIMUM BUDGET PER PERSON</Text>
+                  <Text style={[styles.filterSectionTitle, { color: C.textSecondary }]}>{t('search.maxBudgetPerPerson')}</Text>
                   <Text style={{ fontSize: 14, fontWeight: '700', color: C.accent }}>
-                    {maxBudget >= 50000 ? 'Any Budget' : `₹${maxBudget.toLocaleString('en-IN')}`}
+                    {maxBudget >= 50000 ? t('search.anyBudget') : `₹${maxBudget.toLocaleString('en-IN')}`}
                   </Text>
                 </View>
                 <View style={styles.filterChipsWrap}>
                   {[
-                    { val: 50000, label: 'Any' },
-                    { val: 10000, label: 'Under ₹10k' },
-                    { val: 15000, label: 'Under ₹15k' },
-                    { val: 20000, label: 'Under ₹20k' },
-                    { val: 30000, label: 'Under ₹30k' },
+                    { val: 50000, labelKey: 'search.budgetAny' },
+                    { val: 10000, labelKey: 'search.budgetUnder10k' },
+                    { val: 15000, labelKey: 'search.budgetUnder15k' },
+                    { val: 20000, labelKey: 'search.budgetUnder20k' },
+                    { val: 30000, labelKey: 'search.budgetUnder30k' },
                   ].map((b) => {
                     const isSelected = maxBudget === b.val;
                     return (
@@ -1034,9 +1111,12 @@ function SearchScreen() {
                             borderColor: isSelected ? C.accent : C.cardBorder,
                           },
                         ]}
+                        accessibilityRole="button"
+                        accessibilityLabel={t(b.labelKey)}
+                        accessibilityState={{ selected: isSelected }}
                       >
                         <Text style={[styles.filterSelectChipText, { color: isSelected ? '#FFF' : C.text }]}>
-                          {b.label}
+                          {t(b.labelKey)}
                         </Text>
                       </TouchableOpacity>
                     );
@@ -1046,13 +1126,13 @@ function SearchScreen() {
 
               {/* Section 3: TRIP DURATION */}
               <View style={styles.filterSection}>
-                <Text style={[styles.filterSectionTitle, { color: C.textSecondary }]}>TRIP DURATION</Text>
+                <Text style={[styles.filterSectionTitle, { color: C.textSecondary }]}>{t('search.tripDuration')}</Text>
                 <View style={styles.filterChipsWrap}>
                   {[
-                    { key: 'ALL', label: 'Any Duration' },
-                    { key: 'SHORT', label: '1 - 3 Days' },
-                    { key: 'MEDIUM', label: '4 - 7 Days' },
-                    { key: 'LONG', label: '8+ Days' },
+                    { key: 'ALL', labelKey: 'search.durationAny' },
+                    { key: 'SHORT', labelKey: 'search.duration1to3' },
+                    { key: 'MEDIUM', labelKey: 'search.duration4to7' },
+                    { key: 'LONG', labelKey: 'search.duration8plus' },
                   ].map((dur) => {
                     const isSelected = selectedDuration === dur.key;
                     return (
@@ -1066,9 +1146,12 @@ function SearchScreen() {
                             borderColor: isSelected ? C.accent : C.cardBorder,
                           },
                         ]}
+                        accessibilityRole="button"
+                        accessibilityLabel={t(dur.labelKey)}
+                        accessibilityState={{ selected: isSelected }}
                       >
                         <Text style={[styles.filterSelectChipText, { color: isSelected ? '#FFF' : C.text }]}>
-                          {dur.label}
+                          {t(dur.labelKey)}
                         </Text>
                       </TouchableOpacity>
                     );
@@ -1078,12 +1161,12 @@ function SearchScreen() {
 
               {/* Section 4: TRANSPORT MODE */}
               <View style={styles.filterSection}>
-                <Text style={[styles.filterSectionTitle, { color: C.textSecondary }]}>TRANSPORT MODE</Text>
+                <Text style={[styles.filterSectionTitle, { color: C.textSecondary }]}>{t('search.transportMode')}</Text>
                 <View style={styles.filterChipsWrap}>
                   {[
-                    { key: 'ALL', label: 'All Modes' },
-                    { key: 'BUS', label: 'AC Bus / Coach' },
-                    { key: 'BIKE', label: 'Bike Expedition' },
+                    { key: 'ALL', labelKey: 'search.transportAllModes' },
+                    { key: 'BUS', labelKey: 'search.transportBus' },
+                    { key: 'BIKE', labelKey: 'search.transportBike' },
                   ].map((tr) => {
                     const isSelected = selectedTransport === tr.key;
                     return (
@@ -1097,9 +1180,12 @@ function SearchScreen() {
                             borderColor: isSelected ? C.accent : C.cardBorder,
                           },
                         ]}
+                        accessibilityRole="button"
+                        accessibilityLabel={t(tr.labelKey)}
+                        accessibilityState={{ selected: isSelected }}
                       >
                         <Text style={[styles.filterSelectChipText, { color: isSelected ? '#FFF' : C.text }]}>
-                          {tr.label}
+                          {t(tr.labelKey)}
                         </Text>
                       </TouchableOpacity>
                     );
@@ -1109,20 +1195,23 @@ function SearchScreen() {
 
               {/* Section 5: SPECIAL PREFERENCES */}
               <View style={styles.filterSection}>
-                <Text style={[styles.filterSectionTitle, { color: C.textSecondary }]}>PREFERENCES & HOSTING</Text>
+                <Text style={[styles.filterSectionTitle, { color: C.textSecondary }]}>{t('search.preferencesAndHosting')}</Text>
 
                 {/* Switch 1: Verified Hosts Only */}
                 <TouchableOpacity
                   activeOpacity={0.8}
                   style={[styles.prefToggleRow, { backgroundColor: C.border }]}
                   onPress={() => setVerifiedOnly(!verifiedOnly)}
+                  accessibilityRole="switch"
+                  accessibilityLabel={t('search.verifiedOrganizersOnly')}
+                  accessibilityState={{ checked: verifiedOnly }}
                 >
                   <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
                     <Shield size={18} color={C.accent} style={{ marginRight: 10 }} />
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.prefToggleTitle, { color: C.text }]}>Verified Organizers Only</Text>
+                      <Text style={[styles.prefToggleTitle, { color: C.text }]}>{t('search.verifiedOrganizersOnly')}</Text>
                       <Text style={[styles.prefToggleSub, { color: C.textSecondary }]}>
-                        Only show background-verified group leaders
+                        {t('search.verifiedOrganizersOnlySub')}
                       </Text>
                     </View>
                   </View>
@@ -1141,13 +1230,16 @@ function SearchScreen() {
                   activeOpacity={0.8}
                   style={[styles.prefToggleRow, { backgroundColor: C.border, marginTop: 8 }]}
                   onPress={() => setGuideRequired(!guideRequired)}
+                  accessibilityRole="switch"
+                  accessibilityLabel={t('search.certifiedGuideIncluded')}
+                  accessibilityState={{ checked: guideRequired }}
                 >
                   <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
                     <UserCheck size={18} color="#10B981" style={{ marginRight: 10 }} />
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.prefToggleTitle, { color: C.text }]}>Certified Guide Included</Text>
+                      <Text style={[styles.prefToggleTitle, { color: C.text }]}>{t('search.certifiedGuideIncluded')}</Text>
                       <Text style={[styles.prefToggleSub, { color: C.textSecondary }]}>
-                        Trips with expert local travel guide on board
+                        {t('search.certifiedGuideIncludedSub')}
                       </Text>
                     </View>
                   </View>
@@ -1166,13 +1258,16 @@ function SearchScreen() {
                   activeOpacity={0.8}
                   style={[styles.prefToggleRow, { backgroundColor: C.border, marginTop: 8 }]}
                   onPress={() => setMidwayOnly(!midwayOnly)}
+                  accessibilityRole="switch"
+                  accessibilityLabel={t('search.midwaySegmentJoin')}
+                  accessibilityState={{ checked: midwayOnly }}
                 >
                   <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
                     <MapPin size={18} color="#F59E0B" style={{ marginRight: 10 }} />
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.prefToggleTitle, { color: C.text }]}>Midway Segment Join Available</Text>
+                      <Text style={[styles.prefToggleTitle, { color: C.text }]}>{t('search.midwaySegmentJoin')}</Text>
                       <Text style={[styles.prefToggleSub, { color: C.textSecondary }]}>
-                        Allows joining route from intermediate cities
+                        {t('search.midwaySegmentJoinSub')}
                       </Text>
                     </View>
                   </View>
@@ -1194,6 +1289,8 @@ function SearchScreen() {
                 style={styles.applyFilterBtn}
                 activeOpacity={0.85}
                 onPress={() => setShowFilterModal(false)}
+                accessibilityRole="button"
+                accessibilityLabel={t('search.applyPreferences', { count: filteredTrips.length })}
               >
                 <LinearGradient
                   colors={['#0047C4', '#0066FF', '#00D0FF']}
@@ -1202,7 +1299,7 @@ function SearchScreen() {
                   style={styles.applyFilterBtnGradient}
                 >
                   <Text style={styles.applyFilterBtnText}>
-                    Apply Preferences ({filteredTrips.length} {filteredTrips.length === 1 ? 'Trip' : 'Trips'})
+                    {t('search.applyPreferences', { count: filteredTrips.length })}
                   </Text>
                 </LinearGradient>
               </TouchableOpacity>
