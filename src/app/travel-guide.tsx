@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { logger } from '@/lib/logger';
 import {
   ActivityIndicator,
@@ -86,6 +87,47 @@ interface UploadedMedia {
   date: string;
 }
 
+const TRANSIT_MODE_LABEL_KEYS: Record<'BIKE' | 'CAR' | 'TRAIN' | 'PLANE', string> = {
+  BIKE: 'travelGuide.modeBike',
+  CAR: 'travelGuide.modeCarSuv',
+  TRAIN: 'travelGuide.modeTrain',
+  PLANE: 'travelGuide.modeFlight',
+};
+
+const CROWD_LABEL_KEYS: Record<'LOW' | 'MODERATE' | 'HIGH' | 'CRITICAL', string> = {
+  LOW: 'travelGuide.crowdLow',
+  MODERATE: 'travelGuide.crowdModerate',
+  HIGH: 'travelGuide.crowdHigh',
+  CRITICAL: 'travelGuide.crowdCritical',
+};
+
+const AQI_LABEL_KEYS: Record<'EXCELLENT' | 'GOOD' | 'POOR' | 'HAZARDOUS', string> = {
+  EXCELLENT: 'travelGuide.aqiExcellent',
+  GOOD: 'travelGuide.aqiGood',
+  POOR: 'travelGuide.aqiPoor',
+  HAZARDOUS: 'travelGuide.aqiHazardous',
+};
+
+const ALERT_TYPE_LABEL_KEYS: Record<string, string> = {
+  DANGER: 'travelGuide.alertTypeDanger',
+  WARNING: 'travelGuide.alertTypeWarning',
+  INFO: 'travelGuide.alertTypeInfo',
+};
+
+const LEAD_STATUS_LABEL_KEYS: Record<string, string> = {
+  PENDING: 'travelGuide.statusPending',
+  APPROVED: 'travelGuide.statusApproved',
+  REJECTED: 'travelGuide.statusRejected',
+};
+
+const BUDGET_CATEGORY_LABEL_KEYS: Record<string, string> = {
+  Transport: 'travelGuide.budgetCategoryTransport',
+  Food: 'travelGuide.budgetCategoryFood',
+  Lodging: 'travelGuide.budgetCategoryLodging',
+  'Guide Fee': 'travelGuide.budgetCategoryGuideFee',
+  Misc: 'travelGuide.budgetCategoryMisc',
+};
+
 interface WeatherData {
   city: string;
   temp: string;
@@ -101,6 +143,7 @@ interface WeatherData {
 }
 
 export default function TravelGuideScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const { profile } = useApp();
   const confirm = useConfirm();
@@ -277,7 +320,7 @@ export default function TravelGuideScreen() {
 
   const handleSavePackage = async () => {
     if (!pkgTitle || !pkgPrice || !pkgDuration) {
-      toast('Title, Price, and Duration are required fields.', 'error');
+      toast(t('travelGuide.packageFieldsRequired'), 'error');
       return;
     }
     if (!guideProfile) return;
@@ -296,37 +339,37 @@ export default function TravelGuideScreen() {
     try {
       if (editingPackage) {
         await apiService.updateGuidePackage(guideProfile.id, editingPackage.id, payload);
-        toast('Package updated successfully!', 'success');
+        toast(t('travelGuide.packageUpdated'), 'success');
       } else {
         await apiService.createGuidePackage(guideProfile.id, payload);
-        toast('Package created successfully!', 'success');
+        toast(t('travelGuide.packageCreated'), 'success');
       }
       setPkgModalVisible(false);
       fetchPackages(guideProfile.id);
     } catch {
-      toast('Failed to save package details.', 'error');
+      toast(t('travelGuide.failedToSavePackage'), 'error');
     }
   };
 
   const handleDeletePackage = async (pkgId: string) => {
     if (!guideProfile) return;
     const ok = await confirm({
-      title: 'Delete Package',
-      message: 'Delete this package permanently? This cannot be undone.',
-      confirmLabel: 'Delete',
+      title: t('travelGuide.deletePackageTitle'),
+      message: t('travelGuide.deletePackageMessage'),
+      confirmLabel: t('travelGuide.delete'),
       destructive: true,
     });
     if (!ok) return;
     try {
       await apiService.deleteGuidePackage(guideProfile.id, pkgId);
       fetchPackages(guideProfile.id);
-      toast('Package deleted.', 'success');
+      toast(t('travelGuide.packageDeleted'), 'success');
     } catch (e) {
       // Previously `catch {}` around an Alert — the underlying error was
       // discarded entirely, so a 403 and a network drop looked identical
       // (docs/REMEDIATION.md §0.3).
       logger.warn('[TravelGuide] Delete package failed:', e);
-      toast(errorToastMessage(e, 'Could not delete that package.'), 'error');
+      toast(errorToastMessage(e, t('travelGuide.couldNotDeletePackage')), 'error');
     }
   };
 
@@ -338,7 +381,7 @@ export default function TravelGuideScreen() {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        toast('Permission Required — Please allow photo library access to upload reels.', 'error');
+        toast(t('travelGuide.galleryPermissionRequiredReels'), 'error');
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -357,7 +400,7 @@ export default function TravelGuideScreen() {
         setSelectedVideoUri(publicUrl);
       } catch (uploadErr) {
         logger.warn('[TravelGuide] Video upload failed:', uploadErr);
-        toast(errorToastMessage(uploadErr, 'Could not upload that video. Please try again.'), 'error');
+        toast(errorToastMessage(uploadErr, t('travelGuide.couldNotUploadVideo')), 'error');
       } finally {
         setMediaUploading(false);
       }
@@ -435,7 +478,7 @@ export default function TravelGuideScreen() {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        toast('Permission Required — Please allow photo library access to pick a photo.', 'error');
+        toast(t('travelGuide.galleryPermissionRequiredPhoto'), 'error');
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -456,7 +499,7 @@ export default function TravelGuideScreen() {
         onUploaded(publicUrl);
       } catch (uploadErr) {
         logger.warn('[TravelGuide] Photo upload failed:', uploadErr);
-        toast(errorToastMessage(uploadErr, 'Could not upload that photo. Please try again.'), 'error');
+        toast(errorToastMessage(uploadErr, t('travelGuide.couldNotUploadPhoto')), 'error');
       } finally {
         setMediaUploading(false);
       }
@@ -470,15 +513,15 @@ export default function TravelGuideScreen() {
 
   const handlePublishMedia = async () => {
     if (!mediaTitle.trim() || !mediaLocation.trim()) {
-      toast('Please fill in the title and location tags.', 'error');
+      toast(t('travelGuide.fillTitleLocation'), 'error');
       return;
     }
     if (uploadCategory === 'REEL' && !selectedVideoUri) {
-      toast('No Video Selected — Pick a video to publish a reel.', 'error');
+      toast(t('travelGuide.noVideoSelected'), 'error');
       return;
     }
     if (uploadCategory === 'STORY' && !selectedCoverImage) {
-      toast('No Photo Selected — Pick a cover photo to publish a story.', 'error');
+      toast(t('travelGuide.noPhotoSelected'), 'error');
       return;
     }
     if (!guideProfile) return;
@@ -520,7 +563,7 @@ export default function TravelGuideScreen() {
         location: mediaLocation.trim(),
         price: uploadTheme === 'PRICING' ? (mediaPrice.trim() ? `₹${mediaPrice.trim()}/Day` : undefined) : undefined,
         likes: 0,
-        date: 'Just Now',
+        date: t('travelGuide.justNow'),
       };
       setActiveMedia([newItem, ...activeMedia]);
 
@@ -533,10 +576,13 @@ export default function TravelGuideScreen() {
       setSelectedCoverImage(null);
       setSelectedThumbnailUri(null);
       setSelectedVideoUri(null);
-      toast(`Published! — Your ${uploadCategory.toLowerCase()} has been uploaded and is now visible to all tourists in their feed.`, 'success');
+      toast(
+        uploadCategory === 'STORY' ? t('travelGuide.publishedStory') : t('travelGuide.publishedReel'),
+        'success',
+      );
     } catch (e) {
       logger.warn('[TravelGuide] Publish media failed:', e);
-      toast(errorToastMessage(e, 'Could not publish your content. Please try again.'), 'error');
+      toast(errorToastMessage(e, t('travelGuide.couldNotPublishContent')), 'error');
     }
   };
 
@@ -567,7 +613,7 @@ export default function TravelGuideScreen() {
 
   const handleAddDay = () => {
     if (!newDayTitle.trim() || !newDayDesc.trim()) {
-      toast('Please add both a Day Title and Activities.', 'error');
+      toast(t('travelGuide.addDayTitleActivities'), 'error');
       return;
     }
     const nextDayNum = itineraryDays.length + 1;
@@ -581,7 +627,7 @@ export default function TravelGuideScreen() {
     setItineraryDays([...itineraryDays, newDay]);
     setNewDayTitle('');
     setNewDayDesc('');
-    toast(`Day ${nextDayNum} added to itinerary.`, 'success');
+    toast(t('travelGuide.dayAddedToItinerary', { number: nextDayNum }), 'success');
   };
 
   // Time Estimator
@@ -594,7 +640,7 @@ export default function TravelGuideScreen() {
   const calculateEstimation = () => {
     const distanceVal = parseFloat(estDist);
     if (!estFrom.trim() || !estTo.trim() || isNaN(distanceVal) || distanceVal <= 0) {
-      toast('Please provide valid starting location, destination and distance.', 'error');
+      toast(t('travelGuide.provideValidRoute'), 'error');
       return;
     }
 
@@ -617,7 +663,13 @@ export default function TravelGuideScreen() {
 
     const timeString = `${hours > 0 ? `${hours}h ` : ''}${minutes}m`;
     setEstimationResult(
-      `Estimated transit duration from ${estFrom.trim()} to ${estTo.trim()} (${distanceVal} km) via ${estMode} is ${timeString} (includes standard buffer logs).`,
+      t('travelGuide.estimationResultText', {
+        from: estFrom.trim(),
+        to: estTo.trim(),
+        distance: distanceVal,
+        mode: t(TRANSIT_MODE_LABEL_KEYS[estMode]),
+        time: timeString,
+      }),
     );
   };
 
@@ -640,7 +692,7 @@ export default function TravelGuideScreen() {
 
     const total = tr + fd + ld + gd + ms;
     if (total === 0) {
-      toast('Zero Cost — Please enter some amounts to calculate budget.', 'error');
+      toast(t('travelGuide.zeroCostError'), 'error');
       return;
     }
 
@@ -726,7 +778,7 @@ export default function TravelGuideScreen() {
   };
 
   const handleBookingRedirect = (accomName: string) => {
-    toast(`Partner Redirection — Redirecting you to our external booking partner dashboard to confirm reservation for "${accomName}"...`, 'info');
+    toast(t('travelGuide.partnerRedirection', { name: accomName }), 'info');
   };
 
   // ────────────────────────────────────────────────────────
@@ -738,9 +790,9 @@ export default function TravelGuideScreen() {
   const weatherLocations: WeatherData[] = liveWeatherData
     ? [
         {
-          city: 'Guide Location',
+          city: t('travelGuide.guideLocationFallback'),
           temp: liveWeatherData.temp || '—',
-          condition: liveWeatherData.condition || 'Loading...',
+          condition: liveWeatherData.condition || t('travelGuide.loadingEllipsis'),
           wind: liveWeatherData.windSpeed || '— km/h',
           sunrise: '05:30 AM',
           sunset: '07:00 PM',
@@ -753,9 +805,9 @@ export default function TravelGuideScreen() {
       ]
     : [
         {
-          city: 'Loading...',
+          city: t('travelGuide.loadingEllipsis'),
           temp: '—',
-          condition: 'Fetching weather data...',
+          condition: t('travelGuide.fetchingWeatherData'),
           wind: '—',
           sunrise: '—',
           sunset: '—',
@@ -779,37 +831,37 @@ export default function TravelGuideScreen() {
     const dialable = phone.replace(/[^\d+]/g, '');
     Linking.openURL(`tel:${dialable}`).catch((e: unknown) => {
       logger.warn('[TravelGuide] Failed to open the phone dialer:', e);
-      toast(`Could not open the dialer. Please dial ${phone} for ${name}.`, 'error');
+      toast(t('travelGuide.couldNotOpenDialerFor', { phone, name }), 'error');
     });
   };
 
   // Static helpline contacts (always shown)
   const emergencyContacts = [
     {
-      title: 'National Tourist Helpline',
+      titleKey: 'travelGuide.contactNationalTouristHelpline',
       phone: '1800-11-1363',
-      description: 'Toll-free 24/7 assistance in 12 languages',
+      descKey: 'travelGuide.contactNationalTouristHelplineDesc',
       color: C.blue,
       Icon: PhoneCall,
     },
     {
-      title: 'Police Emergency Response',
+      titleKey: 'travelGuide.contactPoliceEmergency',
       phone: '112',
-      description: 'Immediate assistance from local police',
+      descKey: 'travelGuide.contactPoliceEmergencyDesc',
       color: C.rose,
       Icon: Shield,
     },
     {
-      title: 'National Medical Helpline',
+      titleKey: 'travelGuide.contactNationalMedicalHelpline',
       phone: '102',
-      description: 'Ambulance service and hospital updates',
+      descKey: 'travelGuide.contactNationalMedicalHelplineDesc',
       color: C.green,
       Icon: HeartPulse,
     },
     {
-      title: 'State Disaster Alert Desk',
+      titleKey: 'travelGuide.contactStateDisasterDesk',
       phone: '1070',
-      description: 'Landslide, rainfall, and weather alerts',
+      descKey: 'travelGuide.contactStateDisasterDeskDesc',
       color: C.amber,
       Icon: AlertTriangle,
     },
@@ -821,10 +873,13 @@ export default function TravelGuideScreen() {
       ? sosAlerts.map((a: any) => ({
           id: a.id,
           type: a.status === 'ACTIVE' ? 'DANGER' : 'INFO',
-          location: `Lat: ${a.latitude?.toFixed(4)}, Lon: ${a.longitude?.toFixed(4)}`,
-          message: `SOS Alert from ${a.userName || 'User'} at ${a.timestamp || 'Unknown time'}. Emergency assistance dispatched.`,
+          location: t('travelGuide.sosAlertLocation', { lat: a.latitude?.toFixed(4), lon: a.longitude?.toFixed(4) }),
+          message: t('travelGuide.sosAlertMessage', {
+            name: a.userName || t('travelGuide.unknownUser'),
+            time: a.timestamp || t('travelGuide.unknownTime'),
+          }),
         }))
-      : [{ id: 'empty', type: 'INFO', location: 'All Clear', message: 'No active SOS alerts. Your area is safe.' }];
+      : [{ id: 'empty', type: 'INFO', location: t('travelGuide.allClear'), message: t('travelGuide.noActiveSosAlerts') }];
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
@@ -848,12 +903,14 @@ export default function TravelGuideScreen() {
               }
             }}
             style={styles.backBtn}
+            accessibilityRole="button"
+            accessibilityLabel={t('travelGuide.goBack')}
           >
             <ArrowLeft size={18} color={C.white} />
           </TouchableOpacity>
           <View style={styles.headerTitleWrap}>
-            <Text style={styles.headerTitle}>Tourist Guide Portal</Text>
-            <Text style={styles.headerSub}>Certified Local Expert Dashboard</Text>
+            <Text style={styles.headerTitle}>{t('travelGuide.headerTitle')}</Text>
+            <Text style={styles.headerSub}>{t('travelGuide.headerSub')}</Text>
           </View>
           <LinearGradient
             colors={['#10B981', '#059669']}
@@ -862,7 +919,7 @@ export default function TravelGuideScreen() {
             end={{ x: 1, y: 1 }}
           >
             <Shield size={11} color={C.white} strokeWidth={2.5} />
-            <Text style={styles.badgeOfficialText}>VERIFIED</Text>
+            <Text style={styles.badgeOfficialText}>{t('travelGuide.verifiedBadge')}</Text>
           </LinearGradient>
         </View>
 
@@ -870,11 +927,11 @@ export default function TravelGuideScreen() {
         <View style={styles.tabBarContainer}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabBarScroll}>
             {[
-              { key: 'leads', label: 'Hub & Earnings', Icon: TrendingUp },
-              { key: 'upload', label: 'Upload Reels', Icon: UploadCloud },
-              { key: 'planning', label: 'Guidance', Icon: Compass },
-              { key: 'weather', label: 'Live Info', Icon: Sun },
-              { key: 'safety', label: 'Safety Desk', Icon: ShieldAlert },
+              { key: 'leads', labelKey: 'travelGuide.tabHubEarnings', Icon: TrendingUp },
+              { key: 'upload', labelKey: 'travelGuide.tabUploadReels', Icon: UploadCloud },
+              { key: 'planning', labelKey: 'travelGuide.tabGuidance', Icon: Compass },
+              { key: 'weather', labelKey: 'travelGuide.tabLiveInfo', Icon: Sun },
+              { key: 'safety', labelKey: 'travelGuide.tabSafetyDesk', Icon: ShieldAlert },
             ].map((tab) => {
               const isActive = activeTab === tab.key;
               return (
@@ -883,9 +940,12 @@ export default function TravelGuideScreen() {
                   style={[styles.tabItem, isActive && styles.tabItemActive]}
                   onPress={() => setActiveTab(tab.key as any)}
                   activeOpacity={0.85}
+                  accessibilityRole="tab"
+                  accessibilityLabel={t(tab.labelKey)}
+                  accessibilityState={{ selected: isActive }}
                 >
                   <tab.Icon size={14} color={isActive ? C.white : C.textSec} strokeWidth={isActive ? 2.5 : 1.8} />
-                  <Text style={[styles.tabLabel, { color: isActive ? C.white : C.textSec }]}>{tab.label}</Text>
+                  <Text style={[styles.tabLabel, { color: isActive ? C.white : C.textSec }]}>{t(tab.labelKey)}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -909,7 +969,7 @@ export default function TravelGuideScreen() {
               <View style={styles.walletCardAccent} />
               <View style={styles.walletHeader}>
                 <View>
-                  <Text style={styles.walletLabel}>TOTAL WALLET BALANCE</Text>
+                  <Text style={styles.walletLabel}>{t('travelGuide.totalWalletBalance')}</Text>
                   <View style={styles.amountRow}>
                     <Text style={styles.rupeeSign}>₹</Text>
                     <Text style={styles.walletBalance}>
@@ -925,21 +985,21 @@ export default function TravelGuideScreen() {
 
               <View style={styles.statsRow}>
                 <View style={styles.statBox}>
-                  <Text style={styles.statLabel}>Active Leads</Text>
+                  <Text style={styles.statLabel}>{t('travelGuide.activeLeads')}</Text>
                   <Text style={[styles.statValue, { color: C.cyan }]}>
                     {earnings ? earnings.activeLeadsCount : leads.length}
                   </Text>
                 </View>
                 <View style={styles.statBoxVerticalDivider} />
                 <View style={styles.statBox}>
-                  <Text style={styles.statLabel}>Rating</Text>
+                  <Text style={styles.statLabel}>{t('travelGuide.rating')}</Text>
                   <Text style={[styles.statValue, { color: C.amberGlow }]}>
                     {guideProfile ? `${guideProfile.rating} ★` : '4.9 ★'}
                   </Text>
                 </View>
                 <View style={styles.statBoxVerticalDivider} />
                 <View style={styles.statBox}>
-                  <Text style={styles.statLabel}>Completed Trips</Text>
+                  <Text style={styles.statLabel}>{t('travelGuide.completedTrips')}</Text>
                   <Text style={[styles.statValue, { color: C.greenGlow }]}>
                     {earnings ? earnings.completedTripsCount : 28}
                   </Text>
@@ -947,17 +1007,17 @@ export default function TravelGuideScreen() {
               </View>
 
               {/* Earnings Mini Chart Graphic */}
-              <Text style={styles.sectionLabelInline}>Weekly Earnings Progress</Text>
+              <Text style={styles.sectionLabelInline}>{t('travelGuide.weeklyEarningsProgress')}</Text>
               <View style={styles.chartContainer}>
                 {(
                   earnings?.chartData || [
-                    { day: 'Mon', amtText: '₹1.5k', height: 40 },
-                    { day: 'Tue', amtText: '₹2.2k', height: 65 },
-                    { day: 'Wed', amtText: '₹0', height: 5 },
-                    { day: 'Thu', amtText: '₹3.5k', height: 95 },
-                    { day: 'Fri', amtText: '₹1.8k', height: 50 },
-                    { day: 'Sat', amtText: '₹4.2k', height: 110 },
-                    { day: 'Sun', amtText: '₹2.8k', height: 80 },
+                    { day: t('createTrip.weekdayMon'), amtText: '₹1.5k', height: 40 },
+                    { day: t('createTrip.weekdayTue'), amtText: '₹2.2k', height: 65 },
+                    { day: t('createTrip.weekdayWed'), amtText: '₹0', height: 5 },
+                    { day: t('createTrip.weekdayThu'), amtText: '₹3.5k', height: 95 },
+                    { day: t('createTrip.weekdayFri'), amtText: '₹1.8k', height: 50 },
+                    { day: t('createTrip.weekdaySat'), amtText: '₹4.2k', height: 110 },
+                    { day: t('createTrip.weekdaySun'), amtText: '₹2.8k', height: 80 },
                   ]
                 ).map((item: any, idx: number) => {
                   const isWeekend = idx === 5 || idx === 6;
@@ -978,17 +1038,17 @@ export default function TravelGuideScreen() {
             {/* Tourist Customers Lead Search */}
             <View style={styles.leadHeader}>
               <View>
-                <Text style={styles.subTitle}>Tourist Lead Finder</Text>
-                <Text style={styles.descSec}>Connect directly with travellers matching your expertise</Text>
+                <Text style={styles.subTitle}>{t('travelGuide.touristLeadFinder')}</Text>
+                <Text style={styles.descSec}>{t('travelGuide.connectWithTravellersDesc')}</Text>
               </View>
               <View style={styles.badgeLive}>
                 <View style={styles.liveDot} />
-                <Text style={styles.liveLabel}>LIVE FEEDS</Text>
+                <Text style={styles.liveLabel}>{t('travelGuide.liveFeeds')}</Text>
               </View>
             </View>
 
             <Input
-              placeholder="Search by state, city, tourist name..."
+              placeholder={t('travelGuide.searchLeadsPlaceholder')}
               value={searchLeadQuery}
               onChangeText={setSearchLeadQuery}
               icon={<Search size={16} color={C.textSec} />}
@@ -996,14 +1056,14 @@ export default function TravelGuideScreen() {
             />
 
             {leadsLoading ? (
-              <ScreenLoading label="Loading leads…" />
+              <ScreenLoading label={t('travelGuide.loadingLeads')} />
             ) : filteredLeads.length === 0 ? (
               <ScreenEmpty
-                title="No Matching Leads"
+                title={t('travelGuide.noMatchingLeadsTitle')}
                 message={
                   leads.length === 0
-                    ? 'No tourist requests match your expertise cities yet. New leads will appear here automatically.'
-                    : 'No leads match your search. Try a different keyword.'
+                    ? t('travelGuide.noLeadsYetMessage')
+                    : t('travelGuide.noLeadsMatchSearchMessage')
                 }
               />
             ) : null}
@@ -1032,7 +1092,7 @@ export default function TravelGuideScreen() {
                       </View>
                     </View>
                     <View style={styles.leadRight}>
-                      <Text style={styles.leadDays}>{lead.status}</Text>
+                      <Text style={styles.leadDays}>{t(LEAD_STATUS_LABEL_KEYS[lead.status] ?? 'travelGuide.statusPending')}</Text>
                     </View>
                   </View>
 
@@ -1040,11 +1100,10 @@ export default function TravelGuideScreen() {
                   {isSelected ? (
                     <View style={styles.quoteInputsBox}>
                       <View style={styles.quoteInputsHeader}>
-                        <Text style={styles.quoteInputLabel}>Send a Quote</Text>
+                        <Text style={styles.quoteInputLabel}>{t('travelGuide.sendAQuote')}</Text>
                       </View>
                       <Text style={styles.quoteSchedulePreview}>
-                        Propose a package price for "{lead.tripName}" — the traveler will see your bid and can accept
-                        it in chat.
+                        {t('travelGuide.proposePackagePrice', { tripName: lead.tripName })}
                       </Text>
 
                       <View style={styles.bidRow}>
@@ -1053,7 +1112,7 @@ export default function TravelGuideScreen() {
                         </View>
                         <TextInput
                           style={styles.bidInput}
-                          placeholder="Quote package budget"
+                          placeholder={t('travelGuide.quotePackageBudget')}
                           placeholderTextColor={C.textMuted}
                           keyboardType="numeric"
                           value={quoteInputs[lead.id] || ''}
@@ -1063,26 +1122,30 @@ export default function TravelGuideScreen() {
                           style={styles.sendQuoteBtn}
                           onPress={() => handleSendQuote(lead.id)}
                           activeOpacity={0.8}
+                          accessibilityRole="button"
+                          accessibilityLabel={t('travelGuide.submitQuote')}
                         >
-                          <Text style={styles.sendQuoteBtnText}>Submit Quote</Text>
+                          <Text style={styles.sendQuoteBtnText}>{t('travelGuide.submitQuote')}</Text>
                         </TouchableOpacity>
                       </View>
                     </View>
                   ) : (
                     <View style={styles.leadActionRow}>
-                      <Text style={styles.dateLabel}>Requested: {formatDate(lead.createdAt)}</Text>
+                      <Text style={styles.dateLabel}>{t('travelGuide.requestedOn', { date: formatDate(lead.createdAt) })}</Text>
                       {hasQuote ? (
                         <View style={styles.quoteSentTag}>
                           <CheckCircle size={11} color={C.greenGlow} />
-                          <Text style={styles.quoteSentTagText}>Quote Sent</Text>
+                          <Text style={styles.quoteSentTagText}>{t('travelGuide.quoteSent')}</Text>
                         </View>
                       ) : (
                         <TouchableOpacity
                           style={styles.applyLeadBtn}
                           onPress={() => setSelectedLeadId(lead.id)}
                           activeOpacity={0.7}
+                          accessibilityRole="button"
+                          accessibilityLabel={t('travelGuide.quoteTrip')}
                         >
-                          <Text style={styles.applyLeadBtnText}>Quote Trip</Text>
+                          <Text style={styles.applyLeadBtnText}>{t('travelGuide.quoteTrip')}</Text>
                         </TouchableOpacity>
                       )}
                     </View>
@@ -1099,21 +1162,24 @@ export default function TravelGuideScreen() {
         {activeTab === 'upload' && (
           <View>
             <View style={styles.cardHeader}>
-              <Text style={styles.subTitle}>Broadcaster Panel</Text>
-              <Text style={styles.descSec}>Upload high-fidelity stories and price guides to local discovery feeds</Text>
+              <Text style={styles.subTitle}>{t('travelGuide.broadcasterPanel')}</Text>
+              <Text style={styles.descSec}>{t('travelGuide.broadcasterPanelDesc')}</Text>
             </View>
 
             <View style={styles.uploadOptionsBox}>
-              <Text style={styles.formInputLabel}>Content Format</Text>
+              <Text style={styles.formInputLabel}>{t('travelGuide.contentFormat')}</Text>
               <View style={styles.selectorRow}>
                 <TouchableOpacity
                   style={[styles.selectorBtn, uploadCategory === 'STORY' && styles.selectorBtnActive]}
                   onPress={() => setUploadCategory('STORY')}
                   activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('travelGuide.quickStory')}
+                  accessibilityState={{ selected: uploadCategory === 'STORY' }}
                 >
                   <ImageIcon size={15} color={uploadCategory === 'STORY' ? C.white : C.textSec} />
                   <Text style={[styles.selectorLabelText, { color: uploadCategory === 'STORY' ? C.white : C.textSec }]}>
-                    Quick Story
+                    {t('travelGuide.quickStory')}
                   </Text>
                 </TouchableOpacity>
 
@@ -1121,24 +1187,30 @@ export default function TravelGuideScreen() {
                   style={[styles.selectorBtn, uploadCategory === 'REEL' && styles.selectorBtnActive]}
                   onPress={() => setUploadCategory('REEL')}
                   activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('travelGuide.travelReel')}
+                  accessibilityState={{ selected: uploadCategory === 'REEL' }}
                 >
                   <Video size={15} color={uploadCategory === 'REEL' ? C.white : C.textSec} />
                   <Text style={[styles.selectorLabelText, { color: uploadCategory === 'REEL' ? C.white : C.textSec }]}>
-                    Travel Reel
+                    {t('travelGuide.travelReel')}
                   </Text>
                 </TouchableOpacity>
               </View>
 
-              <Text style={styles.formInputLabel}>Category Theme</Text>
+              <Text style={styles.formInputLabel}>{t('travelGuide.categoryTheme')}</Text>
               <View style={styles.selectorRow}>
                 <TouchableOpacity
                   style={[styles.selectorBtnAlt, uploadTheme === 'LOCATION' && styles.selectorBtnAltActive]}
                   onPress={() => setUploadTheme('LOCATION')}
                   activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('travelGuide.touristSpot')}
+                  accessibilityState={{ selected: uploadTheme === 'LOCATION' }}
                 >
                   <Compass size={13} color={uploadTheme === 'LOCATION' ? C.white : C.textSec} />
                   <Text style={[styles.selectorLabelText, { color: uploadTheme === 'LOCATION' ? C.white : C.textSec }]}>
-                    Tourist Spot
+                    {t('travelGuide.touristSpot')}
                   </Text>
                 </TouchableOpacity>
 
@@ -1146,26 +1218,29 @@ export default function TravelGuideScreen() {
                   style={[styles.selectorBtnAlt, uploadTheme === 'PRICING' && styles.selectorBtnAltActive]}
                   onPress={() => setUploadTheme('PRICING')}
                   activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('travelGuide.pricePackages')}
+                  accessibilityState={{ selected: uploadTheme === 'PRICING' }}
                 >
                   <FileText size={13} color={uploadTheme === 'PRICING' ? C.white : C.textSec} />
                   <Text style={[styles.selectorLabelText, { color: uploadTheme === 'PRICING' ? C.white : C.textSec }]}>
-                    Price Packages
+                    {t('travelGuide.pricePackages')}
                   </Text>
                 </TouchableOpacity>
               </View>
 
               {/* Form inputs */}
               <Input
-                label="Caption & Description"
-                placeholder="Give a catchy title..."
+                label={t('travelGuide.captionDescription')}
+                placeholder={t('travelGuide.captionPlaceholder')}
                 value={mediaTitle}
                 onChangeText={setMediaTitle}
                 containerStyle={styles.formFieldGap}
               />
 
               <Input
-                label="Location Tag"
-                placeholder="e.g. Amer Fort, Jaipur"
+                label={t('travelGuide.locationTag')}
+                placeholder={t('travelGuide.locationTagPlaceholder')}
                 value={mediaLocation}
                 onChangeText={setMediaLocation}
                 containerStyle={styles.formFieldGap}
@@ -1173,8 +1248,8 @@ export default function TravelGuideScreen() {
 
               {uploadTheme === 'PRICING' && (
                 <Input
-                  label="Trip Package Price List (₹ / Day)"
-                  placeholder="e.g. 2500"
+                  label={t('travelGuide.tripPackagePriceList')}
+                  placeholder={t('travelGuide.tripPackagePricePlaceholder')}
                   keyboardType="numeric"
                   value={mediaPrice}
                   onChangeText={setMediaPrice}
@@ -1187,7 +1262,7 @@ export default function TravelGuideScreen() {
                   "gallery". STORY needs a cover photo; REEL needs a video
                   and, optionally, a thumbnail. */}
               <Text style={styles.formInputLabel}>
-                {uploadCategory === 'STORY' ? 'Cover Photo' : 'Video & Thumbnail'}
+                {uploadCategory === 'STORY' ? t('travelGuide.coverPhoto') : t('travelGuide.videoAndThumbnail')}
               </Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.galleryPreviewScroll}>
                 {uploadCategory === 'REEL' && (
@@ -1200,10 +1275,12 @@ export default function TravelGuideScreen() {
                     onPress={handlePickVideo}
                     activeOpacity={0.8}
                     disabled={mediaUploading}
+                    accessibilityRole="button"
+                    accessibilityLabel={selectedVideoUri ? t('travelGuide.videoSelected') : t('travelGuide.pickVideo')}
                   >
                     <Video size={24} color={selectedVideoUri ? C.green : C.blueGlow} style={{ alignSelf: 'center' }} />
                     <Text style={{ fontSize: 12, color: C.textSec, marginTop: 4, textAlign: 'center' }}>
-                      {selectedVideoUri ? 'Video Selected' : 'Pick Video'}
+                      {selectedVideoUri ? t('travelGuide.videoSelected') : t('travelGuide.pickVideo')}
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -1218,6 +1295,8 @@ export default function TravelGuideScreen() {
                   onPress={uploadCategory === 'STORY' ? pickCoverImage : pickThumbnail}
                   activeOpacity={0.8}
                   disabled={mediaUploading}
+                  accessibilityRole="button"
+                  accessibilityLabel={uploadCategory === 'STORY' ? t('travelGuide.pickCoverPhoto') : t('travelGuide.pickThumbnail')}
                 >
                   {(uploadCategory === 'STORY' ? selectedCoverImage : selectedThumbnailUri) ? (
                     <Image
@@ -1228,7 +1307,7 @@ export default function TravelGuideScreen() {
                     <>
                       <ImageIcon size={24} color={C.blueGlow} style={{ alignSelf: 'center' }} />
                       <Text style={{ fontSize: 12, color: C.textSec, marginTop: 4, textAlign: 'center' }}>
-                        {uploadCategory === 'STORY' ? 'Pick Cover Photo' : 'Pick Thumbnail'}
+                        {uploadCategory === 'STORY' ? t('travelGuide.pickCoverPhoto') : t('travelGuide.pickThumbnail')}
                       </Text>
                     </>
                   )}
@@ -1251,24 +1330,26 @@ export default function TravelGuideScreen() {
                 activeOpacity={0.8}
                 onPress={handlePublishMedia}
                 disabled={mediaUploading}
+                accessibilityRole="button"
+                accessibilityLabel={t('travelGuide.publishBroadcast')}
               >
                 <Camera size={16} color={C.white} />
-                <Text style={styles.publishBtnText}>{mediaUploading ? 'Uploading…' : 'Publish Broadcast'}</Text>
+                <Text style={styles.publishBtnText}>{mediaUploading ? t('travelGuide.uploading') : t('travelGuide.publishBroadcast')}</Text>
               </TouchableOpacity>
             </View>
 
             {/* Active Feed Uploads */}
-            <Text style={styles.subTitle}>Live Stories Feed</Text>
+            <Text style={styles.subTitle}>{t('travelGuide.liveStoriesFeed')}</Text>
             <View style={styles.uploadsGrid}>
               {(reels.length > 0
                 ? reels.map((r) => ({
                     id: r.id,
                     type: 'REEL',
-                    title: r.caption || 'Travel Reel Vlog',
+                    title: r.caption || t('travelGuide.travelReelVlogFallback'),
                     image: r.thumbnailUrl || 'https://images.unsplash.com/photo-1548013146-72479768bada?w=300',
-                    location: 'Guided Tour Route',
+                    location: t('travelGuide.guidedTourRouteFallback'),
                     likes: r.likesCount,
-                    date: 'Just Now',
+                    date: t('travelGuide.justNow'),
                     price: undefined,
                   }))
                 : activeMedia
@@ -1277,7 +1358,9 @@ export default function TravelGuideScreen() {
                   <Image source={{ uri: media.image }} style={styles.uploadCardImg} />
                   <View style={styles.uploadCardOverlay}>
                     <View style={styles.badgeCategory}>
-                      <Text style={styles.badgeCategoryText}>{media.type}</Text>
+                      <Text style={styles.badgeCategoryText}>
+                        {media.type === 'REEL' ? t('travelGuide.mediaTypeReel') : t('travelGuide.mediaTypeStory')}
+                      </Text>
                     </View>
                     {media.price && (
                       <View style={[styles.badgeCategory, { backgroundColor: C.amber }]}>
@@ -1298,7 +1381,7 @@ export default function TravelGuideScreen() {
                     <View style={styles.uploadCardLikesRow}>
                       <TrendingUp size={9} color={C.green} />
                       <Text style={styles.uploadCardLikes}>
-                        {media.likes} Views • {media.date}
+                        {t('travelGuide.viewsCount', { count: media.likes, date: media.date })}
                       </Text>
                     </View>
                   </View>
@@ -1315,10 +1398,10 @@ export default function TravelGuideScreen() {
           <View>
             <View style={styles.plannerSubTabs}>
               {[
-                { key: 'itinerary', label: 'Itinerary', Icon: Calendar },
-                { key: 'estimator', label: 'Time Estimator', Icon: Clock },
-                { key: 'budget', label: 'Budget Plan', Icon: Calculator },
-                { key: 'lodging', label: 'Accommodations', Icon: Hotel },
+                { key: 'itinerary', labelKey: 'travelGuide.subtabItinerary', Icon: Calendar },
+                { key: 'estimator', labelKey: 'travelGuide.subtabTimeEstimator', Icon: Clock },
+                { key: 'budget', labelKey: 'travelGuide.subtabBudgetPlan', Icon: Calculator },
+                { key: 'lodging', labelKey: 'travelGuide.subtabAccommodations', Icon: Hotel },
               ].map((sTab) => {
                 const isSubActive = plannerTab === sTab.key;
                 return (
@@ -1327,9 +1410,12 @@ export default function TravelGuideScreen() {
                     style={[styles.plannerSubTabItem, isSubActive && styles.plannerSubTabItemActive]}
                     onPress={() => setPlannerTab(sTab.key as any)}
                     activeOpacity={0.8}
+                    accessibilityRole="tab"
+                    accessibilityLabel={t(sTab.labelKey)}
+                    accessibilityState={{ selected: isSubActive }}
                   >
                     <Text style={[styles.plannerSubTabLabel, { color: isSubActive ? C.blueGlow : C.textSec }]}>
-                      {sTab.label}
+                      {t(sTab.labelKey)}
                     </Text>
                     {isSubActive && <View style={styles.plannerSubTabIndicator} />}
                   </TouchableOpacity>
@@ -1349,8 +1435,8 @@ export default function TravelGuideScreen() {
                   }}
                 >
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.subTitle}>My Guided Tour Packages</Text>
-                    <Text style={styles.descSec}>Manage packages offered to travellers looking for local guiding</Text>
+                    <Text style={styles.subTitle}>{t('travelGuide.myGuidedTourPackages')}</Text>
+                    <Text style={styles.descSec}>{t('travelGuide.managePackagesDesc')}</Text>
                   </View>
                   <TouchableOpacity
                     style={[styles.addDayBtn, { width: 120, height: 35, marginTop: 0 }]}
@@ -1363,16 +1449,18 @@ export default function TravelGuideScreen() {
                       setPkgCities('');
                       setPkgModalVisible(true);
                     }}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('travelGuide.addPackage')}
                   >
                     <Plus size={12} color={C.white} />
-                    <Text style={styles.addDayBtnText}>Add Package</Text>
+                    <Text style={styles.addDayBtnText}>{t('travelGuide.addPackage')}</Text>
                   </TouchableOpacity>
                 </View>
 
                 {packages.length === 0 ? (
                   <ScreenEmpty
-                    title="No Packages Listed"
-                    message="Create a package to display your services and pricing guides."
+                    title={t('travelGuide.noPackagesListedTitle')}
+                    message={t('travelGuide.noPackagesListedMessage')}
                   />
                 ) : (
                   <View style={{ gap: 12 }}>
@@ -1395,7 +1483,10 @@ export default function TravelGuideScreen() {
                           <Text style={[styles.leadBudget, { color: C.greenGlow }]}>₹{pkg.price}</Text>
                         </View>
                         <Text style={[styles.descSec, { marginTop: 4, color: C.textSec }]}>
-                          {pkg.durationDays} Days • {pkg.citiesIncluded?.join(', ') || 'Various Locations'}
+                          {t('travelGuide.packageDaysCities', {
+                            days: pkg.durationDays,
+                            cities: pkg.citiesIncluded?.join(', ') || t('travelGuide.variousLocations'),
+                          })}
                         </Text>
                         <Text style={[styles.leadDesc, { marginTop: 8, color: 'rgba(255,255,255,0.8)' }]}>
                           {pkg.description}
@@ -1415,8 +1506,10 @@ export default function TravelGuideScreen() {
                               setPkgCities(pkg.citiesIncluded?.join(', ') || '');
                               setPkgModalVisible(true);
                             }}
+                            accessibilityRole="button"
+                            accessibilityLabel={t('travelGuide.edit')}
                           >
-                            <Text style={[styles.applyLeadBtnText, { color: C.white }]}>Edit</Text>
+                            <Text style={[styles.applyLeadBtnText, { color: C.white }]}>{t('travelGuide.edit')}</Text>
                           </TouchableOpacity>
                           <TouchableOpacity
                             style={[
@@ -1429,8 +1522,10 @@ export default function TravelGuideScreen() {
                               },
                             ]}
                             onPress={() => handleDeletePackage(pkg.id)}
+                            accessibilityRole="button"
+                            accessibilityLabel={t('travelGuide.delete')}
                           >
-                            <Text style={[styles.applyLeadBtnText, { color: C.rose }]}>Delete</Text>
+                            <Text style={[styles.applyLeadBtnText, { color: C.rose }]}>{t('travelGuide.delete')}</Text>
                           </TouchableOpacity>
                         </View>
                       </View>
@@ -1442,40 +1537,40 @@ export default function TravelGuideScreen() {
                 <Sheet
                   visible={pkgModalVisible}
                   onClose={() => setPkgModalVisible(false)}
-                  title={editingPackage ? 'Edit Package' : 'Create Package'}
+                  title={editingPackage ? t('travelGuide.editPackage') : t('travelGuide.createPackage')}
                 >
                   <Input
-                    label="Package Title *"
-                    placeholder="e.g. Sikkim Highlights Tour Guide"
+                    label={t('travelGuide.packageTitleLabel')}
+                    placeholder={t('travelGuide.packageTitlePlaceholder')}
                     value={pkgTitle}
                     onChangeText={setPkgTitle}
                   />
                   <Input
-                    label="Price (₹) *"
-                    placeholder="e.g. 2500"
+                    label={t('travelGuide.packagePriceLabel')}
+                    placeholder={t('travelGuide.packagePricePlaceholder')}
                     keyboardType="numeric"
                     value={pkgPrice}
                     onChangeText={setPkgPrice}
                     containerStyle={styles.formFieldGap}
                   />
                   <Input
-                    label="Duration (Days) *"
-                    placeholder="e.g. 5"
+                    label={t('travelGuide.packageDurationLabel')}
+                    placeholder={t('travelGuide.packageDurationPlaceholder')}
                     keyboardType="numeric"
                     value={pkgDuration}
                     onChangeText={setPkgDuration}
                     containerStyle={styles.formFieldGap}
                   />
                   <Input
-                    label="Cities Included (Comma separated)"
-                    placeholder="e.g. Gangtok, Lachen, Lachung"
+                    label={t('travelGuide.citiesIncludedLabel')}
+                    placeholder={t('travelGuide.citiesIncludedPlaceholder')}
                     value={pkgCities}
                     onChangeText={setPkgCities}
                     containerStyle={styles.formFieldGap}
                   />
                   <Input
-                    label="Description"
-                    placeholder="Describe services, inclusions, and experience..."
+                    label={t('travelGuide.descriptionLabel')}
+                    placeholder={t('travelGuide.descriptionPlaceholder')}
                     multiline
                     numberOfLines={3}
                     value={pkgDesc}
@@ -1484,9 +1579,9 @@ export default function TravelGuideScreen() {
                   />
 
                   <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
-                    <Button label="Save" style={{ flex: 1 }} onPress={handleSavePackage} />
+                    <Button label={t('travelGuide.save')} style={{ flex: 1 }} onPress={handleSavePackage} />
                     <Button
-                      label="Cancel"
+                      label={t('travelGuide.cancel')}
                       variant="secondary"
                       style={{ flex: 1 }}
                       onPress={() => setPkgModalVisible(false)}
@@ -1499,21 +1594,21 @@ export default function TravelGuideScreen() {
             {/* 3B: Travel Time Estimator */}
             {plannerTab === 'estimator' && (
               <View style={styles.innerPlannerSection}>
-                <Text style={styles.subTitle}>Transit Time Estimator</Text>
-                <Text style={styles.descSec}>Calculate route duration logs based on transport speeds</Text>
+                <Text style={styles.subTitle}>{t('travelGuide.transitTimeEstimator')}</Text>
+                <Text style={styles.descSec}>{t('travelGuide.transitTimeEstimatorDesc')}</Text>
 
                 <View style={styles.estimatorForm}>
                   <View style={styles.formInputRow}>
                     <Input
-                      label="Origin City"
-                      placeholder="e.g. Gangtok"
+                      label={t('travelGuide.originCity')}
+                      placeholder={t('travelGuide.originCityPlaceholder')}
                       value={estFrom}
                       onChangeText={setEstFrom}
                       containerStyle={{ flex: 1, marginRight: 8 }}
                     />
                     <Input
-                      label="Destination City"
-                      placeholder="e.g. Gurudongmar"
+                      label={t('travelGuide.destinationCity')}
+                      placeholder={t('travelGuide.destinationCityPlaceholder')}
                       value={estTo}
                       onChangeText={setEstTo}
                       containerStyle={{ flex: 1 }}
@@ -1521,22 +1616,24 @@ export default function TravelGuideScreen() {
                   </View>
 
                   <Input
-                    label="Road Distance (in km)"
-                    placeholder="e.g. 180"
+                    label={t('travelGuide.roadDistance')}
+                    placeholder={t('travelGuide.roadDistancePlaceholder')}
                     keyboardType="numeric"
                     value={estDist}
                     onChangeText={setEstDist}
                     containerStyle={styles.formFieldGap}
                   />
 
-                  <Text style={styles.formInputLabel}>Travel Mode Selection</Text>
+                  <Text style={styles.formInputLabel}>{t('travelGuide.travelModeSelection')}</Text>
                   <View style={styles.modesGrid}>
-                    {[
-                      { mode: 'BIKE', label: 'Bike', Icon: Car },
-                      { mode: 'CAR', label: 'SUV / Cab', Icon: Car },
-                      { mode: 'TRAIN', label: 'Train', Icon: Train },
-                      { mode: 'PLANE', label: 'Flight', Icon: Plane },
-                    ].map((item) => {
+                    {(
+                      [
+                        { mode: 'BIKE', Icon: Car },
+                        { mode: 'CAR', Icon: Car },
+                        { mode: 'TRAIN', Icon: Train },
+                        { mode: 'PLANE', Icon: Plane },
+                      ] as const
+                    ).map((item) => {
                       const isModeActive = estMode === item.mode;
                       return (
                         <TouchableOpacity
@@ -1544,19 +1641,28 @@ export default function TravelGuideScreen() {
                           style={[styles.modeTile, isModeActive && styles.modeTileActive]}
                           onPress={() => setEstMode(item.mode as any)}
                           activeOpacity={0.8}
+                          accessibilityRole="button"
+                          accessibilityLabel={t(TRANSIT_MODE_LABEL_KEYS[item.mode])}
+                          accessibilityState={{ selected: isModeActive }}
                         >
                           <item.Icon size={14} color={isModeActive ? C.white : C.textSec} />
                           <Text style={[styles.modeTileLabel, { color: isModeActive ? C.white : C.textSec }]}>
-                            {item.label}
+                            {t(TRANSIT_MODE_LABEL_KEYS[item.mode])}
                           </Text>
                         </TouchableOpacity>
                       );
                     })}
                   </View>
 
-                  <TouchableOpacity style={styles.estimateBtn} onPress={calculateEstimation} activeOpacity={0.8}>
+                  <TouchableOpacity
+                    style={styles.estimateBtn}
+                    onPress={calculateEstimation}
+                    activeOpacity={0.8}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('travelGuide.calculateTransitTime')}
+                  >
                     <Clock size={15} color={C.white} />
-                    <Text style={styles.estimateBtnText}>Calculate Transit Time</Text>
+                    <Text style={styles.estimateBtnText}>{t('travelGuide.calculateTransitTime')}</Text>
                   </TouchableOpacity>
 
                   {estimationResult && (
@@ -1572,39 +1678,39 @@ export default function TravelGuideScreen() {
             {/* 3C: Budget Calculator */}
             {plannerTab === 'budget' && (
               <View style={styles.innerPlannerSection}>
-                <Text style={styles.subTitle}>Travel Cost Budget Calculator</Text>
-                <Text style={styles.descSec}>Evaluate day-wise tourist expenses across core sectors</Text>
+                <Text style={styles.subTitle}>{t('travelGuide.travelCostBudgetCalculator')}</Text>
+                <Text style={styles.descSec}>{t('travelGuide.travelCostBudgetDesc')}</Text>
 
                 <View style={styles.budgetForm}>
                   <Input
-                    label="Transport Expenses (₹)"
+                    label={t('travelGuide.transportExpenses')}
                     keyboardType="numeric"
                     value={costTransport}
                     onChangeText={setCostTransport}
                   />
                   <Input
-                    label="Food & Meals Cost (₹)"
+                    label={t('travelGuide.foodMealsCost')}
                     keyboardType="numeric"
                     value={costFood}
                     onChangeText={setCostFood}
                     containerStyle={styles.formFieldGap}
                   />
                   <Input
-                    label="Accommodation / Stays (₹)"
+                    label={t('travelGuide.accommodationStays')}
                     keyboardType="numeric"
                     value={costLodge}
                     onChangeText={setCostLodge}
                     containerStyle={styles.formFieldGap}
                   />
                   <Input
-                    label="Guide Service Charge (₹)"
+                    label={t('travelGuide.guideServiceCharge')}
                     keyboardType="numeric"
                     value={costGuide}
                     onChangeText={setCostGuide}
                     containerStyle={styles.formFieldGap}
                   />
                   <Input
-                    label="Miscellaneous Buffer (₹)"
+                    label={t('travelGuide.miscellaneousBuffer')}
                     keyboardType="numeric"
                     value={costMisc}
                     onChangeText={setCostMisc}
@@ -1615,21 +1721,23 @@ export default function TravelGuideScreen() {
                     style={styles.calculateBudgetBtn}
                     onPress={calculateBudgetBreakdown}
                     activeOpacity={0.8}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('travelGuide.runCostAnalysis')}
                   >
                     <Calculator size={15} color={C.white} />
-                    <Text style={styles.calculateBudgetBtnText}>Run Cost Analysis</Text>
+                    <Text style={styles.calculateBudgetBtnText}>{t('travelGuide.runCostAnalysis')}</Text>
                   </TouchableOpacity>
 
                   {budgetBreakdown && (
                     <View style={styles.budgetResultCard}>
-                      <Text style={styles.budgetResultTitle}>TOTAL TRIP BUDGET</Text>
+                      <Text style={styles.budgetResultTitle}>{t('travelGuide.totalTripBudget')}</Text>
                       <Text style={styles.budgetResultAmount}>₹{budgetBreakdown.total.toLocaleString('en-IN')}</Text>
 
-                      <Text style={styles.budgetResultSubtitle}>Expense Breakdown</Text>
+                      <Text style={styles.budgetResultSubtitle}>{t('travelGuide.expenseBreakdown')}</Text>
                       {Object.entries(budgetBreakdown.percentages).map(([name, pct]) => (
                         <View key={name} style={styles.breakdownRow}>
                           <View style={styles.breakdownLabelRow}>
-                            <Text style={styles.breakdownName}>{name}</Text>
+                            <Text style={styles.breakdownName}>{t(BUDGET_CATEGORY_LABEL_KEYS[name] ?? name)}</Text>
                             <Text style={styles.breakdownPct}>{pct.toFixed(1)}%</Text>
                           </View>
                           <View style={styles.breakdownTrack}>
@@ -1663,15 +1771,15 @@ export default function TravelGuideScreen() {
             {/* 3D: Lodging / Accommodations */}
             {plannerTab === 'lodging' && (
               <View style={styles.innerPlannerSection}>
-                <Text style={styles.subTitle}>Lodging & Accommodations</Text>
-                <Text style={styles.descSec}>Recommend high-rated hotels, hostels, and campsite bookings</Text>
+                <Text style={styles.subTitle}>{t('travelGuide.lodgingAccommodations')}</Text>
+                <Text style={styles.descSec}>{t('travelGuide.lodgingAccommodationsDesc')}</Text>
 
                 <View style={styles.accomSelectorRow}>
                   {[
-                    { key: 'HOTELS', label: 'Hotels', Icon: Hotel },
-                    { key: 'HOSTELS', label: 'Hostels', Icon: Home },
-                    { key: 'HOMESTAYS', label: 'Homestays', Icon: Home },
-                    { key: 'CAMPING', label: 'Campsites', Icon: Tent },
+                    { key: 'HOTELS', labelKey: 'travelGuide.accomHotels', Icon: Hotel },
+                    { key: 'HOSTELS', labelKey: 'travelGuide.accomHostels', Icon: Home },
+                    { key: 'HOMESTAYS', labelKey: 'travelGuide.accomHomestays', Icon: Home },
+                    { key: 'CAMPING', labelKey: 'travelGuide.accomCampsites', Icon: Tent },
                   ].map((item) => {
                     const isAccomActive = accomTab === item.key;
                     return (
@@ -1680,9 +1788,12 @@ export default function TravelGuideScreen() {
                         style={[styles.accomSelectBtn, isAccomActive && styles.accomSelectBtnActive]}
                         onPress={() => setAccomTab(item.key as any)}
                         activeOpacity={0.8}
+                        accessibilityRole="button"
+                        accessibilityLabel={t(item.labelKey)}
+                        accessibilityState={{ selected: isAccomActive }}
                       >
                         <Text style={[styles.accomSelectLabel, { color: isAccomActive ? C.white : C.textSec }]}>
-                          {item.label}
+                          {t(item.labelKey)}
                         </Text>
                       </TouchableOpacity>
                     );
@@ -1707,8 +1818,10 @@ export default function TravelGuideScreen() {
                           style={styles.bookingLinkBtn}
                           onPress={() => handleBookingRedirect(item.name)}
                           activeOpacity={0.7}
+                          accessibilityRole="button"
+                          accessibilityLabel={t('travelGuide.reserve')}
                         >
-                          <Text style={styles.bookingLinkText}>Reserve</Text>
+                          <Text style={styles.bookingLinkText}>{t('travelGuide.reserve')}</Text>
                           <ExternalLink size={10} color={C.blueGlow} />
                         </TouchableOpacity>
                       </View>
@@ -1726,8 +1839,8 @@ export default function TravelGuideScreen() {
         {activeTab === 'weather' && (
           <View>
             <View style={[styles.innerPlannerSection, { marginBottom: 20 }]}>
-              <Text style={[styles.subTitle, { fontSize: 16 }]}>Live Guiding Broadcast Panel</Text>
-              <Text style={styles.descSec}>Broadcast coordinates to active tourist groups and rescue dispatchers</Text>
+              <Text style={[styles.subTitle, { fontSize: 16 }]}>{t('travelGuide.liveGuidingBroadcastPanel')}</Text>
+              <Text style={styles.descSec}>{t('travelGuide.liveGuidingBroadcastDesc')}</Text>
 
               <LinearGradient
                 colors={
@@ -1750,7 +1863,7 @@ export default function TravelGuideScreen() {
               >
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.walletLabel, { fontSize: 12 }]}>BROADCAST STATUS</Text>
+                    <Text style={[styles.walletLabel, { fontSize: 12 }]}>{t('travelGuide.broadcastStatus')}</Text>
                     <Text
                       style={[
                         styles.leadName,
@@ -1762,7 +1875,7 @@ export default function TravelGuideScreen() {
                         },
                       ]}
                     >
-                      {isBroadcasting ? '● ACTIVE • Live on Map' : '○ INACTIVE • Offline'}
+                      {isBroadcasting ? t('travelGuide.broadcastActive') : t('travelGuide.broadcastInactive')}
                     </Text>
                   </View>
                   <TouchableOpacity
@@ -1785,9 +1898,11 @@ export default function TravelGuideScreen() {
                       }
                     }}
                     activeOpacity={0.8}
+                    accessibilityRole="button"
+                    accessibilityLabel={isBroadcasting ? t('travelGuide.stopLive') : t('travelGuide.goLive')}
                   >
                     <Text style={[styles.cashoutBtnText, { fontSize: 12, lineHeight: 14 }]}>
-                      {isBroadcasting ? 'Stop Live' : 'Go Live'}
+                      {isBroadcasting ? t('travelGuide.stopLive') : t('travelGuide.goLive')}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -1802,12 +1917,15 @@ export default function TravelGuideScreen() {
                       gap: 4,
                     }}
                   >
-                    <Text style={[styles.descSec, { fontSize: 12 }]}>Current GPS Coordinates:</Text>
+                    <Text style={[styles.descSec, { fontSize: 12 }]}>{t('travelGuide.currentGpsCoordinates')}</Text>
                     <Text style={{ color: C.white, fontSize: 13, fontWeight: '700' }}>
-                      Lat: {liveStatus.location.latitude.toFixed(6)} • Lon: {liveStatus.location.longitude.toFixed(6)}
+                      {t('travelGuide.latLon', {
+                        lat: liveStatus.location.latitude.toFixed(6),
+                        lon: liveStatus.location.longitude.toFixed(6),
+                      })}
                     </Text>
                     <Text style={[styles.descSec, { fontSize: 12 }]}>
-                      Updated: {new Date(liveStatus.location.updatedAt).toLocaleTimeString()}
+                      {t('travelGuide.updatedAt', { time: new Date(liveStatus.location.updatedAt).toLocaleTimeString() })}
                     </Text>
                   </View>
                 )}
@@ -1823,19 +1941,19 @@ export default function TravelGuideScreen() {
                       borderColor: 'rgba(59, 130, 246, 0.2)',
                     }}
                   >
-                    <Text style={{ color: C.blueGlow, fontSize: 12, fontWeight: '700' }}>Guiding Booking Ongoing</Text>
+                    <Text style={{ color: C.blueGlow, fontSize: 12, fontWeight: '700' }}>{t('travelGuide.guidingBookingOngoing')}</Text>
                     <Text style={[styles.descSec, { fontSize: 12, marginTop: 2 }]}>
-                      Booking ID: {liveStatus.activeGuiding.bookingId}
+                      {t('travelGuide.bookingId', { id: liveStatus.activeGuiding.bookingId })}
                     </Text>
-                    <Text style={[styles.descSec, { fontSize: 12 }]}>Revenue: ₹{liveStatus.activeGuiding.amount}</Text>
+                    <Text style={[styles.descSec, { fontSize: 12 }]}>{t('travelGuide.revenue', { amount: liveStatus.activeGuiding.amount })}</Text>
                   </View>
                 )}
               </LinearGradient>
             </View>
 
             <View style={styles.cardHeader}>
-              <Text style={styles.subTitle}>Live Local Parameters</Text>
-              <Text style={styles.descSec}>Real-time weather forecast, air quality indices, and live crowd levels</Text>
+              <Text style={styles.subTitle}>{t('travelGuide.liveLocalParameters')}</Text>
+              <Text style={styles.descSec}>{t('travelGuide.liveLocalParametersDesc')}</Text>
             </View>
 
             {/* Weather City Selector */}
@@ -1846,6 +1964,9 @@ export default function TravelGuideScreen() {
                   style={[styles.weatherCityBtn, selectedWeatherIdx === idx && styles.weatherCityBtnActive]}
                   onPress={() => setSelectedWeatherIdx(idx)}
                   activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel={item.city}
+                  accessibilityState={{ selected: selectedWeatherIdx === idx }}
                 >
                   <Text style={[styles.weatherCityText, { color: selectedWeatherIdx === idx ? C.white : C.textSec }]}>
                     {item.city}
@@ -1872,7 +1993,7 @@ export default function TravelGuideScreen() {
                 <View style={styles.weatherDetailBox}>
                   <Wind size={15} color={C.blueGlow} />
                   <View style={{ marginLeft: 6 }}>
-                    <Text style={styles.weatherDetailLabel}>Wind Speed</Text>
+                    <Text style={styles.weatherDetailLabel}>{t('travelGuide.windSpeed')}</Text>
                     <Text style={styles.weatherDetailValue}>{currentW.wind}</Text>
                   </View>
                 </View>
@@ -1880,7 +2001,7 @@ export default function TravelGuideScreen() {
                 <View style={styles.weatherDetailBox}>
                   <Sunrise size={15} color={C.greenGlow} />
                   <View style={{ marginLeft: 6 }}>
-                    <Text style={styles.weatherDetailLabel}>Sunrise</Text>
+                    <Text style={styles.weatherDetailLabel}>{t('travelGuide.sunrise')}</Text>
                     <Text style={styles.weatherDetailValue}>{currentW.sunrise}</Text>
                   </View>
                 </View>
@@ -1888,7 +2009,7 @@ export default function TravelGuideScreen() {
                 <View style={styles.weatherDetailBox}>
                   <Sunset size={15} color={C.amberGlow} />
                   <View style={{ marginLeft: 6 }}>
-                    <Text style={styles.weatherDetailLabel}>Sunset</Text>
+                    <Text style={styles.weatherDetailLabel}>{t('travelGuide.sunset')}</Text>
                     <Text style={styles.weatherDetailValue}>{currentW.sunset}</Text>
                   </View>
                 </View>
@@ -1896,9 +2017,9 @@ export default function TravelGuideScreen() {
                 <View style={styles.weatherDetailBox}>
                   <Activity size={15} color={currentW.crowdColor} />
                   <View style={{ marginLeft: 6 }}>
-                    <Text style={styles.weatherDetailLabel}>Crowd Level</Text>
+                    <Text style={styles.weatherDetailLabel}>{t('travelGuide.crowdLevel')}</Text>
                     <Text style={[styles.weatherDetailValue, { color: currentW.crowdColor }]}>
-                      {currentW.crowdLevel}
+                      {t(CROWD_LABEL_KEYS[currentW.crowdLevel])}
                     </Text>
                   </View>
                 </View>
@@ -1906,42 +2027,40 @@ export default function TravelGuideScreen() {
 
               <View style={styles.aqiCard}>
                 <View style={styles.aqiHeader}>
-                  <Text style={styles.aqiTitle}>AIR QUALITY INDEX (AQI)</Text>
+                  <Text style={styles.aqiTitle}>{t('travelGuide.airQualityIndex')}</Text>
                   <View style={[styles.aqiBadge, { backgroundColor: currentW.aqiColor }]}>
-                    <Text style={styles.aqiBadgeText}>{currentW.aqiStatus}</Text>
+                    <Text style={styles.aqiBadgeText}>{t(AQI_LABEL_KEYS[currentW.aqiStatus])}</Text>
                   </View>
                 </View>
                 <View style={styles.aqiMeterRow}>
                   <Text style={styles.aqiValue}>{currentW.aqi}</Text>
                   <Text style={styles.aqiDescText}>
-                    {currentW.aqiStatus === 'EXCELLENT' &&
-                      'Excellent air quality. Perfectly safe for long mountain trekking and camping stays.'}
-                    {currentW.aqiStatus === 'GOOD' &&
-                      'Good air quality. Minimal risk for general outdoor tour exploration.'}
-                    {currentW.aqiStatus === 'POOR' &&
-                      'Poor air quality. Sensitive tourists should limit long strenuous walks around dense traffic.'}
-                    {currentW.aqiStatus === 'HAZARDOUS' &&
-                      'Hazardous conditions. Outdoor face mask is highly recommended for city excursions.'}
+                    {currentW.aqiStatus === 'EXCELLENT' && t('travelGuide.aqiDescExcellent')}
+                    {currentW.aqiStatus === 'GOOD' && t('travelGuide.aqiDescGood')}
+                    {currentW.aqiStatus === 'POOR' && t('travelGuide.aqiDescPoor')}
+                    {currentW.aqiStatus === 'HAZARDOUS' && t('travelGuide.aqiDescHazardous')}
                   </Text>
                 </View>
               </View>
             </LinearGradient>
 
             {/* 5-Day Forecast Grid */}
-            <Text style={styles.subTitle}>5-Day Weather Outlook</Text>
+            <Text style={styles.subTitle}>{t('travelGuide.fiveDayWeatherOutlook')}</Text>
             <View style={styles.forecastGrid}>
-              {[
-                { day: 'Friday', temp: '32°C', icon: Sun, condition: 'Sunny' },
-                { day: 'Saturday', temp: '29°C', icon: CloudRain, condition: 'Partly Rain' },
-                { day: 'Sunday', temp: '28°C', icon: CloudRain, condition: 'Thunderstorm' },
-                { day: 'Monday', temp: '31°C', icon: Sun, condition: 'Clear' },
-                { day: 'Tuesday', temp: '33°C', icon: Sun, condition: 'Sunny' },
-              ].map((f, idx) => (
+              {(
+                [
+                  { dayKey: 'travelGuide.dayFriday', temp: '32°C', icon: Sun, conditionKey: 'travelGuide.conditionSunny', isRain: false },
+                  { dayKey: 'travelGuide.daySaturday', temp: '29°C', icon: CloudRain, conditionKey: 'travelGuide.conditionPartlyRain', isRain: true },
+                  { dayKey: 'travelGuide.daySunday', temp: '28°C', icon: CloudRain, conditionKey: 'travelGuide.conditionThunderstorm', isRain: true },
+                  { dayKey: 'travelGuide.dayMonday', temp: '31°C', icon: Sun, conditionKey: 'travelGuide.conditionClear', isRain: false },
+                  { dayKey: 'travelGuide.dayTuesday', temp: '33°C', icon: Sun, conditionKey: 'travelGuide.conditionSunny', isRain: false },
+                ] as const
+              ).map((f, idx) => (
                 <View key={idx} style={styles.forecastRow}>
-                  <Text style={styles.forecastDay}>{f.day}</Text>
+                  <Text style={styles.forecastDay}>{t(f.dayKey)}</Text>
                   <View style={styles.forecastMid}>
-                    <f.icon size={15} color={f.condition.includes('Rain') ? C.blue : C.amber} />
-                    <Text style={styles.forecastCondText}>{f.condition}</Text>
+                    <f.icon size={15} color={f.isRain ? C.blue : C.amber} />
+                    <Text style={styles.forecastCondText}>{t(f.conditionKey)}</Text>
                   </View>
                   <Text style={styles.forecastTemp}>{f.temp}</Text>
                 </View>
@@ -1956,14 +2075,12 @@ export default function TravelGuideScreen() {
         {activeTab === 'safety' && (
           <View>
             <View style={styles.cardHeader}>
-              <Text style={styles.subTitle}>Safety & Emergency Helpdesk</Text>
-              <Text style={styles.descSec}>
-                Quick dial government helplines, nearby clinics, police authorities, and warning alerts
-              </Text>
+              <Text style={styles.subTitle}>{t('travelGuide.safetyEmergencyHelpdesk')}</Text>
+              <Text style={styles.descSec}>{t('travelGuide.safetyEmergencyHelpdeskDesc')}</Text>
             </View>
 
             {/* Safety Warning Alerts List */}
-            <Text style={styles.sectionLabelInline}>Real-Time Safety & Transit Alerts</Text>
+            <Text style={styles.sectionLabelInline}>{t('travelGuide.realTimeSafetyAlerts')}</Text>
             {safetyAlerts.map((alert) => (
               <View key={alert.id} style={styles.safetyAlertItem}>
                 <View style={styles.safetyAlertHeader}>
@@ -1990,7 +2107,7 @@ export default function TravelGuideScreen() {
                         { color: alert.type === 'DANGER' ? C.rose : alert.type === 'WARNING' ? C.amber : C.blue },
                       ]}
                     >
-                      {alert.type}
+                      {t(ALERT_TYPE_LABEL_KEYS[alert.type] ?? 'travelGuide.alertTypeInfo')}
                     </Text>
                   </View>
                   <Text style={styles.safetyAlertLocation}>{alert.location}</Text>
@@ -2000,7 +2117,7 @@ export default function TravelGuideScreen() {
             ))}
 
             {/* Emergency Contacts Dial Desk */}
-            <Text style={styles.sectionLabelInline}>Speed Dial Emergency Helpline Desk</Text>
+            <Text style={styles.sectionLabelInline}>{t('travelGuide.speedDialEmergencyDesk')}</Text>
             {emergencyContacts.map((contact, idx) => (
               <View key={idx} style={styles.contactItemCard}>
                 <View style={styles.contactItemHeader}>
@@ -2008,14 +2125,16 @@ export default function TravelGuideScreen() {
                     <contact.Icon size={15} color={contact.color} />
                   </View>
                   <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={styles.contactTitle}>{contact.title}</Text>
-                    <Text style={styles.contactDesc}>{contact.description}</Text>
+                    <Text style={styles.contactTitle}>{t(contact.titleKey)}</Text>
+                    <Text style={styles.contactDesc}>{t(contact.descKey)}</Text>
                   </View>
                 </View>
                 <TouchableOpacity
                   style={[styles.callActionBtn, { borderColor: contact.color }]}
-                  onPress={() => handleEmergencyCall(contact.title, contact.phone)}
+                  onPress={() => handleEmergencyCall(t(contact.titleKey), contact.phone)}
                   activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={t(contact.titleKey)}
                 >
                   <Text style={[styles.callActionBtnText, { color: contact.color }]}>{contact.phone}</Text>
                   <PhoneCall size={11} color={contact.color} />
