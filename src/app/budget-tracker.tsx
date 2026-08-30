@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { FlatList, Image, RefreshControl, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -21,11 +22,11 @@ import { Button, Card, Chip, Input, ScreenEmpty, ScreenError, ScreenLoading, She
 
 
 const CATEGORIES = [
-  { key: 'TRANSPORT', label: 'Transport', color: C.blue, Icon: Car },
-  { key: 'LODGING', label: 'Lodging', color: C.purple, Icon: Hotel },
-  { key: 'FOOD', label: 'Food', color: C.amber, Icon: Utensils },
-  { key: 'ACTIVITY', label: 'Activity', color: C.green, Icon: Ticket },
-  { key: 'OTHER', label: 'Other', color: C.rose, Icon: ShoppingBag },
+  { key: 'TRANSPORT', labelKey: 'budgetTracker.categoryTransport', color: C.blue, Icon: Car },
+  { key: 'LODGING', labelKey: 'budgetTracker.categoryLodging', color: C.purple, Icon: Hotel },
+  { key: 'FOOD', labelKey: 'budgetTracker.categoryFood', color: C.amber, Icon: Utensils },
+  { key: 'ACTIVITY', labelKey: 'budgetTracker.categoryActivity', color: C.green, Icon: Ticket },
+  { key: 'OTHER', labelKey: 'budgetTracker.categoryOther', color: C.rose, Icon: ShoppingBag },
 ] as const;
 
 type CategoryKey = (typeof CATEGORIES)[number]['key'];
@@ -83,6 +84,7 @@ function ExpenseRow({
   onDelete: (id: string) => void;
   deleteDisabled: boolean;
 }) {
+  const { t } = useTranslation();
   const meta = catMeta(expense.category);
 
   return (
@@ -93,7 +95,11 @@ function ExpenseRow({
       <View style={{ flex: 1 }}>
         <Text style={styles.expenseTitle}>{expense.description}</Text>
         <Text style={styles.expenseSub}>
-          {meta.label} · paid by {expense.paidByName} · {new Date(expense.createdAt).toLocaleDateString('en-IN')}
+          {t('budgetTracker.expenseSubline', {
+            category: t(meta.labelKey),
+            name: expense.paidByName,
+            date: new Date(expense.createdAt).toLocaleDateString('en-IN'),
+          })}
         </Text>
       </View>
       <Text style={styles.expenseAmount}>{inr(expense.amount)}</Text>
@@ -103,7 +109,7 @@ function ExpenseRow({
           onPress={() => onDelete(expense.id)}
           disabled={deleteDisabled}
           accessibilityRole="button"
-          accessibilityLabel={`Delete ${expense.description}`}
+          accessibilityLabel={t('budgetTracker.deleteExpenseLabel', { description: expense.description })}
         >
           <Trash2 size={15} color={C.textMuted} />
         </TouchableOpacity>
@@ -115,6 +121,7 @@ function ExpenseRow({
 const keyExtractor = (e: ExpenseItem) => e.id;
 
 export default function BudgetTrackerScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const queryClient = useQueryClient();
   const { isLoggedIn } = useApp();
@@ -160,23 +167,23 @@ export default function BudgetTrackerScreen() {
         category,
       }),
     onSuccess: () => {
-      toast('Expense added', 'success');
+      toast(t('budgetTracker.expenseAdded'), 'success');
       setShowAdd(false);
       setDesc('');
       setAmount('');
       setCategory('TRANSPORT');
       if (activeTripId) void queryClient.invalidateQueries({ queryKey: queryKeys.tripExpenses(activeTripId) });
     },
-    onError: (e) => toast(errorToastMessage(e, 'Could not add the expense.'), 'error'),
+    onError: (e) => toast(errorToastMessage(e, t('budgetTracker.couldNotAddExpense')), 'error'),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (expenseId: string) => apiService.deleteTripExpense(activeTripId as string, expenseId),
     onSuccess: () => {
-      toast('Expense removed', 'success');
+      toast(t('budgetTracker.expenseRemoved'), 'success');
       if (activeTripId) void queryClient.invalidateQueries({ queryKey: queryKeys.tripExpenses(activeTripId) });
     },
-    onError: (e) => toast(errorToastMessage(e, 'Could not remove the expense.'), 'error'),
+    onError: (e) => toast(errorToastMessage(e, t('budgetTracker.couldNotRemoveExpense')), 'error'),
   });
 
   const canSubmit = desc.trim().length > 0 && Number(amount) > 0 && !addMutation.isPending;
@@ -184,11 +191,11 @@ export default function BudgetTrackerScreen() {
   // ── Not signed in / no trips ──────────────────────────────────────
   if (!isLoggedIn) {
     return (
-      <Shell title="Budget Tracker" onBack={() => router.back()}>
+      <Shell title={t('budgetTracker.title')} onBack={() => router.back()}>
         <ScreenEmpty
-          title="Sign in required"
-          message="Sign in to track a trip budget."
-          actionLabel="Sign In"
+          title={t('budgetTracker.signInRequiredTitle')}
+          message={t('budgetTracker.signInRequiredMessage')}
+          actionLabel={t('budgetTracker.signIn')}
           onAction={() => router.navigate('/auth')}
         />
       </Shell>
@@ -197,19 +204,19 @@ export default function BudgetTrackerScreen() {
 
   if (tripsLoading) {
     return (
-      <Shell title="Budget Tracker" onBack={() => router.back()}>
-        <ScreenLoading label="Loading your trips…" />
+      <Shell title={t('budgetTracker.title')} onBack={() => router.back()}>
+        <ScreenLoading label={t('budgetTracker.loadingTrips')} />
       </Shell>
     );
   }
 
   if (tripsError || myTrips.length === 0) {
     return (
-      <Shell title="Budget Tracker" onBack={() => router.back()}>
+      <Shell title={t('budgetTracker.title')} onBack={() => router.back()}>
         <ScreenEmpty
-          title={tripsError ? 'Could not load trips' : 'No trips yet'}
-          message={tripsError ? 'Could not load your trips.' : 'Join or create a trip to start tracking a shared budget.'}
-          actionLabel="Browse trips"
+          title={tripsError ? t('budgetTracker.couldNotLoadTripsTitle') : t('budgetTracker.noTripsYetTitle')}
+          message={tripsError ? t('budgetTracker.couldNotLoadTripsMessage') : t('budgetTracker.noTripsYetMessage')}
+          actionLabel={t('budgetTracker.browseTrips')}
           onAction={() => router.navigate('/search')}
         />
       </Shell>
@@ -217,7 +224,7 @@ export default function BudgetTrackerScreen() {
   }
 
   return (
-    <Shell title="Budget Tracker" onBack={() => router.back()}>
+    <Shell title={t('budgetTracker.title')} onBack={() => router.back()}>
       {/* Trip selector */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tripChips}>
         {myTrips.map((t) => (
@@ -226,10 +233,10 @@ export default function BudgetTrackerScreen() {
       </ScrollView>
 
       {budgetLoading ? (
-        <ScreenLoading label="Loading expenses…" />
+        <ScreenLoading label={t('budgetTracker.loadingExpenses')} />
       ) : budgetError || !budget ? (
         <ScreenError
-          message={error instanceof Error ? error.message : 'Could not load this trip budget.'}
+          message={error instanceof Error ? error.message : t('budgetTracker.couldNotLoadBudget')}
           onRetry={() => refetch()}
         />
       ) : (
@@ -254,17 +261,17 @@ export default function BudgetTrackerScreen() {
             <>
               {/* Summary */}
               <LinearGradient colors={['#12203D', '#0C1526']} style={styles.summaryCard}>
-                <Text style={styles.summaryLabel}>TOTAL TRIP SPEND</Text>
+                <Text style={styles.summaryLabel}>{t('budgetTracker.totalTripSpend')}</Text>
                 <Text style={styles.summaryValue}>{inr(budget.total)}</Text>
                 <View style={styles.summaryRow}>
                   <View style={styles.summaryCol}>
-                    <Text style={styles.summaryColLabel}>Split {budget.headCount} ways</Text>
-                    <Text style={styles.summaryColValue}>{inr(budget.yourShare)} / person</Text>
+                    <Text style={styles.summaryColLabel}>{t('budgetTracker.splitWays', { count: budget.headCount })}</Text>
+                    <Text style={styles.summaryColValue}>{t('budgetTracker.perPerson', { amount: inr(budget.yourShare) })}</Text>
                   </View>
                   <View style={styles.summaryCol}>
-                    <Text style={styles.summaryColLabel}>Your balance</Text>
+                    <Text style={styles.summaryColLabel}>{t('budgetTracker.yourBalance')}</Text>
                     <Text style={[styles.summaryColValue, { color: Number(budget.yourNet) >= 0 ? C.green : C.rose }]}>
-                      {Number(budget.yourNet) >= 0 ? 'you are owed ' : 'you owe '}
+                      {Number(budget.yourNet) >= 0 ? t('budgetTracker.youAreOwed') : t('budgetTracker.youOwe')}
                       {inr(Math.abs(Number(budget.yourNet)))}
                     </Text>
                   </View>
@@ -274,17 +281,17 @@ export default function BudgetTrackerScreen() {
               {/* Per-member balances */}
               {budget.balances.length > 1 && (
                 <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Who owes what</Text>
+                  <Text style={styles.sectionTitle}>{t('budgetTracker.whoOwesWhat')}</Text>
                   {budget.balances.map((b) => (
                     <View key={b.userId} style={styles.balanceRow}>
                       <Image source={{ uri: b.avatar }} style={styles.balanceAvatar} />
                       <View style={{ flex: 1 }}>
                         <Text style={styles.balanceName}>
                           {b.name}
-                          {b.isOrganizer ? ' · organizer' : ''}
+                          {b.isOrganizer ? t('budgetTracker.organizerSuffix') : ''}
                         </Text>
                         <Text style={styles.balanceSub}>
-                          paid {inr(b.paid)} of {inr(b.share)} share
+                          {t('budgetTracker.paidOfShare', { paid: inr(b.paid), share: inr(b.share) })}
                         </Text>
                       </View>
                       <Text style={[styles.balanceNet, { color: Number(b.net) >= 0 ? C.green : C.rose }]}>
@@ -295,10 +302,10 @@ export default function BudgetTrackerScreen() {
                   ))}
                 </View>
               )}
-              <Text style={styles.expensesTitle}>Expenses</Text>
+              <Text style={styles.expensesTitle}>{t('budgetTracker.expenses')}</Text>
             </>
           }
-          ListEmptyComponent={<Text style={styles.emptyExpenses}>No expenses logged for this trip yet.</Text>}
+          ListEmptyComponent={<Text style={styles.emptyExpenses}>{t('budgetTracker.noExpensesYet')}</Text>}
           ListFooterComponent={<View style={{ height: 100 }} />}
         />
       )}
@@ -309,7 +316,7 @@ export default function BudgetTrackerScreen() {
           style={styles.fab}
           onPress={() => setShowAdd(true)}
           accessibilityRole="button"
-          accessibilityLabel="Add expense"
+          accessibilityLabel={t('budgetTracker.addExpense')}
         >
           <Plus size={22} color={C.white} />
         </TouchableOpacity>
@@ -319,17 +326,26 @@ export default function BudgetTrackerScreen() {
       <Sheet
         visible={showAdd}
         onClose={() => setShowAdd(false)}
-        title={`Add expense${activeTrip ? ` · ${activeTrip.name}` : ''}`}
+        title={
+          activeTrip
+            ? t('budgetTracker.addExpenseTitleWithTrip', { tripName: activeTrip.name })
+            : t('budgetTracker.addExpenseTitle')
+        }
         scrollable={false}
       >
         <View style={{ gap: 12, paddingBottom: 20 }}>
-          <Input placeholder="What was it for?" value={desc} onChangeText={setDesc} accessibilityLabel="Expense description" />
           <Input
-            placeholder="Amount (₹)"
+            placeholder={t('budgetTracker.whatWasItFor')}
+            value={desc}
+            onChangeText={setDesc}
+            accessibilityLabel={t('budgetTracker.expenseDescriptionLabel')}
+          />
+          <Input
+            placeholder={t('budgetTracker.amountPlaceholder')}
             keyboardType="numeric"
             value={amount}
             onChangeText={setAmount}
-            accessibilityLabel="Expense amount"
+            accessibilityLabel={t('budgetTracker.expenseAmountLabel')}
           />
 
           <View style={styles.catRow}>
@@ -338,7 +354,7 @@ export default function BudgetTrackerScreen() {
               return (
                 <Chip
                   key={c.key}
-                  label={c.label}
+                  label={t(c.labelKey)}
                   selected={active}
                   onPress={() => setCategory(c.key)}
                   icon={<c.Icon size={13} color={active ? c.color : C.textMuted} />}
@@ -349,7 +365,7 @@ export default function BudgetTrackerScreen() {
           </View>
 
           <Button
-            label="Add expense"
+            label={t('budgetTracker.addExpense')}
             onPress={() => addMutation.mutate()}
             disabled={!canSubmit}
             loading={addMutation.isPending}
@@ -363,6 +379,7 @@ export default function BudgetTrackerScreen() {
 }
 
 function Shell({ title, onBack, children }: { title: string; onBack: () => void; children: React.ReactNode }) {
+  const { t } = useTranslation();
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={C.bg} />
@@ -372,7 +389,7 @@ function Shell({ title, onBack, children }: { title: string; onBack: () => void;
           onPress={onBack}
           style={styles.backBtn}
           accessibilityRole="button"
-          accessibilityLabel="Go back"
+          accessibilityLabel={t('budgetTracker.goBack')}
         >
           <ArrowLeft size={18} color={C.white} />
         </TouchableOpacity>
