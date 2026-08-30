@@ -38,7 +38,6 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  useColorScheme,
   View,
   Linking,
 } from 'react-native';
@@ -104,7 +103,6 @@ function WebMapScreen() {
     });
     return unsub;
   }, []);
-  const isDark = useColorScheme() === 'dark';
   const router = useRouter();
   const { triggerSOS, trips } = useApp();
   const { tripId } = useLocalSearchParams<{ tripId: string }>();
@@ -723,7 +721,7 @@ function WebMapScreen() {
   });
 
   return (
-    <SafeAreaView edges={['top', 'left', 'right']} style={[styles.safeArea, { backgroundColor: isDark ? '#060814' : '#FAFAFC' }]}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={[styles.safeArea, { backgroundColor: '#060814' }]}>
       <View style={styles.mapContainer}>
         {/* Render the iframe WITHOUT srcDoc — content is written via useEffect */}
         <iframe
@@ -739,7 +737,7 @@ function WebMapScreen() {
             onPress={() => router.navigate('/')}
             activeOpacity={0.8}
           >
-            <ArrowLeft size={22} color="#000" strokeWidth={3} />
+            <ArrowLeft size={22} color="#FFF" strokeWidth={3} />
           </TouchableOpacity>
 
           {/* OPTION 1: ROUTE ITINERARY SELECTOR DROPDOWN */}
@@ -862,33 +860,33 @@ function WebMapScreen() {
         {/* MAP CONTROLS (RIGHT SIDE) */}
         <View style={styles.mapControlsCol}>
           <TouchableOpacity
-            style={[styles.mapControlBtn, { backgroundColor: isDark ? 'rgba(13, 17, 23, 0.88)' : 'rgba(255, 255, 255, 0.88)' }]}
+            style={[styles.mapControlBtn, { backgroundColor: 'rgba(13, 17, 23, 0.88)' }]}
             onPress={() => postMapMessage({ type: 'ZOOM_IN' })}
             activeOpacity={0.8}
           >
-            <Plus size={17} color={isDark ? '#C9D1D9' : '#0F172A'} />
+            <Plus size={17} color={'#C9D1D9'} />
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.mapControlBtn, { backgroundColor: isDark ? 'rgba(13, 17, 23, 0.88)' : 'rgba(255, 255, 255, 0.88)' }]}
+            style={[styles.mapControlBtn, { backgroundColor: 'rgba(13, 17, 23, 0.88)' }]}
             onPress={() => postMapMessage({ type: 'ZOOM_OUT' })}
             activeOpacity={0.8}
           >
-            <Minus size={17} color={isDark ? '#C9D1D9' : '#0F172A'} />
+            <Minus size={17} color={'#C9D1D9'} />
           </TouchableOpacity>
 
           {/* Entire Route Recenter */}
           <TouchableOpacity
-            style={[styles.mapControlBtn, { backgroundColor: isDark ? 'rgba(13, 17, 23, 0.88)' : 'rgba(255, 255, 255, 0.88)' }]}
+            style={[styles.mapControlBtn, { backgroundColor: 'rgba(13, 17, 23, 0.88)' }]}
             onPress={handleRecenter}
             activeOpacity={0.8}
           >
-            <Route size={17} color={isDark ? '#C9D1D9' : '#0F172A'} />
+            <Route size={17} color={'#C9D1D9'} />
           </TouchableOpacity>
 
           {/* GPS Self Location */}
           <TouchableOpacity
-            style={[styles.mapControlBtn, { backgroundColor: isDark ? 'rgba(13, 17, 23, 0.88)' : 'rgba(255, 255, 255, 0.88)' }]}
+            style={[styles.mapControlBtn, { backgroundColor: 'rgba(13, 17, 23, 0.88)' }]}
             onPress={handleLocateSelf}
             activeOpacity={0.8}
           >
