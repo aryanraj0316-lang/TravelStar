@@ -470,5 +470,24 @@
     "couldNotLoadNearbyTrips": "आस-पास की ट्रिप्स लोड नहीं हो सकीं।",
     "noTripsNearbyTitle": "आस-पास कोई ट्रिप नहीं",
     "noTripsNearbyMessage": "अभी कोई आगामी ट्रिप खुली नहीं है।"
+  },
+  "destinationDetails": {
+    "goBack": "वापस जाएं",
+    "headerFallback": "गंतव्य",
+    "loadingDestination": "गंतव्य लोड हो रहा है…",
+    "notFoundTitle": "गंतव्य नहीं मिला",
+    "notFoundMessage": "हमें वह गंतव्य नहीं मिल सका।",
+    "couldNotLoad": "यह गंतव्य लोड नहीं हो सका।",
+    "addToFavourites": "पसंदीदा में जोड़ें",
+    "removeFromFavourites": "पसंदीदा से हटाएं",
+    "ratingSuffix": "{{rating}} रेटिंग",
+    "overview": "अवलोकन",
+    "specialAttractions": "विशेष आकर्षण और विशेषताएं",
+    "photoGallery": "फोटो गैलरी",
+    "view": "देखें",
+    "planTripHere": "यहां ट्रिप की योजना बनाएं",
+    "closeGallery": "बंद करें",
+    "photoGalleryTitle": "{{name}} फोटो गैलरी",
+    "photoCounter": "{{current}} / {{total}}"
   }
 }

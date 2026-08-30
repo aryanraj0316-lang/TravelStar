@@ -16,6 +16,7 @@ import {
   X,
 } from 'lucide-react-native';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Dimensions, Image, Modal, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -35,6 +36,7 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 // built) and there is no real video content — fabricating either would be
 // exactly the mock data §0.2 bans.
 export default function DestinationDetailsScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const params = useLocalSearchParams<{ id?: string }>();
   const destId = typeof params.id === 'string' ? params.id : '';
@@ -73,7 +75,13 @@ export default function DestinationDetailsScreen() {
 
   const renderHeader = (title: string) => (
     <View style={styles.floatingHeader}>
-      <TouchableOpacity style={styles.circleHeaderBtn} activeOpacity={0.8} onPress={() => router.back()}>
+      <TouchableOpacity
+        style={styles.circleHeaderBtn}
+        activeOpacity={0.8}
+        onPress={() => router.back()}
+        accessibilityRole="button"
+        accessibilityLabel={t('destinationDetails.goBack')}
+      >
         <ArrowLeft size={18} color={C.white} />
       </TouchableOpacity>
       <Text style={styles.headerTitleText} numberOfLines={1}>
@@ -84,6 +92,9 @@ export default function DestinationDetailsScreen() {
         activeOpacity={0.8}
         onPress={() => setIsLiked((v) => !v)}
         disabled={!destination}
+        accessibilityRole="button"
+        accessibilityLabel={isLiked ? t('destinationDetails.removeFromFavourites') : t('destinationDetails.addToFavourites')}
+        accessibilityState={{ selected: isLiked }}
       >
         <Heart size={18} color={isLiked ? C.red : C.white} fill={isLiked ? C.red : 'transparent'} />
       </TouchableOpacity>
@@ -95,8 +106,8 @@ export default function DestinationDetailsScreen() {
     return (
       <SafeAreaView edges={['left', 'right']} style={styles.container}>
         <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
-        {renderHeader('Destination')}
-        <ScreenLoading label="Loading destination…" />
+        {renderHeader(t('destinationDetails.headerFallback'))}
+        <ScreenLoading label={t('destinationDetails.loadingDestination')} />
       </SafeAreaView>
     );
   }
@@ -110,12 +121,12 @@ export default function DestinationDetailsScreen() {
     return (
       <SafeAreaView edges={['left', 'right']} style={styles.container}>
         <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
-        {renderHeader('Destination')}
+        {renderHeader(t('destinationDetails.headerFallback'))}
         {notFound ? (
-          <ScreenEmpty title="Destination not found" message="We couldn't find that destination." />
+          <ScreenEmpty title={t('destinationDetails.notFoundTitle')} message={t('destinationDetails.notFoundMessage')} />
         ) : (
           <ScreenError
-            message={error instanceof Error ? error.message : 'Could not load this destination.'}
+            message={error instanceof Error ? error.message : t('destinationDetails.couldNotLoad')}
             onRetry={() => refetch()}
           />
         )}
@@ -140,7 +151,7 @@ export default function DestinationDetailsScreen() {
           <View style={styles.heroMetaOverlay}>
             <View style={styles.ratingBadgeWrap}>
               <Star size={12} color={C.star} fill={C.star} />
-              <Text style={styles.ratingBadgeText}>{destination.rating} Rating</Text>
+              <Text style={styles.ratingBadgeText}>{t('destinationDetails.ratingSuffix', { rating: destination.rating })}</Text>
             </View>
             <Text style={styles.heroTitle}>{destination.name}</Text>
             <Text style={styles.heroTags}>{destination.tags}</Text>
@@ -151,7 +162,7 @@ export default function DestinationDetailsScreen() {
           {/* Overview */}
           {destination.description.length > 0 && (
             <View style={styles.sectionBlock}>
-              <Text style={styles.sectionTitle}>Overview</Text>
+              <Text style={styles.sectionTitle}>{t('destinationDetails.overview')}</Text>
               <Text style={styles.overviewDesc}>{destination.description}</Text>
             </View>
           )}
@@ -159,7 +170,7 @@ export default function DestinationDetailsScreen() {
           {/* Specialties */}
           {destination.specialties.length > 0 && (
             <View style={styles.sectionBlock}>
-              <Text style={styles.sectionTitle}>Special Attractions & Specialties</Text>
+              <Text style={styles.sectionTitle}>{t('destinationDetails.specialAttractions')}</Text>
               <View style={styles.specialtiesGrid}>
                 {destination.specialties.map((spec, i) => (
                   <Card key={i} style={styles.specialtyCard}>
@@ -177,7 +188,7 @@ export default function DestinationDetailsScreen() {
           {/* Photo gallery */}
           {destination.gallery.length > 0 && (
             <View style={styles.sectionBlock}>
-              <Text style={styles.sectionTitle}>Photo Gallery</Text>
+              <Text style={styles.sectionTitle}>{t('destinationDetails.photoGallery')}</Text>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -189,6 +200,8 @@ export default function DestinationDetailsScreen() {
                     activeOpacity={0.9}
                     style={styles.galleryCard}
                     onPress={() => setActiveImageIndex(index)}
+                    accessibilityRole="imagebutton"
+                    accessibilityLabel={t('destinationDetails.photoGalleryTitle', { name: destination.name })}
                   >
                     <Image source={{ uri: imgUri }} style={styles.galleryImage} />
                     <LinearGradient
@@ -197,7 +210,7 @@ export default function DestinationDetailsScreen() {
                     />
                     <View style={styles.hdIndicator}>
                       <Sparkles size={8} color={C.white} />
-                      <Text style={styles.hdIndicatorText}>VIEW</Text>
+                      <Text style={styles.hdIndicatorText}>{t('destinationDetails.view')}</Text>
                     </View>
                   </TouchableOpacity>
                 ))}
@@ -211,7 +224,7 @@ export default function DestinationDetailsScreen() {
       <View style={styles.stickyCtaWrap}>
         <LinearGradient colors={['#0C1020', C.bg]} style={styles.ctaBackgroundGlow} />
         <Button
-          label="Plan a Trip Here"
+          label={t('destinationDetails.planTripHere')}
           onPress={() => router.navigate('/create')}
           icon={<MapPinned size={15} color={C.white} strokeWidth={2.4} />}
           fullWidth
@@ -227,7 +240,12 @@ export default function DestinationDetailsScreen() {
         onRequestClose={() => setActiveImageIndex(null)}
       >
         <View style={styles.zoomModalContainer}>
-          <TouchableOpacity style={styles.closeZoomBtn} onPress={() => setActiveImageIndex(null)}>
+          <TouchableOpacity
+            style={styles.closeZoomBtn}
+            onPress={() => setActiveImageIndex(null)}
+            accessibilityRole="button"
+            accessibilityLabel={t('destinationDetails.closeGallery')}
+          >
             <X size={22} color={C.white} />
           </TouchableOpacity>
 
@@ -240,9 +258,12 @@ export default function DestinationDetailsScreen() {
           )}
 
           <View style={styles.zoomFooter}>
-            <Text style={styles.zoomTitle}>{destination.name} Photo Gallery</Text>
+            <Text style={styles.zoomTitle}>{t('destinationDetails.photoGalleryTitle', { name: destination.name })}</Text>
             <Text style={styles.zoomCounter}>
-              {(activeImageIndex ?? 0) + 1} / {destination.gallery.length}
+              {t('destinationDetails.photoCounter', {
+                current: (activeImageIndex ?? 0) + 1,
+                total: destination.gallery.length,
+              })}
             </Text>
           </View>
         </View>

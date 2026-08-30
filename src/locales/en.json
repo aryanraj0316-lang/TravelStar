@@ -470,5 +470,24 @@
     "couldNotLoadNearbyTrips": "Could not load nearby trips.",
     "noTripsNearbyTitle": "No trips nearby",
     "noTripsNearbyMessage": "No upcoming trips are open right now."
+  },
+  "destinationDetails": {
+    "goBack": "Go back",
+    "headerFallback": "Destination",
+    "loadingDestination": "Loading destination…",
+    "notFoundTitle": "Destination not found",
+    "notFoundMessage": "We couldn't find that destination.",
+    "couldNotLoad": "Could not load this destination.",
+    "addToFavourites": "Add to favourites",
+    "removeFromFavourites": "Remove from favourites",
+    "ratingSuffix": "{{rating}} Rating",
+    "overview": "Overview",
+    "specialAttractions": "Special Attractions & Specialties",
+    "photoGallery": "Photo Gallery",
+    "view": "VIEW",
+    "planTripHere": "Plan a Trip Here",
+    "closeGallery": "Close",
+    "photoGalleryTitle": "{{name}} Photo Gallery",
+    "photoCounter": "{{current}} / {{total}}"
   }
 }
