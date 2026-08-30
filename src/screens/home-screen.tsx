@@ -108,7 +108,7 @@ function AppleMultilingualGreeting({ isFocused }: { isFocused: boolean }) {
 
   const [wordIdx, setWordIdx] = useState(0);
   const [stepIdx, setStepIdx] = useState(0);
-  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const fadeAnim = useState(() => new Animated.Value(1))[0];
 
   useEffect(() => {
     if (!isFocused) return;
@@ -173,7 +173,7 @@ function FloatingTouristWeatherCard({ locations, isFocused }: { locations: any[]
   const [baseIndex, setBaseIndex] = useState(0);
   // Sliding image: only exists while animating, starts off-screen and slides to (0,0)
   const [slidingIndex, setSlidingIndex] = useState<number | null>(null);
-  const slideAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useState(() => new Animated.Value(0))[0];
   const baseIndexRef = useRef(0);
   const isAnimatingRef = useRef(false);
 
@@ -286,7 +286,7 @@ function FloatingTouristWeatherCard({ locations, isFocused }: { locations: any[]
 function RotatingMonsoonAlertCard({ alerts, isFocused }: { alerts: any[]; isFocused: boolean }) {
   const router = useRouter();
   const [alertIndex, setAlertIndex] = useState(0);
-  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const fadeAnim = useState(() => new Animated.Value(1))[0];
   const isAnimatingRef = useRef(false);
 
   useEffect(() => {
@@ -639,8 +639,7 @@ function HomeScreen() {
       // back to stories-only if the feed endpoint itself is unavailable.
       try {
         const res = await apiService.getFeed(20);
-        if (res && Array.isArray(res) && res.length > 0) return res;
-        if (res && res.data && Array.isArray(res.data) && res.data.length > 0) return res.data;
+        if (res && Array.isArray(res.items) && res.items.length > 0) return res.items;
       } catch (e) {
         logger.warn('[Home] Feed fetch failed, falling back to stories only:', e);
       }

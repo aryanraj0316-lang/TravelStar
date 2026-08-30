@@ -5,6 +5,37 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { DestinationDetail, Guide, MyTripBooking, SOSAlert, Trip, UserProfile } from '../store/AppContext';
 import { ApiErrorCode } from '@/types/api-error-codes';
+import type { Story } from '../store/AppContext';
+import type {
+  EmergencyContact,
+  FeedPage,
+  GuideEarnings,
+  GuideLead,
+  GuidePackage,
+  GuidePackageInput,
+  GuideProfile,
+  GuideReel,
+  GuideReelInput,
+  LiveLocation,
+  LiveWeather,
+  MessageResponse,
+  NearbyTrip,
+  GuideLiveStatus,
+  AppNotification,
+  AuthResponse,
+  ChatMessage,
+  ChatRoomSummary,
+  Destination,
+  HazardAlert,
+  IncomingJoinRequest,
+  JoinRequestSummary,
+  StoryPayload,
+  TripExpenses,
+  TripMemberRow,
+  UploadImageContentType,
+  UploadUrlResponse,
+  WeatherLocation,
+} from '@/types/api';
 
 // Request-ID / idempotency-key generation only needs uniqueness, not
 // cryptographic randomness, so this avoids pulling in expo-crypto for one
@@ -339,14 +370,14 @@ async function requestWithMeta<T>(
 export const apiService = {
   // Auth & Account
   async login(email: string, password?: string) {
-    return request<any>('/auth/login', {
+    return request<AuthResponse>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });
   },
 
   async register(userData: { name: string; email: string; phoneNumber?: string; password?: string; role?: string }) {
-    return request<any>('/auth/register', {
+    return request<AuthResponse>('/auth/register', {
       method: 'POST',
       body: JSON.stringify(userData),
     });
@@ -379,7 +410,7 @@ export const apiService = {
   },
 
   async verifyOtp(phoneNumber: string, otpCode: string) {
-    return request<any>('/auth/verify-otp', {
+    return request<AuthResponse>('/auth/verify-otp', {
       method: 'POST',
       body: JSON.stringify({ phoneNumber, otpCode }),
     });
@@ -416,8 +447,8 @@ export const apiService = {
   // ApiError('STORAGE_UNAVAILABLE') when the backend has no bucket
   // configured — see src/lib/upload.ts, which is what actually calls this
   // and uploads the file.
-  async getAvatarUploadUrl(contentType: 'image/jpeg' | 'image/png' | 'image/webp') {
-    return request<{ uploadUrl: string; publicUrl: string }>('/auth/avatar-upload-url', {
+  async getAvatarUploadUrl(contentType: UploadImageContentType) {
+    return request<UploadUrlResponse>('/auth/avatar-upload-url', {
       method: 'POST',
       body: JSON.stringify({ contentType }),
     });
@@ -425,8 +456,8 @@ export const apiService = {
 
   // Same as getAvatarUploadUrl, for create.tsx's custom trip-cover picker
   // (docs/REMEDIATION.md §8.4).
-  async getTripCoverUploadUrl(contentType: 'image/jpeg' | 'image/png' | 'image/webp') {
-    return request<{ uploadUrl: string; publicUrl: string }>('/trips/cover-upload-url', {
+  async getTripCoverUploadUrl(contentType: UploadImageContentType) {
+    return request<UploadUrlResponse>('/trips/cover-upload-url', {
       method: 'POST',
       body: JSON.stringify({ contentType }),
     });
@@ -436,8 +467,8 @@ export const apiService = {
   // (docs/REMEDIATION.md §8.7). Chat photos used to be sent as the
   // sender's own device-local file:// URI, which no other member could
   // load.
-  async getChatMediaUploadUrl(contentType: 'image/jpeg' | 'image/png' | 'image/webp') {
-    return request<{ uploadUrl: string; publicUrl: string }>('/chats/media-upload-url', {
+  async getChatMediaUploadUrl(contentType: UploadImageContentType) {
+    return request<UploadUrlResponse>('/chats/media-upload-url', {
       method: 'POST',
       body: JSON.stringify({ contentType }),
     });
@@ -497,8 +528,8 @@ export const apiService = {
     });
   },
 
-  async getTripMembers(tripId: string): Promise<any[] | null> {
-    return request<any[]>(`/trips/${tripId}/members`);
+  async getTripMembers(tripId: string): Promise<TripMemberRow[] | null> {
+    return request<TripMemberRow[]>(`/trips/${tripId}/members`);
   },
 
   // docs/REMEDIATION.md §8.6 — organizer roster tools (check-in, room/seat
@@ -551,8 +582,8 @@ export const apiService = {
   },
 
   // Shared trip expenses / budget tracker (docs/REMEDIATION.md §8.12).
-  async getTripExpenses(tripId: string): Promise<any | null> {
-    return request<any>(`/trips/${tripId}/expenses`);
+  async getTripExpenses(tripId: string): Promise<TripExpenses | null> {
+    return request<TripExpenses>(`/trips/${tripId}/expenses`);
   },
 
   async addTripExpense(
@@ -581,8 +612,8 @@ export const apiService = {
   // Real upcoming public trips, optionally sorted by straight-line distance
   // from the caller's device location (docs/REMEDIATION.md §8.13). `query`
   // is a pre-built query string like "?lat=28.6&lng=77.2" or "".
-  async getNearbyTrips(query = ''): Promise<any[] | null> {
-    return request<any[]>(`/trips/nearby${query}`);
+  async getNearbyTrips(query = ''): Promise<NearbyTrip[] | null> {
+    return request<NearbyTrip[]>(`/trips/nearby${query}`);
   },
 
   // Guides
@@ -591,11 +622,11 @@ export const apiService = {
   },
 
   // Stories & Blogs
-  async getStories(): Promise<any[] | null> {
-    return request<any[]>('/stories');
+  async getStories(): Promise<Story[] | null> {
+    return request<Story[]>('/stories');
   },
 
-  async createStory(storyData: any) {
+  async createStory(storyData: StoryPayload) {
     return request('/stories', {
       method: 'POST',
       body: JSON.stringify(storyData),
@@ -634,17 +665,17 @@ export const apiService = {
     return request('/safety/monsoon-advisory');
   },
 
-  async getNotifications(): Promise<any[] | null> {
-    return request<any[]>('/notifications');
+  async getNotifications(): Promise<AppNotification[] | null> {
+    return request<AppNotification[]>('/notifications');
   },
 
-  async markNotificationsRead(): Promise<any> {
+  async markNotificationsRead(): Promise<MessageResponse | null> {
     return request('/notifications/read-all', {
       method: 'POST',
     });
   },
 
-  async markNotificationRead(id: string): Promise<any> {
+  async markNotificationRead(id: string): Promise<MessageResponse | null> {
     return request(`/notifications/${id}/read`, {
       method: 'POST',
     });
@@ -700,15 +731,15 @@ export const apiService = {
   },
 
   // Homepage — Destinations
-  async getDestinations(): Promise<any[] | null> {
-    return request<any[]>('/destinations');
+  async getDestinations(): Promise<Destination[] | null> {
+    return request<Destination[]>('/destinations');
   },
 
   async getDestination(id: string): Promise<DestinationDetail | null> {
     return request<DestinationDetail>(`/destinations/${id}`);
   },
 
-  async createDestination(data: any): Promise<any> {
+  async createDestination(data: Omit<Destination, 'id'>): Promise<Destination | null> {
     return request('/destinations', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -716,16 +747,16 @@ export const apiService = {
   },
 
   // Homepage — Weather
-  async getWeatherLocations(): Promise<any[] | null> {
-    return request<any[]>('/weather');
+  async getWeatherLocations(): Promise<WeatherLocation[] | null> {
+    return request<WeatherLocation[]>('/weather');
   },
 
   // Homepage — Alerts
-  async getAlerts(): Promise<any[] | null> {
-    return request<any[]>('/alerts');
+  async getAlerts(): Promise<HazardAlert[] | null> {
+    return request<HazardAlert[]>('/alerts');
   },
 
-  async createAlert(data: any): Promise<any> {
+  async createAlert(data: Omit<HazardAlert, 'id' | 'active' | 'createdAt'>): Promise<HazardAlert | null> {
     return request('/alerts', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -734,7 +765,7 @@ export const apiService = {
 
   // ── Interactions (Likes, Join Requests, Unread Count) ──────
 
-  async toggleLikeTrip(tripId: string, userId?: string): Promise<any> {
+  async toggleLikeTrip(tripId: string, userId?: string): Promise<{ liked: boolean; likesCount: number } | null> {
     return request('/interactions/like', {
       method: 'POST',
       body: JSON.stringify({ tripId, userId }),
@@ -758,64 +789,64 @@ export const apiService = {
     });
   },
 
-  async getJoinRequests(): Promise<any[] | null> {
-    return request<any[]>('/interactions/join-requests');
+  async getJoinRequests(): Promise<JoinRequestSummary[] | null> {
+    return request<JoinRequestSummary[]>('/interactions/join-requests');
   },
 
-  async cancelJoinRequest(tripId: string): Promise<any> {
+  async cancelJoinRequest(tripId: string): Promise<MessageResponse | null> {
     return request(`/interactions/join-request/${tripId}`, {
       method: 'DELETE',
     });
   },
 
-  async getIncomingRequests(): Promise<any[] | null> {
-    return request<any[]>('/interactions/incoming-requests');
+  async getIncomingRequests(): Promise<IncomingJoinRequest[] | null> {
+    return request<IncomingJoinRequest[]>('/interactions/incoming-requests');
   },
 
-  async updateJoinRequestStatus(requestId: string, status: 'APPROVED' | 'REJECTED'): Promise<any> {
+  async updateJoinRequestStatus(requestId: string, status: 'APPROVED' | 'REJECTED'): Promise<MessageResponse | null> {
     return request(`/interactions/join-request/${requestId}/status`, {
       method: 'POST',
       body: JSON.stringify({ status }),
     });
   },
 
-  async getMyGuideProfile(): Promise<any | null> {
-    return request<any>('/guides/profile');
+  async getMyGuideProfile(): Promise<GuideProfile | null> {
+    return request<GuideProfile>('/guides/profile');
   },
 
-  async getEarnings(guideId: string): Promise<any | null> {
-    return request<any>(`/guides/${guideId}/earnings`);
+  async getEarnings(guideId: string): Promise<GuideEarnings | null> {
+    return request<GuideEarnings>(`/guides/${guideId}/earnings`);
   },
 
-  async getGuidePackages(guideId: string): Promise<any[] | null> {
-    return request<any[]>(`/guides/${guideId}/packages`);
+  async getGuidePackages(guideId: string): Promise<GuidePackage[] | null> {
+    return request<GuidePackage[]>(`/guides/${guideId}/packages`);
   },
 
-  async createGuidePackage(guideId: string, data: any): Promise<any> {
+  async createGuidePackage(guideId: string, data: GuidePackageInput): Promise<GuidePackage | null> {
     return request(`/guides/${guideId}/packages`, {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
 
-  async updateGuidePackage(guideId: string, pkgId: string, data: any): Promise<any> {
+  async updateGuidePackage(guideId: string, pkgId: string, data: Partial<GuidePackageInput>): Promise<GuidePackage | null> {
     return request(`/guides/${guideId}/packages/${pkgId}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     });
   },
 
-  async deleteGuidePackage(guideId: string, pkgId: string): Promise<any> {
+  async deleteGuidePackage(guideId: string, pkgId: string): Promise<MessageResponse | null> {
     return request(`/guides/${guideId}/packages/${pkgId}`, {
       method: 'DELETE',
     });
   },
 
-  async getGuideReels(guideId: string): Promise<any[] | null> {
-    return request<any[]>(`/guides/${guideId}/reels`);
+  async getGuideReels(guideId: string): Promise<GuideReel[] | null> {
+    return request<GuideReel[]>(`/guides/${guideId}/reels`);
   },
 
-  async uploadGuideReel(guideId: string, data: any): Promise<any> {
+  async uploadGuideReel(guideId: string, data: GuideReelInput): Promise<GuideReel | null> {
     return request(`/guides/${guideId}/reels`, {
       method: 'POST',
       body: JSON.stringify(data),
@@ -825,19 +856,19 @@ export const apiService = {
   // A story cover photo, reel video, or reel thumbnail (docs/REMEDIATION.md
   // §8.17) — same pattern as getAvatarUploadUrl/getTripCoverUploadUrl.
   async getGuideMediaUploadUrl(
-    contentType: 'image/jpeg' | 'image/png' | 'image/webp' | 'video/mp4' | 'video/quicktime',
+    contentType: UploadImageContentType | 'video/mp4' | 'video/quicktime',
   ) {
-    return request<{ uploadUrl: string; publicUrl: string }>('/guides/media-upload-url', {
+    return request<UploadUrlResponse>('/guides/media-upload-url', {
       method: 'POST',
       body: JSON.stringify({ contentType }),
     });
   },
 
-  async getGuideLiveStatus(guideId: string): Promise<any | null> {
-    return request<any>(`/guides/${guideId}/live-status`);
+  async getGuideLiveStatus(guideId: string): Promise<GuideLiveStatus | null> {
+    return request<GuideLiveStatus>(`/guides/${guideId}/live-status`);
   },
 
-  async updateGuideLiveStatus(guideId: string, coords: { latitude: number; longitude: number }): Promise<any> {
+  async updateGuideLiveStatus(guideId: string, coords: { latitude: number; longitude: number }): Promise<LiveLocation | null> {
     return request(`/guides/${guideId}/live-status`, {
       method: 'POST',
       body: JSON.stringify(coords),
@@ -845,19 +876,19 @@ export const apiService = {
   },
 
   // Chats
-  async getChats(): Promise<any[] | null> {
-    return request<any[]>('/chats');
+  async getChats(): Promise<ChatRoomSummary[] | null> {
+    return request<ChatRoomSummary[]>('/chats');
   },
 
   async getChatDetails(id: string): Promise<any | null> {
-    return request<any>(`/chats/${id}`);
+    return request<ChatRoomSummary>(`/chats/${id}`);
   },
 
-  async getChatMessages(id: string): Promise<any[] | null> {
-    return request<any[]>(`/chats/${id}/messages`);
+  async getChatMessages(id: string): Promise<ChatMessage[] | null> {
+    return request<ChatMessage[]>(`/chats/${id}/messages`);
   },
 
-  async markChatRead(id: string): Promise<any> {
+  async markChatRead(id: string): Promise<MessageResponse | null> {
     return request(`/chats/${id}/read`, {
       method: 'POST',
     });
@@ -872,35 +903,35 @@ export const apiService = {
   },
 
   // ── Unified Feed (Stories + Guide Reels merged) ──────
-  async getFeed(limit: number = 20, cursor?: string): Promise<any> {
+  async getFeed(limit: number = 20, cursor?: string): Promise<FeedPage | null> {
     const params = new URLSearchParams({ limit: String(limit) });
     if (cursor) params.set('cursor', cursor);
-    return request<any>(`/feed?${params.toString()}`);
+    return request<FeedPage>(`/feed?${params.toString()}`);
   },
 
   // ── Guide Leads (pending JoinRequests as leads) ──────
-  async getGuideLeads(guideId: string): Promise<any[] | null> {
-    return request<any[]>(`/guides/${guideId}/leads`);
+  async getGuideLeads(guideId: string): Promise<GuideLead[] | null> {
+    return request<GuideLead[]>(`/guides/${guideId}/leads`);
   },
 
   // ── Live Weather (at specific coordinates) ──────
   async getLiveWeather(lat: number, lon: number): Promise<any | null> {
-    return request<any>(`/weather/live?lat=${lat}&lon=${lon}`);
+    return request<LiveWeather>(`/weather/live?lat=${lat}&lon=${lon}`);
   },
 
   // ── Emergency Contacts CRUD ──────
-  async getMyEmergencyContacts(): Promise<any[] | null> {
-    return request<any[]>('/safety/contacts');
+  async getMyEmergencyContacts(): Promise<EmergencyContact[] | null> {
+    return request<EmergencyContact[]>('/safety/contacts');
   },
 
-  async createEmergencyContact(data: { name: string; relation: string; phoneNumber: string }): Promise<any> {
+  async createEmergencyContact(data: { name: string; relation: string; phoneNumber: string }): Promise<EmergencyContact | null> {
     return request('/safety/contacts', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
 
-  async deleteEmergencyContact(id: string): Promise<any> {
+  async deleteEmergencyContact(id: string): Promise<MessageResponse | null> {
     return request(`/safety/contacts/${id}`, {
       method: 'DELETE',
     });

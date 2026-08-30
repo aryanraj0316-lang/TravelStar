@@ -1,9 +1,9 @@
 import React from 'react';
-import { StyleSheet, View, useColorScheme } from 'react-native';
+import { StyleSheet, View, useColorScheme, type StyleProp, type ViewStyle } from 'react-native';
 
 interface GlassCardProps {
   children: React.ReactNode;
-  style?: any;
+  style?: StyleProp<ViewStyle>;
   intensity?: number; // unused for standard RN, but good for design systems
 }
 

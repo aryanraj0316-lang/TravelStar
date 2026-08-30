@@ -272,7 +272,7 @@ const SwipeableMessageRow = ({
   onSwipeReply: () => void;
   isMe: boolean;
 }) => {
-  const pan = useRef(new Animated.Value(0)).current;
+  const pan = useState(() => new Animated.Value(0))[0];
 
   const panResponder = useRef(
     PanResponder.create({
@@ -996,10 +996,10 @@ function ChatScreen() {
 
   // Bottom attachments overlay
   const [isAttachmentOpen, setIsAttachmentOpen] = useState(false);
-  const attachPanelHeight = useRef(new Animated.Value(0)).current;
+  const attachPanelHeight = useState(() => new Animated.Value(0))[0];
 
   // Keyboard height tracking for input bar repositioning
-  const keyboardOffset = useRef(new Animated.Value(0)).current;
+  const keyboardOffset = useState(() => new Animated.Value(0))[0];
 
   // Custom Modal Forms
   const [activeModal, setActiveModal] = useState<'NONE' | 'LOCATION'>('NONE');

@@ -74,7 +74,6 @@ interface JoinRequest {
   tourId: string;
   userName: string;
   userAvatar: string;
-  requestMessage: string;
 }
 
 export default function GroupOrganizerScreen() {
@@ -133,8 +132,8 @@ export default function GroupOrganizerScreen() {
             id: r.id,
             tourId: r.tripId,
             userName: r.applicantName,
-            userAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&q=80',
-            requestMessage: r.requestMessage || 'Would love to join this group tour! Let me know if there are slots.',
+            // The real avatar the server sends, not a fixed stock photo.
+            userAvatar: r.applicantAvatar,
           }));
         setJoinRequests(pending);
       }
@@ -1117,7 +1116,14 @@ export default function GroupOrganizerScreen() {
                           <Image source={{ uri: req.userAvatar }} style={styles.reqAvatar} />
                           <View style={{ flex: 1, marginLeft: 12 }}>
                             <Text style={styles.reqName}>{req.userName}</Text>
-                            <Text style={styles.reqMsg}>"{req.requestMessage}"</Text>
+                            {/* No applicant message is rendered here. There
+                                is no message field on JoinRequest and the
+                                endpoint never sent one, so this used to
+                                quote a hardcoded "Would love to join this
+                                group tour!" back to the organizer as though
+                                the applicant had written it — the same
+                                sentence for every person who ever applied
+                                (docs/REMEDIATION.md §0.2 rule 4). */}
                           </View>
                         </View>
 

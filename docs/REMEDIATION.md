@@ -1178,6 +1178,58 @@ partial, exactly what's blocking full completion.
       decision — no monorepo tooling exists yet and most backend routes
       aren't zod-validated, so pick an approach once Phase 5's validation
       coverage is more complete. See commits 49b1206 through df852b4.
+      Follow-up (2026-08-30): §6.4's client half only — new
+      src/types/api.ts hand-mirrors the real response shape of every
+      apiService.* endpoint (70+ were typed `any`), and api.ts's own
+      signatures now use it. Still not shared with the backend (no
+      monorepo tooling, per the original deferral) and still hand-written
+      rather than generated from the backend's zod schemas — this closes
+      the client-side half of the gap only. Typing the real shapes
+      surfaced several existing runtime bugs `any` had been hiding, all
+      fixed in the same pass: travel-guide.tsx's fetchEarnings/
+      fetchPackages/fetchReels/fetchLiveStatus/loadGuideProfile/
+      triggerLiveBroadcast all read a `.data` property off a response that
+      apiService's request() had already unwrapped — every one of those
+      had been silently setting its state to `undefined` since `any` never
+      caught it. home-screen.tsx's feed queryFn had the same bug (`res.data`
+      on GET /feed's real `{items, nextCursor}` shape); its DEFAULT_STORIES
+      fallback had been masking it. travel-guide's Leads tab (inside
+      §8.17's already-flagged "no quote/response field on the model" gap)
+      was rendering a `CustomerLead` shape — avatar, destination, budget,
+      groupSize, durationDays, description — invented wholesale on top of
+      the real GuideLead/JoinRequest row, which has none of those fields;
+      every one of them had been rendering `undefined` in production.
+      Replaced with a card that shows only what the row actually has
+      (applicantName, tripName, status, createdAt); the quote-bid flow
+      stays local-only exactly as already flagged, but no longer overloads
+      the row's real JoinRequestStatus with a fake 'QUOTE_SENT' value —
+      that's now tracked as a separate client-only Set instead.
+      nearby-trips.tsx's local `NearbyTrip` type (independently duplicated
+      in that file, with `budget` correctly typed `string`) is now the
+      shared source in types/api.ts instead of being redeclared, and
+      getNearbyTrips returns it instead of the unrelated `Trip` type
+      (whose `budget: number` disagrees with what the server actually
+      sends — flagging, not fixing, since `Trip` is used far too widely to
+      retype in this pass). Both `tsc --noEmit` (frontend and backend) are
+      clean.
+      Separately, in the same uncommitted batch: six `useRef(new
+      Animated.Value(...)).current` call sites (chat.tsx ×3, map.tsx,
+      search.tsx, stories.tsx, InAppNotificationBanner.tsx ×2,
+      Skeleton.tsx) — one instance of the 381-lint-error `react-hooks/refs`
+      violation this same note flagged as needing a decision — converted
+      to `useState(() => new Animated.Value(...))[0]`, the React
+      Compiler's supported way to create a stable mutable value without
+      touching `.current` during render. GlassCard's `style?: any` is now
+      `StyleProp<ViewStyle>`. group-organizer.tsx's incoming-request cards
+      quoted a hardcoded `requestMessage` ("Would love to join this group
+      tour!...") as if it were the applicant's own words, and showed the
+      same fixed stock photo as every applicant's avatar regardless of who
+      applied — both removed/replaced with the real `applicantAvatar`
+      field; no message field exists on JoinRequest, so none is shown in
+      its place. The broader 381-error lint baseline (purity/
+      set-state-in-effect/preserve-manual-memoization violations across
+      many more files) is untouched — still needs the decision this note
+      already asked for.
       Also found:
       `npm run lint` at HEAD (before this session) already had 381 errors —
       Phase 1's "lint ✅" checkbox above is stale, most likely because

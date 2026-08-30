@@ -1,6 +1,6 @@
 // docs/REMEDIATION.md §9.1 — the loading placeholder for content that has a
 // known shape. Prefer this over a bare spinner in lists.
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet, View, type DimensionValue, type StyleProp, type ViewStyle } from 'react-native';
 import { C, radii, space } from '@/theme/tokens';
 
@@ -12,7 +12,7 @@ export interface SkeletonProps {
 }
 
 export function Skeleton({ width = '100%', height = 16, borderRadius = radii.sm, style }: SkeletonProps) {
-  const pulse = useRef(new Animated.Value(0.4)).current;
+  const pulse = useState(() => new Animated.Value(0.4))[0];
 
   useEffect(() => {
     const loop = Animated.loop(

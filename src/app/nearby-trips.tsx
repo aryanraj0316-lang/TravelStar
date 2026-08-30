@@ -20,6 +20,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { AlertCircle, ArrowLeft, Compass, MapPin, Navigation, Users } from 'lucide-react-native';
 import { C } from '@/theme/tokens';
+import type { NearbyTrip } from '@/types/api';
 
 // docs/REMEDIATION.md §8.13: this screen previously rendered a hardcoded
 // list of Delhi-area "places" with a fake "CURRENT GPS LOCATION" banner and
@@ -28,31 +29,6 @@ import { C } from '@/theme/tokens';
 // nonexistent trip. It now asks for the real device location, fetches real
 // upcoming public trips from GET /trips/nearby sorted by straight-line
 // distance, and only ever opens the join modal on a real trip.
-
-
-type NearbyTrip = {
-  id: string;
-  name: string;
-  creator: string;
-  creatorId: string;
-  cities: string[];
-  startDate: string;
-  endDate: string;
-  budget: string;
-  availableSeats: number;
-  totalSeats: number;
-  membersCount: number;
-  meetingPoint: string;
-  coverImage: string;
-  category: string;
-  guideIncluded: boolean;
-  foodIncluded: boolean;
-  hotelIncluded: boolean;
-  cabIncluded: boolean;
-  distanceKm: number | null;
-  distanceIsApproximate: boolean;
-  nearestCity: string | null;
-};
 
 // Each row is its own component so the React Compiler
 // (app.json > experiments.reactCompiler) can memoize rows independently —
@@ -152,7 +128,7 @@ export default function NearbyTripsScreen() {
     queryFn: async (): Promise<NearbyTrip[]> => {
       const qs = coords ? `?lat=${coords.lat}&lng=${coords.lng}` : '';
       const res = await apiService.getNearbyTrips(qs);
-      return (res ?? []) as NearbyTrip[];
+      return res ?? [];
     },
   });
 

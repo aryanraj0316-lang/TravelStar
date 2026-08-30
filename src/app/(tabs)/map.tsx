@@ -760,7 +760,7 @@ function MapScreen() {
   };
 
   const webViewRef = useRef<WebView>(null);
-  const sosPulse = useRef(new Animated.Value(1)).current;
+  const sosPulse = useState(() => new Animated.Value(1))[0];
 
   useEffect(() => {
     (async () => {
@@ -776,7 +776,7 @@ function MapScreen() {
   let activeTrip = trips.find((t) => t.id === (selectedTripId || tripId));
 
   const [bottomCardHeight, setBottomCardHeight] = useState(180);
-  const panelTranslateY = useRef(new Animated.Value(0)).current;
+  const panelTranslateY = useState(() => new Animated.Value(0))[0];
 
   useEffect(() => {
     Animated.spring(panelTranslateY, {

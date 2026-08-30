@@ -21,6 +21,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useApp } from '@/store/AppContext';
 import { apiService } from '@/services/api';
+import type { GuideLead } from '@/types/api';
+import { formatDate } from '@/lib/datetime';
 import * as ImagePicker from 'expo-image-picker';
 import {
   ArrowLeft,
@@ -64,18 +66,13 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 
 // ─── Interfaces ───
-interface CustomerLead {
-  id: string;
-  name: string;
-  avatar: string;
-  destination: string;
-  groupSize: number;
-  durationDays: number;
-  budget: number;
-  startDate: string;
-  description: string;
-  status: 'PENDING' | 'QUOTE_SENT';
-}
+// A real GuideLead is a JoinRequest row (docs/REMEDIATION.md §8.17 /
+// §8.16's GET /:id/leads) — it carries no avatar, budget, group size,
+// duration, or free-text description. There is no backend model for those
+// fields yet (a real "lead" quote/response flow needs a schema of its own),
+// so the lead card below shows only what the row actually has rather than
+// inventing the rest, and `handleSendQuote` below stays local-only per that
+// same flagged gap.
 
 interface UploadedMedia {
   id: string;
@@ -151,8 +148,8 @@ export default function TravelGuideScreen() {
     try {
       setLoading(true);
       const res = await apiService.getMyGuideProfile();
-      if (res && res.data) {
-        const guide = res.data;
+      if (res) {
+        const guide = res;
         setGuideProfile(guide);
         fetchEarnings(guide.id);
         fetchPackages(guide.id);
@@ -206,7 +203,7 @@ export default function TravelGuideScreen() {
       setWeatherLoading(true);
       // Use guide's last-known position if available
       const statusRes = await apiService.getGuideLiveStatus(guideId);
-      const loc = statusRes?.data?.location;
+      const loc = statusRes?.location;
       const lat = loc?.latitude || 26.9124;
       const lon = loc?.longitude || 75.7873;
       const weatherRes = await apiService.getLiveWeather(lat, lon);
@@ -223,8 +220,8 @@ export default function TravelGuideScreen() {
   const fetchEarnings = async (guideId: string) => {
     try {
       const res = await apiService.getEarnings(guideId);
-      if (res && res.data) {
-        setEarnings(res.data);
+      if (res) {
+        setEarnings(res);
       }
     } catch (e) {
       logger.warn('[TravelGuide] Fetch earnings failed:', e);
@@ -233,9 +230,9 @@ export default function TravelGuideScreen() {
 
   const fetchPackages = async (guideId: string) => {
     try {
-      const res: any = await apiService.getGuidePackages(guideId);
-      if (res && res.data) {
-        setPackages(res.data);
+      const res = await apiService.getGuidePackages(guideId);
+      if (res) {
+        setPackages(res);
       }
     } catch (e) {
       logger.warn('[TravelGuide] Fetch packages failed:', e);
@@ -244,9 +241,9 @@ export default function TravelGuideScreen() {
 
   const fetchReels = async (guideId: string) => {
     try {
-      const res: any = await apiService.getGuideReels(guideId);
-      if (res && res.data) {
-        setReels(res.data);
+      const res = await apiService.getGuideReels(guideId);
+      if (res) {
+        setReels(res);
       }
     } catch (e) {
       logger.warn('[TravelGuide] Fetch reels failed:', e);
@@ -256,8 +253,8 @@ export default function TravelGuideScreen() {
   const fetchLiveStatus = async (guideId: string) => {
     try {
       const res = await apiService.getGuideLiveStatus(guideId);
-      if (res && res.data) {
-        setLiveStatus(res.data);
+      if (res) {
+        setLiveStatus(res);
       }
     } catch (e) {
       logger.warn('[TravelGuide] Fetch live status failed:', e);
@@ -270,8 +267,8 @@ export default function TravelGuideScreen() {
     const lon = 75.7873 + (Math.random() - 0.5) * 0.01;
     try {
       const res = await apiService.updateGuideLiveStatus(guideProfile.id, { latitude: lat, longitude: lon });
-      if (res && res.data) {
-        setLiveStatus((prev: any) => ({ ...prev, location: res.data }));
+      if (res) {
+        setLiveStatus((prev: any) => ({ ...prev, location: res }));
       }
     } catch (e) {
       logger.warn('Failed to broadcast live location:', e);
@@ -385,7 +382,11 @@ export default function TravelGuideScreen() {
     };
   }, [isBroadcasting, guideProfile]);
 
-  const [leads, setLeads] = useState<CustomerLead[]>([]);
+  const [leads, setLeads] = useState<GuideLead[]>([]);
+  // 'QUOTE_SENT' isn't a real JoinRequestStatus — there's no quote/response
+  // field on that model (see the note above), so this stays a purely local
+  // "did I click send" marker rather than overwriting the lead's real status.
+  const [quotedLeadIds, setQuotedLeadIds] = useState<Set<string>>(new Set());
 
   const handleSendQuote = (leadId: string) => {
     const quoteVal = quoteInputs[leadId] || '';
@@ -394,7 +395,7 @@ export default function TravelGuideScreen() {
       return;
     }
 
-    setLeads((prev) => prev.map((l) => (l.id === leadId ? { ...l, status: 'QUOTE_SENT' } : l)));
+    setQuotedLeadIds((prev) => new Set(prev).add(leadId));
     toast(`Quote Sent Successfully! — Your bid of ₹${quoteVal} has been sent to the traveler. They will be notified immediately.`, 'success');
     setQuoteInputs((prev) => ({ ...prev, [leadId]: '' }));
     setSelectedLeadId(null);
@@ -403,8 +404,8 @@ export default function TravelGuideScreen() {
   // Filtered Leads
   const filteredLeads = leads.filter(
     (l) =>
-      l.destination.toLowerCase().includes(searchLeadQuery.toLowerCase()) ||
-      l.name.toLowerCase().includes(searchLeadQuery.toLowerCase()),
+      l.tripName.toLowerCase().includes(searchLeadQuery.toLowerCase()) ||
+      l.applicantName.toLowerCase().includes(searchLeadQuery.toLowerCase()),
   );
 
   // ────────────────────────────────────────────────────────
@@ -493,11 +494,15 @@ export default function TravelGuideScreen() {
         await apiService.createStory({
           title: mediaTitle.trim(),
           content: caption,
-          coverImg: selectedCoverImage,
+          coverImg: selectedCoverImage ?? undefined,
           location: mediaLocation.trim(),
           hasReel: false,
         });
       } else {
+        // Guaranteed by the uploadCategory === 'REEL' guard at the top of
+        // this function, but TS can't narrow selectedVideoUri across that
+        // compound `uploadCategory === 'REEL' && !selectedVideoUri` check.
+        if (!selectedVideoUri) return;
         await apiService.uploadGuideReel(guideProfile.id, {
           videoUrl: selectedVideoUri,
           thumbnailUrl: selectedThumbnailUri || undefined,
@@ -1013,46 +1018,41 @@ export default function TravelGuideScreen() {
 
             {filteredLeads.map((lead) => {
               const isSelected = selectedLeadId === lead.id;
-              const hasQuote = lead.status === 'QUOTE_SENT';
+              const hasQuote = quotedLeadIds.has(lead.id);
 
               return (
                 <View key={lead.id} style={[styles.leadCard, isSelected && styles.leadCardSelected]}>
                   {isSelected && <View style={styles.activeBorderGlow} />}
                   <View style={styles.leadHeaderRow}>
-                    <View style={styles.avatarBorder}>
-                      <Image source={{ uri: lead.avatar }} style={styles.leadAvatar} />
+                    {/* A GuideLead is a JoinRequest row — no applicant avatar
+                        on that model, so this is a generic placeholder
+                        rather than a made-up photo URL. */}
+                    <View style={[styles.avatarBorder, styles.leadAvatarPlaceholder]}>
+                      <Users size={16} color={C.textSec} />
                     </View>
                     <View style={styles.leadInfo}>
-                      <Text style={styles.leadName}>{lead.name}</Text>
+                      <Text style={styles.leadName}>{lead.applicantName}</Text>
                       <View style={styles.leadDestinationRow}>
                         <MapPin size={11} color={C.green} />
                         <Text style={styles.leadDestination} numberOfLines={1}>
-                          {lead.destination}
+                          {lead.tripName}
                         </Text>
                       </View>
                     </View>
                     <View style={styles.leadRight}>
-                      <Text style={styles.leadBudget}>₹{lead.budget.toLocaleString('en-IN')}</Text>
-                      <Text style={styles.leadDays}>
-                        {lead.durationDays} Days • {lead.groupSize} Pax
-                      </Text>
+                      <Text style={styles.leadDays}>{lead.status}</Text>
                     </View>
                   </View>
-
-                  <Text style={styles.leadDesc} numberOfLines={isSelected ? undefined : 2}>
-                    {lead.description}
-                  </Text>
 
                   {/* Toggle Detailed Lead quote input */}
                   {isSelected ? (
                     <View style={styles.quoteInputsBox}>
                       <View style={styles.quoteInputsHeader}>
-                        <Text style={styles.quoteInputLabel}>Proposed Schedule</Text>
-                        <Text style={styles.quoteDurationBadge}>{lead.durationDays} Days Tour</Text>
+                        <Text style={styles.quoteInputLabel}>Send a Quote</Text>
                       </View>
                       <Text style={styles.quoteSchedulePreview}>
-                        Dynamic {lead.durationDays}-Day itinerary covering all major sightseeing, local food joints, and
-                        shopping hotspots with private SUV transport.
+                        Propose a package price for "{lead.tripName}" — the traveler will see your bid and can accept
+                        it in chat.
                       </Text>
 
                       <View style={styles.bidRow}>
@@ -1078,7 +1078,7 @@ export default function TravelGuideScreen() {
                     </View>
                   ) : (
                     <View style={styles.leadActionRow}>
-                      <Text style={styles.dateLabel}>Departure: {lead.startDate}</Text>
+                      <Text style={styles.dateLabel}>Requested: {formatDate(lead.createdAt)}</Text>
                       {hasQuote ? (
                         <View style={styles.quoteSentTag}>
                           <CheckCircle size={11} color={C.greenGlow} />
@@ -2459,6 +2459,11 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     borderRadius: 20,
+  },
+  leadAvatarPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.cardAlt,
   },
   leadHeaderRow: {
     flexDirection: 'row',

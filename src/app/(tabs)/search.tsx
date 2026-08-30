@@ -433,7 +433,7 @@ function SearchScreen() {
   const [showJoinModal, setShowJoinModal] = useState(false);
 
   // Animations
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const fadeAnim = useState(() => new Animated.Value(0))[0];
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
   }, []);

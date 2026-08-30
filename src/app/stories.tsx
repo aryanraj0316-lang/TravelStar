@@ -64,7 +64,7 @@ export default function StoriesScreen() {
 
   // Progress bar. progressValueRef mirrors the animated value via a
   // listener so we never have to reach for the private `._value`.
-  const progressAnim = useRef(new Animated.Value(0)).current;
+  const progressAnim = useState(() => new Animated.Value(0))[0];
   const progressValueRef = useRef(0);
 
   useEffect(() => {

@@ -23,8 +23,8 @@ interface InAppNotif {
 
 export const InAppNotificationBanner: React.FC = () => {
   const [notif, setNotif] = useState<InAppNotif | null>(null);
-  const translateY = useRef(new Animated.Value(-100)).current;
-  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useState(() => new Animated.Value(-100))[0];
+  const opacity = useState(() => new Animated.Value(0))[0];
   const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { setActiveRoomId } = useApp();
   const router = useRouter();
