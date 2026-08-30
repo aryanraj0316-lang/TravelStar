@@ -2246,9 +2246,14 @@ partial, exactly what's blocking full completion.
       unselected map show?), not an i18n/accessibility change — needs
       a decision on whether to remove it, replace it with an honest
       empty state, or keep it as a labeled demo.
+      **map.web.tsx** now done too (dcbcd09 — web counterpart to
+      map.tsx, structurally near-identical, reused the same map.*
+      namespace almost entirely). 23 screens/components fully done
+      now. Same two gaps flagged as map.tsx's (embedded iframe HTML
+      strings not translated; same static-placeholder fallback data
+      left untouched pending a product decision).
       Remaining large screens: chat.tsx (5388 lines), travel-guide.tsx
-      (3713), create.tsx (3405), map.web.tsx (1952),
-      group-organizer.tsx (2250).
+      (3713), create.tsx (3405), group-organizer.tsx (2250).
       Touch target sizing — §9.3's other concrete ask, ~100 elements
       under 44×44 — not yet started on any screen; too easy to break
       layout to bulk-script like fontSize was, needs the same per-screen
