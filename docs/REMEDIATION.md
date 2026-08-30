@@ -2004,6 +2004,53 @@ partial, exactly what's blocking full completion.
       real `isLoading`/empty candidate on its main trip list worth doing
       first. Not attempted in this pass; see the consolidated report for
       the recommended next step.
+      Fifth slice (2026-08-30, commit 03abcd6): search.tsx. Found and fixed
+      the same class of bug the tokens.ts pass (first §9.1 sub-pass) was
+      meant to close app-wide but missed here: a local `const DARK = {...}`/
+      `const LIGHT = {...}` palette pair plus a `useColorScheme()`-driven
+      light-mode branch — dead code on a dark-only app (§1.3) — that also
+      reused a single `#0066FF` for both fills/borders and body text in the
+      same spots the token module's `blue`/`blueText` split exists to
+      prevent (the brand blue fails AA as text at 4.13:1). Removed the
+      local palette; `TripResultCard` no longer takes `C`/`isDark` as
+      props. The main trip list's loading/error/empty states converted
+      onto `ScreenLoading`/`ScreenError`/`ScreenEmpty`, removing the
+      now-dead `emptyStateCard`/`emptyStateTitle`/`emptyStateSub`/
+      `resetEmptyBtn*` styles.
+      Sixth slice (2026-08-30, commit ee5db7f): group-organizer.tsx's
+      "Launch New Tour Group" modal (5 `TextInput`s + 2 buttons) onto
+      `Sheet` + `Input` + `Button`. Left alone on purpose: the "No tours
+      yet" empty state, because it reuses the exact same `createTripBtn`
+      style as an identical CTA elsewhere in this same file — swapping
+      only the empty-state instance onto `ScreenEmpty`'s generic button
+      would have split one CTA into two different looks within one file,
+      a regression against this phase's own goal.
+      Seventh slice (2026-08-30, commit 79a9409): profile.tsx. Same
+      local-`isDark` violation as search.tsx (here as ~12 scattered inline
+      ternaries rather than a named palette pair) — removed, both modals
+      now read tokens directly. Also found and removed dead code while in
+      there: the "Digital Ticket & QR Code" modal was unreachable —
+      `const [selectedTicket] = useState<any>(null)` never destructured a
+      setter (permanently null) and nothing in the file ever called
+      `setShowTicketModal(true)` — presenting a fake "BOARDING PASS" whose
+      "Download Pass (PDF)" button only ever toasted success and saved
+      nothing, the same shape of bug as this file's already-documented
+      "Share Profile" removal. Deleting it surfaced 76 more dead style
+      blocks from an abandoned tabbed Dashboard/History/Wallet/Settings
+      design the current hero+menu-card layout replaced without cleanup
+      (confirmed zero-referenced against the real JSX before deletion).
+      Edit Profile modal's `<Modal>` shell onto `Sheet`, its 6 `TextInput`s
+      onto `Input`, its gender selector onto `Chip`. Delete-account
+      modal's password field onto `Input`, its two buttons onto `Button`
+      (kept as a custom centered `<Modal>`, not `Sheet`, since it's a
+      confirm dialog rather than a bottom sheet).
+      Remaining after seven slices: group-organizer.tsx and profile.tsx
+      are done; 9 screens remain — stories.tsx (deliberately skipped),
+      travel-guide.tsx, and five `(tabs)/` screens (chat.tsx 5388 lines,
+      create.tsx 3405, map.tsx 2359 + map.web.tsx 1952 — map.web.tsx has
+      the same local-isDark pattern as search.tsx/profile.tsx, worth
+      checking first when that pair is done). All still each need their
+      own careful pass; not attempted this session beyond what's listed.
 - [ ] Phase 10 — Performance (in progress — the list-virtualization and
       backend caching/pooling items done; bundle analysis, code-splitting,
       and a measured TTI budget not started):
