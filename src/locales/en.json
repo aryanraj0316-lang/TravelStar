@@ -228,5 +228,36 @@
     "startExploring": "Start Exploring",
     "welcomeToApp": "Welcome to TravelStar!",
     "couldNotCreateAccount": "Could not create your account. Please try again."
+  },
+  "forgotPassword": {
+    "goBack": "Go back",
+    "heading": "Reset your password",
+    "sub": "Enter the email on your account and we'll start a password reset for it.",
+    "backToLogIn": "Back to Log In",
+    "emailLabel": "Email Address",
+    "sendResetLink": "Send Reset Link",
+    "rememberedIt": "Remembered it? ",
+    "logIn": "Log In",
+    "enterEmail": "Enter the email address on your account.",
+    "couldNotSendReset": "Could not send the reset request. Please try again."
+  },
+  "resetPassword": {
+    "goBack": "Go back",
+    "heading": "Set a new password",
+    "sub": "This will sign you out everywhere else, so only whoever holds this link stays in.",
+    "passwordUpdated": "Password updated. Please sign in with your new password.",
+    "goToLogIn": "Go to Log In",
+    "missingToken": "This reset link is missing its token. Request a new one from the login screen.",
+    "requestNewLink": "Request a New Link",
+    "newPasswordLabel": "New Password",
+    "newPasswordA11y": "New password",
+    "confirmPasswordLabel": "Confirm New Password",
+    "confirmPasswordA11y": "Confirm new password",
+    "hidePassword": "Hide password",
+    "showPassword": "Show password",
+    "updatePassword": "Update Password",
+    "passwordTooShort": "Password must be at least 8 characters.",
+    "passwordsDoNotMatch": "Passwords do not match.",
+    "couldNotResetPassword": "Could not reset your password. The link may have expired."
   }
 }

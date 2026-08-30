@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -20,6 +21,7 @@ import { C, space } from '@/theme/tokens';
 // token straight off the deep link's query string, same pattern as
 // destination-details.tsx and stories.tsx.
 export default function ResetPasswordScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const params = useLocalSearchParams<{ token?: string }>();
   const token = typeof params.token === 'string' ? params.token : '';
@@ -32,11 +34,11 @@ export default function ResetPasswordScreen() {
 
   const handleSubmit = async () => {
     if (password.length < 8) {
-      toast('Password must be at least 8 characters.', 'error');
+      toast(t('resetPassword.passwordTooShort'), 'error');
       return;
     }
     if (password !== confirmPassword) {
-      toast('Passwords do not match.', 'error');
+      toast(t('resetPassword.passwordsDoNotMatch'), 'error');
       return;
     }
     setLoading(true);
@@ -45,7 +47,7 @@ export default function ResetPasswordScreen() {
       setDone(true);
     } catch (e) {
       logger.warn('[ResetPassword] Request failed:', e);
-      toast(errorToastMessage(e, 'Could not reset your password. The link may have expired.'), 'error');
+      toast(errorToastMessage(e, t('resetPassword.couldNotResetPassword')), 'error');
     } finally {
       setLoading(false);
     }
@@ -61,7 +63,7 @@ export default function ResetPasswordScreen() {
               style={styles.backBtn}
               activeOpacity={0.8}
               accessibilityRole="button"
-              accessibilityLabel="Go back"
+              accessibilityLabel={t('resetPassword.goBack')}
             >
               <ArrowLeft size={20} color={C.white} />
             </TouchableOpacity>
@@ -72,9 +74,9 @@ export default function ResetPasswordScreen() {
             <LinearGradient colors={[C.blue, '#0044CC']} style={styles.heroIconBadge}>
               <Lock size={24} color={C.white} />
             </LinearGradient>
-            <Text style={styles.heroHeading}>Set a new password</Text>
+            <Text style={styles.heroHeading}>{t('resetPassword.heading')}</Text>
             <Text style={styles.heroSub}>
-              This will sign you out everywhere else, so only whoever holds this link stays in.
+              {t('resetPassword.sub')}
             </Text>
           </View>
 
@@ -82,46 +84,50 @@ export default function ResetPasswordScreen() {
             {done ? (
               <View style={styles.confirmWrap}>
                 <ShieldCheck size={28} color={C.greenText} style={{ marginBottom: 10 }} />
-                <Text style={styles.confirmText}>Password updated. Please sign in with your new password.</Text>
+                <Text style={styles.confirmText}>{t('resetPassword.passwordUpdated')}</Text>
                 <TouchableOpacity
                   style={{ marginTop: 18 }}
                   onPress={() => router.replace('/auth')}
                   activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('resetPassword.goToLogIn')}
                 >
-                  <Text style={styles.footerLink}>Go to Log In</Text>
+                  <Text style={styles.footerLink}>{t('resetPassword.goToLogIn')}</Text>
                 </TouchableOpacity>
               </View>
             ) : !token ? (
               <View style={styles.confirmWrap}>
                 <ShieldAlert size={28} color={C.star} style={{ marginBottom: 10 }} />
                 <Text style={styles.confirmText}>
-                  This reset link is missing its token. Request a new one from the login screen.
+                  {t('resetPassword.missingToken')}
                 </Text>
                 <TouchableOpacity
                   style={{ marginTop: 18 }}
                   onPress={() => router.replace('/forgot-password')}
                   activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('resetPassword.requestNewLink')}
                 >
-                  <Text style={styles.footerLink}>Request a New Link</Text>
+                  <Text style={styles.footerLink}>{t('resetPassword.requestNewLink')}</Text>
                 </TouchableOpacity>
               </View>
             ) : (
               <>
                 <Input
-                  label="New Password"
+                  label={t('resetPassword.newPasswordLabel')}
                   icon={<Lock size={18} color={C.textSec} />}
                   placeholder="••••••••"
                   secureTextEntry={!showPassword}
                   value={password}
                   onChangeText={setPassword}
-                  accessibilityLabel="New password"
+                  accessibilityLabel={t('resetPassword.newPasswordA11y')}
                   containerStyle={styles.inputWrap}
                   rightAccessory={
                     <TouchableOpacity
                       onPress={() => setShowPassword(!showPassword)}
                       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                       accessibilityRole="button"
-                      accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                      accessibilityLabel={showPassword ? t('resetPassword.hidePassword') : t('resetPassword.showPassword')}
                     >
                       {showPassword ? <EyeOff size={18} color={C.textSec} /> : <Eye size={18} color={C.textSec} />}
                     </TouchableOpacity>
@@ -129,17 +135,17 @@ export default function ResetPasswordScreen() {
                 />
 
                 <Input
-                  label="Confirm New Password"
+                  label={t('resetPassword.confirmPasswordLabel')}
                   icon={<Lock size={18} color={C.textSec} />}
                   placeholder="••••••••"
                   secureTextEntry={!showPassword}
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
-                  accessibilityLabel="Confirm new password"
+                  accessibilityLabel={t('resetPassword.confirmPasswordA11y')}
                   containerStyle={styles.inputWrap}
                 />
 
-                <Button label="Update Password" onPress={handleSubmit} loading={loading} fullWidth style={styles.submitBtn} />
+                <Button label={t('resetPassword.updatePassword')} onPress={handleSubmit} loading={loading} fullWidth style={styles.submitBtn} />
               </>
             )}
           </GlassCard>

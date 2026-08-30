@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -30,6 +31,7 @@ import { C, space } from '@/theme/tokens';
 // travelstar://reset-password?token=... deep link once that token reaches
 // the user by some channel.
 export default function ForgotPasswordScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
@@ -37,7 +39,7 @@ export default function ForgotPasswordScreen() {
 
   const handleSubmit = async () => {
     if (!email.trim()) {
-      toast('Enter the email address on your account.', 'error');
+      toast(t('forgotPassword.enterEmail'), 'error');
       return;
     }
     setLoading(true);
@@ -46,7 +48,7 @@ export default function ForgotPasswordScreen() {
       setSentMessage(res.message);
     } catch (e) {
       logger.warn('[ForgotPassword] Request failed:', e);
-      toast(errorToastMessage(e, 'Could not send the reset request. Please try again.'), 'error');
+      toast(errorToastMessage(e, t('forgotPassword.couldNotSendReset')), 'error');
     } finally {
       setLoading(false);
     }
@@ -62,7 +64,7 @@ export default function ForgotPasswordScreen() {
               style={styles.backBtn}
               activeOpacity={0.8}
               accessibilityRole="button"
-              accessibilityLabel="Go back"
+              accessibilityLabel={t('forgotPassword.goBack')}
             >
               <ArrowLeft size={20} color={C.white} />
             </TouchableOpacity>
@@ -73,9 +75,9 @@ export default function ForgotPasswordScreen() {
             <LinearGradient colors={[C.blue, '#0044CC']} style={styles.heroIconBadge}>
               <KeyRound size={24} color={C.white} />
             </LinearGradient>
-            <Text style={styles.heroHeading}>Reset your password</Text>
+            <Text style={styles.heroHeading}>{t('forgotPassword.heading')}</Text>
             <Text style={styles.heroSub}>
-              Enter the email on your account and we&apos;ll start a password reset for it.
+              {t('forgotPassword.sub')}
             </Text>
           </View>
 
@@ -88,14 +90,16 @@ export default function ForgotPasswordScreen() {
                   style={{ marginTop: 18 }}
                   onPress={() => router.replace('/auth')}
                   activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('forgotPassword.backToLogIn')}
                 >
-                  <Text style={styles.footerLink}>Back to Log In</Text>
+                  <Text style={styles.footerLink}>{t('forgotPassword.backToLogIn')}</Text>
                 </TouchableOpacity>
               </View>
             ) : (
               <>
                 <Input
-                  label="Email Address"
+                  label={t('forgotPassword.emailLabel')}
                   icon={<Mail size={18} color={C.textSec} />}
                   placeholder="aarav@example.com"
                   keyboardType="email-address"
@@ -106,7 +110,7 @@ export default function ForgotPasswordScreen() {
                 />
 
                 <Button
-                  label="Send Reset Link"
+                  label={t('forgotPassword.sendResetLink')}
                   onPress={handleSubmit}
                   loading={loading}
                   fullWidth
@@ -117,9 +121,13 @@ export default function ForgotPasswordScreen() {
           </GlassCard>
 
           <View style={styles.footerWrap}>
-            <Text style={styles.footerText}>Remembered it? </Text>
-            <TouchableOpacity onPress={() => router.replace('/auth')}>
-              <Text style={styles.footerLink}>Log In</Text>
+            <Text style={styles.footerText}>{t('forgotPassword.rememberedIt')}</Text>
+            <TouchableOpacity
+              onPress={() => router.replace('/auth')}
+              accessibilityRole="button"
+              accessibilityLabel={t('forgotPassword.logIn')}
+            >
+              <Text style={styles.footerLink}>{t('forgotPassword.logIn')}</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
