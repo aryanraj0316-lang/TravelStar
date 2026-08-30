@@ -2220,7 +2220,15 @@ partial, exactly what's blocking full completion.
       profile.tsx 2337 — language switcher already wired, rest of screen
       not yet extracted — group-organizer.tsx 2250) which have not been
       started yet (profile.tsx partially) and will each need substantial
-      dedicated passes.
+      dedicated passes. **profile.tsx** now done too (57c612f — full
+      pass beyond the language switcher: every menu row, all toggle
+      switches, the edit-profile sheet, delete-account modal,
+      saved-places sheet, and every toast/alert extracted and labeled;
+      also removed a dead "scan" button with no `onPress` at all,
+      found during this pass). 21 screens/components fully done now.
+      Remaining large screens: chat.tsx (5388 lines), travel-guide.tsx
+      (3713), create.tsx (3405), map.tsx (2359), map.web.tsx (1952),
+      group-organizer.tsx (2250).
       Touch target sizing — §9.3's other concrete ask, ~100 elements
       under 44×44 — not yet started on any screen; too easy to break
       layout to bulk-script like fontSize was, needs the same per-screen
