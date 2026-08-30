@@ -4,22 +4,13 @@ import { queryKeys } from '@/lib/query-keys';
 import { getCurrentDeviceLocation } from '@/lib/device-location';
 import TripDetailModal from '@/components/TripDetailModal';
 import { useQuery } from '@tanstack/react-query';
-import {
-  ActivityIndicator,
-  FlatList,
-  Image,
-  RefreshControl,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { FlatList, Image, RefreshControl, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { AlertCircle, ArrowLeft, Compass, MapPin, Navigation, Users } from 'lucide-react-native';
+import { ArrowLeft, MapPin, Navigation, Users } from 'lucide-react-native';
 import { C } from '@/theme/tokens';
+import { ScreenEmpty, ScreenError, ScreenLoading } from '@/components/ui';
 import type { NearbyTrip } from '@/types/api';
 
 // docs/REMEDIATION.md §8.13: this screen previously rendered a hardcoded
@@ -194,25 +185,14 @@ export default function NearbyTripsScreen() {
       </View>
 
       {isLoading ? (
-        <View style={styles.stateWrap}>
-          <ActivityIndicator size="large" color={C.blue} />
-          <Text style={styles.stateText}>Finding trips near you…</Text>
-        </View>
+        <ScreenLoading label="Finding trips near you…" />
       ) : isError ? (
-        <View style={styles.stateWrap}>
-          <AlertCircle size={52} color={C.rose} strokeWidth={1.4} />
-          <Text style={styles.stateText}>
-            {error instanceof Error ? error.message : 'Could not load nearby trips.'}
-          </Text>
-          <TouchableOpacity style={styles.retryBtn} onPress={() => refetch()}>
-            <Text style={styles.retryBtnText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
+        <ScreenError
+          message={error instanceof Error ? error.message : 'Could not load nearby trips.'}
+          onRetry={() => refetch()}
+        />
       ) : trips.length === 0 ? (
-        <View style={styles.stateWrap}>
-          <Compass size={56} color={C.textMuted} strokeWidth={1.2} />
-          <Text style={styles.stateText}>No upcoming trips are open right now.</Text>
-        </View>
+        <ScreenEmpty title="No trips nearby" message="No upcoming trips are open right now." />
       ) : (
         <FlatList
           data={trips}
@@ -288,27 +268,6 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(59,130,246,0.3)',
   },
   locBtnText: { fontSize: 10.5, fontWeight: '700', color: C.blue },
-  stateWrap: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 14,
-    paddingHorizontal: 40,
-  },
-  stateText: {
-    color: C.textSec,
-    fontSize: 13.5,
-    fontWeight: '600',
-    textAlign: 'center',
-    lineHeight: 19,
-  },
-  retryBtn: {
-    backgroundColor: C.blue,
-    paddingHorizontal: 22,
-    paddingVertical: 10,
-    borderRadius: 12,
-  },
-  retryBtnText: { color: C.white, fontSize: 13, fontWeight: '700' },
   scrollContent: { paddingHorizontal: 16, paddingTop: 8 },
   tripCard: {
     backgroundColor: C.card,

@@ -1,25 +1,16 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  TextInput,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
-  ActivityIndicator,
-} from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { ArrowLeft, KeyRound, Mail, ShieldCheck } from 'lucide-react-native';
 
 import GlassCard from '@/components/ui/GlassCard';
+import { Button, Input } from '@/components/ui';
 import { apiService } from '@/services/api';
 import { logger } from '@/lib/logger';
 import { errorToastMessage, toast } from '@/lib/feedback';
-import { C } from '@/theme/tokens';
+import { C, space } from '@/theme/tokens';
 
 // docs/REMEDIATION.md §8.1: apiService.forgotPassword/resetPassword existed
 // on the client and the backend routes were fully built (token hashing,
@@ -73,14 +64,14 @@ export default function ForgotPasswordScreen() {
               accessibilityRole="button"
               accessibilityLabel="Go back"
             >
-              <ArrowLeft size={20} color="#FFFFFF" />
+              <ArrowLeft size={20} color={C.white} />
             </TouchableOpacity>
             <View style={{ width: 40 }} />
           </View>
 
           <View style={styles.heroWrap}>
-            <LinearGradient colors={['#0066FF', '#0044CC']} style={styles.heroIconBadge}>
-              <KeyRound size={24} color="#FFFFFF" />
+            <LinearGradient colors={[C.blue, '#0044CC']} style={styles.heroIconBadge}>
+              <KeyRound size={24} color={C.white} />
             </LinearGradient>
             <Text style={styles.heroHeading}>Reset your password</Text>
             <Text style={styles.heroSub}>
@@ -91,7 +82,7 @@ export default function ForgotPasswordScreen() {
           <GlassCard style={styles.card}>
             {sentMessage ? (
               <View style={styles.confirmWrap}>
-                <ShieldCheck size={28} color="#22C55E" style={{ marginBottom: 10 }} />
+                <ShieldCheck size={28} color={C.greenText} style={{ marginBottom: 10 }} />
                 <Text style={styles.confirmText}>{sentMessage}</Text>
                 <TouchableOpacity
                   style={{ marginTop: 18 }}
@@ -103,37 +94,24 @@ export default function ForgotPasswordScreen() {
               </View>
             ) : (
               <>
-                <View style={styles.inputWrap}>
-                  <Text style={styles.inputLabel}>Email Address</Text>
-                  <View style={styles.inputBox}>
-                    <Mail size={18} color="#94A3B8" style={{ marginRight: 10 }} />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="aarav@example.com"
-                      placeholderTextColor="#7E8494"
-                      keyboardType="email-address"
-                      autoCapitalize="none"
-                      value={email}
-                      onChangeText={setEmail}
-                      accessibilityLabel="Email address"
-                    />
-                  </View>
-                </View>
+                <Input
+                  label="Email Address"
+                  icon={<Mail size={18} color={C.textSec} />}
+                  placeholder="aarav@example.com"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  value={email}
+                  onChangeText={setEmail}
+                  containerStyle={styles.inputWrap}
+                />
 
-                <TouchableOpacity
+                <Button
+                  label="Send Reset Link"
                   onPress={handleSubmit}
-                  disabled={loading}
-                  activeOpacity={0.85}
-                  style={{ marginTop: 6 }}
-                >
-                  <LinearGradient colors={['#0066FF', '#0044CC']} style={styles.submitBtn}>
-                    {loading ? (
-                      <ActivityIndicator color="#FFFFFF" />
-                    ) : (
-                      <Text style={styles.submitBtnText}>Send Reset Link</Text>
-                    )}
-                  </LinearGradient>
-                </TouchableOpacity>
+                  loading={loading}
+                  fullWidth
+                  style={styles.submitBtn}
+                />
               </>
             )}
           </GlassCard>
@@ -188,34 +166,10 @@ const styles = StyleSheet.create({
   heroSub: { fontSize: 13, color: C.textSec, textAlign: 'center', maxWidth: 280, lineHeight: 18 },
   card: { padding: 20, borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.12)' },
   inputWrap: { marginBottom: 14 },
-  inputLabel: { fontSize: 12, fontWeight: '600', color: C.textSec, marginBottom: 6 },
-  inputBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  input: { fontSize: 14, color: C.white, flex: 1 },
-  submitBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 16,
-    shadowColor: C.blue,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 6,
-  },
-  submitBtnText: { fontSize: 15, fontWeight: '700', color: C.white },
+  submitBtn: { marginTop: space[2] },
   confirmWrap: { alignItems: 'center', paddingVertical: 10 },
-  confirmText: { fontSize: 14, color: '#E2E8F0', textAlign: 'center', lineHeight: 20 },
+  confirmText: { fontSize: 14, color: C.white, textAlign: 'center', lineHeight: 20 },
   footerWrap: { flexDirection: 'row', justifyContent: 'center', marginTop: 16 },
   footerText: { fontSize: 13, color: C.textSec },
-  footerLink: { fontSize: 13, fontWeight: '700', color: '#60A5FA' },
+  footerLink: { fontSize: 13, fontWeight: '700', color: C.blueText },
 });

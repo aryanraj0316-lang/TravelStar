@@ -1,34 +1,16 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import {
-  AlertCircle,
-  ArrowLeft,
-  Calendar,
-  ChevronRight,
-  Compass,
-  MapPin,
-  MessageCircle,
-  Users,
-} from 'lucide-react-native';
+import { ArrowLeft, Calendar, ChevronRight, MapPin, MessageCircle, Users } from 'lucide-react-native';
 import React, { useState } from 'react';
-import {
-  ActivityIndicator,
-  FlatList,
-  Image,
-  RefreshControl,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { FlatList, Image, RefreshControl, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { apiService } from '@/services/api';
 import { queryKeys } from '@/lib/query-keys';
 import { MyTripBooking, useApp } from '@/store/AppContext';
 import { C } from '@/theme/tokens';
+import { ScreenEmpty, ScreenError, ScreenLoading } from '@/components/ui';
 
 
 type BookingFilter = 'ALL' | 'ONGOING' | 'UPCOMING' | 'COMPLETED';
@@ -265,28 +247,19 @@ export default function BookingsScreen() {
 
       {/* Bookings List */}
       {!isLoggedIn ? (
-        <View style={styles.emptyContainer}>
-          <Compass size={64} color={C.textMuted} strokeWidth={1.2} />
-          <Text style={styles.emptyText}>Sign in to see your bookings.</Text>
-          <TouchableOpacity activeOpacity={0.8} style={styles.retryBtn} onPress={() => router.navigate('/auth')}>
-            <Text style={styles.retryBtnText}>Sign In</Text>
-          </TouchableOpacity>
-        </View>
+        <ScreenEmpty
+          title="Sign in required"
+          message="Sign in to see your bookings."
+          actionLabel="Sign In"
+          onAction={() => router.navigate('/auth')}
+        />
       ) : isLoading ? (
-        <View style={styles.emptyContainer}>
-          <ActivityIndicator color={C.blue} size="large" />
-          <Text style={styles.emptyText}>Loading your bookings…</Text>
-        </View>
+        <ScreenLoading label="Loading your bookings…" />
       ) : isError ? (
-        <View style={styles.emptyContainer}>
-          <AlertCircle size={56} color={C.rose} strokeWidth={1.4} />
-          <Text style={styles.emptyText}>
-            {error instanceof Error ? error.message : 'Could not load your bookings.'}
-          </Text>
-          <TouchableOpacity activeOpacity={0.8} style={styles.retryBtn} onPress={() => refetch()}>
-            <Text style={styles.retryBtnText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
+        <ScreenError
+          message={error instanceof Error ? error.message : 'Could not load your bookings.'}
+          onRetry={() => refetch()}
+        />
       ) : (
         <FlatList
           data={filteredBookings}
@@ -302,12 +275,10 @@ export default function BookingsScreen() {
           windowSize={7}
           removeClippedSubviews
           ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Compass size={64} color={C.textMuted} strokeWidth={1.2} />
-              <Text style={styles.emptyText}>
-                {myTrips.length === 0 ? "You haven't joined any trips yet." : 'No bookings found in this category.'}
-              </Text>
-            </View>
+            <ScreenEmpty
+              title="No bookings"
+              message={myTrips.length === 0 ? "You haven't joined any trips yet." : 'No bookings found in this category.'}
+            />
           }
         />
       )}
@@ -382,30 +353,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 10,
     paddingBottom: 40,
-  },
-  emptyContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 80,
-    gap: 16,
-    paddingHorizontal: 32,
-  },
-  emptyText: {
-    color: C.textMuted,
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  retryBtn: {
-    backgroundColor: C.blue,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 10,
-  },
-  retryBtnText: {
-    color: C.white,
-    fontSize: 13,
-    fontWeight: '700',
   },
   bookingCard: {
     backgroundColor: C.card,

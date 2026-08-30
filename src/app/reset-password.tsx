@@ -1,25 +1,16 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  TextInput,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
-  ActivityIndicator,
-} from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, Eye, EyeOff, Lock, ShieldAlert, ShieldCheck } from 'lucide-react-native';
 
 import GlassCard from '@/components/ui/GlassCard';
+import { Button, Input } from '@/components/ui';
 import { apiService } from '@/services/api';
 import { logger } from '@/lib/logger';
 import { errorToastMessage, toast } from '@/lib/feedback';
-import { C } from '@/theme/tokens';
+import { C, space } from '@/theme/tokens';
 
 // docs/REMEDIATION.md §8.1 — the other half of forgot-password.tsx. Reached
 // via the app's `travelstar://` scheme as `travelstar://reset-password?token=...`
@@ -72,14 +63,14 @@ export default function ResetPasswordScreen() {
               accessibilityRole="button"
               accessibilityLabel="Go back"
             >
-              <ArrowLeft size={20} color="#FFFFFF" />
+              <ArrowLeft size={20} color={C.white} />
             </TouchableOpacity>
             <View style={{ width: 40 }} />
           </View>
 
           <View style={styles.heroWrap}>
-            <LinearGradient colors={['#0066FF', '#0044CC']} style={styles.heroIconBadge}>
-              <Lock size={24} color="#FFFFFF" />
+            <LinearGradient colors={[C.blue, '#0044CC']} style={styles.heroIconBadge}>
+              <Lock size={24} color={C.white} />
             </LinearGradient>
             <Text style={styles.heroHeading}>Set a new password</Text>
             <Text style={styles.heroSub}>
@@ -90,7 +81,7 @@ export default function ResetPasswordScreen() {
           <GlassCard style={styles.card}>
             {done ? (
               <View style={styles.confirmWrap}>
-                <ShieldCheck size={28} color="#22C55E" style={{ marginBottom: 10 }} />
+                <ShieldCheck size={28} color={C.greenText} style={{ marginBottom: 10 }} />
                 <Text style={styles.confirmText}>Password updated. Please sign in with your new password.</Text>
                 <TouchableOpacity
                   style={{ marginTop: 18 }}
@@ -102,7 +93,7 @@ export default function ResetPasswordScreen() {
               </View>
             ) : !token ? (
               <View style={styles.confirmWrap}>
-                <ShieldAlert size={28} color="#F59E0B" style={{ marginBottom: 10 }} />
+                <ShieldAlert size={28} color={C.star} style={{ marginBottom: 10 }} />
                 <Text style={styles.confirmText}>
                   This reset link is missing its token. Request a new one from the login screen.
                 </Text>
@@ -116,58 +107,39 @@ export default function ResetPasswordScreen() {
               </View>
             ) : (
               <>
-                <View style={styles.inputWrap}>
-                  <Text style={styles.inputLabel}>New Password</Text>
-                  <View style={styles.inputBox}>
-                    <Lock size={18} color="#94A3B8" style={{ marginRight: 10 }} />
-                    <TextInput
-                      style={[styles.input, { flex: 1 }]}
-                      placeholder="••••••••"
-                      placeholderTextColor="#7E8494"
-                      secureTextEntry={!showPassword}
-                      value={password}
-                      onChangeText={setPassword}
-                      accessibilityLabel="New password"
-                    />
+                <Input
+                  label="New Password"
+                  icon={<Lock size={18} color={C.textSec} />}
+                  placeholder="••••••••"
+                  secureTextEntry={!showPassword}
+                  value={password}
+                  onChangeText={setPassword}
+                  accessibilityLabel="New password"
+                  containerStyle={styles.inputWrap}
+                  rightAccessory={
                     <TouchableOpacity
                       onPress={() => setShowPassword(!showPassword)}
                       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      accessibilityRole="button"
+                      accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
                     >
-                      {showPassword ? <EyeOff size={18} color="#94A3B8" /> : <Eye size={18} color="#94A3B8" />}
+                      {showPassword ? <EyeOff size={18} color={C.textSec} /> : <Eye size={18} color={C.textSec} />}
                     </TouchableOpacity>
-                  </View>
-                </View>
+                  }
+                />
 
-                <View style={styles.inputWrap}>
-                  <Text style={styles.inputLabel}>Confirm New Password</Text>
-                  <View style={styles.inputBox}>
-                    <Lock size={18} color="#94A3B8" style={{ marginRight: 10 }} />
-                    <TextInput
-                      style={[styles.input, { flex: 1 }]}
-                      placeholder="••••••••"
-                      placeholderTextColor="#7E8494"
-                      secureTextEntry={!showPassword}
-                      value={confirmPassword}
-                      onChangeText={setConfirmPassword}
-                      accessibilityLabel="Confirm new password"
-                    />
-                  </View>
-                </View>
+                <Input
+                  label="Confirm New Password"
+                  icon={<Lock size={18} color={C.textSec} />}
+                  placeholder="••••••••"
+                  secureTextEntry={!showPassword}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  accessibilityLabel="Confirm new password"
+                  containerStyle={styles.inputWrap}
+                />
 
-                <TouchableOpacity
-                  onPress={handleSubmit}
-                  disabled={loading}
-                  activeOpacity={0.85}
-                  style={{ marginTop: 6 }}
-                >
-                  <LinearGradient colors={['#0066FF', '#0044CC']} style={styles.submitBtn}>
-                    {loading ? (
-                      <ActivityIndicator color="#FFFFFF" />
-                    ) : (
-                      <Text style={styles.submitBtnText}>Update Password</Text>
-                    )}
-                  </LinearGradient>
-                </TouchableOpacity>
+                <Button label="Update Password" onPress={handleSubmit} loading={loading} fullWidth style={styles.submitBtn} />
               </>
             )}
           </GlassCard>
@@ -215,32 +187,8 @@ const styles = StyleSheet.create({
   heroSub: { fontSize: 13, color: C.textSec, textAlign: 'center', maxWidth: 300, lineHeight: 18 },
   card: { padding: 20, borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.12)' },
   inputWrap: { marginBottom: 14 },
-  inputLabel: { fontSize: 12, fontWeight: '600', color: C.textSec, marginBottom: 6 },
-  inputBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  input: { fontSize: 14, color: C.white, flex: 1 },
-  submitBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 16,
-    shadowColor: C.blue,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 6,
-  },
-  submitBtnText: { fontSize: 15, fontWeight: '700', color: C.white },
+  submitBtn: { marginTop: space[2] },
   confirmWrap: { alignItems: 'center', paddingVertical: 10 },
-  confirmText: { fontSize: 14, color: '#E2E8F0', textAlign: 'center', lineHeight: 20 },
-  footerLink: { fontSize: 13, fontWeight: '700', color: '#60A5FA' },
+  confirmText: { fontSize: 14, color: C.white, textAlign: 'center', lineHeight: 20 },
+  footerLink: { fontSize: 13, fontWeight: '700', color: C.blueText },
 });

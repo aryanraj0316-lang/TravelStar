@@ -1,25 +1,16 @@
 import React, { useState } from 'react';
 import { setTokens } from '@/services/api';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  TextInput,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
-  ActivityIndicator,
-} from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { ArrowLeft, Mail, Lock, User, Eye, EyeOff, ShieldCheck, Sparkles, Compass } from 'lucide-react-native';
 
 import GlassCard from '@/components/ui/GlassCard';
+import { Button, Input } from '@/components/ui';
 import { useApp, UserRole } from '@/store/AppContext';
 import { apiService } from '@/services/api';
-import { C } from '@/theme/tokens';
+import { C, space } from '@/theme/tokens';
 import { errorToastMessage, showAlert, toast } from '@/lib/feedback';
 
 const ROLES: { id: UserRole; title: string; subtitle: string; icon: string }[] = [
@@ -144,12 +135,18 @@ export default function AuthScreen() {
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           {/* Top Header Navigation */}
           <View style={styles.headerRow}>
-            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.8}>
-              <ArrowLeft size={20} color="#FFFFFF" />
+            <TouchableOpacity
+              onPress={() => router.back()}
+              style={styles.backBtn}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+            >
+              <ArrowLeft size={20} color={C.white} />
             </TouchableOpacity>
 
             <View style={styles.brandBadge}>
-              <Compass size={18} color="#0066FF" style={{ marginRight: 6 }} />
+              <Compass size={18} color={C.blue} style={{ marginRight: space[1] }} />
               <Text style={styles.brandTitle}>TravelStar</Text>
             </View>
 
@@ -159,12 +156,12 @@ export default function AuthScreen() {
           {/* Hero Banner Title */}
           <View style={styles.heroWrap}>
             <LinearGradient
-              colors={['#0066FF', '#0044CC']}
+              colors={[C.blue, '#0044CC']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.heroIconBadge}
             >
-              <Sparkles size={24} color="#FFFFFF" />
+              <Sparkles size={24} color={C.white} />
             </LinearGradient>
             <Text style={styles.heroHeading}>{mode === 'LOGIN' ? 'Welcome Back' : 'Create Account'}</Text>
             <Text style={styles.heroSub}>
@@ -218,91 +215,67 @@ export default function AuthScreen() {
           {/* Form Input Fields */}
           <GlassCard style={styles.card}>
             {mode === 'SIGNUP' && (
-              <View style={styles.inputWrap}>
-                <Text style={styles.inputLabel}>Full Name (Username)</Text>
-                <View style={styles.inputBox}>
-                  <User size={18} color="#94A3B8" style={{ marginRight: 10 }} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="e.g. Aarav Sharma"
-                    placeholderTextColor="#7E8494"
-                    value={fullName}
-                    onChangeText={setFullName}
-                  />
-                </View>
-              </View>
+              <Input
+                label="Full Name (Username)"
+                icon={<User size={18} color={C.textSec} />}
+                placeholder="e.g. Aarav Sharma"
+                value={fullName}
+                onChangeText={setFullName}
+                containerStyle={styles.inputWrap}
+              />
             )}
 
-            <View style={styles.inputWrap}>
-              <Text style={styles.inputLabel}>Email Address</Text>
-              <View style={styles.inputBox}>
-                <Mail size={18} color="#94A3B8" style={{ marginRight: 10 }} />
-                <TextInput
-                  style={styles.input}
-                  placeholder="aarav@example.com"
-                  placeholderTextColor="#7E8494"
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  value={email}
-                  onChangeText={setEmail}
-                />
-              </View>
-            </View>
+            <Input
+              label="Email Address"
+              icon={<Mail size={18} color={C.textSec} />}
+              placeholder="aarav@example.com"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              value={email}
+              onChangeText={setEmail}
+              containerStyle={styles.inputWrap}
+            />
 
-            <View style={styles.inputWrap}>
-              <Text style={styles.inputLabel}>Password</Text>
-              <View style={styles.inputBox}>
-                <Lock size={18} color="#94A3B8" style={{ marginRight: 10 }} />
-                <TextInput
-                  style={[styles.input, { flex: 1 }]}
-                  placeholder="••••••••"
-                  placeholderTextColor="#7E8494"
-                  secureTextEntry={!showPassword}
-                  value={password}
-                  onChangeText={setPassword}
-                />
+            <Input
+              label="Password"
+              icon={<Lock size={18} color={C.textSec} />}
+              placeholder="••••••••"
+              secureTextEntry={!showPassword}
+              value={password}
+              onChangeText={setPassword}
+              containerStyle={styles.inputWrap}
+              rightAccessory={
                 <TouchableOpacity
                   onPress={() => setShowPassword(!showPassword)}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  {showPassword ? <EyeOff size={18} color="#94A3B8" /> : <Eye size={18} color="#94A3B8" />}
-                </TouchableOpacity>
-              </View>
-              {mode === 'LOGIN' && (
-                <TouchableOpacity
-                  onPress={() => router.push('/forgot-password')}
-                  style={styles.forgotPasswordLink}
                   accessibilityRole="button"
-                  accessibilityLabel="Forgot password"
+                  accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
                 >
-                  <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+                  {showPassword ? <EyeOff size={18} color={C.textSec} /> : <Eye size={18} color={C.textSec} />}
                 </TouchableOpacity>
-              )}
-            </View>
+              }
+            />
+            {mode === 'LOGIN' && (
+              <TouchableOpacity
+                onPress={() => router.push('/forgot-password')}
+                style={styles.forgotPasswordLink}
+                accessibilityRole="button"
+                accessibilityLabel="Forgot password"
+              >
+                <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+              </TouchableOpacity>
+            )}
 
             {/* Primary Submit Button */}
-            <TouchableOpacity
+            <Button
+              label={mode === 'LOGIN' ? 'Log In' : 'Create Account'}
               onPress={handleFormSubmit}
-              disabled={loading}
-              activeOpacity={0.85}
-              style={{ marginTop: 10 }}
-            >
-              <LinearGradient
-                colors={['#0066FF', '#0044CC']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.submitBtn}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <>
-                    <ShieldCheck size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-                    <Text style={styles.submitBtnText}>{mode === 'LOGIN' ? 'Log In' : 'Create Account'}</Text>
-                  </>
-                )}
-              </LinearGradient>
-            </TouchableOpacity>
+              loading={loading}
+              fullWidth
+              icon={<ShieldCheck size={20} color={C.white} />}
+              style={styles.submitBtn}
+              accessibilityHint={mode === 'LOGIN' ? 'Signs you in' : 'Creates your account'}
+            />
 
             {/* Footer Switcher */}
             <View style={styles.footerWrap}>
@@ -323,7 +296,7 @@ export default function AuthScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#050710',
+    backgroundColor: C.bg,
   },
   scrollContent: {
     paddingHorizontal: 20,
@@ -359,7 +332,7 @@ const styles = StyleSheet.create({
   brandTitle: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#60A5FA',
+    color: C.blueText,
   },
   heroWrap: {
     alignItems: 'center',
@@ -422,7 +395,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#E2E8F0',
+    color: C.white,
     marginBottom: 10,
     marginLeft: 4,
   },
@@ -442,11 +415,11 @@ const styles = StyleSheet.create({
   roleTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#CBD5E1',
+    color: C.textSec,
     marginBottom: 2,
   },
   roleTitleActive: {
-    color: '#60A5FA',
+    color: C.blueText,
   },
   roleSub: {
     fontSize: 10,
@@ -463,50 +436,16 @@ const styles = StyleSheet.create({
   },
   forgotPasswordLink: {
     alignSelf: 'flex-end',
-    marginTop: 8,
+    marginTop: -8,
+    marginBottom: 8,
   },
   forgotPasswordText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#60A5FA',
-  },
-  inputLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: C.textSec,
-    marginBottom: 6,
-  },
-  inputBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  input: {
-    fontSize: 14,
-    color: C.white,
-    flex: 1,
+    color: C.blueText,
   },
   submitBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 16,
-    shadowColor: C.blue,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 6,
-  },
-  submitBtnText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: C.white,
+    marginTop: space[3],
   },
   footerWrap: {
     flexDirection: 'row',
@@ -520,6 +459,6 @@ const styles = StyleSheet.create({
   footerLink: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#60A5FA',
+    color: C.blueText,
   },
 });

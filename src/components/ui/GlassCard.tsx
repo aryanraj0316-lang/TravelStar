@@ -1,5 +1,12 @@
+// This used to pick a light or dark translucent fill from useColorScheme(),
+// but the app is dark-only by design (§1.3) and useColorScheme() returns
+// 'light' whenever the OS has no preference set — the same bug §9.1 already
+// found and fixed for ThemedText (src/theme/tokens.ts's header comment).
+// That meant this card rendered as a near-opaque white glass panel with
+// dark-on-dark text underneath it on any device that had never set a colour
+// scheme, exactly like ThemedText's invisible-text bug. Always dark now.
 import React from 'react';
-import { StyleSheet, View, useColorScheme, type StyleProp, type ViewStyle } from 'react-native';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 interface GlassCardProps {
   children: React.ReactNode;
@@ -8,19 +15,7 @@ interface GlassCardProps {
 }
 
 export const GlassCard: React.FC<GlassCardProps> = ({ children, style }) => {
-  const isDark = useColorScheme() === 'dark';
-
-  return (
-    <View
-      style={[
-        styles.card,
-        isDark ? styles.cardDark : styles.cardLight,
-        style,
-      ]}
-    >
-      {children}
-    </View>
-  );
+  return <View style={[styles.card, style]}>{children}</View>;
 };
 
 const styles = StyleSheet.create({
@@ -28,20 +23,13 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
+    backgroundColor: 'rgba(30, 31, 36, 0.65)',
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.15,
     shadowRadius: 16,
     elevation: 4,
-  },
-  cardLight: {
-    backgroundColor: 'rgba(255, 255, 255, 0.75)',
-    borderColor: 'rgba(255, 255, 255, 0.5)',
-    shadowColor: '#000',
-  },
-  cardDark: {
-    backgroundColor: 'rgba(30, 31, 36, 0.65)',
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    shadowColor: '#000',
   },
 });
 export default GlassCard;

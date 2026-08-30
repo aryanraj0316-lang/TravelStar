@@ -1918,6 +1918,48 @@ partial, exactly what's blocking full completion.
       the Dialog primitive existing. §9.3 (labels/roles/hints, 44×44
       targets, the fontSize 8.5/9 floor, OS font scaling), §9.4 (i18n) and
       §9.5 (hotlinked Unsplash images) are untouched.
+      The component library itself did get built in a later commit
+      (d41cc44) — src/components/ui/{Button,Card,Input,Select,Chip
+      (+Badge),Avatar,Sheet,Skeleton,ScreenState}.tsx and
+      src/lib/feedback.tsx for Dialog/Toast — but this tracker entry was
+      never updated to say so, so it sat reading "not done" for several
+      commits after it was in fact done. Screen migration onto it had not
+      started: only home-screen.tsx imported from `@/components/ui` (for
+      GlassCard), out of 27 screens.
+      Follow-up (2026-08-30): migrated the first 5 screens as a
+      deliberately bounded slice rather than all 27 at once — auth.tsx,
+      forgot-password.tsx, reset-password.tsx (the three password/login
+      screens, structurally identical) onto `Input` (extended with
+      optional `icon`/`rightAccessory` slots, since nothing consumed it
+      yet and every one of these screens hand-rolled an icon-prefixed
+      field) and `Button`; nearby-trips.tsx and bookings.tsx onto
+      `ScreenLoading`/`ScreenError`/`ScreenEmpty` for their loading/error/
+      empty states, replacing hand-rolled versions of exactly that
+      pattern. The auth family's gradient CTA button is now the shared
+      flat-blue `Button` — a deliberate normalization, not a compromise:
+      a bespoke gradient nowhere else in the app matches is the same
+      "twelve disagreeing treatments" problem this phase exists to close.
+      Every remaining raw hex in the five screens (auth family's
+      `#050710` background — a fourth near-black duplicate of `C.bg` — and
+      several `#60A5FA`/`#E2E8F0`/`#CBD5E1` text colors) now routes through
+      tokens. Bug found and fixed along the way, and it was actively
+      blocking this migration's own visual verification: GlassCard read
+      `useColorScheme()` to pick a light-or-dark translucent fill — the
+      exact ThemedText bug already fixed earlier in this same phase
+      (returns 'light' whenever the OS has no preference set), so the
+      three GlassCard screens rendered a near-opaque white panel with
+      dark-on-dark, barely legible text on any device/browser with no
+      colour scheme preference. GlassCard is dark-only now, matching the
+      app's own dark-only design (§1.3). Verified live: `expo start
+      --web` + an ad-hoc Playwright screenshot of all 5 screens (no
+      chromium-cli/claude-in-chrome extension connected in this
+      environment) — confirmed the GlassCard fix and general layout
+      before and after. Both `tsc --noEmit` and `eslint` on all touched
+      files are clean (0 new errors; same pre-existing warnings).
+      Remaining: 22 of 27 screens still unmigrated, including every large
+      one (chat.tsx, travel-guide.tsx, create.tsx, profile.tsx, map.tsx,
+      search.tsx, group-organizer.tsx) — this was a deliberately scoped
+      first slice, not a claim that migration is done.
 - [ ] Phase 10 — Performance (in progress — the list-virtualization and
       backend caching/pooling items done; bundle analysis, code-splitting,
       and a measured TTI budget not started):
