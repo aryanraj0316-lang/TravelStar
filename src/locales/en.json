@@ -295,5 +295,30 @@
     "privacyPolicy": "Privacy Policy",
     "thirdPartyLicenses": "Third-Party Licenses",
     "copyright": "© 2026 TravelStar Technologies Pvt Ltd"
+  },
+  "support": {
+    "title": "Customer Support",
+    "goBack": "Go back",
+    "greeting": "How can we help you?",
+    "greetingSub": "Our team is available 24/7 to assist you with bookings, payments, and safety.",
+    "startLiveChat": "Start Live Chat",
+    "startLiveChatSub": "Average response time: 2 minutes",
+    "liveChatNotAvailable": "Live chat isn't available yet — email us at support@travelstar.app in the meantime.",
+    "emailUs": "Email support@travelstar.app",
+    "emailUsSub": "Get a reply within 2 hours",
+    "couldNotOpenMail": "Could not open your email app. Please email support@travelstar.app directly.",
+    "callEmergency": "Call 112 — National Emergency Number",
+    "callEmergencySub": "India's emergency helpline — police, ambulance, fire",
+    "couldNotOpenDialer": "Could not open the dialer automatically. Please dial 112 directly."
+  },
+  "licenses": {
+    "title": "Third-Party Licenses",
+    "goBack": "Go back",
+    "searchPlaceholder": "Search packages or licenses",
+    "packageCount_one": "{{count}} open-source package · generated {{date}}",
+    "packageCount_other": "{{count}} open-source packages · generated {{date}}",
+    "noResultsFor": "No packages match \"{{query}}\".",
+    "couldNotOpenLink": "Could not open that link.",
+    "openRepository": "Open repository for {{name}}"
   }
 }

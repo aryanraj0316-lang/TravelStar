@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ScrollView,
   StyleSheet,
@@ -24,6 +25,7 @@ import { Card } from '@/components/ui';
 
 
 export default function SupportScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
 
   // Dials India's real national emergency number (docs/REMEDIATION.md
@@ -36,7 +38,7 @@ export default function SupportScreen() {
   const handleSOSCall = () => {
     Linking.openURL('tel:112').catch((e) => {
       logger.warn('[Support] Failed to open the phone dialer:', e);
-      toast('Could not open the dialer automatically. Please dial 112 directly.', 'error');
+      toast(t('support.couldNotOpenDialer'), 'error');
     });
   };
 
@@ -50,21 +52,23 @@ export default function SupportScreen() {
           activeOpacity={0.7}
           onPress={() => router.back()}
           style={styles.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel={t('support.goBack')}
         >
           <ArrowLeft size={18} color={C.white} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Customer Support</Text>
+        <Text style={styles.headerTitle}>{t('support.title')}</Text>
         <View style={{ width: 36 }} />
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        
+
         {/* Support Greeting */}
         <View style={styles.greetingBox}>
           <LifeBuoy size={48} color={C.blue} style={{ marginBottom: 12 }} />
-          <Text style={styles.greetingTitle}>How can we help you?</Text>
+          <Text style={styles.greetingTitle}>{t('support.greeting')}</Text>
           <Text style={styles.greetingSubtitle}>
-            Our team is available 24/7 to assist you with bookings, payments, and safety.
+            {t('support.greetingSub')}
           </Text>
         </View>
 
@@ -76,15 +80,17 @@ export default function SupportScreen() {
               no-ops on web and claimed a chat had started. */}
           <TouchableOpacity
             activeOpacity={0.8}
-            onPress={() => toast('Live chat isn\'t available yet — email us at support@travelstar.app in the meantime.', 'info')}
+            onPress={() => toast(t('support.liveChatNotAvailable'), 'info')}
+            accessibilityRole="button"
+            accessibilityLabel={t('support.startLiveChat')}
           >
             <Card style={styles.contactCard}>
               <View style={styles.contactIconBg}>
                 <MessageSquare size={18} color={C.blue} />
               </View>
               <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={styles.contactTitle}>Start Live Chat</Text>
-                <Text style={styles.contactSubtitle}>Average response time: 2 minutes</Text>
+                <Text style={styles.contactTitle}>{t('support.startLiveChat')}</Text>
+                <Text style={styles.contactSubtitle}>{t('support.startLiveChatSub')}</Text>
               </View>
             </Card>
           </TouchableOpacity>
@@ -94,29 +100,36 @@ export default function SupportScreen() {
             activeOpacity={0.8}
             onPress={() => Linking.openURL('mailto:support@travelstar.app').catch((e) => {
               logger.warn('[Support] Failed to open mail client:', e);
-              toast('Could not open your email app. Please email support@travelstar.app directly.', 'error');
+              toast(t('support.couldNotOpenMail'), 'error');
             })}
+            accessibilityRole="button"
+            accessibilityLabel={t('support.emailUs')}
           >
             <Card style={styles.contactCard}>
               <View style={styles.contactIconBg}>
                 <Mail size={18} color={C.blue} />
               </View>
               <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={styles.contactTitle}>Email support@travelstar.app</Text>
-                <Text style={styles.contactSubtitle}>Get a reply within 2 hours</Text>
+                <Text style={styles.contactTitle}>{t('support.emailUs')}</Text>
+                <Text style={styles.contactSubtitle}>{t('support.emailUsSub')}</Text>
               </View>
             </Card>
           </TouchableOpacity>
 
           {/* Call emergency hotline */}
-          <TouchableOpacity activeOpacity={0.8} onPress={handleSOSCall}>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={handleSOSCall}
+            accessibilityRole="button"
+            accessibilityLabel={t('support.callEmergency')}
+          >
             <Card style={[styles.contactCard, styles.sosCardBorder]}>
               <View style={[styles.contactIconBg, { backgroundColor: 'rgba(255, 45, 85, 0.1)' }]}>
                 <PhoneCall size={18} color={C.rose} />
               </View>
               <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={[styles.contactTitle, { color: C.rose }]}>Call 112 — National Emergency Number</Text>
-                <Text style={styles.contactSubtitle}>India&apos;s emergency helpline — police, ambulance, fire</Text>
+                <Text style={[styles.contactTitle, { color: C.rose }]}>{t('support.callEmergency')}</Text>
+                <Text style={styles.contactSubtitle}>{t('support.callEmergencySub')}</Text>
               </View>
             </Card>
           </TouchableOpacity>

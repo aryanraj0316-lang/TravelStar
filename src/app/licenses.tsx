@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { FlatList, Linking, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -27,6 +28,7 @@ const entries = (licensesData as { generatedAt: string; entries: LicenseEntry[] 
 const generatedAt = (licensesData as { generatedAt: string }).generatedAt;
 
 export default function LicensesScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const [query, setQuery] = useState('');
 
@@ -39,7 +41,7 @@ export default function LicensesScreen() {
   const openRepo = (url: string) => {
     Linking.openURL(url).catch((e) => {
       logger.warn('[Licenses] Failed to open repository link:', e);
-      toast('Could not open that link.', 'error');
+      toast(t('licenses.couldNotOpenLink'), 'error');
     });
   };
 
@@ -48,36 +50,44 @@ export default function LicensesScreen() {
       <StatusBar barStyle="light-content" backgroundColor={C.bg} />
 
       <View style={styles.header}>
-        <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => router.back()}
+          style={styles.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel={t('licenses.goBack')}
+        >
           <ArrowLeft size={18} color={C.white} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Third-Party Licenses</Text>
+        <Text style={styles.headerTitle}>{t('licenses.title')}</Text>
         <View style={{ width: 36 }} />
       </View>
 
       <Input
         icon={<Search size={15} color={C.textMuted} />}
-        placeholder="Search packages or licenses"
+        placeholder={t('licenses.searchPlaceholder')}
         value={query}
         onChangeText={setQuery}
         containerStyle={styles.searchWrap}
       />
 
       <Text style={styles.countText}>
-        {entries.length} open-source packages · generated {new Date(generatedAt).toLocaleDateString()}
+        {t('licenses.packageCount', { count: entries.length, date: new Date(generatedAt).toLocaleDateString() })}
       </Text>
 
       <FlatList
         data={filtered}
         keyExtractor={(item) => item.name}
         contentContainerStyle={styles.listContent}
-        ListEmptyComponent={<Text style={styles.emptyText}>No packages match &quot;{query}&quot;.</Text>}
+        ListEmptyComponent={<Text style={styles.emptyText}>{t('licenses.noResultsFor', { query })}</Text>}
         renderItem={({ item }) => (
           <TouchableOpacity
             style={styles.row}
             activeOpacity={item.repository ? 0.7 : 1}
             disabled={!item.repository}
             onPress={() => item.repository && openRepo(item.repository)}
+            accessibilityRole="button"
+            accessibilityLabel={item.repository ? t('licenses.openRepository', { name: item.name }) : item.name}
           >
             <View style={{ flex: 1 }}>
               <Text style={styles.rowName}>{item.name}</Text>

@@ -295,5 +295,30 @@
     "privacyPolicy": "गोपनीयता नीति",
     "thirdPartyLicenses": "तृतीय-पक्ष लाइसेंस",
     "copyright": "© 2026 TravelStar Technologies Pvt Ltd"
+  },
+  "support": {
+    "title": "ग्राहक सहायता",
+    "goBack": "वापस जाएं",
+    "greeting": "हम आपकी कैसे मदद कर सकते हैं?",
+    "greetingSub": "हमारी टीम बुकिंग, भुगतान और सुरक्षा में आपकी सहायता के लिए 24/7 उपलब्ध है।",
+    "startLiveChat": "लाइव चैट शुरू करें",
+    "startLiveChatSub": "औसत प्रतिक्रिया समय: 2 मिनट",
+    "liveChatNotAvailable": "लाइव चैट अभी उपलब्ध नहीं है — तब तक हमें support@travelstar.app पर ईमेल करें।",
+    "emailUs": "support@travelstar.app पर ईमेल करें",
+    "emailUsSub": "2 घंटे के भीतर जवाब पाएं",
+    "couldNotOpenMail": "आपका ईमेल ऐप नहीं खोला जा सका। कृपया सीधे support@travelstar.app पर ईमेल करें।",
+    "callEmergency": "112 पर कॉल करें — राष्ट्रीय आपातकालीन नंबर",
+    "callEmergencySub": "भारत की आपातकालीन हेल्पलाइन — पुलिस, एम्बुलेंस, फायर",
+    "couldNotOpenDialer": "डायलर अपने आप नहीं खोला जा सका। कृपया सीधे 112 डायल करें।"
+  },
+  "licenses": {
+    "title": "तृतीय-पक्ष लाइसेंस",
+    "goBack": "वापस जाएं",
+    "searchPlaceholder": "पैकेज या लाइसेंस खोजें",
+    "packageCount_one": "{{count}} ओपन-सोर्स पैकेज · {{date}} को जनरेट किया गया",
+    "packageCount_other": "{{count}} ओपन-सोर्स पैकेज · {{date}} को जनरेट किया गया",
+    "noResultsFor": "\"{{query}}\" से कोई पैकेज मेल नहीं खाता।",
+    "couldNotOpenLink": "वह लिंक नहीं खोला जा सका।",
+    "openRepository": "{{name}} का रिपॉज़िटरी खोलें"
   }
 }
