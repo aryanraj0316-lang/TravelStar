@@ -2226,8 +2226,28 @@ partial, exactly what's blocking full completion.
       saved-places sheet, and every toast/alert extracted and labeled;
       also removed a dead "scan" button with no `onPress` at all,
       found during this pass). 21 screens/components fully done now.
+      **map.tsx** now done too (b319caa — full RN-chrome pass: top
+      filter bar, map controls, layer picker, bottom trip/leg cards,
+      nav handoff overlay, SOS modal, every toast, and accessibility
+      on every control). 22 screens/components fully done now.
+      Two things intentionally NOT done in that pass, flagged rather
+      than silently skipped: (1) the embedded Leaflet WebView's
+      injected HTML/JS strings (popup badges, "You are here",
+      geolocation errors inside `buildMapHTML`'s template literal)
+      aren't reachable by `t()` — translating them needs those
+      strings threaded through as data params into the HTML builder,
+      a separate follow-up; (2) the screen still renders static
+      placeholder data with no active trip selected ("Ranchi to
+      Vrindavan Road Trip", organizer "Local Guide", "ETA 3h 20m",
+      "65 km/h", a totalSeats-based vehicle-name heuristic) — the same
+      category of fabricated-but-real-looking data this file's own
+      §8.8 comments describe having removed elsewhere on this exact
+      screen. Not fixed since it's a product decision (what should an
+      unselected map show?), not an i18n/accessibility change — needs
+      a decision on whether to remove it, replace it with an honest
+      empty state, or keep it as a labeled demo.
       Remaining large screens: chat.tsx (5388 lines), travel-guide.tsx
-      (3713), create.tsx (3405), map.tsx (2359), map.web.tsx (1952),
+      (3713), create.tsx (3405), map.web.tsx (1952),
       group-organizer.tsx (2250).
       Touch target sizing — §9.3's other concrete ask, ~100 elements
       under 44×44 — not yet started on any screen; too easy to break
