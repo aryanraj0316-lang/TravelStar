@@ -3,6 +3,7 @@ import { useApp } from '@/store/AppContext';
 import { useRouter } from 'expo-router';
 import { CheckCheck, ChevronRight, X } from 'lucide-react-native';
 import React, { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Animated,
   StyleSheet,
@@ -22,6 +23,7 @@ interface InAppNotif {
 }
 
 export const InAppNotificationBanner: React.FC = () => {
+  const { t } = useTranslation();
   const [notif, setNotif] = useState<InAppNotif | null>(null);
   const translateY = useState(() => new Animated.Value(-100))[0];
   const opacity = useState(() => new Animated.Value(0))[0];
@@ -83,6 +85,9 @@ export const InAppNotificationBanner: React.FC = () => {
         style={styles.banner}
         activeOpacity={0.92}
         onPress={handleTap}
+        accessibilityRole="button"
+        accessibilityLabel={notif.title}
+        accessibilityHint={notif.chatRoomId ? t('notifications.tapToOpenGroupChat') : undefined}
       >
         {/* Left icon */}
         <View style={styles.iconWrap}>
@@ -95,14 +100,19 @@ export const InAppNotificationBanner: React.FC = () => {
           <Text style={styles.content} numberOfLines={2}>{notif.content}</Text>
           {notif.chatRoomId && (
             <View style={styles.tapRow}>
-              <Text style={styles.tapHint}>Tap to open group chat</Text>
+              <Text style={styles.tapHint}>{t('notifications.tapToOpenGroupChat')}</Text>
               <ChevronRight size={11} color="#10B981" />
             </View>
           )}
         </View>
 
         {/* Dismiss */}
-        <TouchableOpacity onPress={dismiss} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <TouchableOpacity
+          onPress={dismiss}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel={t('common.dismiss')}
+        >
           <X size={16} color="rgba(255,255,255,0.5)" />
         </TouchableOpacity>
       </TouchableOpacity>

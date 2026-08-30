@@ -6,6 +6,7 @@
     "delete": "Delete",
     "retry": "Try again",
     "close": "Close",
+    "dismiss": "Dismiss",
     "loading": "Loading…",
     "somethingWrong": "Something went wrong",
     "loadFailedMessage": "We could not load this right now. Check your connection and try again.",
