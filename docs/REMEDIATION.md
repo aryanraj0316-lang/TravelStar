@@ -2252,8 +2252,15 @@ partial, exactly what's blocking full completion.
       now. Same two gaps flagged as map.tsx's (embedded iframe HTML
       strings not translated; same static-placeholder fallback data
       left untouched pending a product decision).
+      **group-organizer.tsx** now done too (0b0780a — full pass across
+      all 4 tabs: dashboard, roster, itinerary/transport/hotel
+      logistics, chat moderation, plus the create-tour sheet and every
+      toast/confirm/prompt in the handlers). 24 screens/components
+      fully done now. Also fixed a real display bug found in the same
+      pass: the revenue metric card rendered a mojibake "â‚¹" instead of
+      "₹" (a mis-encoded rupee sign).
       Remaining large screens: chat.tsx (5388 lines), travel-guide.tsx
-      (3713), create.tsx (3405), group-organizer.tsx (2250).
+      (3713), create.tsx (3405).
       Touch target sizing — §9.3's other concrete ask, ~100 elements
       under 44×44 — not yet started on any screen; too easy to break
       layout to bulk-script like fontSize was, needs the same per-screen
