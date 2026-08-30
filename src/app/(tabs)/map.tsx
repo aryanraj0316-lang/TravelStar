@@ -34,6 +34,7 @@ import {
   Zap
 } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Animated,
   ScrollView,
@@ -688,7 +689,9 @@ const getLegDetails = (startIndex: number, coords: any[]) => {
   const distance = calculateDistance(start.latitude, start.longitude, end.latitude, end.longitude);
 
   return {
-    title: `Leg ${startIndex + 1}: ${start.name} ➔ ${end.name}`,
+    legNumber: startIndex + 1,
+    startName: start.name,
+    endName: end.name,
     distance: `${Math.round(distance)} km`,
     start,
     end,
@@ -703,6 +706,7 @@ const getLegDetails = (startIndex: number, coords: any[]) => {
 // which does have real turn-by-turn data.
 
 function MapScreen() {
+  const { t } = useTranslation();
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -788,12 +792,12 @@ function MapScreen() {
   }, [showNavigationOverlay, bottomCardHeight]);
 
   const filterOptions = [
-    { value: 'ALL', label: 'All Categories', icon: Compass },
-    { value: 'GUIDES', label: 'Guides', icon: Users },
-    { value: 'GROUPS', label: 'Groups', icon: Users },
-    { value: 'TOURISTS', label: 'Solo Tourists', icon: User },
-    { value: 'ATTRACTIONS', label: 'Attractions', icon: Star },
-    { value: 'NONE', label: 'No Categories', icon: EyeOff },
+    { value: 'ALL', labelKey: 'map.filterAllCategories', icon: Compass },
+    { value: 'GUIDES', labelKey: 'map.filterGuides', icon: Users },
+    { value: 'GROUPS', labelKey: 'map.filterGroups', icon: Users },
+    { value: 'TOURISTS', labelKey: 'map.filterSoloTourists', icon: User },
+    { value: 'ATTRACTIONS', labelKey: 'map.filterAttractions', icon: Star },
+    { value: 'NONE', labelKey: 'map.filterNoCategories', icon: EyeOff },
   ];
   const activeOption = filterOptions.find((o) => o.value === mapFilter) || filterOptions[0];
 
@@ -807,7 +811,7 @@ function MapScreen() {
   const handleCallEmergencyServices = () => {
     Linking.openURL('tel:112').catch((e: unknown) => {
       logger.warn('[Map] Failed to open the phone dialer:', e);
-      toast('Could not open the dialer. Please dial 112 directly.', 'error');
+      toast(t('map.couldNotOpenDialer'), 'error');
     });
   };
 
@@ -815,7 +819,7 @@ function MapScreen() {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        toast('Permission Denied — Location permission is required to show your current position on the map. Please enable it in your device settings.', 'error');
+        toast(t('map.locationPermissionDenied'), 'error');
         return;
       }
     } catch (e) {
@@ -867,8 +871,8 @@ function MapScreen() {
     const location = await getCurrentDeviceLocation();
     if (!location.ok) {
       const message = location.reason === 'PERMISSION_DENIED'
-        ? 'Location permission is required to send an accurate SOS. Please enable it and try again, or call 112 directly.'
-        : 'Could not get your current location. Please try again, or call 112 directly.';
+        ? t('map.sosPermissionRequired')
+        : t('map.couldNotGetLocation');
       toast(message, 'error');
       return;
     }
@@ -936,7 +940,7 @@ function MapScreen() {
   const fromCity = activeTrip ? activeTrip.cities[0] : 'Ranchi';
   const toCity = activeTrip ? activeTrip.cities[activeTrip.cities.length - 1] : 'Vrindavan';
   const stopCount = activeRouteCoords.length;
-  const activeSegmentText = activeTrip ? `Route with ${stopCount} cities` : 'Active segment • 2 of 4 stops';
+  const activeSegmentText = activeTrip ? t('map.routeWithCities', { count: stopCount }) : t('map.activeSegmentFallback');
   const distanceVal = activeTrip ? activeTrip.cities.length * 115 : 145;
   const nextStopName = activeTrip ? (activeTrip.cities[1] || activeTrip.cities[0]) : 'Mathura';
   const isMyTrip = isLoggedIn && !!(activeTrip && profile && profile.id && activeTrip.creatorId && activeTrip.creatorId === profile.id);
@@ -966,7 +970,7 @@ function MapScreen() {
                 if (data.type === 'CHECKPOINT_CLICKED') {
                   setSelectedLegIndex(data.index);
                 } else if (data.type === 'GEOLOCATION_ERROR') {
-                  toast(typeof data.message === 'string' ? data.message : 'Could not read your location.', 'error');
+                  toast(typeof data.message === 'string' ? data.message : t('map.couldNotReadLocation'), 'error');
                 }
               } catch (e) {
                 logger.warn('[Map] Failed to parse WebView message:', e);
@@ -982,6 +986,8 @@ function MapScreen() {
               style={styles.backButton}
               onPress={() => router.navigate('/')}
               activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel={t('map.goBack')}
             >
               <ArrowLeft size={22} color="#FFF" strokeWidth={3} />
             </TouchableOpacity>
@@ -992,11 +998,14 @@ function MapScreen() {
                 style={styles.dropdownTrigger}
                 onPress={toggleItineraryDropdown}
                 activeOpacity={0.9}
+                accessibilityRole="button"
+                accessibilityLabel={t('map.routeSelector')}
+                accessibilityState={{ expanded: isItineraryOpen }}
               >
                 <View style={styles.dropdownTriggerLeft}>
                   <Route size={11} color="#0066FF" style={{ marginRight: 4 }} />
                   <Text style={styles.dropdownTriggerText} numberOfLines={1}>
-                    ROUTE: {legs.length + 1} STOPS
+                    {t('map.routeStops', { count: legs.length + 1 })}
                   </Text>
                 </View>
                 <ChevronDown size={11} color="#8B949E" style={{ transform: [{ rotate: isItineraryOpen ? '180deg' : '0deg' }] }} />
@@ -1016,19 +1025,27 @@ function MapScreen() {
                         setIsItineraryOpen(false);
                       }}
                       activeOpacity={0.8}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('map.entireRoute')}
+                      accessibilityState={{ selected: selectedLegIndex === null }}
                     >
                       <Compass size={11} color={selectedLegIndex === null ? '#0066FF' : '#8B949E'} style={{ marginRight: 6 }} />
                       <Text style={[
                         styles.dropdownOptionText,
                         selectedLegIndex === null && styles.dropdownOptionTextActive
                       ]}>
-                        Entire Route
+                        {t('map.entireRoute')}
                       </Text>
                     </TouchableOpacity>
 
                     {/* List of legs */}
                     {legs.map((leg, idx) => {
                       const isActive = selectedLegIndex === idx;
+                      const legLabel = t('map.legLabel', {
+                        number: idx + 1,
+                        start: leg.start.name.split(',')[0],
+                        end: leg.end.name.split(',')[0],
+                      });
                       return (
                         <TouchableOpacity
                           key={idx}
@@ -1041,13 +1058,16 @@ function MapScreen() {
                             setIsItineraryOpen(false);
                           }}
                           activeOpacity={0.8}
+                          accessibilityRole="button"
+                          accessibilityLabel={legLabel}
+                          accessibilityState={{ selected: isActive }}
                         >
                           <Route size={11} color={isActive ? '#0066FF' : '#8B949E'} style={{ marginRight: 6 }} />
                           <Text style={[
                             styles.dropdownOptionText,
                             isActive && styles.dropdownOptionTextActive
                           ]} numberOfLines={1}>
-                            Leg {idx + 1}: {leg.start.name.split(',')[0]} ➔ {leg.end.name.split(',')[0]}
+                            {legLabel}
                           </Text>
                         </TouchableOpacity>
                       );
@@ -1063,10 +1083,13 @@ function MapScreen() {
                 style={styles.dropdownTrigger}
                 onPress={toggleCategoryDropdown}
                 activeOpacity={0.9}
+                accessibilityRole="button"
+                accessibilityLabel={t('map.categorySelector')}
+                accessibilityState={{ expanded: isDropdownOpen }}
               >
                 <View style={styles.dropdownTriggerLeft}>
                   <activeOption.icon size={11} color="#0066FF" style={{ marginRight: 4 }} />
-                  <Text style={styles.dropdownTriggerText}>{activeOption.label}</Text>
+                  <Text style={styles.dropdownTriggerText}>{t(activeOption.labelKey)}</Text>
                 </View>
                 <ChevronDown size={11} color="#8B949E" style={{ transform: [{ rotate: isDropdownOpen ? '180deg' : '0deg' }] }} />
               </TouchableOpacity>
@@ -1084,10 +1107,13 @@ function MapScreen() {
                           setIsDropdownOpen(false);
                         }}
                         activeOpacity={0.8}
+                        accessibilityRole="button"
+                        accessibilityLabel={t(opt.labelKey)}
+                        accessibilityState={{ selected: isSelected }}
                       >
                         <opt.icon size={10} color={isSelected ? '#0066FF' : '#8B949E'} style={{ marginRight: 6 }} />
                         <Text style={[styles.dropdownOptionText, isSelected && styles.dropdownOptionTextActive]}>
-                          {opt.label}
+                          {t(opt.labelKey)}
                         </Text>
                       </TouchableOpacity>
                     );
@@ -1106,6 +1132,8 @@ function MapScreen() {
             style={styles.mapControlBtn}
             onPress={() => setShowLayerPicker(!showLayerPicker)}
             activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel={t('map.toggleLayerPicker')}
           >
             <Layers size={17} color="#C9D1D9" />
           </TouchableOpacity>
@@ -1114,6 +1142,8 @@ function MapScreen() {
             style={styles.mapControlBtn}
             onPress={() => postMapMessage({ type: 'ZOOM_IN' })}
             activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel={t('map.zoomIn')}
           >
             <Plus size={17} color="#C9D1D9" />
           </TouchableOpacity>
@@ -1122,6 +1152,8 @@ function MapScreen() {
             style={styles.mapControlBtn}
             onPress={() => postMapMessage({ type: 'ZOOM_OUT' })}
             activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel={t('map.zoomOut')}
           >
             <Minus size={17} color="#C9D1D9" />
           </TouchableOpacity>
@@ -1131,6 +1163,8 @@ function MapScreen() {
             style={styles.mapControlBtn}
             onPress={handleRecenter}
             activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel={t('map.recenterRoute')}
           >
             <Route size={17} color="#C9D1D9" />
           </TouchableOpacity>
@@ -1140,6 +1174,8 @@ function MapScreen() {
             style={styles.mapControlBtn}
             onPress={handleLocateSelf}
             activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel={t('map.locateMe')}
           >
             <Locate size={17} color="#0066FF" />
           </TouchableOpacity>
@@ -1149,26 +1185,37 @@ function MapScreen() {
             style={styles.sosControlBtn}
             onPress={handleSOS}
             activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel={t('map.sos')}
           >
             <ShieldAlert size={18} color="#FFF" />
-            <Text style={{ color: '#FFF', fontSize: 12, fontWeight: '900', marginTop: 1 }}>SOS</Text>
+            <Text style={{ color: '#FFF', fontSize: 12, fontWeight: '900', marginTop: 1 }}>{t('map.sos')}</Text>
           </TouchableOpacity>
         </View>
 
         {/* LAYER PICKER POPOVER */}
         {showLayerPicker && (
           <View style={styles.layerPickerPanel}>
-            {(['roadmap', 'satellite', 'terrain', 'dark'] as const).map((key) => {
-              const labels = { roadmap: 'Google Maps', satellite: 'Satellite', terrain: 'Terrain', dark: 'Dark Mode' };
+            {(
+              [
+                { key: 'roadmap', labelKey: 'map.layerRoadmap' },
+                { key: 'satellite', labelKey: 'map.layerSatellite' },
+                { key: 'terrain', labelKey: 'map.layerTerrain' },
+                { key: 'dark', labelKey: 'map.layerDark' },
+              ] as const
+            ).map(({ key, labelKey }) => {
               const isActive = tileLayer === key;
               return (
                 <TouchableOpacity
                   key={key}
                   style={[styles.layerPickerItem, isActive && styles.layerPickerItemActive]}
                   onPress={() => { setTileLayer(key); setShowLayerPicker(false); }}
+                  accessibilityRole="button"
+                  accessibilityLabel={t(labelKey)}
+                  accessibilityState={{ selected: isActive }}
                 >
                   <Text style={[styles.layerPickerText, isActive && { color: '#0066FF' }]}>
-                    {labels[key]}
+                    {t(labelKey)}
                   </Text>
                 </TouchableOpacity>
               );
@@ -1207,7 +1254,7 @@ function MapScreen() {
                   <Text style={styles.bottomCardSub}>{activeSegmentText}</Text>
                 </View>
                 <View style={styles.etaBadge}>
-                  <Text style={styles.etaBadgeText}>ETA 3h 20m</Text>
+                  <Text style={styles.etaBadgeText}>{t('map.etaLabel', { time: '3h 20m' })}</Text>
                 </View>
 
                 {/* Main Panel Collapse/Expand Toggle Button */}
@@ -1218,6 +1265,8 @@ function MapScreen() {
                   }}
                   activeOpacity={0.8}
                   style={{ width: 28, height: 28, borderRadius: 14, overflow: 'hidden', marginLeft: 8 }}
+                  accessibilityRole="button"
+                  accessibilityLabel={isMainPanelCollapsed ? t('map.expandPanel') : t('map.collapsePanel')}
                 >
                   <LinearGradient
                     colors={['#0066FF', '#00D2FF']}
@@ -1248,19 +1297,19 @@ function MapScreen() {
                   <View style={styles.bottomStatsRow}>
                     <View style={styles.bottomStatItem}>
                       <Clock size={11} color="#8B949E" />
-                      <Text style={styles.bottomStatLabel}>Distance</Text>
+                      <Text style={styles.bottomStatLabel}>{t('map.distance')}</Text>
                       <Text style={styles.bottomStatVal}>{distanceVal} km</Text>
                     </View>
                     <View style={styles.bottomStatDivider} />
                     <View style={styles.bottomStatItem}>
                       <Zap size={11} color="#8B949E" />
-                      <Text style={styles.bottomStatLabel}>Speed</Text>
+                      <Text style={styles.bottomStatLabel}>{t('map.speed')}</Text>
                       <Text style={styles.bottomStatVal}>65 km/h</Text>
                     </View>
                     <View style={styles.bottomStatDivider} />
                     <View style={styles.bottomStatItem}>
                       <Navigation size={11} color="#8B949E" />
-                      <Text style={styles.bottomStatLabel}>Next Stop</Text>
+                      <Text style={styles.bottomStatLabel}>{t('map.nextStop')}</Text>
                       <Text style={styles.bottomStatVal}>{nextStopName}</Text>
                     </View>
                   </View>
@@ -1269,7 +1318,7 @@ function MapScreen() {
                     requestedTrips.has(activeTrip.id) ? (
                       <View style={[styles.joinTripBtn, styles.joinTripBtnRequested]}>
                         <Check size={13} color="#2ECC71" style={{ marginRight: 6 }} />
-                        <Text style={styles.joinTripBtnRequestedText}>Requested</Text>
+                        <Text style={styles.joinTripBtnRequestedText}>{t('map.requested')}</Text>
                       </View>
                     ) : (
                       <TouchableOpacity
@@ -1277,14 +1326,16 @@ function MapScreen() {
                         activeOpacity={0.8}
                         onPress={() => {
                           if (activeTrip.availableSeats <= 0) {
-                            toast('⚠️ No Seats Available — Sorry, this trip has no seats left.', 'error');
+                            toast(t('map.noSeatsAvailable'), 'error');
                             return;
                           }
                           joinTrip(activeTrip.id);
-                          toast(`🎉 Seat Requested! — You have requested to join "${activeTrip.name}". Status synced to database.`, 'info');
+                          toast(t('map.seatRequested', { name: activeTrip.name }), 'info');
                         }}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('map.requestToJoinTrip')}
                       >
-                        <Text style={styles.joinTripBtnText}>Request to Join Trip</Text>
+                        <Text style={styles.joinTripBtnText}>{t('map.requestToJoinTrip')}</Text>
                       </TouchableOpacity>
                     )
                   )}
@@ -1300,28 +1351,28 @@ function MapScreen() {
                 const legDetails = getLegDetails(selectedLegIndex, activeRouteCoords);
 
                 // Determine vehicle based on activeTrip
-                let vehicleName = "Sedan Car";
+                let vehicleName = t('map.vehicleSedan');
                 if (activeTrip) {
                   if (activeTrip.totalSeats <= 4) {
-                    vehicleName = "Premium Sedan";
+                    vehicleName = t('map.vehiclePremiumSedan');
                   } else if (activeTrip.totalSeats > 4 && activeTrip.totalSeats <= 7) {
-                    vehicleName = "Luxury SUV";
+                    vehicleName = t('map.vehicleLuxurySuv');
                   } else if (activeTrip.totalSeats > 7 && activeTrip.totalSeats <= 15) {
-                    vehicleName = "Traveler Van";
+                    vehicleName = t('map.vehicleTravelerVan');
                   } else {
-                    vehicleName = "AC Tour Bus";
+                    vehicleName = t('map.vehicleAcTourBus');
                   }
                 }
 
                 // Determine facilities based on activeTrip
                 let facilities: string[] = [];
                 if (activeTrip) {
-                  if (activeTrip.guideIncluded) facilities.push("Certified Guide");
-                  if (activeTrip.foodIncluded) facilities.push("Food/Drinks");
-                  if (activeTrip.hotelIncluded !== false) facilities.push("Hotel Stays");
+                  if (activeTrip.guideIncluded) facilities.push(t('map.facilityGuide'));
+                  if (activeTrip.foodIncluded) facilities.push(t('map.facilityFood'));
+                  if (activeTrip.hotelIncluded !== false) facilities.push(t('map.facilityHotel'));
                   if (activeTrip.cabIncluded !== false) {
                     const isBike = activeTrip.name?.toLowerCase().includes('bike');
-                    facilities.push(isBike ? "Fuel/Bike" : "AC Vehicle");
+                    facilities.push(isBike ? t('map.facilityFuelBike') : t('map.facilityAcVehicle'));
                   }
                 }
 
@@ -1337,7 +1388,7 @@ function MapScreen() {
                           {activeTrip ? activeTrip.name : 'Ranchi to Vrindavan Road Trip'}
                         </Text>
                         <Text style={styles.bottomCardSub} numberOfLines={1}>
-                          Organizer: {activeTrip ? activeTrip.creator : 'Local Guide'}
+                          {t('map.organizerLabel', { name: activeTrip ? activeTrip.creator : 'Local Guide' })}
                         </Text>
                       </View>
 
@@ -1350,6 +1401,8 @@ function MapScreen() {
                         }}
                         activeOpacity={0.8}
                         style={{ width: 28, height: 28, borderRadius: 14, overflow: 'hidden', marginRight: 6 }}
+                        accessibilityRole="button"
+                        accessibilityLabel={isBottomPanelCollapsed ? t('map.expandPanel') : t('map.collapsePanel')}
                       >
                         <LinearGradient
                           colors={['#0066FF', '#00D2FF']}
@@ -1365,15 +1418,29 @@ function MapScreen() {
                         </LinearGradient>
                       </TouchableOpacity>
 
-                      <TouchableOpacity onPress={handleRecenter} style={styles.closeLegBtn} activeOpacity={0.8}>
+                      <TouchableOpacity
+                        onPress={handleRecenter}
+                        style={styles.closeLegBtn}
+                        activeOpacity={0.8}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('map.closeLegDetails')}
+                      >
                         <X size={15} color="#8B949E" />
                       </TouchableOpacity>
                     </View>
 
                     {/* Segment Info Row: Leg name & Road condition */}
                     <View style={styles.segmentInfoRow}>
-                      <Text style={styles.segmentLegTitle}>{legDetails?.title}</Text>
-                      <Text style={styles.segmentRoadText}>Straight-line distance</Text>
+                      <Text style={styles.segmentLegTitle}>
+                        {legDetails
+                          ? t('map.legLabel', {
+                              number: legDetails.legNumber,
+                              start: legDetails.startName,
+                              end: legDetails.endName,
+                            })
+                          : ''}
+                      </Text>
+                      <Text style={styles.segmentRoadText}>{t('map.straightLineDistance')}</Text>
                     </View>
 
                     {!isBottomPanelCollapsed && (
@@ -1398,7 +1465,9 @@ function MapScreen() {
                           <View style={styles.statsGridCol}>
                             <Users size={11} color="#A78BFA" />
                             <Text style={styles.statsGridVal}>
-                              {activeTrip ? `${activeTrip.availableSeats}/${activeTrip.totalSeats} Seats` : '—'}
+                              {activeTrip
+                                ? t('map.seatsCount', { available: activeTrip.availableSeats, total: activeTrip.totalSeats })
+                                : '—'}
                             </Text>
                           </View>
                         </View>
@@ -1411,19 +1480,19 @@ function MapScreen() {
                           {activeTrip && (
                             <>
                               <Text style={styles.dbDetailsText}>
-                                <Text style={styles.dbDetailsLabel}>Meeting Point: </Text>
+                                <Text style={styles.dbDetailsLabel}>{t('map.meetingPointLabel')}</Text>
                                 {activeTrip.meetingPoint}
                               </Text>
 
                               <Text style={styles.dbDetailsText}>
-                                <Text style={styles.dbDetailsLabel}>Budget: </Text>
-                                ₹{activeTrip.budget} per person
+                                <Text style={styles.dbDetailsLabel}>{t('map.budgetLabel')}</Text>
+                                {t('map.budgetPerPerson', { amount: activeTrip.budget })}
                               </Text>
                             </>
                           )}
 
                           <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 2 }}>
-                            <Text style={styles.dbDetailsLabel}>Service Inclusion: </Text>
+                            <Text style={styles.dbDetailsLabel}>{t('map.serviceInclusionLabel')}</Text>
                             <View style={styles.facilitiesChipsWrap}>
                               {facilities.map((fac, fIdx) => (
                                 <View key={fIdx} style={styles.facilityChip}>
@@ -1461,24 +1530,26 @@ function MapScreen() {
                 <View style={styles.navOverlayHeader}>
                   <Compass size={18} color="#10B981" />
                   <View style={{ flex: 1, marginLeft: 10 }}>
-                    <Text style={styles.navOverlayTitle}>Directions</Text>
+                    <Text style={styles.navOverlayTitle}>{t('map.directions')}</Text>
                     <Text style={styles.navOverlaySub} numberOfLines={1}>
-                      {getLegDetails(selectedLegIndex, activeRouteCoords)?.title}
+                      {(() => {
+                        const leg = getLegDetails(selectedLegIndex, activeRouteCoords);
+                        return leg ? t('map.legLabel', { number: leg.legNumber, start: leg.startName, end: leg.endName }) : '';
+                      })()}
                     </Text>
                   </View>
                   <TouchableOpacity
                     style={styles.closeOverlayBtn}
                     onPress={() => setShowNavigationOverlay(false)}
                     activeOpacity={0.8}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('map.closeDirections')}
                   >
                     <X size={16} color="#C9D1D9" />
                   </TouchableOpacity>
                 </View>
 
-                <Text style={styles.navHandoffNote}>
-                  TravelStar plots this leg as a straight line between the two stops. Open it in your maps
-                  app for real road directions.
-                </Text>
+                <Text style={styles.navHandoffNote}>{t('map.navHandoffNote')}</Text>
 
                 <TouchableOpacity
                   style={styles.startDrivingBtn}
@@ -1490,13 +1561,15 @@ function MapScreen() {
                     const url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
                     Linking.openURL(url).catch((e: unknown) => {
                       logger.warn('[Map] Could not open directions:', e);
-                      toast('Could not open a maps app on this device.', 'error');
+                      toast(t('map.couldNotOpenMapsApp'), 'error');
                     });
                     setShowNavigationOverlay(false);
                   }}
                   activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('map.openInMaps')}
                 >
-                  <Text style={styles.startDrivingBtnText}>Open in Maps</Text>
+                  <Text style={styles.startDrivingBtnText}>{t('map.openInMaps')}</Text>
                 </TouchableOpacity>
               </LinearGradient>
             </View>
@@ -1514,23 +1587,33 @@ function MapScreen() {
                 style={styles.sosModalGradient}
               >
                 <AlertCircle size={44} color="#EF4444" />
-                <Text style={styles.sosModalTitle}>EMERGENCY ALERT TRIGGERED</Text>
+                <Text style={styles.sosModalTitle}>{t('map.emergencyAlertTriggered')}</Text>
                 <Text style={styles.sosModalSub}>
                   {sosCoords
-                    ? `Your location (${sosCoords.latitude.toFixed(4)}, ${sosCoords.longitude.toFixed(4)}) was sent to your emergency contacts on TravelStar, your trip members, and our safety team.`
-                    : 'Your location was sent to your emergency contacts on TravelStar, your trip members, and our safety team.'}
+                    ? t('map.sosMessageWithCoords', {
+                        lat: sosCoords.latitude.toFixed(4),
+                        lng: sosCoords.longitude.toFixed(4),
+                      })
+                    : t('map.sosMessageNoCoords')}
                 </Text>
 
                 <TouchableOpacity
                   style={styles.callBtn}
                   onPress={handleCallEmergencyServices}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('map.call112Police')}
                 >
                   <Phone size={16} color="#FFF" />
-                  <Text style={styles.callBtnText}>Call 112 Police</Text>
+                  <Text style={styles.callBtnText}>{t('map.call112Police')}</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity style={styles.cancelSosBtn} onPress={() => setSosTriggered(false)}>
-                  <Text style={styles.cancelSosBtnText}>Cancel Alert</Text>
+                <TouchableOpacity
+                  style={styles.cancelSosBtn}
+                  onPress={() => setSosTriggered(false)}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('map.cancelAlert')}
+                >
+                  <Text style={styles.cancelSosBtnText}>{t('map.cancelAlert')}</Text>
                 </TouchableOpacity>
               </LinearGradient>
             </View>
