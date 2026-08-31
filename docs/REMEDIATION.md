@@ -2271,15 +2271,33 @@ partial, exactly what's blocking full completion.
       JSX, and undisclosed hardcoded placeholder data (accommodations
       listings, 5-day forecast) with no REMEDIATION.md comment
       explaining it, unlike this file's other fabricated-data spots.
-      Remaining large screen: chat.tsx (5388 lines) — the last one.
-      Touch target sizing — §9.3's other concrete ask, ~100 elements
-      under 44×44 — not yet started on any screen; too easy to break
-      layout to bulk-script like fontSize was, needs the same per-screen
-      care. §9.5 (hotlinked images) not started — hard-blocked on real
-      licensed imagery, which only the user can provide; the object-
-      storage/caching pipeline itself could still be built ahead of that.
-      This is large enough
-      that it will span many more commits.
+      **chat.tsx** now done too (1d80102 — the last of the large
+      screens, and the largest at 5388 lines; a 130-key `chat.*`
+      namespace covering every message-bubble variant, the inbox
+      list/filters/SOS ticker, room options modal, settings/safety
+      panel, itinerary tab, members/docs tab, and the composer +
+      attachment drawer). **27/27 screens/components fully done —
+      the §9.3/§9.4 combined string-extraction + accessibility sweep
+      across every screen is complete.**
+      Two items from this combined pass remain explicitly open, not
+      silently skipped: touch target sizing — §9.3's other concrete
+      ask, ~100 elements under 44×44 — not started on any screen; too
+      easy to break layout to bulk-script like fontSize was, needs its
+      own per-screen pass. §9.5 (hotlinked images) not started —
+      hard-blocked on real licensed imagery, which only the user can
+      provide; the object-storage/caching pipeline itself could still
+      be built ahead of that. Also still open from earlier in this
+      combined pass, unrelated to any single screen: the embedded
+      Leaflet/iframe HTML strings in map.tsx/map.web.tsx aren't
+      reachable by `t()`; a handful of screens (map.tsx/map.web.tsx,
+      travel-guide.tsx) carry undisclosed hardcoded placeholder data
+      flagged as a product decision rather than fixed; travel-guide.tsx
+      has a dead `itineraryDays`/`handleAddDay` feature never rendered
+      anywhere in its JSX; and the raw-ISO-date-instead-of-
+      formatDateRange() bug recurred independently in five screens
+      during this pass, still worth a lint rule or shared
+      `<DateRange>` component rather than continued screen-by-screen
+      catches.
 - [ ] Phase 10 — Performance (in progress — the list-virtualization and
       backend caching/pooling items done; bundle analysis, code-splitting,
       and a measured TTI budget not started):
