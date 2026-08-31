@@ -11,7 +11,7 @@ import GlassCard from '@/components/ui/GlassCard';
 import { Button, Input } from '@/components/ui';
 import { useApp, UserRole } from '@/store/AppContext';
 import { apiService } from '@/services/api';
-import { C, space } from '@/theme/tokens';
+import { C, MIN_TOUCH_TARGET, space } from '@/theme/tokens';
 import { errorToastMessage, showAlert, toast } from '@/lib/feedback';
 
 const ROLES: { id: UserRole; titleKey: string; subtitleKey: string; icon: string }[] = [
@@ -152,7 +152,7 @@ export default function AuthScreen() {
               <Text style={styles.brandTitle}>TravelStar</Text>
             </View>
 
-            <View style={{ width: 40 }} />
+            <View style={{ width: MIN_TOUCH_TARGET }} />
           </View>
 
           {/* Hero Banner Title */}
@@ -257,7 +257,7 @@ export default function AuthScreen() {
               rightAccessory={
                 <TouchableOpacity
                   onPress={() => setShowPassword(!showPassword)}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  hitSlop={{ top: 13, bottom: 13, left: 13, right: 13 }}
                   accessibilityRole="button"
                   accessibilityLabel={showPassword ? t('auth.hidePassword') : t('auth.showPassword')}
                 >
@@ -269,6 +269,7 @@ export default function AuthScreen() {
               <TouchableOpacity
                 onPress={() => router.push('/forgot-password')}
                 style={styles.forgotPasswordLink}
+                hitSlop={{ top: 14, bottom: 14, left: 10, right: 10 }}
                 accessibilityRole="button"
                 accessibilityLabel={t('auth.forgotPassword')}
               >
@@ -294,6 +295,7 @@ export default function AuthScreen() {
               </Text>
               <TouchableOpacity
                 onPress={() => setMode(mode === 'LOGIN' ? 'SIGNUP' : 'LOGIN')}
+                hitSlop={{ top: 14, bottom: 14, left: 10, right: 10 }}
                 accessibilityRole="button"
                 accessibilityLabel={mode === 'LOGIN' ? t('auth.createOneNow') : t('auth.switchToLogIn')}
               >
@@ -324,9 +326,9 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
+    borderRadius: MIN_TOUCH_TARGET / 2,
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
     alignItems: 'center',
     justifyContent: 'center',
@@ -390,8 +392,10 @@ const styles = StyleSheet.create({
   },
   modeTab: {
     flex: 1,
+    minHeight: MIN_TOUCH_TARGET,
     paddingVertical: 10,
     alignItems: 'center',
+    justifyContent: 'center',
     borderRadius: 22,
   },
   modeTabActive: {
