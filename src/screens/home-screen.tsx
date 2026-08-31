@@ -47,7 +47,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { eventBus } from '@/services/event-bus';
-import { C } from '@/theme/tokens';
+import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const TRENDING_CARD_WIDTH = SCREEN_WIDTH * 0.52;
@@ -378,6 +378,7 @@ function RotatingMonsoonAlertCard({ alerts, isFocused }: { alerts: any[]; isFocu
           style={styles.alertLink}
           activeOpacity={0.8}
           onPress={() => router.push('/monsoon-advisory' as any)}
+          hitSlop={{ top: 8, bottom: 10, left: 8, right: 8 }}
           accessibilityRole="button"
           accessibilityLabel={t('home.viewDetails')}
         >
@@ -768,6 +769,7 @@ function HomeScreen() {
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
+                  minHeight: MIN_TOUCH_TARGET,
                   backgroundColor: 'rgba(0, 102, 255, 0.2)',
                   paddingHorizontal: 10,
                   paddingVertical: 6,
@@ -804,6 +806,7 @@ function HomeScreen() {
               activeOpacity={0.85}
               style={styles.avatarWrap}
               onPress={() => router.navigate('/profile')}
+              hitSlop={{ top: 2, bottom: 2, left: 2, right: 2 }}
               accessibilityRole="button"
               accessibilityLabel={t('home.profileLabel')}
             >
@@ -880,7 +883,12 @@ function HomeScreen() {
             ════════════════════════════════════════════════ */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>{t('home.reelsAndStories')}</Text>
-          <TouchableOpacity style={styles.viewAllBtn} accessibilityRole="button" accessibilityLabel={t('home.viewAll')}>
+          <TouchableOpacity
+            style={styles.viewAllBtn}
+            hitSlop={{ top: 14, bottom: 14, left: 10, right: 10 }}
+            accessibilityRole="button"
+            accessibilityLabel={t('home.viewAll')}
+          >
             <Text style={styles.viewAllText}>{t('home.viewAll')}</Text>
             <ChevronRight size={14} color={C.blue} />
           </TouchableOpacity>
@@ -988,7 +996,12 @@ function HomeScreen() {
             ════════════════════════════════════════════════ */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>{t('home.trendingDestinations')}</Text>
-          <TouchableOpacity style={styles.viewAllBtn} accessibilityRole="button" accessibilityLabel={t('home.viewAll')}>
+          <TouchableOpacity
+            style={styles.viewAllBtn}
+            hitSlop={{ top: 14, bottom: 14, left: 10, right: 10 }}
+            accessibilityRole="button"
+            accessibilityLabel={t('home.viewAll')}
+          >
             <Text style={styles.viewAllText}>{t('home.viewAll')}</Text>
             <ChevronRight size={14} color={C.blue} />
           </TouchableOpacity>
@@ -1066,6 +1079,7 @@ function HomeScreen() {
               <TouchableOpacity
                 style={styles.heartBtn}
                 activeOpacity={0.7}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                 accessibilityRole="button"
                 accessibilityLabel={t('home.favoriteHint')}
               >
@@ -1248,6 +1262,7 @@ const styles = StyleSheet.create({
   },
   joinBtn: {
     backgroundColor: C.blue,
+    minHeight: MIN_TOUCH_TARGET,
     paddingVertical: 5,
     borderRadius: 6,
     alignItems: 'center',
