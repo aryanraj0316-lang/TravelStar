@@ -42,7 +42,7 @@ import { apiService, type NotificationPreferences } from '@/services/api';
 import { registerForPushNotifications, unregisterPushNotifications } from '@/lib/push';
 import { toast, errorToastMessage, showAlert, useConfirm } from '@/lib/feedback';
 import { uploadFileToUrl } from '@/lib/upload';
-import { C } from '@/theme/tokens';
+import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { Button, Chip, Input, Sheet } from '@/components/ui';
 import { getAppLanguage, setAppLanguage } from '@/lib/i18n';
 
@@ -655,6 +655,7 @@ function ProfileScreen() {
                   styles.switchTrack,
                   { backgroundColor: pushNotifications ? '#0066FF' : '#2C2F48', opacity: pushBusy ? 0.6 : 1 },
                 ]}
+                hitSlop={{ top: 10, bottom: 10, left: 0, right: 0 }}
                 accessibilityRole="switch"
                 accessibilityLabel={t('profile.pushNotifications')}
                 accessibilityState={{ checked: pushNotifications, disabled: pushBusy }}
@@ -683,6 +684,7 @@ function ProfileScreen() {
                         styles.switchTrack,
                         { backgroundColor: pushPrefs[row.key] ? '#0066FF' : '#2C2F48', transform: [{ scale: 0.85 }] },
                       ]}
+                      hitSlop={{ top: 10, bottom: 10, left: 0, right: 0 }}
                       accessibilityRole="switch"
                       accessibilityLabel={t(row.labelKey)}
                       accessibilityState={{ checked: pushPrefs[row.key] }}
@@ -712,6 +714,7 @@ function ProfileScreen() {
                   updateProfile({ locationSharing: newValue });
                 }}
                 style={[styles.switchTrack, { backgroundColor: locationSharing ? '#0066FF' : '#2C2F48' }]}
+                hitSlop={{ top: 10, bottom: 10, left: 0, right: 0 }}
                 accessibilityRole="switch"
                 accessibilityLabel={t('profile.locationSharing')}
                 accessibilityState={{ checked: locationSharing }}
@@ -1020,6 +1023,7 @@ function ProfileScreen() {
               backgroundColor: 'rgba(255, 255, 255, 0.2)',
             }}
             onPress={() => setShowAuthModal(false)}
+            hitSlop={{ top: 3, bottom: 3, left: 3, right: 3 }}
             accessibilityRole="button"
             accessibilityLabel={t('profile.closeSignIn')}
           >
@@ -1280,9 +1284,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   topActionBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
+    borderRadius: MIN_TOUCH_TARGET / 2,
     backgroundColor: 'rgba(0, 0, 0, 0.45)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.25)',
@@ -1453,7 +1457,7 @@ const styles = StyleSheet.create({
   },
   devicePickBtn: {
     flex: 1,
-    height: 40,
+    height: MIN_TOUCH_TARGET,
     borderRadius: 12,
     backgroundColor: 'rgba(0, 102, 255, 0.08)',
     borderWidth: 1,
@@ -1531,9 +1535,9 @@ const styles = StyleSheet.create({
     color: '#FFF',
   },
   bottomSheetCloseBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
+    borderRadius: MIN_TOUCH_TARGET / 2,
     backgroundColor: 'rgba(255, 255, 255, 0.08)',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1563,9 +1567,9 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   deletePlaceBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
+    borderRadius: MIN_TOUCH_TARGET / 2,
     backgroundColor: 'rgba(255, 69, 58, 0.1)',
     alignItems: 'center',
     justifyContent: 'center',
