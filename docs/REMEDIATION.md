@@ -2283,7 +2283,30 @@ partial, exactly what's blocking full completion.
       silently skipped: touch target sizing — §9.3's other concrete
       ask, ~100 elements under 44×44 — not started on any screen; too
       easy to break layout to bulk-script like fontSize was, needs its
-      own per-screen pass. §9.5 (hotlinked images) not started —
+      own per-screen pass.
+      **Touch target sizing started (2026-08-31) with a 4-screen
+      representative slice, per user decision** (the same "propose a
+      small slice, confirm scope before a full sweep" call already
+      applied to the §9.1/§9.3/§9.4 string-extraction work): auth.tsx
+      (50459f5), profile.tsx (43bfcfe), home-screen.tsx (ab02846),
+      chat.tsx (db51a68 — the largest file in the app, 5117 lines,
+      layered on top of its just-finished accessibility+i18n pass
+      without touching it). `MIN_TOUCH_TARGET = 44` (theme/tokens.ts)
+      was already used by the shared Button/Chip/Input/Select/Sheet/
+      ScreenState components from the §9.1 migration; this slice
+      applied it to each screen's own raw TouchableOpacity elements
+      for the first time. Two techniques, chosen by context: resize
+      to MIN_TOUCH_TARGET (explicit small fixed boxes, or a style
+      shared by a full-width row with no overlap risk); or widen/add
+      `hitSlop` instead of resizing (icon-only controls inside dense
+      layouts — message bubbles, the composer row, tightly packed
+      panels — where growing the visible box would look wrong or risk
+      overlapping a sibling; and plain-text links, where resizing
+      would turn a one-line link into a visually oversized empty tap
+      target). 4/27 screens done this way; tsc clean on each. User
+      has not yet confirmed extending this to the remaining ~23
+      screens.
+      §9.5 (hotlinked images) not started —
       hard-blocked on real licensed imagery, which only the user can
       provide; the object-storage/caching pipeline itself could still
       be built ahead of that. Also still open from earlier in this
