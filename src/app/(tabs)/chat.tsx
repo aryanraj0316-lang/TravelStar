@@ -44,6 +44,7 @@ import {
   X,
 } from 'lucide-react-native';
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Animated,
@@ -104,143 +105,23 @@ interface CustomMessage {
   };
 }
 
-// Initial messages mapped by tripId (Unified streams)
-const INITIAL_TRIP_MESSAGES: Record<string, CustomMessage[]> = {
-  // --- TRIP 1: Vrindavan ---
-  'trip-1': [
-    {
-      id: 't1-ann-1',
-      senderName: 'Vikram Singh',
-      senderRole: 'Organizer',
-      avatar: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=100&q=80',
-      content: "Welcome everyone to the Ranchi-Vrindavan spiritual journey! 🌸 Let's coordinate our schedules here.",
-      timestamp: 'Yesterday, 10:30 AM',
-      isMe: false,
-    },
-    {
-      id: 't1-g-1',
-      senderName: 'Rajesh Kumar',
-      senderRole: 'Guide',
-      avatar: 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=150&q=80',
-      content:
-        'Radhe Radhe! 🙏 I am Rajesh, your spiritual guide for this trip. I will meet you all at Mathura Junction. Let me know if you need help with temple entry details or special darshan.',
-      timestamp: 'Yesterday, 04:00 PM',
-      isMe: false,
-    },
-    {
-      id: 't1-gen-1',
-      senderName: 'Vikram Singh',
-      senderRole: 'Organizer',
-      avatar: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=100&q=80',
-      content: 'Hey team! 👋 We start from Ranchi Junction on 12th August. Make sure your luggage is tagged.',
-      timestamp: '10:30 AM',
-      isMe: false,
-      translations: {
-        hindi: 'हे टीम! 👋 हम 12 अगस्त को रांची जंक्शन से शुरू करेंगे। सुनिश्चित करें कि आपका सामान टैग किया गया है।',
-      },
-    },
-    {
-      id: 't1-gen-2',
-      senderName: 'Suman Gupta',
-      senderRole: 'Tourist',
-      avatar: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=100&q=80',
-      content: 'Super excited! 😍 Is the train ticket booking included in the budget or do we pay extra?',
-      timestamp: '10:32 AM',
-      isMe: false,
-      translations: {
-        hindi: 'बेहद उत्साहित! 😍 क्या ट्रेन टिकट बुकिंग बजट में शामिल है या हमें अलग से भुगतान करना होगा?',
-      },
-    },
-    {
-      id: 't1-gen-3',
-      senderName: 'Vikram Singh',
-      senderRole: 'Organizer',
-      avatar: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=100&q=80',
-      content: 'Yes, it is included in the base package of ₹8500 per head.',
-      timestamp: '10:33 AM',
-      isMe: false,
-      translations: {
-        hindi: 'हां, यह ₹8500 प्रति व्यक्ति के मूल पैकेज में शामिल है।',
-      },
-    },
-  ],
-
-  // --- TRIP 2: Leh Ladakh ---
-  'trip-2': [
-    {
-      id: 't2-ann-1',
-      senderName: 'Aditya Sen',
-      senderRole: 'Organizer',
-      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
-      content:
-        'Welcome riders! 🏍️ Leh Ladakh expedition is locked. Acclimatization is key. First 2 days in Leh we will rest. No high altitude rides on Day 1 & 2.',
-      timestamp: '3 Days ago',
-      isMe: false,
-    },
-    {
-      id: 't2-g-1',
-      senderName: 'Lobsang Yeshi',
-      senderRole: 'Guide',
-      avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80',
-      content:
-        'Juley! 👋 Welcome to Ladakh. I am Lobsang Yeshi, your native guide. I have arranged the Inner Line Permits for Pangong and Nubra. I will bring extra oxygen cylinders in our backup vehicle.',
-      timestamp: 'Yesterday',
-      isMe: false,
-    },
-    {
-      id: 't2-gen-1',
-      senderName: 'Aditya Sen',
-      senderRole: 'Organizer',
-      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
-      content:
-        'Ready to roll guys? Make sure your bikes are serviced. Changing engine oil and checking brake pads is highly recommended.',
-      timestamp: '09:00 AM',
-      isMe: false,
-    },
-    {
-      id: 't2-gen-2',
-      senderName: 'Priya Nair',
-      senderRole: 'Tourist',
-      avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150&q=80',
-      content: 'Servicing is complete! Fitted off-road tires too. Ready for the Sarchu river crossings.',
-      timestamp: '09:12 AM',
-      isMe: false,
-    },
-  ],
-
-  // --- TRIP 3: Kerala ---
-  'trip-3': [
-    {
-      id: 't3-ann-1',
-      senderName: 'Priya Nair',
-      senderRole: 'Organizer',
-      avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150&q=80',
-      content:
-        'Hello family! 🌴 Kerala Backwaters trip itinerary finalized. We have booked private luxury houseboats in Alleppey. Check in at 12 PM on 28th Aug.',
-      timestamp: '2 days ago',
-      isMe: false,
-    },
-    {
-      id: 't3-g-1',
-      senderName: 'Anjali Sharma',
-      senderRole: 'Guide',
-      avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150&q=80',
-      content:
-        'Namaskaram! 🙏 I am Anjali Sharma, your tourist guide. I speak English, Hindi, and Malayalam. Looking forward to showing you the beautiful tea gardens of Munnar.',
-      timestamp: 'Yesterday',
-      isMe: false,
-    },
-    {
-      id: 't3-gen-1',
-      senderName: 'Priya Nair',
-      senderRole: 'Organizer',
-      avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150&q=80',
-      content: 'Weather check: Munnar is cool (18°C) but carrying an umbrella is smart since rains are unpredictable.',
-      timestamp: 'Yesterday',
-      isMe: false,
-    },
-  ],
-};
+// docs/REMEDIATION.md §9.3/§9.4 follow-up: an INITIAL_TRIP_MESSAGES
+// constant used to live here — full fabricated conversations for three
+// seed trip ids ("trip-1"/"trip-2"/"trip-3"), spread into tripMessages'
+// initial state, alongside five hardcoded inboxRooms entries
+// ("Ranchi-Vrindavan Group Chat", two fake 1:1 guide chats, etc.) with
+// invented unread counts and Date.now()-derived timestamps so they always
+// looked recent. loadInboxRooms() below only ever *merged* real API rooms
+// into that list rather than replacing it, so every user, on every
+// account, saw these five fake chat rooms with fabricated people and
+// conversations permanently mixed into their real inbox — the exact
+// "mock data presented as real" pattern §0.2 bans and that every other
+// screen in this remediation program has had removed already (chat.tsx's
+// own removed polls/expense-ledger/documents-vault below are the same
+// call, just never applied to the inbox/message seed itself). Removed;
+// tripMessages and inboxRooms now start empty and are populated
+// exclusively from apiService.getChats()/getChatMessages() and the
+// socket sync effect.
 
 // Group polls were removed here, not rebuilt (docs/REMEDIATION.md §8.7).
 // This used to be INITIAL_TRIP_POLLS: three hardcoded polls keyed by the
@@ -382,6 +263,14 @@ interface ChatRoom {
   lastMessageAt?: string;
 }
 
+const SENDER_ROLE_LABEL_KEYS: Record<string, string> = {
+  Organizer: 'chat.roleOrganizer',
+  Guide: 'chat.roleGuide',
+  Tourist: 'chat.roleTourist',
+  Family: 'chat.roleFamily',
+  System: 'chat.roleSystem',
+};
+
 // One chat message. Extracted from an inline `.map()` so the message list can
 // be virtualized (the FlatList below) and so the React Compiler
 // (app.json > experiments.reactCompiler) can memoize bubbles independently —
@@ -413,6 +302,7 @@ function MessageBubble({
   canResolveSOS: boolean;
   onResolveSOS: () => void;
 }) {
+  const { t } = useTranslation();
   const hasTranslation = isTranslated;
   const displayedContent = hasTranslation && msg.translations?.hindi ? msg.translations.hindi : msg.content;
   const isSOS = msg.type === 'sos';
@@ -462,7 +352,7 @@ function MessageBubble({
                       : { color: C.green },
                 ]}
               >
-                {msg.isMe ? 'You' : msg.senderName}
+                {msg.isMe ? t('chat.you') : msg.senderName}
               </Text>
               {msg.senderRole && !msg.isMe && (
                 <View
@@ -475,7 +365,9 @@ function MessageBubble({
                         : styles.rolePillTourist,
                   ]}
                 >
-                  <Text style={styles.rolePillText}>{msg.senderRole}</Text>
+                  <Text style={styles.rolePillText}>
+                    {SENDER_ROLE_LABEL_KEYS[msg.senderRole] ? t(SENDER_ROLE_LABEL_KEYS[msg.senderRole]) : msg.senderRole}
+                  </Text>
                 </View>
               )}
             </View>
@@ -497,6 +389,9 @@ function MessageBubble({
                     key={opt.text}
                     style={[styles.pollOptionTouch, isVotedByMe && styles.pollOptionVoted]}
                     onPress={() => onPollVote(msg.id, idx)}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('chat.pollOptionLabel', { option: opt.text, percent, votes: opt.votes })}
+                    accessibilityState={{ selected: isVotedByMe }}
                   >
                     <View style={[styles.pollProgressFill, { width: `${percent}%` }]} />
                     <View style={styles.pollOptionContent}>
@@ -510,21 +405,21 @@ function MessageBubble({
                   </TouchableOpacity>
                 );
               })}
-              <Text style={styles.pollFooter}>Tap option to vote in thread</Text>
+              <Text style={styles.pollFooter}>{t('chat.tapToVote')}</Text>
             </View>
           ) : msg.type === 'expense' ? (
             <View style={styles.expenseCard}>
               <View style={styles.expenseHeader}>
                 <DollarSign size={16} color={C.green} />
-                <Text style={styles.expenseHeaderTitle}>Shared Expense Logged</Text>
+                <Text style={styles.expenseHeaderTitle}>{t('chat.sharedExpenseLogged')}</Text>
               </View>
               <Text style={styles.expenseBillDesc}>{msg.expenseDesc}</Text>
               <Text style={styles.expenseBillAmount}>₹{msg.expenseAmount}</Text>
               <View style={styles.expenseDivider} />
               <View style={styles.expenseFooterRow}>
-                <Text style={styles.expenseShareText}>Split with {msg.expenseSplitWith} members</Text>
+                <Text style={styles.expenseShareText}>{t('chat.splitWithMembers', { count: msg.expenseSplitWith })}</Text>
                 <Text style={styles.expenseCostHead}>
-                  ₹{Math.round((msg.expenseAmount || 0) / (msg.expenseSplitWith || 1))}/head
+                  {t('chat.perHead', { amount: Math.round((msg.expenseAmount || 0) / (msg.expenseSplitWith || 1)) })}
                 </Text>
               </View>
             </View>
@@ -532,7 +427,7 @@ function MessageBubble({
             <View style={styles.locationCard}>
               <View style={styles.locationHeader}>
                 <MapPin size={16} color={C.blueGlow} />
-                <Text style={styles.locationCardTitle}>Shared Meeting Point</Text>
+                <Text style={styles.locationCardTitle}>{t('chat.sharedMeetingPoint')}</Text>
               </View>
               <Text style={styles.locationText}>{msg.content}</Text>
               <View style={styles.miniMapPlaceholder}>
@@ -540,16 +435,28 @@ function MessageBubble({
                 <View style={styles.radarRing2} />
                 <MapPin size={24} color={C.red} style={styles.miniMapPin} />
                 <Text style={styles.coordsText}>
-                  Lat: {msg.locationCoords?.latitude.toFixed(4)}, Lng: {msg.locationCoords?.longitude.toFixed(4)}
+                  {t('chat.latLng', {
+                    lat: msg.locationCoords?.latitude.toFixed(4),
+                    lng: msg.locationCoords?.longitude.toFixed(4),
+                  })}
                 </Text>
               </View>
-              <TouchableOpacity style={styles.locationActionTouch} onPress={onOpenMap}>
-                <Text style={styles.locationActionText}>Open Live Navigation</Text>
+              <TouchableOpacity
+                style={styles.locationActionTouch}
+                onPress={onOpenMap}
+                accessibilityRole="button"
+                accessibilityLabel={t('chat.openLiveNavigation')}
+              >
+                <Text style={styles.locationActionText}>{t('chat.openLiveNavigation')}</Text>
               </TouchableOpacity>
             </View>
           ) : msg.type === 'voice' ? (
             <View style={styles.voiceNoteCard}>
-              <TouchableOpacity style={styles.playButtonCircle}>
+              <TouchableOpacity
+                style={styles.playButtonCircle}
+                accessibilityRole="button"
+                accessibilityLabel={t('chat.playVoiceMessage')}
+              >
                 <View style={styles.playArrow} />
               </TouchableOpacity>
               <View style={styles.waveformContainer}>
@@ -571,7 +478,11 @@ function MessageBubble({
                 <Text style={styles.imageCardDesc} numberOfLines={1}>
                   {msg.content}
                 </Text>
-                <TouchableOpacity style={styles.imageDownloadBtn}>
+                <TouchableOpacity
+                  style={styles.imageDownloadBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('chat.downloadImage')}
+                >
                   <Download size={14} color="#FFF" />
                 </TouchableOpacity>
               </View>
@@ -580,22 +491,32 @@ function MessageBubble({
             <View style={styles.sosCardAlert}>
               <View style={styles.sosAlertHeader}>
                 <AlertCircle size={18} color="#FFF" />
-                <Text style={styles.sosAlertHeaderTitle}>CRITICAL EMERGENCY WARNING</Text>
+                <Text style={styles.sosAlertHeaderTitle}>{t('chat.criticalEmergencyWarning')}</Text>
               </View>
               <Text style={styles.sosAlertDesc}>{msg.content}</Text>
               <Text style={styles.sosAlertCoords}>
-                Coordinates: {msg.locationCoords?.latitude.toFixed(4)}, {msg.locationCoords?.longitude.toFixed(4)}
+                {t('chat.coordinates', {
+                  lat: msg.locationCoords?.latitude.toFixed(4),
+                  lng: msg.locationCoords?.longitude.toFixed(4),
+                })}
               </Text>
               <View style={styles.sosAlertBtnRow}>
                 <TouchableOpacity
                   style={[styles.sosAlertBtn, { backgroundColor: 'rgba(255,255,255,0.15)' }]}
                   onPress={onOpenMap}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('chat.showOnMap')}
                 >
-                  <Text style={styles.sosAlertBtnText}>Show on Map</Text>
+                  <Text style={styles.sosAlertBtnText}>{t('chat.showOnMap')}</Text>
                 </TouchableOpacity>
                 {canResolveSOS ? (
-                  <TouchableOpacity style={[styles.sosAlertBtn, { backgroundColor: C.green }]} onPress={onResolveSOS}>
-                    <Text style={styles.sosAlertBtnText}>Mark as Safe</Text>
+                  <TouchableOpacity
+                    style={[styles.sosAlertBtn, { backgroundColor: C.green }]}
+                    onPress={onResolveSOS}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('chat.markAsSafe')}
+                  >
+                    <Text style={styles.sosAlertBtnText}>{t('chat.markAsSafe')}</Text>
                   </TouchableOpacity>
                 ) : null}
               </View>
@@ -603,7 +524,13 @@ function MessageBubble({
           ) : (
             <View style={[msg.isMe ? styles.instagramBubbleContainerMe : styles.bubbleContainerOther]}>
               {msg.isMe ? (
-                <TouchableOpacity activeOpacity={0.9} onLongPress={() => onShowOptions(msg)}>
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  onLongPress={() => onShowOptions(msg)}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('chat.you')}
+                  accessibilityHint={t('chat.messageOptionsHint')}
+                >
                   <LinearGradient
                     colors={['#0066FF', '#7C3AED', '#BA68C8']}
                     start={(() => {
@@ -644,7 +571,13 @@ function MessageBubble({
                   </LinearGradient>
                 </TouchableOpacity>
               ) : (
-                <TouchableOpacity activeOpacity={0.9} onLongPress={() => onShowOptions(msg)}>
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  onLongPress={() => onShowOptions(msg)}
+                  accessibilityRole="button"
+                  accessibilityLabel={msg.senderName}
+                  accessibilityHint={t('chat.messageOptionsHint')}
+                >
                   <View style={[styles.bubble, styles.bubbleOther]}>
                     {msg.replyTo && (
                       <View style={styles.bubbleReplyHeaderOther}>
@@ -662,10 +595,12 @@ function MessageBubble({
                         activeOpacity={0.7}
                         onPress={() => onToggleTranslate(msg.id)}
                         style={styles.translateRow}
+                        accessibilityRole="button"
+                        accessibilityLabel={hasTranslation ? t('chat.showOriginal') : t('chat.translateToHindi')}
                       >
                         <TranslateIcon size={12} color={C.blueGlow} />
                         <Text style={styles.translateText}>
-                          {hasTranslation ? 'Show Original' : 'Translate to Hindi'}
+                          {hasTranslation ? t('chat.showOriginal') : t('chat.translateToHindi')}
                         </Text>
                       </TouchableOpacity>
                     )}
@@ -687,6 +622,7 @@ function ChatScreen() {
   useEffect(() => {
     logger.log('Screen mounted: ChatScreen');
   }, []);
+  const { t } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const lastScrollYRef = useRef(0);
@@ -720,10 +656,9 @@ function ChatScreen() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isTripDetailsExpanded, setIsTripDetailsExpanded] = useState(false);
 
-  // Tab Selection & Group Updates
+  // Tab Selection
   const confirm = useConfirm();
   const [activeTab, setActiveTab] = useState<'chat' | 'itinerary' | 'members'>('chat');
-  const [showGroupUpdate, setShowGroupUpdate] = useState(true);
 
 
   // Document Upload form states
@@ -836,7 +771,7 @@ function ChatScreen() {
   useEffect(() => {
     if (messages.length > 0) {
       const latestMsg = messages[messages.length - 1];
-      const key = latestMsg.roomId || activeRoomId || 'trip-1';
+      const key = latestMsg.roomId || activeRoomId || 'unknown-room';
 
       // Check if this is a system message about a new user joining
       const isSystemMsg = latestMsg.senderRole === 'SYSTEM' || latestMsg.senderName === 'System';
@@ -921,9 +856,7 @@ function ChatScreen() {
           const roomType = key.includes('guide') || key.includes('dm') ? 'GUIDE' : 'GROUP';
           const newRoom: ChatRoom = {
             id: key,
-            tripId: latestMsg.roomId?.startsWith('room-')
-              ? latestMsg.roomId.replace('room-', '').split('-')[0]
-              : 'trip-1',
+            tripId: selectedTripId,
             name: key.includes('group') ? 'New Group Chat' : latestMsg.senderName || 'New Chat',
             avatar: isMe
               ? profile.avatar
@@ -946,7 +879,7 @@ function ChatScreen() {
   const [searchQuery, setSearchQuery] = useState('');
 
   // Active Trip selection (binds details drawer + polls + expenses)
-  const [selectedTripId, setSelectedTripId] = useState<string>('trip-1');
+  const [selectedTripId, setSelectedTripId] = useState<string>('');
 
   // Dynamic database members state
   const [dbMembers, setDbMembers] = useState<{ name: string; avatar: string; role: string; id?: string }[]>([]);
@@ -1008,102 +941,16 @@ function ChatScreen() {
   const [locatingSelf, setLocatingSelf] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
 
-  // Stateful Chat Data
-  const [tripMessages, setTripMessages] = useState<Record<string, CustomMessage[]>>(() => {
-    return {
-      ...INITIAL_TRIP_MESSAGES,
-      'room-vrindavan-group': INITIAL_TRIP_MESSAGES['trip-1'] || [],
-      'room-ladakh-group': INITIAL_TRIP_MESSAGES['trip-2'] || [],
-      'room-kerala-group': INITIAL_TRIP_MESSAGES['trip-3'] || [],
-      'room-guide-rajesh': [
-        {
-          id: 'guide-init-1',
-          senderName: 'Rajesh Kumar',
-          senderRole: 'Guide',
-          avatar: 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=150&q=80',
-          content:
-            'Hello! Feel free to ask me any private questions about temple entry or darshan coordinates here. 🙏',
-          timestamp: 'Yesterday, 04:00 PM',
-          isMe: false,
-        },
-      ],
-      'room-guide-lobsang': [
-        {
-          id: 'guide-init-2',
-          senderName: 'Lobsang Yeshi',
-          senderRole: 'Guide',
-          avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80',
-          content: 'Hello! I am Lobsang Yeshi. We can coordinate here regarding bike gears or acclimatization rest. 🏔️',
-          timestamp: 'Yesterday',
-          isMe: false,
-        },
-      ],
-    };
-  });
+  // Stateful Chat Data — starts empty; populated exclusively from
+  // apiService.getChats()/getChatMessages() (loadInboxRooms below and the
+  // message-history effect) and the real-time socket sync effect. See the
+  // removed-INITIAL_TRIP_MESSAGES comment above the CustomMessage/ChatRoom
+  // interfaces for why this used to be seeded with fake conversations.
+  const [tripMessages, setTripMessages] = useState<Record<string, CustomMessage[]>>({});
 
-  // Inbox Rooms state - updates snippet text in real-time
-  const [inboxRooms, setInboxRooms] = useState<ChatRoom[]>([
-    {
-      id: 'room-vrindavan-group',
-      tripId: 'trip-1',
-      name: 'Ranchi-Vrindavan Group Chat',
-      avatar: 'https://images.unsplash.com/photo-1548013146-72479768bada?w=150&q=80',
-      type: 'GROUP',
-      latestMessage: 'Vikram Singh: Yes, it is included in the base package of ₹8500 per head.',
-      latestTime: '10:33 AM',
-      unreadCount: 2,
-      badge: 'Trip Group',
-      lastMessageAt: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
-    },
-    {
-      id: 'room-ladakh-group',
-      tripId: 'trip-2',
-      name: 'Leh Ladakh Bike Expedition',
-      avatar: 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=150&q=80',
-      type: 'GROUP',
-      latestMessage: 'Priya Nair: Servicing is complete! Fitted off-road tires too.',
-      latestTime: '09:12 AM',
-      unreadCount: 0,
-      badge: 'Bikers',
-      lastMessageAt: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
-    },
-    {
-      id: 'room-kerala-group',
-      tripId: 'trip-3',
-      name: 'Kerala Backwaters & Hills',
-      avatar: 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=150&q=80',
-      type: 'GROUP',
-      latestMessage: 'Priya Nair: Munnar is cool (18°C) but carry umbrellas.',
-      latestTime: 'Yesterday',
-      unreadCount: 0,
-      badge: 'Family',
-      lastMessageAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
-    },
-    {
-      id: 'room-guide-rajesh',
-      tripId: 'trip-1',
-      name: 'Rajesh Kumar (Guide)',
-      avatar: 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=150&q=80',
-      type: 'GUIDE',
-      latestMessage: 'Rajesh Kumar: Modest attire is recommended for temples.',
-      latestTime: 'Yesterday',
-      unreadCount: 0,
-      badge: 'Braj Expert',
-      lastMessageAt: new Date(Date.now() - 1000 * 60 * 60 * 25).toISOString(),
-    },
-    {
-      id: 'room-guide-lobsang',
-      tripId: 'trip-2',
-      name: 'Lobsang Yeshi (Guide)',
-      avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80',
-      type: 'GUIDE',
-      latestMessage: 'Lobsang: Acclimatization is key. First 2 days in Leh we rest.',
-      latestTime: 'Yesterday',
-      unreadCount: 0,
-      badge: 'Local Rider',
-      lastMessageAt: new Date(Date.now() - 1000 * 60 * 60 * 26).toISOString(),
-    },
-  ]);
+  // Inbox Rooms state - updates snippet text in real-time. Starts empty for
+  // the same reason as tripMessages above.
+  const [inboxRooms, setInboxRooms] = useState<ChatRoom[]>([]);
 
   // Dynamic Room Sync effect
   useEffect(() => {
@@ -1127,25 +974,10 @@ function ChatScreen() {
       if (missingTrips.length === 0) return prevRooms;
 
       const newRooms: ChatRoom[] = missingTrips.map((t) => ({
-        id:
-          t.chatRoomId ||
-          (t.id === 'trip-1'
-            ? 'room-vrindavan-group'
-            : t.id === 'trip-2'
-              ? 'room-ladakh-group'
-              : t.id === 'trip-3'
-                ? 'room-kerala-group'
-                : `room-${t.id}`),
+        id: t.chatRoomId || `room-${t.id}`,
         tripId: t.id,
         name: t.name.includes('Chat') || t.name.includes('Group') ? t.name : `${t.name} Group Chat`,
-        avatar:
-          t.id === 'trip-1'
-            ? 'https://images.unsplash.com/photo-1548013146-72479768bada?w=150&q=80'
-            : t.id === 'trip-2'
-              ? 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=150&q=80'
-              : t.id === 'trip-3'
-                ? 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=150&q=80'
-                : 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=150&q=80',
+        avatar: t.coverImage || 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=150&q=80',
         type: 'GROUP',
         latestMessage: 'System: Welcome to the group chat! Start planning together.',
         latestTime: 'Just Now',
@@ -1204,6 +1036,32 @@ function ChatScreen() {
   // point and a ₹8,500 budget — which every panel below then rendered as
   // this room's actual trip details (docs/REMEDIATION.md §0.2 rule 4).
   const activeTrip = trips.find((t) => t.id === selectedTripId) ?? null;
+
+  // Real per-trip day itinerary (docs/REMEDIATION.md §9.3/§9.4 follow-up).
+  // The "Vertical Itinerary Roadmap" below used to render a hardcoded
+  // getTripItineraryHighlights() function — a full fake day-by-day plan for
+  // the two seed trip ids, and (worse) the SAME fake Kerala itinerary for
+  // every other real trip, regardless of its actual cities or dates. This
+  // uses the same real, persisted itinerary endpoint group-organizer.tsx's
+  // organizer view already reads and writes.
+  const [chatItinerary, setChatItinerary] = useState<{ id: string; day: number; title: string; plan: string }[]>([]);
+  const [chatItineraryLoading, setChatItineraryLoading] = useState(false);
+
+  useEffect(() => {
+    if (!selectedTripId) {
+      setChatItinerary([]);
+      return;
+    }
+    setChatItineraryLoading(true);
+    apiService
+      .getTripItinerary(selectedTripId)
+      .then((res) => setChatItinerary(res?.days ?? []))
+      .catch((e) => {
+        logger.warn('[Chat] Failed to load trip itinerary:', e);
+        setChatItinerary([]);
+      })
+      .finally(() => setChatItineraryLoading(false));
+  }, [selectedTripId]);
 
   // There is no trip -> guide relation on the client Trip type, so the
   // "Your Travel Guide" card that used to live in the settings panel was
@@ -1810,14 +1668,7 @@ function ChatScreen() {
           matchedTrip.name.includes('Chat') || matchedTrip.name.includes('Group')
             ? matchedTrip.name
             : `${matchedTrip.name} Group Chat`,
-        avatar:
-          matchedTrip.id === 'trip-1'
-            ? 'https://images.unsplash.com/photo-1548013146-72479768bada?w=150&q=80'
-            : matchedTrip.id === 'trip-2'
-              ? 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=150&q=80'
-              : matchedTrip.id === 'trip-3'
-                ? 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=150&q=80'
-                : 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=150&q=80',
+        avatar: matchedTrip.coverImage || 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=150&q=80',
         type: 'GROUP',
         latestMessage: 'System: Welcome to the group chat! Start planning together.',
         latestTime: 'Just Now',
@@ -1833,12 +1684,12 @@ function ChatScreen() {
       <SafeAreaView edges={['top', 'left', 'right']} style={styles.inboxContainer}>
         {/* WhatsApp-Style Header */}
         <View style={styles.inboxHeader}>
-          <Text style={styles.inboxHeaderTitle}>TravelStar Chats</Text>
+          <Text style={styles.inboxHeaderTitle}>{t('chat.travelStarChats')}</Text>
           <View style={styles.inboxHeaderIcons}>
-            <TouchableOpacity style={styles.headerIconTouch}>
+            <TouchableOpacity style={styles.headerIconTouch} accessibilityRole="button" accessibilityLabel={t('chat.contacts')}>
               <UsersIcon size={20} color="#FFF" />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.headerIconTouch}>
+            <TouchableOpacity style={styles.headerIconTouch} accessibilityRole="button" accessibilityLabel={t('chat.moreOptions')}>
               <MoreVertical size={20} color="#FFF" />
             </TouchableOpacity>
           </View>
@@ -1847,7 +1698,7 @@ function ChatScreen() {
         {/* Search bar */}
         <View style={styles.searchBarWrapper}>
           <Input
-            placeholder="Search groups, guides, or alerts..."
+            placeholder={t('chat.searchPlaceholder')}
             value={searchQuery}
             onChangeText={setSearchQuery}
             icon={<Search size={16} color={C.textMuted} />}
@@ -1856,35 +1707,49 @@ function ChatScreen() {
 
         {/* Category filters */}
         <View style={styles.inboxFiltersRow}>
-          {(['ALL', 'GROUPS', 'GUIDES'] as const).map((filter) => {
-            const isSelected = inboxFilter === filter;
-            const label = filter === 'ALL' ? 'All Chats' : filter === 'GROUPS' ? 'Groups' : 'Guides';
+          {(
+            [
+              { key: 'ALL', labelKey: 'chat.filterAllChats' },
+              { key: 'GROUPS', labelKey: 'chat.filterGroups' },
+              { key: 'GUIDES', labelKey: 'chat.filterGuides' },
+            ] as const
+          ).map((filter) => {
+            const isSelected = inboxFilter === filter.key;
 
             return (
               <TouchableOpacity
-                key={filter}
+                key={filter.key}
                 style={[styles.filterPill, isSelected && styles.filterPillSelected]}
-                onPress={() => setInboxFilter(filter)}
+                onPress={() => setInboxFilter(filter.key)}
                 activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel={t(filter.labelKey)}
+                accessibilityState={{ selected: isSelected }}
               >
-                <Text style={[styles.filterPillText, isSelected && styles.filterPillTextSelected]}>{label}</Text>
+                <Text style={[styles.filterPillText, isSelected && styles.filterPillTextSelected]}>{t(filter.labelKey)}</Text>
               </TouchableOpacity>
             );
           })}
         </View>
 
-        {/* SOS Pulse Alerter if active globally */}
+        {/* SOS Pulse Alerter if active globally. docs/REMEDIATION.md
+        §9.3/§9.4 follow-up: this used to hardcode navigation into the fake
+        Vrindavan seed room regardless of which real trip the alert
+        actually belonged to — the real SOSAlert model (AppContext.tsx)
+        carries no trip/room association at all, so there was never a real
+        room to "join" here. Routes to the real map/locate flow instead,
+        the same honest action the in-room SOS banner's "Locate" button
+        already uses below. */}
         {activeSOS && (
           <TouchableOpacity
             style={styles.safetyTickerBanner}
-            onPress={() => {
-              setSelectedTripId('trip-1'); // default to Vrindavan
-              setSelectedRoomId('room-vrindavan-group');
-            }}
+            onPress={() => router.navigate('/map')}
+            accessibilityRole="button"
+            accessibilityLabel={t('chat.sosLocateHint', { name: activeSOS.userName })}
           >
             <AlertTriangle size={15} color="#FFF" style={styles.sosFlash} />
             <Text style={styles.safetyTickerText} numberOfLines={1}>
-              CRITICAL: Active SOS for {activeSOS.userName}! Tap to join room.
+              {t('chat.sosLocateHint', { name: activeSOS.userName })}
             </Text>
           </TouchableOpacity>
         )}
@@ -1925,10 +1790,7 @@ function ChatScreen() {
             return (
               <TouchableOpacity
                 key={room.id}
-                style={[
-                  styles.roomItemTouch,
-                  activeSOS && room.tripId === activeSOS.id.split('-')[1] && styles.sosBlinkingRoomBorder,
-                ]}
+                style={styles.roomItemTouch}
                 onPress={() => {
                   setSelectedRoomId(room.id);
                   setSelectedTripId(room.tripId);
@@ -1936,6 +1798,9 @@ function ChatScreen() {
                 onLongPress={() => setSelectedRoomForOptions(room)}
                 delayLongPress={400}
                 activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel={room.name}
+                accessibilityHint={room.latestMessage}
               >
                 {/* Avatar left */}
                 <View style={styles.roomAvatarWrap}>
@@ -1987,15 +1852,17 @@ function ChatScreen() {
               style={StyleSheet.absoluteFill}
               activeOpacity={1}
               onPress={() => setSelectedRoomForOptions(null)}
+              accessibilityRole="button"
+              accessibilityLabel={t('common.close')}
             />
             <View style={styles.optionsModalContent}>
               <View style={styles.optionsHeaderRow}>
                 <Text style={styles.optionsHeaderTitle} numberOfLines={1}>
-                  {selectedRoomForOptions.name} Options
+                  {t('chat.roomOptionsTitle', { name: selectedRoomForOptions.name })}
                 </Text>
                 <Text style={styles.optionsHeaderSubText} numberOfLines={1}>
-                  {selectedRoomForOptions.type === 'GROUP' ? 'Group Chat' : 'Direct Message'} •{' '}
-                  {selectedRoomForOptions.badge || 'Contact'}
+                  {selectedRoomForOptions.type === 'GROUP' ? t('chat.groupChat') : t('chat.directMessage')} •{' '}
+                  {selectedRoomForOptions.badge || t('chat.contact')}
                 </Text>
               </View>
 
@@ -2013,10 +1880,12 @@ function ChatScreen() {
                   });
                   setSelectedRoomForOptions(null);
                 }}
+                accessibilityRole="button"
+                accessibilityLabel={pinnedRoomIds.has(selectedRoomForOptions.id) ? t('chat.unpinChat') : t('chat.pinChatToTop')}
               >
                 <Pin size={16} color="#94A3B8" style={styles.optionsRowIcon} />
                 <Text style={styles.optionsRowText}>
-                  {pinnedRoomIds.has(selectedRoomForOptions.id) ? 'Unpin Chat' : 'Pin Chat to Top'}
+                  {pinnedRoomIds.has(selectedRoomForOptions.id) ? t('chat.unpinChat') : t('chat.pinChatToTop')}
                 </Text>
               </TouchableOpacity>
 
@@ -2035,10 +1904,12 @@ function ChatScreen() {
                   );
                   setSelectedRoomForOptions(null);
                 }}
+                accessibilityRole="button"
+                accessibilityLabel={selectedRoomForOptions.unreadCount > 0 ? t('chat.markAsRead') : t('chat.markAsUnread')}
               >
                 <CheckCircle size={16} color="#94A3B8" style={styles.optionsRowIcon} />
                 <Text style={styles.optionsRowText}>
-                  {selectedRoomForOptions.unreadCount > 0 ? 'Mark as Read' : 'Mark as Unread'}
+                  {selectedRoomForOptions.unreadCount > 0 ? t('chat.markAsRead') : t('chat.markAsUnread')}
                 </Text>
               </TouchableOpacity>
 
@@ -2049,10 +1920,9 @@ function ChatScreen() {
                   const roomId = selectedRoomForOptions.id;
                   void (async () => {
                     const ok = await confirm({
-                      title: 'Clear Chat',
-                      message:
-                        'Clear all message history for this chat? This cannot be undone.',
-                      confirmLabel: 'Clear',
+                      title: t('chat.clearChatTitle'),
+                      message: t('chat.clearChatMessage'),
+                      confirmLabel: t('chat.clear'),
                       destructive: true,
                     });
                     if (ok) {
@@ -2064,7 +1934,7 @@ function ChatScreen() {
                           setInboxRooms((prev) =>
                             prev.map((r) => {
                               if (r.id === roomId) {
-                                return { ...r, latestMessage: 'No messages in this chat' };
+                                return { ...r, latestMessage: t('chat.noMessagesInChat') };
                               }
                               return r;
                             }),
@@ -2073,9 +1943,11 @@ function ChatScreen() {
                   })();
                   setSelectedRoomForOptions(null);
                 }}
+                accessibilityRole="button"
+                accessibilityLabel={t('chat.clearConversation')}
               >
                 <Trash2 size={16} color="#EF4444" style={styles.optionsRowIcon} />
-                <Text style={[styles.optionsRowText, { color: '#EF4444' }]}>Clear Conversation</Text>
+                <Text style={[styles.optionsRowText, { color: '#EF4444' }]}>{t('chat.clearConversation')}</Text>
               </TouchableOpacity>
 
               {/* LEAVE GROUP / DELETE CHAT */}
@@ -2087,28 +1959,35 @@ function ChatScreen() {
                   const isGroup = selectedRoomForOptions.type === 'GROUP';
                   void (async () => {
                     const ok = await confirm({
-                      title: isGroup ? 'Leave Group' : 'Delete Chat',
+                      title: isGroup ? t('chat.leaveGroupTitle') : t('chat.deleteChatTitle'),
                       message: isGroup
-                        ? `Leave ${roomName}? You will no longer receive updates.`
-                        : `Delete the chat with ${roomName}?`,
-                      confirmLabel: isGroup ? 'Leave' : 'Delete',
+                        ? t('chat.leaveGroupMessage', { name: roomName })
+                        : t('chat.deleteChatMessage', { name: roomName }),
+                      confirmLabel: isGroup ? t('chat.leave') : t('chat.delete'),
                       destructive: true,
                     });
                     if (ok) await handleLeaveRoom(roomId);
                   })();
                   setSelectedRoomForOptions(null);
                 }}
+                accessibilityRole="button"
+                accessibilityLabel={selectedRoomForOptions.type === 'GROUP' ? t('chat.leaveGroupTitle') : t('chat.deleteChatTitle')}
               >
                 <X size={16} color="#EF4444" style={styles.optionsRowIcon} />
                 <Text style={[styles.optionsRowText, { color: '#EF4444' }]}>
-                  {selectedRoomForOptions.type === 'GROUP' ? 'Leave Group' : 'Delete Chat'}
+                  {selectedRoomForOptions.type === 'GROUP' ? t('chat.leaveGroupTitle') : t('chat.deleteChatTitle')}
                 </Text>
               </TouchableOpacity>
 
               <View style={styles.optionsCancelDivider} />
 
-              <TouchableOpacity style={styles.optionsCancelBtn} onPress={() => setSelectedRoomForOptions(null)}>
-                <Text style={styles.optionsCancelText}>Cancel</Text>
+              <TouchableOpacity
+                style={styles.optionsCancelBtn}
+                onPress={() => setSelectedRoomForOptions(null)}
+                accessibilityRole="button"
+                accessibilityLabel={t('common.cancel')}
+              >
+                <Text style={styles.optionsCancelText}>{t('common.cancel')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -2129,20 +2008,28 @@ function ChatScreen() {
               setSelectedRoomId(null);
               setIsSettingsOpen(false);
             }}
+            accessibilityRole="button"
+            accessibilityLabel={t('chat.goBack')}
           >
             <ArrowLeft size={20} color="#FFF" />
           </TouchableOpacity>
 
           <Image source={{ uri: activeRoom?.avatar }} style={styles.roomHeaderAvatar} />
 
-          <TouchableOpacity style={styles.roomHeaderTitles} onPress={() => setIsSettingsOpen(true)} activeOpacity={0.7}>
+          <TouchableOpacity
+            style={styles.roomHeaderTitles}
+            onPress={() => setIsSettingsOpen(true)}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={t('chat.openRoomSettings')}
+          >
             <Text style={styles.roomHeaderNameText} numberOfLines={1}>
               {activeRoom?.name}
             </Text>
             <View style={styles.activityStatusRow}>
               <View style={styles.statusGreenDot} />
               <Text style={styles.roomHeaderStatusText}>
-                Active Group Ledger{activeTrip ? ` • ${activeTrip.membersCount} members` : ''}
+                {activeTrip ? t('chat.activeGroupLedgerWithMembers', { count: activeTrip.membersCount }) : t('chat.activeGroupLedger')}
               </Text>
             </View>
           </TouchableOpacity>
@@ -2154,6 +2041,8 @@ function ChatScreen() {
             onPress={() => router.navigate('/map')}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={t('chat.openMap')}
           >
             <MapPin size={17} color="#FFF" />
           </TouchableOpacity>
@@ -2162,6 +2051,8 @@ function ChatScreen() {
             onPress={() => setIsSettingsOpen(true)}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={t('chat.openRoomSettings')}
           >
             <Settings size={17} color="#FFF" />
           </TouchableOpacity>
@@ -2175,27 +2066,36 @@ function ChatScreen() {
             style={[styles.tabItemTouch, activeTab === 'chat' && styles.tabItemTouchActive]}
             onPress={() => setActiveTab('chat')}
             activeOpacity={0.8}
+            accessibilityRole="tab"
+            accessibilityLabel={t('chat.tabChat')}
+            accessibilityState={{ selected: activeTab === 'chat' }}
           >
             <MessageSquare size={17} color={activeTab === 'chat' ? '#C084FC' : '#7E8494'} />
-            <Text style={[styles.tabItemLabel, activeTab === 'chat' && styles.tabItemLabelActive]}>Chat</Text>
+            <Text style={[styles.tabItemLabel, activeTab === 'chat' && styles.tabItemLabelActive]}>{t('chat.tabChat')}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={[styles.tabItemTouch, activeTab === 'itinerary' && styles.tabItemTouchActive]}
             onPress={() => setActiveTab('itinerary')}
             activeOpacity={0.8}
+            accessibilityRole="tab"
+            accessibilityLabel={t('chat.tabItinerary')}
+            accessibilityState={{ selected: activeTab === 'itinerary' }}
           >
             <Calendar size={17} color={activeTab === 'itinerary' ? '#C084FC' : '#7E8494'} />
-            <Text style={[styles.tabItemLabel, activeTab === 'itinerary' && styles.tabItemLabelActive]}>Itinerary</Text>
+            <Text style={[styles.tabItemLabel, activeTab === 'itinerary' && styles.tabItemLabelActive]}>{t('chat.tabItinerary')}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={[styles.tabItemTouch, activeTab === 'members' && styles.tabItemTouchActive]}
             onPress={() => setActiveTab('members')}
             activeOpacity={0.8}
+            accessibilityRole="tab"
+            accessibilityLabel={t('chat.tabMembers')}
+            accessibilityState={{ selected: activeTab === 'members' }}
           >
             <UsersIcon size={17} color={activeTab === 'members' ? '#C084FC' : '#7E8494'} />
-            <Text style={[styles.tabItemLabel, activeTab === 'members' && styles.tabItemLabelActive]}>Members</Text>
+            <Text style={[styles.tabItemLabel, activeTab === 'members' && styles.tabItemLabelActive]}>{t('chat.tabMembers')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -2210,17 +2110,24 @@ function ChatScreen() {
         >
           <View style={styles.sosBannerLeft}>
             <AlertTriangle size={18} color="#FFF" style={styles.sosPulse} />
-            <Text style={styles.sosBannerText}>🚨 SOS Alert: {activeSOS.userName} needs help!</Text>
+            <Text style={styles.sosBannerText}>{t('chat.sosAlertNeedsHelp', { name: activeSOS.userName })}</Text>
           </View>
           <View style={styles.sosBannerRight}>
-            <TouchableOpacity style={styles.sosBannerActionBtn} onPress={() => router.navigate('/map')}>
-              <Text style={styles.sosBannerBtnText}>Locate</Text>
+            <TouchableOpacity
+              style={styles.sosBannerActionBtn}
+              onPress={() => router.navigate('/map')}
+              accessibilityRole="button"
+              accessibilityLabel={t('chat.showOnMap')}
+            >
+              <Text style={styles.sosBannerBtnText}>{t('chat.locate')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.sosBannerActionBtn, { backgroundColor: '#FFF' }]}
               onPress={handleResolveSOSEvent}
+              accessibilityRole="button"
+              accessibilityLabel={t('chat.markAsSafe')}
             >
-              <Text style={[styles.sosBannerBtnText, { color: '#D32F2F' }]}>Safe</Text>
+              <Text style={[styles.sosBannerBtnText, { color: '#D32F2F' }]}>{t('chat.safe')}</Text>
             </TouchableOpacity>
           </View>
         </LinearGradient>
@@ -2229,30 +2136,14 @@ function ChatScreen() {
       {/* ─── WORKSPACE CONTENT AREA (CLEAN CONVERSATION FEED OR TABS) ───── */}
       {activeTab === 'chat' ? (
         <View style={{ flex: 1 }}>
-          {/* Pinned Group Update Banner */}
-          {activeRoom?.type === 'GROUP' && showGroupUpdate && (
-            <View style={styles.groupUpdateCard}>
-              <View style={styles.groupUpdateLeft}>
-                <Pin size={16} color="#8B5CF6" style={styles.groupUpdatePinIcon} />
-                <View style={styles.groupUpdateInfo}>
-                  <Text style={styles.groupUpdateTitleText}>Group Update</Text>
-                  <Text style={styles.groupUpdateDescText}>
-                    {selectedTripId === 'trip-2'
-                      ? 'Acclimatization is key. First 2 days in Leh we will rest. No high altitude rides on Day 1 & 2.'
-                      : 'Acclimatization and schedule sync. Please tag luggage and be on time.'}
-                  </Text>
-                </View>
-              </View>
-              <View style={styles.groupUpdateRight}>
-                <TouchableOpacity style={styles.groupUpdateViewBtn} onPress={() => setIsSettingsOpen(true)}>
-                  <Text style={styles.groupUpdateViewBtnText}>View Details</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.groupUpdateCloseBtn} onPress={() => setShowGroupUpdate(false)}>
-                  <X size={14} color="#7E8494" />
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
+          {/* docs/REMEDIATION.md §9.3/§9.4 follow-up: a "Pinned Group Update"
+          banner used to live here — fully fabricated content (a fixed
+          Leh-Ladakh acclimatization notice for `selectedTripId === 'trip-2'`,
+          a generic placeholder otherwise) with no backing model, endpoint,
+          or real pinned-message concept anywhere in this codebase. Removed
+          rather than kept faked, per the same §0.2 rule 4 call already
+          applied to this file's polls/expense-ledger/documents-vault
+          (see the comments near INITIAL_TRIP_MESSAGES and the Docs tab). */}
 
           <FlatList
             ref={messageListRef}
@@ -2284,7 +2175,7 @@ function ChatScreen() {
                 {isTyping && (
                   <View style={styles.typingIndicatorRow}>
                     <View style={styles.typingDotWrap}>
-                      <Text style={styles.typingText}>{typerName} is typing</Text>
+                      <Text style={styles.typingText}>{t('chat.isTyping', { name: typerName })}</Text>
                       <ActivityIndicator size="small" color={C.textSec} style={{ marginLeft: 6 }} />
                     </View>
                   </View>
@@ -2318,11 +2209,16 @@ function ChatScreen() {
                   (docs/REMEDIATION.md §8.7). The expense tracker is reachable
                   from this room's settings panel. */}
 
-              <TouchableOpacity style={styles.attachBtn} onPress={() => setActiveModal('LOCATION')}>
+              <TouchableOpacity
+                style={styles.attachBtn}
+                onPress={() => setActiveModal('LOCATION')}
+                accessibilityRole="button"
+                accessibilityLabel={t('chat.sharePlace')}
+              >
                 <LinearGradient colors={['#64B5F6', '#2196F3']} style={styles.attachIconCircle}>
                   <MapPin size={18} color="#FFF" />
                 </LinearGradient>
-                <Text style={styles.attachLabel}>Share Place</Text>
+                <Text style={styles.attachLabel}>{t('chat.sharePlace')}</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -2330,13 +2226,13 @@ function ChatScreen() {
                 onPress={handleSendPhoto}
                 disabled={photoUploading}
                 accessibilityRole="button"
-                accessibilityLabel={photoUploading ? 'Sending photo' : 'Send a photo'}
+                accessibilityLabel={photoUploading ? t('chat.sendingPhoto') : t('chat.sendPhotoHint')}
                 accessibilityState={{ disabled: photoUploading, busy: photoUploading }}
               >
                 <LinearGradient colors={['#4DB6AC', '#009688']} style={styles.attachIconCircle}>
                   {photoUploading ? <ActivityIndicator size="small" color="#FFF" /> : <ImageIcon size={18} color="#FFF" />}
                 </LinearGradient>
-                <Text style={styles.attachLabel}>{photoUploading ? 'Sending…' : 'Send Photo'}</Text>
+                <Text style={styles.attachLabel}>{photoUploading ? t('chat.sendingEllipsis') : t('chat.sendPhoto')}</Text>
               </TouchableOpacity>
             </ScrollView>
           </Animated.View>
@@ -2355,13 +2251,20 @@ function ChatScreen() {
               <View style={styles.replyPreviewContainer}>
                 <View style={styles.replyPreviewTextCol}>
                   <Text style={styles.replyPreviewSenderName}>
-                    Replying to {replyingToMessage.isMe ? 'yourself' : replyingToMessage.senderName}
+                    {replyingToMessage.isMe
+                      ? t('chat.replyingToYourself')
+                      : t('chat.replyingToName', { name: replyingToMessage.senderName })}
                   </Text>
                   <Text style={styles.replyPreviewContentText} numberOfLines={1}>
                     {replyingToMessage.content}
                   </Text>
                 </View>
-                <TouchableOpacity style={styles.replyPreviewCloseBtn} onPress={() => setReplyingToMessage(null)}>
+                <TouchableOpacity
+                  style={styles.replyPreviewCloseBtn}
+                  onPress={() => setReplyingToMessage(null)}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('chat.cancelReply')}
+                >
                   <X size={14} color={C.textSec} />
                 </TouchableOpacity>
               </View>
@@ -2371,20 +2274,28 @@ function ChatScreen() {
               <TouchableOpacity
                 style={[styles.plusCircle, isAttachmentOpen && styles.plusCircleOpen]}
                 onPress={() => setIsAttachmentOpen(!isAttachmentOpen)}
+                accessibilityRole="button"
+                accessibilityLabel={t('chat.attachmentOptions')}
+                accessibilityState={{ expanded: isAttachmentOpen }}
               >
                 <Plus size={18} color="#FFF" style={{ transform: [{ rotate: isAttachmentOpen ? '45deg' : '0deg' }] }} />
               </TouchableOpacity>
 
               <View style={styles.textInputWrapper}>
                 <TextInput
-                  placeholder="Message..."
+                  placeholder={t('chat.messagePlaceholder')}
                   placeholderTextColor={C.textMuted}
                   style={styles.textInput}
                   value={inputText}
                   onChangeText={handleInputChange}
                   onSubmitEditing={handleSendText}
+                  accessibilityLabel={t('chat.messagePlaceholder')}
                 />
-                <TouchableOpacity style={styles.smileIcon}>
+                <TouchableOpacity
+                  style={styles.smileIcon}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('chat.emojiPicker')}
+                >
                   <Smile size={18} color={C.textSec} />
                 </TouchableOpacity>
               </View>
@@ -2396,6 +2307,9 @@ function ChatScreen() {
                 ]}
                 onPress={handleSendText}
                 disabled={inputText.trim() === ''}
+                accessibilityRole="button"
+                accessibilityLabel={t('chat.sendMessage')}
+                accessibilityState={{ disabled: inputText.trim() === '' }}
               >
                 <Send size={15} color={inputText.trim() === '' ? C.textMuted : '#FFF'} />
               </TouchableOpacity>
@@ -2418,21 +2332,21 @@ function ChatScreen() {
             <View style={styles.statsHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Compass size={16} color="#C084FC" />
-                <Text style={styles.statsTitle}>TRIP COMMAND CENTER</Text>
+                <Text style={styles.statsTitle}>{t('chat.tripCommandCenter')}</Text>
               </View>
               <View style={styles.statsStatusBadge}>
-                <Text style={styles.statsStatusText}>ACTIVE</Text>
+                <Text style={styles.statsStatusText}>{t('chat.active')}</Text>
               </View>
             </View>
 
             {activeTrip ? (
               <View style={styles.statsGrid}>
                 <View style={styles.statsCell}>
-                  <Text style={styles.statsValLabel}>Seats Left</Text>
+                  <Text style={styles.statsValLabel}>{t('chat.seatsLeft')}</Text>
                   <Text style={styles.statsValText}>{activeTrip.availableSeats}</Text>
                 </View>
                 <View style={styles.statsCell}>
-                  <Text style={styles.statsValLabel}>Budget Per Person</Text>
+                  <Text style={styles.statsValLabel}>{t('chat.budgetPerPerson')}</Text>
                   <Text style={[styles.statsValText, { color: C.greenText }]}>{formatINR(activeTrip.budget)}</Text>
                 </View>
               </View>
@@ -2440,7 +2354,9 @@ function ChatScreen() {
 
             <View style={styles.statsFooter}>
               <Clock size={12} color="#C084FC" style={{ marginRight: 6 }} />
-              <Text style={styles.statsFooterText}>Assembly: {activeTrip?.meetingPoint ?? 'Not set'}</Text>
+              <Text style={styles.statsFooterText}>
+                {t('chat.assemblyPoint', { place: activeTrip?.meetingPoint ?? t('chat.notSet') })}
+              </Text>
             </View>
           </LinearGradient>
 
@@ -2448,112 +2364,19 @@ function ChatScreen() {
           <View style={styles.timelineCard}>
             <View style={styles.timelineHeader}>
               <MapPin size={16} color="#0066FF" style={{ marginRight: 6 }} />
-              <Text style={styles.timelineTitleText}>Vertical Itinerary Roadmap</Text>
+              <Text style={styles.timelineTitleText}>{t('chat.verticalItineraryRoadmap')}</Text>
             </View>
 
             <View style={styles.timelineList}>
-              {(() => {
-                const getTripItineraryHighlights = (tripId: string) => {
-                  if (tripId === 'trip-2') {
-                    return [
-                      {
-                        day: 'Day 1',
-                        title: 'Manali Assembly',
-                        desc: 'Assemble at Mall Road. Bike check & safety briefing.',
-                      },
-                      {
-                        day: 'Day 2',
-                        title: 'Sarchu Ride',
-                        desc: 'Cross Rohtang Pass / Atal Tunnel. Rest in Sarchu camps (14k ft).',
-                      },
-                      {
-                        day: 'Day 3',
-                        title: 'Leh Arrival',
-                        desc: 'Ride through Nakeela & Tanglang La passes. Reach Leh.',
-                      },
-                      {
-                        day: 'Day 4-5',
-                        title: 'Leh Acclimatization',
-                        desc: 'Local exploration, rest, and oxygen checks.',
-                      },
-                      {
-                        day: 'Day 6-7',
-                        title: 'Nubra Valley via Khardung La',
-                        desc: 'Cross one of the highest roads. Desert camping & double-hump camels.',
-                      },
-                      {
-                        day: 'Day 8-9',
-                        title: 'Pangong Tso Lakeside',
-                        desc: 'High-altitude lake riding. Overnight in lakeside tents.',
-                      },
-                      { day: 'Day 10', title: 'Leh Return & Departure', desc: 'Return ride to Leh and board flights.' },
-                    ];
-                  } else if (tripId === 'trip-1') {
-                    return [
-                      {
-                        day: 'Day 1',
-                        title: 'Departure from Ranchi',
-                        desc: 'Board train from Ranchi Junction. Group icebreaker.',
-                      },
-                      {
-                        day: 'Day 2',
-                        title: 'Arrive at Delhi',
-                        desc: 'Transit to Mathura via express cabs. Check-in at ashram.',
-                      },
-                      {
-                        day: 'Day 3',
-                        title: 'Vrindavan Temples',
-                        desc: 'Banke Bihari special darshan and Prem Mandir light show.',
-                      },
-                      {
-                        day: 'Day 4',
-                        title: 'Barsana & Nandgaon',
-                        desc: 'Visit Radha Rani temple and local spiritual walks.',
-                      },
-                      { day: 'Day 5', title: 'Mathura Heritage', desc: 'Krishna Janmabhoomi temple and Yamuna Aarti.' },
-                      {
-                        day: 'Day 6',
-                        title: 'Spiritual Wrap & Return',
-                        desc: 'Final morning prayers and return journey to Ranchi.',
-                      },
-                    ];
-                  } else {
-                    return [
-                      {
-                        day: 'Day 1',
-                        title: 'Kochi Meetup',
-                        desc: 'Assemble at Airport Terminal. Transfer to Munnar hills.',
-                      },
-                      {
-                        day: 'Day 2',
-                        title: 'Munnar Tea Gardens',
-                        desc: 'Trek through Eravikulam National Park and explore tea estates.',
-                      },
-                      {
-                        day: 'Day 3',
-                        title: 'Munnar to Alleppey',
-                        desc: 'Drive down to backwaters. Board private luxury houseboat.',
-                      },
-                      {
-                        day: 'Day 4',
-                        title: 'Backwater Cruising',
-                        desc: 'Full day cruising through canals. Traditional Kerala lunch.',
-                      },
-                      {
-                        day: 'Day 5',
-                        title: 'Alleppey Beach & Sunset',
-                        desc: 'Visit beach, local coir museums, and group dinner.',
-                      },
-                      { day: 'Day 6', title: 'Departure', desc: 'Checkout and transfer back to Kochi Airport.' },
-                    ];
-                  }
-                };
-
-                const highlights = getTripItineraryHighlights(selectedTripId);
-                return highlights.map((hl, idx) => {
-                  const isLast = idx === highlights.length - 1;
+              {chatItineraryLoading ? (
+                <ActivityIndicator color={C.blueGlow} />
+              ) : chatItinerary.length === 0 ? (
+                <Text style={styles.verticalTimelineDesc}>{t('chat.noItineraryYet')}</Text>
+              ) : (
+                chatItinerary.map((day, idx) => {
+                  const isLast = idx === chatItinerary.length - 1;
                   return (
-                    <View key={hl.day} style={styles.verticalTimelineStep}>
+                    <View key={day.id} style={styles.verticalTimelineStep}>
                       <View style={styles.verticalTimelineLeft}>
                         <View style={styles.verticalTimelineDot}>
                           <View style={styles.verticalTimelineInnerDot} />
@@ -2562,15 +2385,15 @@ function ChatScreen() {
                       </View>
                       <View style={styles.verticalTimelineCard}>
                         <View style={styles.verticalTimelineHeaderRow}>
-                          <Text style={styles.verticalTimelineDayText}>{hl.day}</Text>
-                          <Text style={styles.verticalTimelineNodeTitle}>{hl.title}</Text>
+                          <Text style={styles.verticalTimelineDayText}>{t('chat.dayNumber', { number: day.day })}</Text>
+                          <Text style={styles.verticalTimelineNodeTitle}>{day.title}</Text>
                         </View>
-                        <Text style={styles.verticalTimelineDesc}>{hl.desc}</Text>
+                        <Text style={styles.verticalTimelineDesc}>{day.plan}</Text>
                       </View>
                     </View>
                   );
-                });
-              })()}
+                })
+              )}
             </View>
           </View>
         </ScrollView>
@@ -2597,10 +2420,8 @@ function ChatScreen() {
 
           {/* Members Title Info */}
           <View style={styles.docsHeaderBlock}>
-            <Text style={styles.docsHeaderTitleText}>Group Directory</Text>
-            <Text style={styles.docsHeaderDescText}>
-              All members in this expedition chat. Click a participant to start a private conversation.
-            </Text>
+            <Text style={styles.docsHeaderTitleText}>{t('chat.groupDirectory')}</Text>
+            <Text style={styles.docsHeaderDescText}>{t('chat.groupDirectoryDesc')}</Text>
           </View>
 
           {/* Members List Container */}
@@ -2611,12 +2432,16 @@ function ChatScreen() {
                 style={styles.memberTabCard}
                 onPress={() => handleMemberClick(member)}
                 activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel={t('chat.startPrivateChatWith', { name: member.name })}
               >
                 <View style={styles.memberTabCardLeft}>
                   <Image source={{ uri: member.avatar }} style={styles.memberTabAvatar} />
                   <View style={styles.memberTabMeta}>
                     <Text style={styles.memberTabNameText}>{member.name}</Text>
-                    <Text style={styles.memberTabRoleText}>{member.role}</Text>
+                    <Text style={styles.memberTabRoleText}>
+                      {SENDER_ROLE_LABEL_KEYS[member.role] ? t(SENDER_ROLE_LABEL_KEYS[member.role]) : member.role}
+                    </Text>
                   </View>
                 </View>
 
@@ -2641,16 +2466,18 @@ function ChatScreen() {
                             : { color: '#94A3B8' },
                       ]}
                     >
-                      {member.role.toUpperCase()}
+                      {(SENDER_ROLE_LABEL_KEYS[member.role] ? t(SENDER_ROLE_LABEL_KEYS[member.role]) : member.role).toUpperCase()}
                     </Text>
                   </View>
                   <TouchableOpacity
                     style={styles.dmMemberBtn}
                     onPress={() => handleMemberClick(member)}
                     activeOpacity={0.8}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('chat.directMessageName', { name: member.name })}
                   >
                     <MessageSquare size={12} color="#FFF" style={{ marginRight: 3 }} />
-                    <Text style={styles.dmMemberBtnText}>DM</Text>
+                    <Text style={styles.dmMemberBtnText}>{t('chat.dm')}</Text>
                   </TouchableOpacity>
                 </View>
               </TouchableOpacity>
@@ -2666,11 +2493,13 @@ function ChatScreen() {
             style={StyleSheet.absoluteFill}
             activeOpacity={1}
             onPress={() => setSelectedMessageForOptions(null)}
+            accessibilityRole="button"
+            accessibilityLabel={t('common.close')}
           />
           <View style={styles.optionsModalContent}>
             <View style={styles.optionsHeaderRow}>
               <Text style={styles.optionsHeaderTitle} numberOfLines={1}>
-                Message Options
+                {t('chat.messageOptions')}
               </Text>
               <Text style={styles.optionsHeaderSubText} numberOfLines={1}>
                 "{selectedMessageForOptions.content}"
@@ -2686,18 +2515,22 @@ function ChatScreen() {
                 setReplyingToMessage(selectedMessageForOptions);
                 setSelectedMessageForOptions(null);
               }}
+              accessibilityRole="button"
+              accessibilityLabel={t('chat.replyToMessage')}
             >
               <CornerUpLeft size={16} color="#94A3B8" style={styles.optionsRowIcon} />
-              <Text style={styles.optionsRowText}>Reply to Message</Text>
+              <Text style={styles.optionsRowText}>{t('chat.replyToMessage')}</Text>
             </TouchableOpacity>
 
             {/* COPY OPTION */}
             <TouchableOpacity
               style={styles.optionsRowBtn}
               onPress={() => handleCopyMessage(selectedMessageForOptions.content)}
+              accessibilityRole="button"
+              accessibilityLabel={t('chat.copyText')}
             >
               <Copy size={16} color="#94A3B8" style={styles.optionsRowIcon} />
-              <Text style={styles.optionsRowText}>Copy Text</Text>
+              <Text style={styles.optionsRowText}>{t('chat.copyText')}</Text>
             </TouchableOpacity>
 
             {/* TRANSLATE OPTION */}
@@ -2708,9 +2541,11 @@ function ChatScreen() {
                   toggleTranslate(selectedMessageForOptions.id);
                   setSelectedMessageForOptions(null);
                 }}
+                accessibilityRole="button"
+                accessibilityLabel={t('chat.translateMessage')}
               >
                 <TranslateIcon size={16} color="#94A3B8" style={styles.optionsRowIcon} />
-                <Text style={styles.optionsRowText}>Translate Message</Text>
+                <Text style={styles.optionsRowText}>{t('chat.translateMessage')}</Text>
               </TouchableOpacity>
             )}
 
@@ -2721,9 +2556,13 @@ function ChatScreen() {
                 onPress={() =>
                   handleStartDirectMessage(selectedMessageForOptions.senderName, selectedMessageForOptions.avatar)
                 }
+                accessibilityRole="button"
+                accessibilityLabel={t('chat.directMessageName', { name: selectedMessageForOptions.senderName })}
               >
                 <MessageSquare size={16} color="#94A3B8" style={styles.optionsRowIcon} />
-                <Text style={styles.optionsRowText}>Direct Message {selectedMessageForOptions.senderName}</Text>
+                <Text style={styles.optionsRowText}>
+                  {t('chat.directMessageName', { name: selectedMessageForOptions.senderName })}
+                </Text>
               </TouchableOpacity>
             )}
 
@@ -2732,16 +2571,23 @@ function ChatScreen() {
               <TouchableOpacity
                 style={styles.optionsRowBtn}
                 onPress={() => handleDeleteMessage(selectedMessageForOptions.id)}
+                accessibilityRole="button"
+                accessibilityLabel={t('chat.deleteMessage')}
               >
                 <X size={16} color="#EF4444" style={styles.optionsRowIcon} />
-                <Text style={[styles.optionsRowText, { color: '#EF4444' }]}>Delete Message</Text>
+                <Text style={[styles.optionsRowText, { color: '#EF4444' }]}>{t('chat.deleteMessage')}</Text>
               </TouchableOpacity>
             )}
 
             <View style={styles.optionsCancelDivider} />
 
-            <TouchableOpacity style={styles.optionsCancelBtn} onPress={() => setSelectedMessageForOptions(null)}>
-              <Text style={styles.optionsCancelText}>Cancel</Text>
+            <TouchableOpacity
+              style={styles.optionsCancelBtn}
+              onPress={() => setSelectedMessageForOptions(null)}
+              accessibilityRole="button"
+              accessibilityLabel={t('common.cancel')}
+            >
+              <Text style={styles.optionsCancelText}>{t('common.cancel')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -2756,6 +2602,8 @@ function ChatScreen() {
               onPress={() => setIsSettingsOpen(false)}
               style={styles.settingsAbsoluteCloseBtn}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={t('chat.closeSettings')}
             >
               <ArrowLeft size={20} color="#FFF" />
             </TouchableOpacity>
@@ -2777,6 +2625,11 @@ function ChatScreen() {
                 onPress={() => setIsTripDetailsExpanded((prev) => !prev)}
                 activeOpacity={0.85}
                 style={{ marginBottom: 16 }}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  isTripDetailsExpanded ? t('chat.tapToCollapseSettings') : t('chat.tapToExpandSettings')
+                }
+                accessibilityState={{ expanded: isTripDetailsExpanded }}
               >
                 <LinearGradient
                   colors={['#2E1065', '#120D26']}
@@ -2787,7 +2640,7 @@ function ChatScreen() {
                   <View style={styles.telemetryHeader}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                       <Compass size={15} color="#C084FC" />
-                      <Text style={[styles.telemetryTitle, { color: '#E9D5FF' }]}>TRIP COMMAND CENTER</Text>
+                      <Text style={[styles.telemetryTitle, { color: '#E9D5FF' }]}>{t('chat.tripCommandCenter')}</Text>
                     </View>
                     <View
                       style={[
@@ -2795,11 +2648,11 @@ function ChatScreen() {
                         { backgroundColor: 'rgba(192, 132, 252, 0.15)', borderColor: 'rgba(192, 132, 252, 0.3)' },
                       ]}
                     >
-                      <Text style={[styles.telemetryStatusText, { color: '#F3E8FF' }]}>ACTIVE RUN</Text>
+                      <Text style={[styles.telemetryStatusText, { color: '#F3E8FF' }]}>{t('chat.activeRun')}</Text>
                     </View>
                   </View>
 
-                  <Text style={styles.telemetryLabel}>Itinerary Sync Progress</Text>
+                  <Text style={styles.telemetryLabel}>{t('chat.itinerarySyncProgress')}</Text>
                   <View style={styles.progressBarBg}>
                     <LinearGradient
                       colors={['#0066FF', '#8B5CF6']}
@@ -2812,13 +2665,13 @@ function ChatScreen() {
                   <View style={styles.telemetryMetaGrid}>
                     <View style={styles.telemetryMetaCell}>
                       <Text style={styles.telemetryMetaVal}>{activeTrip?.cities[1] ?? '—'}</Text>
-                      <Text style={styles.telemetryMetaLbl}>Last Node</Text>
+                      <Text style={styles.telemetryMetaLbl}>{t('chat.lastNode')}</Text>
                     </View>
                     <View style={[styles.telemetryMetaCell, { alignItems: 'flex-end' }]}>
                       <Text style={styles.telemetryMetaVal}>
                         {activeTrip?.cities[activeTrip.cities.length - 1] ?? '—'}
                       </Text>
-                      <Text style={styles.telemetryMetaLbl}>Target Node</Text>
+                      <Text style={styles.telemetryMetaLbl}>{t('chat.targetNode')}</Text>
                     </View>
                   </View>
 
@@ -2826,9 +2679,7 @@ function ChatScreen() {
 
                   <View style={styles.telemetryFooter}>
                     <Text style={[styles.telemetryFooterText, { color: '#C084FC' }]}>
-                      {isTripDetailsExpanded
-                        ? 'Tap to collapse settings & timeline'
-                        : 'Tap to expand settings, ledger & logs'}
+                      {isTripDetailsExpanded ? t('chat.tapToCollapseSettings') : t('chat.tapToExpandSettings')}
                     </Text>
                     {isTripDetailsExpanded ? (
                       <ChevronUp size={14} color="#C084FC" />
@@ -2845,7 +2696,7 @@ function ChatScreen() {
                   <View style={styles.settingSectionCard}>
                     <View style={styles.sectionHeader}>
                       <MapPin size={16} color="#0066FF" style={{ marginRight: 6 }} />
-                      <Text style={styles.sectionHeaderTitle}>Itinerary Timeline</Text>
+                      <Text style={styles.sectionHeaderTitle}>{t('chat.itineraryTimeline')}</Text>
                     </View>
                     <View style={styles.timelineRow}>
                       {(activeTrip?.cities ?? []).map((city, idx) => {
@@ -2886,9 +2737,9 @@ function ChatScreen() {
                     </View>
                     <View style={styles.meetingPointPanel}>
                       <Clock size={14} color="#0066FF" style={{ marginRight: 6 }} />
-                      <Text style={styles.meetingTitle}>Assembly point:</Text>
+                      <Text style={styles.meetingTitle}>{t('chat.assemblyPointLabel')}</Text>
                       <Text style={styles.meetingLocation} numberOfLines={1}>
-                        {activeTrip?.meetingPoint ?? 'Not set'}
+                        {activeTrip?.meetingPoint ?? t('chat.notSet')}
                       </Text>
                     </View>
                   </View>
@@ -2897,12 +2748,12 @@ function ChatScreen() {
                   <View style={styles.settingSectionCard}>
                     <View style={styles.sectionHeader}>
                       <DollarSign size={16} color="#0066FF" style={{ marginRight: 6 }} />
-                      <Text style={styles.sectionHeaderTitle}>Group Budget & Splits</Text>
+                      <Text style={styles.sectionHeaderTitle}>{t('chat.groupBudgetSplits')}</Text>
                     </View>
 
                     <View style={styles.budgetOverviewRow}>
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.budgetLabel}>Budget / Person</Text>
+                        <Text style={styles.budgetLabel}>{t('chat.budgetPerPersonShort')}</Text>
                         <Text style={styles.budgetValue}>{formatINR(activeTrip?.budget)}</Text>
                       </View>
                     </View>
@@ -2917,10 +2768,10 @@ function ChatScreen() {
                         router.push('/budget-tracker');
                       }}
                       accessibilityRole="button"
-                      accessibilityLabel="Open the shared expense tracker"
+                      accessibilityLabel={t('chat.openExpenseTracker')}
                     >
                       <DollarSign size={14} color={C.blue} style={{ marginRight: 4 }} />
-                      <Text style={[styles.settingsOutlineBtnText, { color: C.blue }]}>Open Expense Tracker</Text>
+                      <Text style={[styles.settingsOutlineBtnText, { color: C.blue }]}>{t('chat.openExpenseTracker')}</Text>
                     </TouchableOpacity>
                   </View>
 
@@ -2935,39 +2786,44 @@ function ChatScreen() {
                   <View style={[styles.settingSectionCard, { borderColor: 'rgba(239,68,68,0.2)' }]}>
                     <View style={styles.sectionHeader}>
                       <ShieldAlert size={16} color="#0066FF" style={{ marginRight: 6 }} />
-                      <Text style={styles.sectionHeaderTitle}>Safety Command & Emergency Control</Text>
+                      <Text style={styles.sectionHeaderTitle}>{t('chat.safetyCommandTitle')}</Text>
                     </View>
 
-                    <View style={styles.safetyControlRow}>
-                      <View style={styles.controlInfo}>
-                        <Text style={styles.controlTitle}>Live Location Pinging</Text>
-                        <Text style={styles.controlDesc}>Sends background telemetry updates</Text>
-                      </View>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#0066FF', letterSpacing: 0.5 }}>
-                        ACTIVE
-                      </Text>
-                    </View>
-
-                    <View style={styles.safetyControlRow}>
-                      <View style={styles.controlInfo}>
-                        <Text style={styles.controlTitle}>Government Aadhaar verification</Text>
-                        <Text style={styles.controlDesc}>Aadhaar status: verified</Text>
-                      </View>
-                      <CheckCircle size={16} color="#0066FF" />
-                    </View>
+                    {/* docs/REMEDIATION.md §9.3/§9.4 follow-up: two more fake
+                    status rows used to live here. "Live Location Pinging"
+                    always showed "ACTIVE" with no background telemetry
+                    feature anywhere in this codebase to back it. "Government
+                    Aadhaar verification" always showed a green checkmark and
+                    "Aadhaar status: verified" for every member regardless of
+                    any real verification state — worse, Aadhaar/KYC was
+                    already explicitly removed from this app for v1 per an
+                    earlier decision (docs/REMEDIATION.md §12.1: "rip it out
+                    for v1... no Aadhaar number / ID photo / face-verification
+                    fields, models, or UI"), so this leftover badge directly
+                    contradicted that. Both removed rather than kept faked. */}
 
                     {sosCountdown !== null ? (
                       <View style={styles.settingsArmedBox}>
-                        <Text style={styles.armedLabel}>ARMING SOS IN</Text>
+                        <Text style={styles.armedLabel}>{t('chat.armingSosIn')}</Text>
                         <Text style={styles.armedTimer}>{sosCountdown}</Text>
-                        <TouchableOpacity style={styles.armedCancelTouch} onPress={cancelSOS}>
-                          <Text style={styles.armedCancelText}>CANCEL</Text>
+                        <TouchableOpacity
+                          style={styles.armedCancelTouch}
+                          onPress={cancelSOS}
+                          accessibilityRole="button"
+                          accessibilityLabel={t('chat.cancel')}
+                        >
+                          <Text style={styles.armedCancelText}>{t('chat.cancel')}</Text>
                         </TouchableOpacity>
                       </View>
                     ) : (
-                      <TouchableOpacity style={styles.settingsSOSBtn} onPress={startSOSCountdown}>
+                      <TouchableOpacity
+                        style={styles.settingsSOSBtn}
+                        onPress={startSOSCountdown}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('chat.triggerPanicSosAlert')}
+                      >
                         <ShieldAlert size={18} color="#FFF" style={{ marginRight: 6 }} />
-                        <Text style={styles.settingsSOSBtnText}>TRIGGER PANIC SOS ALERT</Text>
+                        <Text style={styles.settingsSOSBtnText}>{t('chat.triggerPanicSosAlert')}</Text>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -2979,9 +2835,11 @@ function ChatScreen() {
                 <View style={{ marginBottom: 14, paddingHorizontal: 4 }}>
                   <View style={styles.sectionHeader}>
                     <UsersIcon size={16} color="#0066FF" style={{ marginRight: 6 }} />
-                    <Text style={styles.sectionHeaderTitle}>Group Members ({groupMembers.length})</Text>
+                    <Text style={styles.sectionHeaderTitle}>
+                      {t('chat.groupMembersCount', { count: groupMembers.length })}
+                    </Text>
                   </View>
-                  <Text style={styles.settingsSubInfo}>Tap a member to start a private chat.</Text>
+                  <Text style={styles.settingsSubInfo}>{t('chat.tapMemberToStartChat')}</Text>
                   <View style={styles.membersListContainer}>
                     {groupMembers.map((member, idx) => {
                       const isLast = idx === groupMembers.length - 1;
@@ -2994,11 +2852,15 @@ function ChatScreen() {
                           ]}
                           onPress={() => handleMemberClick(member)}
                           activeOpacity={0.7}
+                          accessibilityRole="button"
+                          accessibilityLabel={t('chat.startPrivateChatWith', { name: member.name })}
                         >
                           <Image source={{ uri: member.avatar }} style={styles.memberAvatar} />
                           <View style={styles.memberMeta}>
                             <Text style={styles.memberName}>{member.name}</Text>
-                            <Text style={styles.memberRoleText}>{member.role}</Text>
+                            <Text style={styles.memberRoleText}>
+                              {SENDER_ROLE_LABEL_KEYS[member.role] ? t(SENDER_ROLE_LABEL_KEYS[member.role]) : member.role}
+                            </Text>
                           </View>
 
                           {/* Role Badge indicator */}
@@ -3022,7 +2884,7 @@ function ChatScreen() {
                                     : { color: '#94A3B8' },
                               ]}
                             >
-                              {member.role.toUpperCase()}
+                              {(SENDER_ROLE_LABEL_KEYS[member.role] ? t(SENDER_ROLE_LABEL_KEYS[member.role]) : member.role).toUpperCase()}
                             </Text>
                           </View>
 
@@ -3030,9 +2892,11 @@ function ChatScreen() {
                             style={styles.dmMemberBtn}
                             onPress={() => handleMemberClick(member)}
                             activeOpacity={0.8}
+                            accessibilityRole="button"
+                            accessibilityLabel={t('chat.directMessageName', { name: member.name })}
                           >
                             <MessageSquare size={12} color="#FFF" style={{ marginRight: 3 }} />
-                            <Text style={styles.dmMemberBtnText}>DM</Text>
+                            <Text style={styles.dmMemberBtnText}>{t('chat.dm')}</Text>
                           </TouchableOpacity>
                         </TouchableOpacity>
                       );
@@ -3047,9 +2911,9 @@ function ChatScreen() {
                   onPress={() => {
                     void (async () => {
                       const ok = await confirm({
-                        title: 'Exit Group',
-                        message: `Leave ${activeRoom?.name}? You will no longer receive messages or updates.`,
-                        confirmLabel: 'Exit',
+                        title: t('chat.exitGroupTitle'),
+                        message: t('chat.exitGroupMessage', { name: activeRoom?.name }),
+                        confirmLabel: t('chat.exit'),
                         destructive: true,
                       });
                       if (!ok) return;
@@ -3059,9 +2923,11 @@ function ChatScreen() {
                     })();
                   }}
                   activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('chat.exitGroupTitle')}
                 >
                   <LogOut size={16} color="#EF4444" style={{ marginRight: 6 }} />
-                  <Text style={styles.settingsExitBtnText}>Exit Group</Text>
+                  <Text style={styles.settingsExitBtnText}>{t('chat.exitGroupTitle')}</Text>
                 </TouchableOpacity>
               )}
 
@@ -3077,25 +2943,25 @@ function ChatScreen() {
           <View style={styles.modalContentCard}>
             {activeModal === 'LOCATION' && (
               <View>
-                <Text style={styles.modalHeading}>Share Custom Location</Text>
+                <Text style={styles.modalHeading}>{t('chat.shareCustomLocation')}</Text>
                 <Input
-                  label="Location Name / Meeting spot"
-                  placeholder="e.g. Prem Mandir Entrance Gate"
+                  label={t('chat.locationNameLabel')}
+                  placeholder={t('chat.locationNamePlaceholder')}
                   value={locationForm.label}
                   onChangeText={(val) => setLocationForm((p) => ({ ...p, label: val }))}
                 />
                 <View style={styles.rowInputs}>
                   <Input
-                    label="Latitude"
-                    placeholder="e.g. 27.5650"
+                    label={t('chat.latitude')}
+                    placeholder={t('chat.latitudePlaceholder')}
                     keyboardType="numeric"
                     value={locationForm.lat}
                     onChangeText={(val) => setLocationForm((p) => ({ ...p, lat: val }))}
                     containerStyle={{ flex: 1, marginRight: 8 }}
                   />
                   <Input
-                    label="Longitude"
-                    placeholder="e.g. 77.6593"
+                    label={t('chat.longitude')}
+                    placeholder={t('chat.longitudePlaceholder')}
                     keyboardType="numeric"
                     value={locationForm.lng}
                     onChangeText={(val) => setLocationForm((p) => ({ ...p, lng: val }))}
@@ -3108,8 +2974,8 @@ function ChatScreen() {
                   onPress={handleUseMyLocation}
                   disabled={locatingSelf}
                   accessibilityRole="button"
-                  accessibilityLabel="Use my current location"
-                  accessibilityHint="Fills the latitude and longitude from your device GPS"
+                  accessibilityLabel={t('chat.useMyCurrentLocationLabel')}
+                  accessibilityHint={t('chat.useMyCurrentLocationHint')}
                   accessibilityState={{ disabled: locatingSelf, busy: locatingSelf }}
                 >
                   {locatingSelf ? (
@@ -3118,17 +2984,22 @@ function ChatScreen() {
                     <MapPin size={14} color={C.blueText} />
                   )}
                   <Text style={styles.useMyLocationText}>
-                    {locatingSelf ? 'Reading your location…' : 'Use my location'}
+                    {locatingSelf ? t('chat.readingLocation') : t('chat.useMyLocation')}
                   </Text>
                 </TouchableOpacity>
 
                 <View style={styles.modalActionButtons}>
-                  <Button label="Cancel" variant="secondary" size="sm" onPress={() => setActiveModal('NONE')} />
                   <Button
-                    label="Share"
+                    label={t('common.cancel')}
+                    variant="secondary"
+                    size="sm"
+                    onPress={() => setActiveModal('NONE')}
+                  />
+                  <Button
+                    label={t('chat.share')}
                     size="sm"
                     onPress={handleShareLocationSubmit}
-                    accessibilityLabel="Share this location with the group"
+                    accessibilityLabel={t('chat.shareLocationWithGroup')}
                   />
                 </View>
               </View>
@@ -3265,11 +3136,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0.5,
     borderBottomColor: 'rgba(37, 39, 64, 0.5)',
     alignItems: 'center',
-  },
-  sosBlinkingRoomBorder: {
-    borderLeftWidth: 3,
-    borderLeftColor: C.red,
-    backgroundColor: 'rgba(239, 68, 68, 0.03)',
   },
   roomAvatarWrap: {
     position: 'relative',
@@ -4893,66 +4759,6 @@ const styles = StyleSheet.create({
   },
 
   // ─── PINNED GROUP UPDATE STYLES ───────────────────────────────
-  groupUpdateCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: 'rgba(139, 92, 246, 0.08)',
-    borderWidth: 1.2,
-    borderColor: 'rgba(139, 92, 246, 0.25)',
-    borderRadius: 16,
-    padding: 12,
-    marginHorizontal: 14,
-    marginTop: 6,
-    marginBottom: 10,
-  },
-  groupUpdateLeft: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-  },
-  groupUpdatePinIcon: {
-    marginTop: 2,
-    transform: [{ rotate: '45deg' }],
-  },
-  groupUpdateInfo: {
-    flex: 1,
-    paddingRight: 6,
-  },
-  groupUpdateTitleText: {
-    color: '#C084FC',
-    fontSize: 13.5,
-    fontWeight: '700',
-    marginBottom: 2,
-  },
-  groupUpdateDescText: {
-    color: C.textSec,
-    fontSize: 12,
-    lineHeight: 15,
-  },
-  groupUpdateRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  groupUpdateViewBtn: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderWidth: 0.8,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-  },
-  groupUpdateViewBtnText: {
-    color: '#FFF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  groupUpdateCloseBtn: {
-    padding: 4,
-  },
-
   // ─── TAB CONTENT MAIN SCROLL VIEWS ────────────────────────────
   tabScrollView: {
     flex: 1,
