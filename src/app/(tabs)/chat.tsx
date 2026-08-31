@@ -444,6 +444,7 @@ function MessageBubble({
               <TouchableOpacity
                 style={styles.locationActionTouch}
                 onPress={onOpenMap}
+                hitSlop={{ top: 9, bottom: 9, left: 9, right: 9 }}
                 accessibilityRole="button"
                 accessibilityLabel={t('chat.openLiveNavigation')}
               >
@@ -454,6 +455,7 @@ function MessageBubble({
             <View style={styles.voiceNoteCard}>
               <TouchableOpacity
                 style={styles.playButtonCircle}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 accessibilityRole="button"
                 accessibilityLabel={t('chat.playVoiceMessage')}
               >
@@ -480,6 +482,7 @@ function MessageBubble({
                 </Text>
                 <TouchableOpacity
                   style={styles.imageDownloadBtn}
+                  hitSlop={{ top: 11, bottom: 11, left: 11, right: 11 }}
                   accessibilityRole="button"
                   accessibilityLabel={t('chat.downloadImage')}
                 >
@@ -595,6 +598,7 @@ function MessageBubble({
                         activeOpacity={0.7}
                         onPress={() => onToggleTranslate(msg.id)}
                         style={styles.translateRow}
+                        hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
                         accessibilityRole="button"
                         accessibilityLabel={hasTranslation ? t('chat.showOriginal') : t('chat.translateToHindi')}
                       >
@@ -1686,10 +1690,20 @@ function ChatScreen() {
         <View style={styles.inboxHeader}>
           <Text style={styles.inboxHeaderTitle}>{t('chat.travelStarChats')}</Text>
           <View style={styles.inboxHeaderIcons}>
-            <TouchableOpacity style={styles.headerIconTouch} accessibilityRole="button" accessibilityLabel={t('chat.contacts')}>
+            <TouchableOpacity
+              style={styles.headerIconTouch}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel={t('chat.contacts')}
+            >
               <UsersIcon size={20} color="#FFF" />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.headerIconTouch} accessibilityRole="button" accessibilityLabel={t('chat.moreOptions')}>
+            <TouchableOpacity
+              style={styles.headerIconTouch}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel={t('chat.moreOptions')}
+            >
               <MoreVertical size={20} color="#FFF" />
             </TouchableOpacity>
           </View>
@@ -2008,6 +2022,7 @@ function ChatScreen() {
               setSelectedRoomId(null);
               setIsSettingsOpen(false);
             }}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             accessibilityRole="button"
             accessibilityLabel={t('chat.goBack')}
           >
@@ -2020,6 +2035,7 @@ function ChatScreen() {
             style={styles.roomHeaderTitles}
             onPress={() => setIsSettingsOpen(true)}
             activeOpacity={0.7}
+            hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
             accessibilityRole="button"
             accessibilityLabel={t('chat.openRoomSettings')}
           >
@@ -2262,6 +2278,7 @@ function ChatScreen() {
                 <TouchableOpacity
                   style={styles.replyPreviewCloseBtn}
                   onPress={() => setReplyingToMessage(null)}
+                  hitSlop={{ top: 11, bottom: 11, left: 11, right: 11 }}
                   accessibilityRole="button"
                   accessibilityLabel={t('chat.cancelReply')}
                 >
@@ -2274,6 +2291,7 @@ function ChatScreen() {
               <TouchableOpacity
                 style={[styles.plusCircle, isAttachmentOpen && styles.plusCircleOpen]}
                 onPress={() => setIsAttachmentOpen(!isAttachmentOpen)}
+                hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
                 accessibilityRole="button"
                 accessibilityLabel={t('chat.attachmentOptions')}
                 accessibilityState={{ expanded: isAttachmentOpen }}
@@ -2293,6 +2311,7 @@ function ChatScreen() {
                 />
                 <TouchableOpacity
                   style={styles.smileIcon}
+                  hitSlop={{ top: 11, bottom: 11, left: 8, right: 8 }}
                   accessibilityRole="button"
                   accessibilityLabel={t('chat.emojiPicker')}
                 >
@@ -2307,6 +2326,7 @@ function ChatScreen() {
                 ]}
                 onPress={handleSendText}
                 disabled={inputText.trim() === ''}
+                hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
                 accessibilityRole="button"
                 accessibilityLabel={t('chat.sendMessage')}
                 accessibilityState={{ disabled: inputText.trim() === '' }}
@@ -2473,6 +2493,7 @@ function ChatScreen() {
                     style={styles.dmMemberBtn}
                     onPress={() => handleMemberClick(member)}
                     activeOpacity={0.8}
+                    hitSlop={{ top: 9, bottom: 9, left: 8, right: 8 }}
                     accessibilityRole="button"
                     accessibilityLabel={t('chat.directMessageName', { name: member.name })}
                   >
@@ -2602,6 +2623,7 @@ function ChatScreen() {
               onPress={() => setIsSettingsOpen(false)}
               style={styles.settingsAbsoluteCloseBtn}
               activeOpacity={0.7}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               accessibilityRole="button"
               accessibilityLabel={t('chat.closeSettings')}
             >
@@ -2809,6 +2831,7 @@ function ChatScreen() {
                         <TouchableOpacity
                           style={styles.armedCancelTouch}
                           onPress={cancelSOS}
+                          hitSlop={{ top: 11, bottom: 11, left: 11, right: 11 }}
                           accessibilityRole="button"
                           accessibilityLabel={t('chat.cancel')}
                         >
@@ -3093,6 +3116,8 @@ const styles = StyleSheet.create({
     borderBottomColor: C.border,
   },
   filterPill: {
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
     paddingHorizontal: 12,
     paddingVertical: 5,
     borderRadius: 14,
@@ -3115,6 +3140,7 @@ const styles = StyleSheet.create({
   safetyTickerBanner: {
     flexDirection: 'row',
     alignItems: 'center',
+    minHeight: MIN_TOUCH_TARGET,
     backgroundColor: C.red,
     paddingVertical: 8,
     paddingHorizontal: 16,
@@ -3324,6 +3350,8 @@ const styles = StyleSheet.create({
   },
   sosBannerActionBtn: {
     backgroundColor: 'rgba(255,255,255,0.2)',
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
@@ -3464,6 +3492,7 @@ const styles = StyleSheet.create({
   settingsOutlineBtn: {
     borderWidth: 1,
     borderRadius: 10,
+    minHeight: MIN_TOUCH_TARGET,
     paddingVertical: 8,
     flexDirection: 'row',
     alignItems: 'center',
@@ -3581,6 +3610,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    minHeight: MIN_TOUCH_TARGET,
     paddingVertical: 10,
     borderRadius: 10,
     marginTop: 6,
@@ -3827,7 +3857,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     overflow: 'hidden',
     position: 'relative',
-    height: 38,
+    height: MIN_TOUCH_TARGET,
     justifyContent: 'center',
   },
   pollOptionVoted: {
@@ -4113,9 +4143,11 @@ const styles = StyleSheet.create({
   },
   sosAlertBtn: {
     flex: 1,
+    minHeight: MIN_TOUCH_TARGET,
     paddingVertical: 7,
     borderRadius: 8,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   sosAlertBtnText: {
     color: '#FFF',
@@ -4520,6 +4552,7 @@ const styles = StyleSheet.create({
   optionsRowBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    minHeight: MIN_TOUCH_TARGET,
     paddingVertical: 10,
     gap: 12,
   },
@@ -4539,6 +4572,8 @@ const styles = StyleSheet.create({
   },
   optionsCancelBtn: {
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: MIN_TOUCH_TARGET,
     paddingVertical: 10,
     backgroundColor: 'rgba(255, 255, 255, 0.04)',
     borderRadius: 10,
@@ -4702,6 +4737,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    minHeight: MIN_TOUCH_TARGET,
     backgroundColor: 'rgba(239, 68, 68, 0.1)',
     borderWidth: 1.2,
     borderColor: 'rgba(239, 68, 68, 0.3)',
@@ -4741,6 +4777,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    minHeight: MIN_TOUCH_TARGET,
     paddingVertical: 8,
     borderRadius: 14,
     gap: 6,
