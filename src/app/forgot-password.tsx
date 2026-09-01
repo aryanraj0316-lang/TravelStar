@@ -11,7 +11,7 @@ import { Button, Input } from '@/components/ui';
 import { apiService } from '@/services/api';
 import { logger } from '@/lib/logger';
 import { errorToastMessage, toast } from '@/lib/feedback';
-import { C, space } from '@/theme/tokens';
+import { C, MIN_TOUCH_TARGET, space } from '@/theme/tokens';
 
 // docs/REMEDIATION.md §8.1: apiService.forgotPassword/resetPassword existed
 // on the client and the backend routes were fully built (token hashing,
@@ -68,7 +68,7 @@ export default function ForgotPasswordScreen() {
             >
               <ArrowLeft size={20} color={C.white} />
             </TouchableOpacity>
-            <View style={{ width: 40 }} />
+            <View style={{ width: MIN_TOUCH_TARGET }} />
           </View>
 
           <View style={styles.heroWrap}>
@@ -90,6 +90,7 @@ export default function ForgotPasswordScreen() {
                   style={{ marginTop: 18 }}
                   onPress={() => router.replace('/auth')}
                   activeOpacity={0.85}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                   accessibilityRole="button"
                   accessibilityLabel={t('forgotPassword.backToLogIn')}
                 >
@@ -124,6 +125,7 @@ export default function ForgotPasswordScreen() {
             <Text style={styles.footerText}>{t('forgotPassword.rememberedIt')}</Text>
             <TouchableOpacity
               onPress={() => router.replace('/auth')}
+              hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
               accessibilityRole="button"
               accessibilityLabel={t('forgotPassword.logIn')}
             >
@@ -147,9 +149,9 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
+    borderRadius: MIN_TOUCH_TARGET / 2,
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
     alignItems: 'center',
     justifyContent: 'center',
