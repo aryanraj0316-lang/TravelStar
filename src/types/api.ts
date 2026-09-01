@@ -208,21 +208,25 @@ export interface TripItineraryDay {
 export interface ChatRoomSummary {
   id: string;
   name: string;
-  tripId?: string | null;
-  isGroup: boolean;
-  latestMessage?: string | null;
-  latestTime?: IsoDateTime | null;
+  tripId: string | null;
+  avatar: string;
+  type: string;
+  latestMessage: string;
+  latestTime: string;
+  unread: boolean;
   unreadCount: number;
+  badge: string;
+  lastMessageAt: IsoDateTime;
 }
 
 export interface ChatMessage {
   id: string;
-  chatRoomId: string;
   senderId: string;
   senderName: string;
+  senderRole: string;
   content: string;
+  timestamp: string;
   mediaType: 'NONE' | 'IMAGE' | 'VOICE';
-  mediaUrl?: string | null;
   createdAt: IsoDateTime;
 }
 

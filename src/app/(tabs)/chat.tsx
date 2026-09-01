@@ -23,12 +23,10 @@ import {
   CornerUpLeft,
   DollarSign,
   Download,
-  FileText,
   Image as ImageIcon,
   LogOut,
   MapPin,
   MessageSquare,
-  Mic,
   MoreVertical,
   Pin,
   Plus,
@@ -37,7 +35,6 @@ import {
   Settings,
   ShieldAlert,
   Smile,
-  Star,
   Globe as TranslateIcon,
   Trash2,
   Users as UsersIcon,
@@ -67,8 +64,12 @@ import { useApp } from '@/store/AppContext';
 import { C, MIN_TOUCH_TARGET, fontSize, radii } from '@/theme/tokens';
 import { Button, Input } from '@/components/ui';
 
-let ImagePicker: any = null;
+// Deliberately require(), not import(): needs to synchronously catch a
+// missing/unlinked native module at load time (same reasoning as
+// profile.tsx's identical pattern).
+let ImagePicker: typeof import('expo-image-picker') | null = null;
 try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   ImagePicker = require('expo-image-picker');
 } catch {
   ImagePicker = null;
@@ -156,7 +157,11 @@ const SwipeableMessageRow = ({
 }) => {
   const pan = useState(() => new Animated.Value(0))[0];
 
-  const panResponder = useRef(
+  // useState's lazy initializer (matching `pan` above), not useRef().current
+  // - reading .current synchronously during render is a react-hooks/refs
+  // violation; this is the React Compiler's supported way to create a
+  // stable value without it.
+  const panResponder = useState(() =>
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (evt, gestureState) => {
@@ -189,7 +194,7 @@ const SwipeableMessageRow = ({
         }).start();
       },
     }),
-  ).current;
+  )[0];
 
   return (
     <View style={{ position: 'relative', width: '100%' }} {...panResponder.panHandlers}>
@@ -633,7 +638,6 @@ function ChatScreen() {
   const navbarHiddenRef = useRef(false);
   const {
     trips,
-    guides,
     profile,
     sosAlerts,
     triggerSOS,
@@ -648,35 +652,33 @@ function ChatScreen() {
     refreshTrips,
   } = useApp();
 
-  useEffect(() => {
-    clearChatUnread();
-    refreshTrips();
-    loadInboxRooms();
-  }, []);
+  // Active Trip selection (binds details drawer + polls + expenses)
+  const [selectedTripId, setSelectedTripId] = useState<string>('');
 
-  // Navigation States
-  const selectedRoomId = activeRoomId;
-  const setSelectedRoomId = setActiveRoomId;
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isTripDetailsExpanded, setIsTripDetailsExpanded] = useState(false);
+  // Dynamic database members state
+  const [dbMembers, setDbMembers] = useState<{ name: string; avatar: string; role: string; id?: string }[]>([]);
 
-  // Tab Selection
-  const confirm = useConfirm();
-  const [activeTab, setActiveTab] = useState<'chat' | 'itinerary' | 'members'>('chat');
+  // Stateful Chat Data — starts empty; populated exclusively from
+  // apiService.getChats()/getChatMessages() (loadInboxRooms below and the
+  // message-history effect) and the real-time socket sync effect. See the
+  // removed-INITIAL_TRIP_MESSAGES comment above the CustomMessage/ChatRoom
+  // interfaces for why this used to be seeded with fake conversations.
+  const [tripMessages, setTripMessages] = useState<Record<string, CustomMessage[]>>({});
 
+  // Inbox Rooms state - updates snippet text in real-time. Starts empty for
+  // the same reason as tripMessages above.
+  const [inboxRooms, setInboxRooms] = useState<ChatRoom[]>([]);
 
-  // Document Upload form states
-
-  async function loadInboxRooms() {
+  const loadInboxRooms = useCallback(async () => {
     try {
       const res = await apiService.getChats();
       if (res && res.length > 0) {
-        const loadedRooms: ChatRoom[] = res.map((r: any) => ({
+        const loadedRooms: ChatRoom[] = res.map((r) => ({
           id: r.id,
-          tripId: r.tripId,
+          tripId: r.tripId ?? '',
           name: r.name,
           avatar: r.avatar,
-          type: r.type || 'GROUP',
+          type: (r.type as ChatRoom['type']) || 'GROUP',
           latestMessage: r.latestMessage,
           latestTime: r.latestTime,
           unreadCount: r.unreadCount || 0,
@@ -700,7 +702,28 @@ function ChatScreen() {
     } catch (e) {
       logger.warn('Failed to load chat rooms from backend:', e);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    clearChatUnread();
+    refreshTrips();
+    // False positive: the linter traces into loadInboxRooms and sees it
+    // eventually calls setInboxRooms, but that call happens after an
+    // `await`, inside a resolved promise's continuation — not synchronously
+    // within this effect's body.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadInboxRooms();
+  }, [clearChatUnread, refreshTrips, loadInboxRooms]);
+
+  // Navigation States
+  const selectedRoomId = activeRoomId;
+  const setSelectedRoomId = setActiveRoomId;
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isTripDetailsExpanded, setIsTripDetailsExpanded] = useState(false);
+
+  // Tab Selection
+  const confirm = useConfirm();
+  const [activeTab, setActiveTab] = useState<'chat' | 'itinerary' | 'members'>('chat');
 
   // Load message history from DB
   useEffect(() => {
@@ -716,9 +739,9 @@ function ChatScreen() {
 
       apiService
         .getChatMessages(selectedRoomId)
-        .then((history: any[] | null) => {
+        .then((history) => {
           if (history && history.length > 0) {
-            const mappedHistory: CustomMessage[] = history.map((m: any) => {
+            const mappedHistory: CustomMessage[] = history.map((m) => {
               const isMe = m.senderId === profile.id || !!(profile.name && m.senderName === profile.name);
               return {
                 id: m.id,
@@ -760,18 +783,29 @@ function ChatScreen() {
             });
           }
         })
-        .catch((e: any) => {
+        .catch((e) => {
           logger.warn('Failed to load chat messages:', e);
         });
     }
-  }, [selectedRoomId]);
+  }, [selectedRoomId, profile.avatar, profile.id, profile.name]);
 
-  // Reset tab to chat when activeRoomId/selectedRoomId changes
+  // Reset tab to chat when activeRoomId/selectedRoomId changes. react.dev's
+  // documented pattern for this (compare against a ref during render, adjust
+  // state if it changed) isn't compatible with the React Compiler running on
+  // this codebase — it flags ref reads/writes during render as impure
+  // (react-hooks/refs) — so this stays a plain effect. The cascading-render
+  // cost the set-state-in-effect rule warns about is one extra render on
+  // room switch, not a correctness issue.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setActiveTab('chat');
   }, [activeRoomId]);
 
-  // Sync real-time socket messages from context to component's map state
+  // Sync real-time socket messages from context to component's map state.
+  // dbMembers/tripMessages/inboxRooms are each hydrated from their own REST
+  // call elsewhere in this file too, so this can't be replaced with a pure
+  // derivation of `messages` alone — it incrementally merges each arriving
+  // socket message into whatever those calls already loaded.
   useEffect(() => {
     if (messages.length > 0) {
       const latestMsg = messages[messages.length - 1];
@@ -781,6 +815,7 @@ function ChatScreen() {
       const isSystemMsg = latestMsg.senderRole === 'SYSTEM' || latestMsg.senderName === 'System';
       if (isSystemMsg && latestMsg.content.includes('has joined the group')) {
         const userName = latestMsg.content.replace(' has joined the group', '').trim();
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setDbMembers((prev) => {
           if (prev.some((m) => m.name.toLowerCase() === userName.toLowerCase())) return prev;
           return [
@@ -876,17 +911,11 @@ function ChatScreen() {
         }
       });
     }
-  }, [messages, activeRoomId]);
+  }, [messages, activeRoomId, profile.avatar, profile.id, profile.name, selectedTripId]);
 
   // Filters for the Inbox List view
   const [inboxFilter, setInboxFilter] = useState<'ALL' | 'GROUPS' | 'GUIDES'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
-
-  // Active Trip selection (binds details drawer + polls + expenses)
-  const [selectedTripId, setSelectedTripId] = useState<string>('');
-
-  // Dynamic database members state
-  const [dbMembers, setDbMembers] = useState<{ name: string; avatar: string; role: string; id?: string }[]>([]);
 
   // Load trip members from database dynamically when selectedTripId changes
   useEffect(() => {
@@ -895,31 +924,17 @@ function ChatScreen() {
         .getTripMembers(selectedTripId)
         .then((membersData) => {
           if (membersData && Array.isArray(membersData)) {
-            const mapped = membersData.map((m: any) => {
-              const userObj = m.user || m;
-              const profileObj = userObj.profile || {};
-              const firstName = profileObj.firstName || '';
-              const lastName = profileObj.lastName || '';
-              const fullName =
-                firstName && lastName
-                  ? `${firstName} ${lastName}`.trim()
-                  : userObj.name || userObj.email?.split('@')[0] || 'Traveler';
-
-              let roleName = m.role || userObj.role || 'Tourist';
-              if (roleName === 'TOURIST' || roleName === 'MEMBER') roleName = 'Tourist';
-              if (roleName === 'ORGANIZER') roleName = 'Organizer';
-              if (roleName === 'GUIDE') roleName = 'Guide';
-
-              return {
-                id: userObj.id || m.userId,
-                name: fullName,
-                avatar:
-                  profileObj.avatarUrl ||
-                  userObj.avatar ||
-                  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
-                role: roleName,
-              };
-            });
+            // TripMemberRow (src/types/api.ts) carries `isCreator`, not a
+            // `role`/nested `user` shape — this used to read fields that
+            // never existed on the real response (`m.role`, `m.user.role`,
+            // `m.user.profile.*`), so every member silently rendered as
+            // 'Tourist' regardless of who actually organized the trip.
+            const mapped = membersData.map((m) => ({
+              id: m.userId,
+              name: m.name,
+              avatar: m.avatar,
+              role: m.isCreator ? 'Organizer' : 'Tourist',
+            }));
             setDbMembers(mapped);
           } else {
             setDbMembers([]);
@@ -945,22 +960,16 @@ function ChatScreen() {
   const [locatingSelf, setLocatingSelf] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
 
-  // Stateful Chat Data — starts empty; populated exclusively from
-  // apiService.getChats()/getChatMessages() (loadInboxRooms below and the
-  // message-history effect) and the real-time socket sync effect. See the
-  // removed-INITIAL_TRIP_MESSAGES comment above the CustomMessage/ChatRoom
-  // interfaces for why this used to be seeded with fake conversations.
-  const [tripMessages, setTripMessages] = useState<Record<string, CustomMessage[]>>({});
-
-  // Inbox Rooms state - updates snippet text in real-time. Starts empty for
-  // the same reason as tripMessages above.
-  const [inboxRooms, setInboxRooms] = useState<ChatRoom[]>([]);
-
-  // Dynamic Room Sync effect
+  // Dynamic Room Sync effect. selectedTripId can't be a pure derived value
+  // here — it's also set directly by user actions elsewhere (picking a room
+  // from a list) — this effect only keeps it aligned when selectedRoomId (or
+  // the async-loaded inboxRooms/trips it's matched against) changes out from
+  // under it.
   useEffect(() => {
     if (selectedRoomId) {
       const matchedRoom = inboxRooms.find((r) => r.id === selectedRoomId);
       if (matchedRoom) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setSelectedTripId(matchedRoom.tripId);
       } else {
         const matchedTrip = trips.find((t) => t.chatRoomId === selectedRoomId || `room-${t.id}` === selectedRoomId);
@@ -971,8 +980,13 @@ function ChatScreen() {
     }
   }, [selectedRoomId, inboxRooms, trips]);
 
-  // Dynamic trips synchronization into inboxRooms
+  // Dynamic trips synchronization into inboxRooms. inboxRooms is hydrated
+  // from two other independent sources (loadInboxRooms' REST call and the
+  // real-time socket-sync effect below), so it can't be recomputed as a pure
+  // derived value of `trips` alone — this backfills any trip that doesn't
+  // have a room yet without discarding what those other sources loaded.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setInboxRooms((prevRooms) => {
       const missingTrips = trips.filter((t) => !prevRooms.some((r) => r.tripId === t.id));
       if (missingTrips.length === 0) return prevRooms;
@@ -1027,12 +1041,21 @@ function ChatScreen() {
 
   // SOS Countdown
   const [sosCountdown, setSosCountdown] = useState<number | null>(null);
-  const countdownInterval = useRef<any>(null);
+  const countdownInterval = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Scroll ref
   // FlatList, not ScrollView, since the message list was virtualized in
   // Phase 10. `scrollToEnd` exists on both, so scrollToBottom is unchanged.
   const messageListRef = useRef<FlatList<CustomMessage>>(null);
+
+  // Auto scroll
+  const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollToBottom = useCallback((animated = true) => {
+    if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
+    scrollTimerRef.current = setTimeout(() => {
+      messageListRef.current?.scrollToEnd({ animated });
+    }, 40);
+  }, []);
 
   // Fetch current active trip data
   // The real trip for the open room, or null. This used to fall back to a
@@ -1051,8 +1074,13 @@ function ChatScreen() {
   const [chatItinerary, setChatItinerary] = useState<{ id: string; day: number; title: string; plan: string }[]>([]);
   const [chatItineraryLoading, setChatItineraryLoading] = useState(false);
 
+  // Standard fetch-on-dependency-change effect: reset then load. The
+  // synchronous setState below is the "clear stale data" half of a fetch
+  // that completes asynchronously right after — not the pattern this lint
+  // rule exists to catch.
   useEffect(() => {
     if (!selectedTripId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setChatItinerary([]);
       return;
     }
@@ -1079,7 +1107,10 @@ function ChatScreen() {
   const activeSOS = sosAlerts.find((sos) => sos.status === 'ACTIVE');
 
   // Retrieve current active messages list (unified feed)
-  const currentMessages = tripMessages[selectedRoomId || selectedTripId] || [];
+  const currentMessages = useMemo(
+    () => tripMessages[selectedRoomId || selectedTripId] || [],
+    [tripMessages, selectedRoomId, selectedTripId],
+  );
 
   // Dynamically extract group members from message history in this room/trip
   const groupMembers = useMemo(() => {
@@ -1165,7 +1196,7 @@ function ChatScreen() {
       duration: 250,
       useNativeDriver: false,
     }).start();
-  }, [isAttachmentOpen]);
+  }, [isAttachmentOpen, attachPanelHeight]);
 
   // Keyboard show/hide — lift input bar above keyboard
   useEffect(() => {
@@ -1194,7 +1225,7 @@ function ChatScreen() {
       onShow.remove();
       onHide.remove();
     };
-  }, []);
+  }, [keyboardOffset, scrollToBottom]);
 
   // docs/REMEDIATION.md §8.7: this was a "Typing indicator simulation" (the
   // original code's own comment) — a fixed setTimeout that showed a
@@ -1205,18 +1236,11 @@ function ChatScreen() {
   // open — see the TextInput's onChangeText below for the emitting side.
   useEffect(() => {
     if (!typingUser || typingUser.roomId !== (selectedRoomId || selectedTripId)) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTyperName(typingUser.userName);
     setIsTyping(typingUser.isTyping);
   }, [typingUser, selectedTripId, selectedRoomId]);
 
-  // Auto scroll
-  const scrollTimerRef = useRef<any>(null);
-  const scrollToBottom = useCallback((animated = true) => {
-    if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
-    scrollTimerRef.current = setTimeout(() => {
-      messageListRef.current?.scrollToEnd({ animated });
-    }, 40);
-  }, []);
 
   useEffect(() => {
     if (selectedRoomId) {
@@ -1228,7 +1252,11 @@ function ChatScreen() {
   const toggleTranslate = (id: string) => {
     setTranslatedMsgs((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
       return next;
     });
   };
@@ -1328,6 +1356,10 @@ function ChatScreen() {
   // Copy message text to device clipboard safely
   const handleCopyMessage = (content: string) => {
     try {
+      // Synchronous require() so the catch block below can fall back
+      // cleanly if this module isn't present in this RN build - an async
+      // import() can't replicate that at the point of use here.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const ClipboardObj = require('react-native').Clipboard;
       if (ClipboardObj && typeof ClipboardObj.setString === 'function') {
         ClipboardObj.setString(content);
@@ -1889,7 +1921,11 @@ function ChatScreen() {
                   const roomId = selectedRoomForOptions.id;
                   setPinnedRoomIds((prev) => {
                     const next = new Set(prev);
-                    next.has(roomId) ? next.delete(roomId) : next.add(roomId);
+                    if (next.has(roomId)) {
+                      next.delete(roomId);
+                    } else {
+                      next.add(roomId);
+                    }
                     return next;
                   });
                   setSelectedRoomForOptions(null);
@@ -2523,7 +2559,7 @@ function ChatScreen() {
                 {t('chat.messageOptions')}
               </Text>
               <Text style={styles.optionsHeaderSubText} numberOfLines={1}>
-                "{selectedMessageForOptions.content}"
+                &ldquo;{selectedMessageForOptions.content}&rdquo;
               </Text>
             </View>
 
