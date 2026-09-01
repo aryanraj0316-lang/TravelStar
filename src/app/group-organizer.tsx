@@ -36,7 +36,7 @@ import {
   Check,
   Send,
 } from 'lucide-react-native';
-import { C } from '@/theme/tokens';
+import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { showPrompt, toast, useConfirm } from '@/lib/feedback';
 import { Button, Input, Sheet } from '@/components/ui';
 
@@ -993,6 +993,7 @@ export default function GroupOrganizerScreen() {
                         <Text style={styles.itineraryStateText}>{itineraryError}</Text>
                         <TouchableOpacity
                           onPress={() => currentTour && fetchItinerary(currentTour.id)}
+                          hitSlop={{ top: 14, bottom: 14, left: 10, right: 10 }}
                           accessibilityRole="button"
                           accessibilityLabel={t('groupOrganizer.retry')}
                         >
@@ -1463,6 +1464,7 @@ const styles = StyleSheet.create({
   joinBtn: {
     backgroundColor: C.blue,
     paddingVertical: 5,
+    minHeight: MIN_TOUCH_TARGET,
     borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1487,8 +1489,8 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
   backBtn: {
-    width: 34,
-    height: 34,
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
     borderRadius: 10,
     backgroundColor: 'rgba(255,255,255,0.03)',
     alignItems: 'center',
@@ -1541,8 +1543,10 @@ const styles = StyleSheet.create({
   tabItem: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 8,
     paddingHorizontal: 12,
+    minHeight: MIN_TOUCH_TARGET,
     borderRadius: 20,
     backgroundColor: 'rgba(255,255,255,0.03)',
     borderWidth: 1,
@@ -1581,6 +1585,8 @@ const styles = StyleSheet.create({
   dropdownTripBtn: {
     paddingHorizontal: 10,
     paddingVertical: 6,
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
     borderRadius: 8,
     backgroundColor: 'rgba(255,255,255,0.02)',
     borderWidth: 1.2,
@@ -1767,10 +1773,12 @@ const styles = StyleSheet.create({
   memberActionToggleBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 4,
     backgroundColor: 'rgba(255,255,255,0.02)',
     paddingHorizontal: 10,
     paddingVertical: 5,
+    minHeight: MIN_TOUCH_TARGET,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: C.border,
@@ -1823,7 +1831,7 @@ const styles = StyleSheet.create({
   createTripBtn: {
     flexDirection: 'row',
     backgroundColor: C.blue,
-    height: 40,
+    height: MIN_TOUCH_TARGET,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1868,7 +1876,9 @@ const styles = StyleSheet.create({
   plannerSubTabItem: {
     flex: 1,
     paddingVertical: 9,
+    minHeight: MIN_TOUCH_TARGET,
     alignItems: 'center',
+    justifyContent: 'center',
     borderRadius: 10,
     position: 'relative',
   },
@@ -1965,7 +1975,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,102,255,0.12)',
     borderWidth: 1.2,
     borderColor: C.blue,
-    height: 38,
+    height: MIN_TOUCH_TARGET,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1999,10 +2009,12 @@ const styles = StyleSheet.create({
   allocButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 4,
     backgroundColor: 'rgba(0,102,255,0.1)',
     paddingHorizontal: 8,
     paddingVertical: 5,
+    minHeight: MIN_TOUCH_TARGET,
     borderRadius: 8,
   },
   allocButtonText: {
@@ -2080,9 +2092,11 @@ const styles = StyleSheet.create({
   reqBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 5,
+    minHeight: MIN_TOUCH_TARGET,
     borderRadius: 8,
   },
   reqBtnReject: {
@@ -2146,7 +2160,7 @@ const styles = StyleSheet.create({
   announceBtn: {
     flexDirection: 'row',
     backgroundColor: C.blue,
-    height: 36,
+    height: MIN_TOUCH_TARGET,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
