@@ -22,8 +22,18 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useApp } from '@/store/AppContext';
 import { apiService } from '@/services/api';
-import type { GuideLead } from '@/types/api';
+import type {
+  GuideLead,
+  GuideProfile,
+  GuideEarnings,
+  GuidePackage,
+  GuideReel,
+  GuideLiveStatus,
+  LiveWeather,
+} from '@/types/api';
+import type { SOSAlert } from '@/store/AppContext';
 import { formatDate } from '@/lib/datetime';
+import { formatINRCompact } from '@/lib/money';
 import * as ImagePicker from 'expo-image-picker';
 import {
   ArrowLeft,
@@ -149,23 +159,23 @@ export default function TravelGuideScreen() {
   const confirm = useConfirm();
 
   const [activeTab, setActiveTab] = useState<'leads' | 'upload' | 'planning' | 'weather' | 'safety'>('leads');
-  const [guideProfile, setGuideProfile] = useState<any>(null);
+  const [guideProfile, setGuideProfile] = useState<GuideProfile | null>(null);
   const [, setLoading] = useState(true);
-  const [earnings, setEarnings] = useState<any>(null);
-  const [packages, setPackages] = useState<any[]>([]);
-  const [reels, setReels] = useState<any[]>([]);
-  const [liveStatus, setLiveStatus] = useState<any>(null);
+  const [earnings, setEarnings] = useState<GuideEarnings | null>(null);
+  const [packages, setPackages] = useState<GuidePackage[]>([]);
+  const [reels, setReels] = useState<GuideReel[]>([]);
+  const [liveStatus, setLiveStatus] = useState<GuideLiveStatus | null>(null);
   const [isBroadcasting, setIsBroadcasting] = useState(false);
   const [selectedVideoUri, setSelectedVideoUri] = useState<string | null>(null);
 
   // Live weather state (fetched from API)
-  const [liveWeatherData, setLiveWeatherData] = useState<any>(null);
+  const [liveWeatherData, setLiveWeatherData] = useState<LiveWeather | null>(null);
   const [, setWeatherLoading] = useState(false);
 
-  // Safety state (fetched from API)
-  const [sosAlerts, setSosAlerts] = useState<any[]>([]);
-  const [, setMonsoonAdvisories] = useState<any[]>([]);
-  const [, setUserEmergencyContacts] = useState<any[]>([]);
+  // Safety state (fetched from API). monsoonAdvisories/userEmergencyContacts
+  // were fetched into write-only state (never read anywhere in this
+  // component) — removed rather than given a real type for the sake of it.
+  const [sosAlerts, setSosAlerts] = useState<SOSAlert[]>([]);
   const [, setSafetyLoading] = useState(false);
 
   // Leads state (fetched from API)
@@ -173,7 +183,7 @@ export default function TravelGuideScreen() {
 
   // CRUD state variables for packages modal
   const [pkgModalVisible, setPkgModalVisible] = useState(false);
-  const [editingPackage, setEditingPackage] = useState<any>(null);
+  const [editingPackage, setEditingPackage] = useState<GuidePackage | null>(null);
   const [pkgTitle, setPkgTitle] = useState('');
   const [pkgDesc, setPkgDesc] = useState('');
   const [pkgPrice, setPkgPrice] = useState('');
@@ -194,13 +204,15 @@ export default function TravelGuideScreen() {
       if (res) {
         const guide = res;
         setGuideProfile(guide);
-        fetchEarnings(guide.id);
-        fetchPackages(guide.id);
-        fetchReels(guide.id);
-        fetchLiveStatus(guide.id);
-        fetchLeads(guide.id);
-        fetchSafetyData();
-        fetchLiveWeather(guide.id);
+        // Deliberately not awaited — these run in parallel, each with its
+        // own try/catch (see below), so one failing doesn't block the rest.
+        void fetchEarnings(guide.id);
+        void fetchPackages(guide.id);
+        void fetchReels(guide.id);
+        void fetchLiveStatus(guide.id);
+        void fetchLeads(guide.id);
+        void fetchSafetyData();
+        void fetchLiveWeather(guide.id);
       }
     } catch (e) {
       logger.warn('[TravelGuide] Load profile failed:', e);
@@ -226,14 +238,8 @@ export default function TravelGuideScreen() {
   const fetchSafetyData = async () => {
     try {
       setSafetyLoading(true);
-      const [sosRes, advisoryRes, contactsRes] = await Promise.all([
-        apiService.getSOSAlerts(),
-        apiService.getMonsoonAdvisories(),
-        apiService.getMyEmergencyContacts(),
-      ]);
+      const sosRes = await apiService.getSOSAlerts();
       if (sosRes && Array.isArray(sosRes)) setSosAlerts(sosRes);
-      if (advisoryRes && Array.isArray(advisoryRes)) setMonsoonAdvisories(advisoryRes);
-      if (contactsRes && Array.isArray(contactsRes)) setUserEmergencyContacts(contactsRes);
     } catch (e) {
       logger.warn('[TravelGuide] Fetch safety data failed:', e);
     } finally {
@@ -311,7 +317,7 @@ export default function TravelGuideScreen() {
     try {
       const res = await apiService.updateGuideLiveStatus(guideProfile.id, { latitude: lat, longitude: lon });
       if (res) {
-        setLiveStatus((prev: any) => ({ ...prev, location: res }));
+        setLiveStatus((prev) => (prev ? { ...prev, location: res } : { location: res, activeGuiding: null }));
       }
     } catch (e) {
       logger.warn('Failed to broadcast live location:', e);
@@ -345,7 +351,7 @@ export default function TravelGuideScreen() {
         toast(t('travelGuide.packageCreated'), 'success');
       }
       setPkgModalVisible(false);
-      fetchPackages(guideProfile.id);
+      void fetchPackages(guideProfile.id);
     } catch {
       toast(t('travelGuide.failedToSavePackage'), 'error');
     }
@@ -362,7 +368,7 @@ export default function TravelGuideScreen() {
     if (!ok) return;
     try {
       await apiService.deleteGuidePackage(guideProfile.id, pkgId);
-      fetchPackages(guideProfile.id);
+      void fetchPackages(guideProfile.id);
       toast(t('travelGuide.packageDeleted'), 'success');
     } catch (e) {
       // Previously `catch {}` around an Alert — the underlying error was
@@ -409,20 +415,32 @@ export default function TravelGuideScreen() {
     }
   };
 
+  // loadGuideProfile (and the fetch* functions it calls) are plain functions
+  // redeclared every render, not stable useCallbacks — adding it to the deps
+  // array would refire this on every render instead of once on mount, which
+  // is the intended behavior here.
   useEffect(() => {
-    loadGuideProfile();
+    // False positive: loadGuideProfile's own setState calls happen after an
+    // `await`, inside its promise continuation, not synchronously here.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadGuideProfile();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Same reasoning applies to triggerLiveBroadcast below — it isn't a stable
+  // reference either, so it's deliberately left out of the deps array rather
+  // than tearing down and resetting this interval on every render.
   useEffect(() => {
-    let intervalId: any;
+    let intervalId: ReturnType<typeof setInterval> | undefined;
     if (isBroadcasting && guideProfile) {
       intervalId = setInterval(() => {
-        triggerLiveBroadcast();
+        void triggerLiveBroadcast();
       }, 5000);
     }
     return () => {
       if (intervalId) clearInterval(intervalId);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isBroadcasting, guideProfile]);
 
   const [leads, setLeads] = useState<GuideLead[]>([]);
@@ -568,7 +586,7 @@ export default function TravelGuideScreen() {
       setActiveMedia([newItem, ...activeMedia]);
 
       // Refresh reels from server
-      fetchReels(guideProfile.id);
+      void fetchReels(guideProfile.id);
 
       setMediaTitle('');
       setMediaLocation('');
@@ -591,44 +609,12 @@ export default function TravelGuideScreen() {
   // ────────────────────────────────────────────────────────
   const [plannerTab, setPlannerTab] = useState<'itinerary' | 'estimator' | 'budget' | 'lodging'>('itinerary');
 
-  // Itinerary
-  const [itineraryDays, setItineraryDays] = useState([
-    {
-      id: 'd-1',
-      day: '01',
-      title: 'Arrival & Local Market Walk',
-      activities:
-        'Pick up from hotel at 09:00 AM. Visit local handicraft shops, walk around City lake, and witness the evening light show.',
-    },
-    {
-      id: 'd-2',
-      day: '02',
-      title: 'Fort exploration & Sunset Viewpoint',
-      activities:
-        'Depart early (07:30 AM) to avoid crowd. Detailed guided exploration of main fortress complex. Sunset photography session at hill ledge.',
-    },
-  ]);
-  const [newDayTitle, setNewDayTitle] = useState('');
-  const [newDayDesc, setNewDayDesc] = useState('');
-
-  const handleAddDay = () => {
-    if (!newDayTitle.trim() || !newDayDesc.trim()) {
-      toast(t('travelGuide.addDayTitleActivities'), 'error');
-      return;
-    }
-    const nextDayNum = itineraryDays.length + 1;
-    const formattedDay = nextDayNum < 10 ? `0${nextDayNum}` : `${nextDayNum}`;
-    const newDay = {
-      id: `d-${Date.now()}`,
-      day: formattedDay,
-      title: newDayTitle.trim(),
-      activities: newDayDesc.trim(),
-    };
-    setItineraryDays([...itineraryDays, newDay]);
-    setNewDayTitle('');
-    setNewDayDesc('');
-    toast(t('travelGuide.dayAddedToItinerary', { number: nextDayNum }), 'success');
-  };
+  // docs/REMEDIATION.md §9.3/§9.4 follow-up: an itineraryDays/handleAddDay
+  // feature (seeded with hardcoded "Arrival & Local Market Walk"-style fake
+  // days) used to live here but was never rendered anywhere in this file's
+  // JSX — no form, no list, nothing called handleAddDay. Removed rather than
+  // wired up, since there's no UI to connect it to and inventing one is a
+  // product decision, not a lint fix.
 
   // Time Estimator
   const [estFrom, setEstFrom] = useState('');
@@ -791,9 +777,9 @@ export default function TravelGuideScreen() {
     ? [
         {
           city: t('travelGuide.guideLocationFallback'),
-          temp: liveWeatherData.temp || '—',
+          temp: liveWeatherData.temperature != null ? `${Math.round(liveWeatherData.temperature)}°C` : '—',
           condition: liveWeatherData.condition || t('travelGuide.loadingEllipsis'),
-          wind: liveWeatherData.windSpeed || '— km/h',
+          wind: liveWeatherData.windSpeed != null ? `${liveWeatherData.windSpeed} km/h` : '— km/h',
           sunrise: '05:30 AM',
           sunset: '07:00 PM',
           aqi: 30,
@@ -870,7 +856,7 @@ export default function TravelGuideScreen() {
   // Safety alerts now come from DB (sosAlerts state) — map for display
   const safetyAlerts =
     sosAlerts.length > 0
-      ? sosAlerts.map((a: any) => ({
+      ? sosAlerts.map((a) => ({
           id: a.id,
           type: a.status === 'ACTIVE' ? 'DANGER' : 'INFO',
           location: t('travelGuide.sosAlertLocation', { lat: a.latitude?.toFixed(4), lon: a.longitude?.toFixed(4) }),
@@ -938,7 +924,7 @@ export default function TravelGuideScreen() {
                 <TouchableOpacity
                   key={tab.key}
                   style={[styles.tabItem, isActive && styles.tabItemActive]}
-                  onPress={() => setActiveTab(tab.key as any)}
+                  onPress={() => setActiveTab(tab.key as typeof activeTab)}
                   activeOpacity={0.85}
                   accessibilityRole="tab"
                   accessibilityLabel={t(tab.labelKey)}
@@ -1010,20 +996,29 @@ export default function TravelGuideScreen() {
               <Text style={styles.sectionLabelInline}>{t('travelGuide.weeklyEarningsProgress')}</Text>
               <View style={styles.chartContainer}>
                 {(
-                  earnings?.chartData || [
-                    { day: t('createTrip.weekdayMon'), amtText: '₹1.5k', height: 40 },
-                    { day: t('createTrip.weekdayTue'), amtText: '₹2.2k', height: 65 },
-                    { day: t('createTrip.weekdayWed'), amtText: '₹0', height: 5 },
-                    { day: t('createTrip.weekdayThu'), amtText: '₹3.5k', height: 95 },
-                    { day: t('createTrip.weekdayFri'), amtText: '₹1.8k', height: 50 },
-                    { day: t('createTrip.weekdaySat'), amtText: '₹4.2k', height: 110 },
-                    { day: t('createTrip.weekdaySun'), amtText: '₹2.8k', height: 80 },
-                  ]
-                ).map((item: any, idx: number) => {
+                  earnings?.chartData
+                    ? (() => {
+                        const maxValue = Math.max(...earnings.chartData.map((c) => c.value), 1);
+                        return earnings.chartData.map((c) => ({
+                          day: c.label,
+                          amtText: formatINRCompact(c.value),
+                          height: Math.max(5, Math.round((c.value / maxValue) * 110)),
+                        }));
+                      })()
+                    : [
+                        { day: t('createTrip.weekdayMon'), amtText: '₹1.5k', height: 40 },
+                        { day: t('createTrip.weekdayTue'), amtText: '₹2.2k', height: 65 },
+                        { day: t('createTrip.weekdayWed'), amtText: '₹0', height: 5 },
+                        { day: t('createTrip.weekdayThu'), amtText: '₹3.5k', height: 95 },
+                        { day: t('createTrip.weekdayFri'), amtText: '₹1.8k', height: 50 },
+                        { day: t('createTrip.weekdaySat'), amtText: '₹4.2k', height: 110 },
+                        { day: t('createTrip.weekdaySun'), amtText: '₹2.8k', height: 80 },
+                      ]
+                ).map((item, idx) => {
                   const isWeekend = idx === 5 || idx === 6;
                   return (
                     <View key={idx} style={styles.chartCol}>
-                      <Text style={styles.chartBarValue}>{item.amtText || item.amt}</Text>
+                      <Text style={styles.chartBarValue}>{item.amtText}</Text>
                       <LinearGradient
                         colors={isWeekend ? [C.purpleGlow, C.purple] : [C.blueGlow, C.blue]}
                         style={[styles.chartBar, { height: item.height }]}
@@ -1408,7 +1403,7 @@ export default function TravelGuideScreen() {
                   <TouchableOpacity
                     key={sTab.key}
                     style={[styles.plannerSubTabItem, isSubActive && styles.plannerSubTabItemActive]}
-                    onPress={() => setPlannerTab(sTab.key as any)}
+                    onPress={() => setPlannerTab(sTab.key as typeof plannerTab)}
                     activeOpacity={0.8}
                     accessibilityRole="tab"
                     accessibilityLabel={t(sTab.labelKey)}
@@ -1639,7 +1634,7 @@ export default function TravelGuideScreen() {
                         <TouchableOpacity
                           key={item.mode}
                           style={[styles.modeTile, isModeActive && styles.modeTileActive]}
-                          onPress={() => setEstMode(item.mode as any)}
+                          onPress={() => setEstMode(item.mode as typeof estMode)}
                           activeOpacity={0.8}
                           accessibilityRole="button"
                           accessibilityLabel={t(TRANSIT_MODE_LABEL_KEYS[item.mode])}
@@ -1786,7 +1781,7 @@ export default function TravelGuideScreen() {
                       <TouchableOpacity
                         key={item.key}
                         style={[styles.accomSelectBtn, isAccomActive && styles.accomSelectBtnActive]}
-                        onPress={() => setAccomTab(item.key as any)}
+                        onPress={() => setAccomTab(item.key as typeof accomTab)}
                         activeOpacity={0.8}
                         accessibilityRole="button"
                         accessibilityLabel={t(item.labelKey)}
@@ -1894,7 +1889,7 @@ export default function TravelGuideScreen() {
                         setIsBroadcasting(false);
                       } else {
                         setIsBroadcasting(true);
-                        triggerLiveBroadcast();
+                        void triggerLiveBroadcast();
                       }
                     }}
                     activeOpacity={0.8}
