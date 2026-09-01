@@ -1,6 +1,6 @@
 // docs/REMEDIATION.md §9.1 — the loading placeholder for content that has a
 // known shape. Prefer this over a bare spinner in lists.
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Animated, StyleSheet, View, type DimensionValue, type StyleProp, type ViewStyle } from 'react-native';
 import { C, radii, space } from '@/theme/tokens';
 

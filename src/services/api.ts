@@ -208,6 +208,17 @@ export interface NotificationPreferences {
   pushSeasonal: boolean;
 }
 
+/** The §0.2.1 API response envelope, as parsed straight off the wire — every
+ * field is optional/loosely typed here because this is what a non-2xx or
+ * malformed response looks like before it's been checked; `data`'s real
+ * shape is asserted by each caller via requestEnvelope<T>'s generic. */
+interface ApiEnvelope {
+  ok?: boolean;
+  data?: unknown;
+  meta?: { cursor?: string | null; total?: number };
+  error?: { code?: ApiErrorCode; message?: string; details?: unknown };
+}
+
 interface RequestOptions extends RequestInit {
   /** Override the default 10s timeout for a slow endpoint (e.g. an upload). */
   timeoutMs?: number;
@@ -247,7 +258,7 @@ async function requestEnvelope<T>(
   options?: RequestOptions,
   isAuthRetry = false,
   attempt = 0,
-): Promise<{ data: T; meta?: { cursor?: string; total?: number } }> {
+): Promise<{ data: T; meta?: { cursor?: string | null; total?: number } }> {
   const url = `${getApiBaseUrl()}${endpoint}`;
   const method = (options?.method ?? 'GET').toUpperCase();
   const requestId = generateRequestId();
@@ -314,7 +325,7 @@ async function requestEnvelope<T>(
       // AppContext react (clear state, show a "session expired" toast, route
       // to /auth) rather than every screen silently rendering empty forever.
       await clearTokens();
-      eventBus.emit('sessionExpired', {});
+      eventBus.emit('sessionExpired', undefined);
       throw new ApiError('UNAUTHORIZED', 'Your session has expired. Please sign in again.', 401, undefined, requestId);
     }
 
@@ -323,7 +334,7 @@ async function requestEnvelope<T>(
       return requestEnvelope<T>(endpoint, options, isAuthRetry, attempt + 1);
     }
 
-    let json: any = null;
+    let json: ApiEnvelope | null = null;
     try {
       json = await res.json();
     } catch {
@@ -363,7 +374,7 @@ async function request<T>(endpoint: string, options?: RequestOptions, isAuthRetr
 async function requestWithMeta<T>(
   endpoint: string,
   options?: RequestOptions,
-): Promise<{ data: T; meta?: { cursor?: string; total?: number } }> {
+): Promise<{ data: T; meta?: { cursor?: string | null; total?: number } }> {
   return requestEnvelope<T>(endpoint, options);
 }
 
@@ -505,7 +516,7 @@ export const apiService = {
     if (params.limit) qs.set('limit', String(params.limit));
 
     const { data, meta } = await requestWithMeta<Trip[]>(`/trips?${qs.toString()}`);
-    return { trips: data, nextCursor: meta?.cursor };
+    return { trips: data, nextCursor: meta?.cursor ?? undefined };
   },
 
   // Trips the current user is a confirmed member of — real data backing
@@ -782,8 +793,8 @@ export const apiService = {
   async createJoinRequest(
     tripId: string,
     opts?: { midway?: boolean; fromCity?: string; toCity?: string },
-  ): Promise<any> {
-    return request('/interactions/join-request', {
+  ): Promise<JoinRequestSummary> {
+    return request<JoinRequestSummary>('/interactions/join-request', {
       method: 'POST',
       body: JSON.stringify({ tripId, ...opts }),
     });
@@ -880,7 +891,7 @@ export const apiService = {
     return request<ChatRoomSummary[]>('/chats');
   },
 
-  async getChatDetails(id: string): Promise<any | null> {
+  async getChatDetails(id: string): Promise<ChatRoomSummary | null> {
     return request<ChatRoomSummary>(`/chats/${id}`);
   },
 
@@ -915,7 +926,7 @@ export const apiService = {
   },
 
   // ── Live Weather (at specific coordinates) ──────
-  async getLiveWeather(lat: number, lon: number): Promise<any | null> {
+  async getLiveWeather(lat: number, lon: number): Promise<LiveWeather | null> {
     return request<LiveWeather>(`/weather/live?lat=${lat}&lon=${lon}`);
   },
 

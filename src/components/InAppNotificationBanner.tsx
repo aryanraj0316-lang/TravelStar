@@ -1,8 +1,8 @@
-import { eventBus } from '@/services/event-bus';
+import { eventBus, type InAppNotif } from '@/services/event-bus';
 import { useApp } from '@/store/AppContext';
 import { useRouter } from 'expo-router';
 import { CheckCheck, ChevronRight, X } from 'lucide-react-native';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Animated,
@@ -13,15 +13,6 @@ import {
 } from 'react-native';
 import { C } from '@/theme/tokens';
 
-interface InAppNotif {
-  id: string;
-  title: string;
-  content: string;
-  chatRoomId?: string;
-  tripId?: string;
-  category?: string;
-}
-
 export const InAppNotificationBanner: React.FC = () => {
   const { t } = useTranslation();
   const [notif, setNotif] = useState<InAppNotif | null>(null);
@@ -31,37 +22,33 @@ export const InAppNotificationBanner: React.FC = () => {
   const { setActiveRoomId } = useApp();
   const router = useRouter();
 
-  const dismiss = () => {
+  const dismiss = useCallback(() => {
     if (dismissTimer.current) clearTimeout(dismissTimer.current);
     Animated.parallel([
       Animated.timing(translateY, { toValue: -120, duration: 250, useNativeDriver: true }),
       Animated.timing(opacity, { toValue: 0, duration: 250, useNativeDriver: true }),
     ]).start(() => setNotif(null));
-  };
-
-  const show = (data: InAppNotif) => {
-    if (dismissTimer.current) clearTimeout(dismissTimer.current);
-    translateY.setValue(-120);
-    opacity.setValue(0);
-    setNotif(data);
-
-    Animated.parallel([
-      Animated.timing(translateY, { toValue: 0, duration: 350, useNativeDriver: true }),
-      Animated.timing(opacity, { toValue: 1, duration: 350, useNativeDriver: true }),
-    ]).start(() => {
-      dismissTimer.current = setTimeout(dismiss, 5000);
-    });
-  };
+  }, [translateY, opacity]);
 
   useEffect(() => {
     const unsub = eventBus.on('inAppNotification', (data: InAppNotif) => {
-      show(data);
+      if (dismissTimer.current) clearTimeout(dismissTimer.current);
+      translateY.setValue(-120);
+      opacity.setValue(0);
+      setNotif(data);
+
+      Animated.parallel([
+        Animated.timing(translateY, { toValue: 0, duration: 350, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 1, duration: 350, useNativeDriver: true }),
+      ]).start(() => {
+        dismissTimer.current = setTimeout(dismiss, 5000);
+      });
     });
     return () => {
       unsub();
       if (dismissTimer.current) clearTimeout(dismissTimer.current);
     };
-  }, []);
+  }, [dismiss, translateY, opacity]);
 
   const handleTap = () => {
     if (notif?.chatRoomId) {
