@@ -8,7 +8,7 @@ import { ArrowLeft, ExternalLink, Search } from 'lucide-react-native';
 import licensesData from '@/data/licenses.json';
 import { logger } from '@/lib/logger';
 import { toast } from '@/lib/feedback';
-import { C } from '@/theme/tokens';
+import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { Input } from '@/components/ui';
 
 
@@ -60,7 +60,7 @@ export default function LicensesScreen() {
           <ArrowLeft size={18} color={C.white} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('licenses.title')}</Text>
-        <View style={{ width: 36 }} />
+        <View style={{ width: MIN_TOUCH_TARGET }} />
       </View>
 
       <Input
@@ -116,9 +116,9 @@ const styles = StyleSheet.create({
     borderColor: C.border,
   },
   backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
+    borderRadius: MIN_TOUCH_TARGET / 2,
     backgroundColor: C.card,
     alignItems: 'center',
     justifyContent: 'center',
