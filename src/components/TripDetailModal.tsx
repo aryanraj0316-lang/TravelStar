@@ -29,7 +29,7 @@ import { eventBus } from '@/services/event-bus';
 import { useRouter } from 'expo-router';
 import { toast } from '@/lib/feedback';
 import { formatDate } from '@/lib/datetime';
-import { C } from '@/theme/tokens';
+import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 
 export interface TripDetailModalProps {
   visible: boolean;
@@ -161,6 +161,7 @@ export default function TripDetailModal({
                 <TouchableOpacity
                   onPress={() => { onClose(); setMidwayJoin(false); }}
                   style={styles.closeBtn}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   accessibilityRole="button"
                   accessibilityLabel={t('tripDetailModal.close')}
                 >
@@ -282,6 +283,7 @@ export default function TripDetailModal({
                       styles.toggleSwitch,
                       midwayJoin ? styles.toggleSwitchOn : styles.toggleSwitchOff,
                     ]}
+                    hitSlop={{ top: 10, bottom: 10, left: 0, right: 0 }}
                     accessibilityRole="switch"
                     accessibilityLabel={t('tripDetailModal.midwayToggleLabel')}
                     accessibilityState={{ checked: midwayJoin }}
@@ -503,6 +505,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.blue,
     paddingHorizontal: 10,
     paddingVertical: 5,
+    minHeight: MIN_TOUCH_TARGET,
     borderRadius: 6,
     alignSelf: 'flex-start',
   },
@@ -687,6 +690,8 @@ const styles = StyleSheet.create({
   citySelectChip: {
     paddingVertical: 6,
     paddingHorizontal: 12,
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
     borderRadius: 18,
     borderWidth: 1,
     backgroundColor: C.card,
