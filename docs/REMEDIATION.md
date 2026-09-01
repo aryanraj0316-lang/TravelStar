@@ -2303,9 +2303,27 @@ partial, exactly what's blocking full completion.
       panels — where growing the visible box would look wrong or risk
       overlapping a sibling; and plain-text links, where resizing
       would turn a one-line link into a visually oversized empty tap
-      target). 4/27 screens done this way; tsc clean on each. User
-      has not yet confirmed extending this to the remaining ~23
-      screens.
+      target). User confirmed on 2026-09-01 extending the sweep from
+      that 4-screen slice to the rest of the app, one screen per
+      commit, no further check-ins needed. The remaining 23 —
+      search.tsx, bookings.tsx, nearby-trips.tsx, monsoon-advisory.tsx,
+      budget-trips.tsx, budget-tracker.tsx, notifications.tsx,
+      destination-details.tsx, stories.tsx, forgot-password.tsx,
+      reset-password.tsx, legal/privacy.tsx, legal/terms.tsx,
+      support.tsx, licenses.tsx, about.tsx, group-organizer.tsx,
+      travel-guide.tsx, create.tsx, map.tsx, map.web.tsx,
+      InAppNotificationBanner.tsx, TripDetailModal.tsx — are now done
+      the same way, tsc clean on each. **27/27 screens/components
+      done — §9.3's touch-target sizing is complete.** A few patterns
+      recurred throughout: shared circular icon buttons (map controls,
+      counters, accept/reject pairs) resized directly since they sit
+      with enough surrounding gap; header-row X/back/chevron buttons
+      (calendar modals, panel collapse toggles, card headers) almost
+      always got hitSlop instead, since they sit tight against a title
+      or a sibling icon; and one iOS-style toggle switch
+      (TripDetailModal.tsx) kept its 48x24 shape and got vertical-only
+      hitSlop rather than being resized into a square, since inflating
+      a switch's box would misrepresent what it is.
       §9.5 (hotlinked images) not started —
       hard-blocked on real licensed imagery, which only the user can
       provide; the object-storage/caching pipeline itself could still
