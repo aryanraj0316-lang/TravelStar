@@ -7,6 +7,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import { apiService, clearTokens, ApiError } from '../services/api';
 import { socketService } from '../services/socket';
 import { eventBus } from '../services/event-bus';
+import type { JoinRequestSummary, IncomingJoinRequest, AppNotification, ChatRoomSummary } from '@/types/api';
 
 // Registered once at module scope — apiService is a stable singleton, and
 // these are the two REST writes queued for offline retry (see
@@ -157,6 +158,8 @@ export interface Story {
   createdAt: string;
 }
 
+export type NewStoryInput = Pick<Story, 'title' | 'content'> & Partial<Pick<Story, 'coverImg' | 'location'>>;
+
 /**
  * Per-collection load state, so a screen can render §0.2.5's four states
  * instead of an ambiguous empty array. Before this existed, a failed fetch
@@ -197,7 +200,7 @@ interface AppContextType {
   navbarHidden: boolean;
   setNavbarHidden: (hidden: boolean) => void;
   storiesList: Story[];
-  addStory: (storyData: any) => void;
+  addStory: (storyData: NewStoryInput) => void;
   requestedTrips: Set<string>;
   setRequestedTrips: React.Dispatch<React.SetStateAction<Set<string>>>;
   reloadJoinRequests: () => void;
@@ -272,6 +275,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // storage) has settled — see the hydrate effect below and §7.5.
   const [sessionRestored, setSessionRestored] = useState(false);
 
+  // Declared here (rather than down by the other chat/SOS state, where they
+  // used to live) because `logout` below reads their setters — the React
+  // Compiler requires a value be declared before any hook that closes over
+  // it, even though the runtime closure itself was always safe.
+  // No mock seed on `messages` on purpose: these used to be three hardcoded
+  // messages with no roomId, which meant they rendered in whichever chat
+  // room was currently open (docs/REMEDIATION.md §3.6). Real history loads
+  // via GET /chats/:id/messages; this array only accumulates live socket
+  // deltas.
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [sosAlerts, setSosAlerts] = useState<SOSAlert[]>([]);
+  const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
+
   const login = useCallback(() => {
     setIsLoggedIn(true);
     safeStorage.setItem('isLoggedIn', 'true').catch((e) => logger.warn('[Auth] Failed to persist login state:', e));
@@ -322,12 +338,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    // Never write a role change from an unauthenticated session — this used to
-    // fire unconditionally on every mount, including logged out, and (before
-    // §2.3's fix) mutated whichever profile the server last saw.
-    if (!isLoggedIn) return;
+  // Adjusted during render (see profile.tsx's identical pattern) rather than
+  // in the effect below, which stays for the actual network side effect
+  // only — react-hooks/set-state-in-effect flags a synchronous setProfile
+  // call in an effect body. Never writes a role change from an
+  // unauthenticated session — this used to fire unconditionally on every
+  // mount, including logged out, and (before §2.3's fix) mutated whichever
+  // profile the server last saw.
+  const [prevRoleSync, setPrevRoleSync] = useState({ role: currentRole, loggedIn: isLoggedIn });
+  if (isLoggedIn && (currentRole !== prevRoleSync.role || isLoggedIn !== prevRoleSync.loggedIn)) {
+    setPrevRoleSync({ role: currentRole, loggedIn: isLoggedIn });
     setProfile((prev) => ({ ...prev, role: currentRole }));
+  }
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
     apiService
       .updateProfile({ role: currentRole })
       .catch((e) => logger.warn('[Profile] Failed to sync role change:', e));
@@ -348,13 +373,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // guides whenever GET /guides failed was the worst instance of this bug.
   const [guides, setGuides] = useState<Guide[]>([]);
 
-  // No mock seed here on purpose: these used to be three hardcoded messages
-  // with no roomId, which meant they rendered in whichever chat room was
-  // currently open (docs/REMEDIATION.md §3.6). Real history loads via
-  // GET /chats/:id/messages; this array only accumulates live socket deltas.
-  const [messages, setMessages] = useState<Message[]>([]);
-
-  const [sosAlerts, setSosAlerts] = useState<SOSAlert[]>([]);
   // No hardcoded seed (docs/REMEDIATION.md §0.2 rule 4). This used to hold
   // two fabricated stories with invented authors, captions and Unsplash
   // cover images, which stayed on screen — presented as real posts by real
@@ -366,8 +384,100 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     guides: 'loading',
     stories: 'loading',
   });
-  const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const [navbarHidden, setNavbarHidden] = useState(false);
+
+  // Declared here (rather than down by the effects that call them, where
+  // they used to live) so the React Compiler can see them declared before
+  // the mount/reactive effects below close over them.
+  const reloadJoinRequests = useCallback(() => {
+    if (!isLoggedIn) return;
+    apiService
+      .getJoinRequests()
+      .then((reqs) => {
+        if (reqs && reqs.length > 0) {
+          const tripIds = reqs
+            .filter((r: JoinRequestSummary) => r.status === 'PENDING' || r.status === 'APPROVED')
+            .map((r: JoinRequestSummary) => r.tripId);
+          setRequestedTrips(new Set(tripIds));
+        } else {
+          setRequestedTrips(new Set());
+        }
+      })
+      .catch((e) => logger.warn('[Trips] Reload join requests failed:', e));
+  }, [isLoggedIn]);
+
+  const refreshTrips = useCallback(() => {
+    apiService
+      .getTrips()
+      .then((remoteTrips) => {
+        setTrips(remoteTrips ?? []);
+        setDataStatus((prev) => ({ ...prev, trips: 'ready' }));
+      })
+      .catch((e) => {
+        logger.warn('[Trips] Refresh failed:', e);
+        setDataStatus((prev) => ({ ...prev, trips: 'error' }));
+      });
+  }, []);
+
+  const reloadIncomingRequestsCount = useCallback(() => {
+    if (!isLoggedIn) return;
+    apiService
+      .getIncomingRequests()
+      .then((reqs) => {
+        if (reqs && reqs.length > 0) {
+          const pending = reqs.filter((r: IncomingJoinRequest) => r.status === 'PENDING').length;
+          setPendingRequestsCount(pending);
+        } else {
+          setPendingRequestsCount(0);
+        }
+      })
+      .catch(() => {
+        setPendingRequestsCount(0);
+      });
+  }, [isLoggedIn]);
+
+  const clearChatUnread = useCallback(() => {
+    setHasUnreadChat(false);
+  }, []);
+
+  const checkUnreadNotifications = useCallback(() => {
+    if (!isLoggedIn) return;
+    apiService
+      .getNotifications()
+      .then((notifs) => {
+        if (notifs && notifs.length > 0) {
+          const hasAnyUnread = notifs.some((n: AppNotification) => n.unread === true);
+          setHasUnreadNotification(hasAnyUnread);
+          const hasUnreadJoinAccepted = notifs.some(
+            (n: AppNotification) => (n.category === 'CHAT_ADDED' || n.category === 'JOIN_ACCEPTED') && n.unread === true,
+          );
+          if (hasUnreadJoinAccepted) {
+            setHasUnreadChat(true);
+          }
+        } else {
+          setHasUnreadNotification(false);
+        }
+      })
+      .catch((e) => logger.warn('[Notifications] Unread check failed:', e));
+  }, [isLoggedIn]);
+
+  const checkUnreadChats = useCallback(() => {
+    if (!isLoggedIn) return;
+    apiService
+      .getChats()
+      .then((rooms) => {
+        if (rooms && rooms.length > 0) {
+          // ChatRoomSummary has no top-level `unread` flag - unreadCount is
+          // the real signal (the `any` here had been silently treating a
+          // nonexistent field as a second, always-false condition).
+          const hasUnread = rooms.some((r: ChatRoomSummary) => r.unreadCount > 0);
+          setHasUnreadChat(hasUnread);
+        } else {
+          setHasUnreadChat(false);
+        }
+      })
+      .catch((e) => logger.warn('[Chats] Unread check failed:', e));
+  }, [isLoggedIn]);
 
   // ── One-time mount: hydrate auth, profile, socket, guides, wallet, SOS, stories ──
   useEffect(() => {
@@ -379,7 +489,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // keeps running in the background and can be slow or fail offline —
     // local storage is fast and authoritative enough for "logged in or
     // not"; waiting on the network here would just make the splash hang.
-    Promise.allSettled([
+    void Promise.allSettled([
       safeStorage.getItem('isLoggedIn').then((val) => {
         if (val === 'true') {
           setIsLoggedIn(true);
@@ -458,7 +568,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return;
     }
 
-    socketService.connect();
+    // connect() is async but handles its own errors internally (see
+    // socket.ts) and never rejects in a way this caller needs to react to.
+    void socketService.connect();
     if (activeRoomId) {
       socketService.joinRoom(activeRoomId);
     } else {
@@ -528,101 +640,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsubAddedToChat();
       unsubNotification();
     };
-  }, [activeRoomId, isLoggedIn, profile.id]);
+  }, [activeRoomId, isLoggedIn, profile.id, refreshTrips, reloadJoinRequests, reloadIncomingRequestsCount, checkUnreadNotifications]);
 
-  const reloadJoinRequests = useCallback(() => {
-    if (!isLoggedIn) return;
-    apiService
-      .getJoinRequests()
-      .then((reqs) => {
-        if (reqs && reqs.length > 0) {
-          const tripIds = reqs
-            .filter((r: any) => r.status === 'PENDING' || r.status === 'APPROVED')
-            .map((r: any) => r.tripId);
-          setRequestedTrips(new Set(tripIds));
-        } else {
-          setRequestedTrips(new Set());
-        }
-      })
-      .catch((e) => logger.warn('[Trips] Reload join requests failed:', e));
-  }, [isLoggedIn]);
-
-  const refreshTrips = useCallback(() => {
-    apiService
-      .getTrips()
-      .then((remoteTrips) => {
-        setTrips(remoteTrips ?? []);
-        setDataStatus((prev) => ({ ...prev, trips: 'ready' }));
-      })
-      .catch((e) => {
-        logger.warn('[Trips] Refresh failed:', e);
-        setDataStatus((prev) => ({ ...prev, trips: 'error' }));
-      });
-  }, []);
-
-  const reloadIncomingRequestsCount = useCallback(() => {
-    if (!isLoggedIn) return;
-    apiService
-      .getIncomingRequests()
-      .then((reqs) => {
-        if (reqs && reqs.length > 0) {
-          const pending = reqs.filter((r: any) => r.status === 'PENDING').length;
-          setPendingRequestsCount(pending);
-        } else {
-          setPendingRequestsCount(0);
-        }
-      })
-      .catch(() => {
-        setPendingRequestsCount(0);
-      });
-  }, [isLoggedIn]);
-
-  const clearChatUnread = useCallback(() => {
-    setHasUnreadChat(false);
-  }, []);
-
-  const checkUnreadNotifications = useCallback(() => {
-    if (!isLoggedIn) return;
-    apiService
-      .getNotifications()
-      .then((notifs) => {
-        if (notifs && notifs.length > 0) {
-          const hasAnyUnread = notifs.some((n: any) => n.unread === true);
-          setHasUnreadNotification(hasAnyUnread);
-          const hasUnreadJoinAccepted = notifs.some(
-            (n: any) => (n.category === 'CHAT_ADDED' || n.category === 'JOIN_ACCEPTED') && n.unread === true,
-          );
-          if (hasUnreadJoinAccepted) {
-            setHasUnreadChat(true);
-          }
-        } else {
-          setHasUnreadNotification(false);
-        }
-      })
-      .catch((e) => logger.warn('[Notifications] Unread check failed:', e));
-  }, [isLoggedIn]);
-
-  const checkUnreadChats = useCallback(() => {
-    if (!isLoggedIn) return;
-    apiService
-      .getChats()
-      .then((rooms) => {
-        if (rooms && rooms.length > 0) {
-          const hasUnread = rooms.some((r: any) => r.unread === true || r.unreadCount > 0);
-          setHasUnreadChat(hasUnread);
-        } else {
-          setHasUnreadChat(false);
-        }
-      })
-      .catch((e) => logger.warn('[Chats] Unread check failed:', e));
-  }, [isLoggedIn]);
-
-  useEffect(() => {
+  // The isLoggedIn===false branch is adjusted during render (see profile.tsx
+  // and the role-sync effect above for the same pattern) rather than in the
+  // effect below, which now only ever calls the reload* functions — no
+  // synchronous setState of its own, so it doesn't trip
+  // react-hooks/set-state-in-effect.
+  const [prevIsLoggedInForReset, setPrevIsLoggedInForReset] = useState(isLoggedIn);
+  if (isLoggedIn !== prevIsLoggedInForReset) {
+    setPrevIsLoggedInForReset(isLoggedIn);
     if (!isLoggedIn) {
       setPendingRequestsCount(0);
       setRequestedTrips(new Set());
-      return;
     }
+  }
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
     reloadJoinRequests();
     reloadIncomingRequestsCount();
     checkUnreadNotifications();
@@ -657,7 +692,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     (trip: Trip) => {
       const tripWithMeta = {
         ...trip,
-        creatorId: profile?.id,
+        creatorId: profile.id,
         isMyTrip: true,
       };
       setTrips((prev) => [tripWithMeta, ...prev]);
@@ -674,7 +709,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           toast(errorToastMessage(e, 'Could not create the trip.'), 'error');
         });
     },
-    [profile?.id, refreshTrips],
+    [profile.id, refreshTrips],
   );
 
   const joinTrip = useCallback((tripId: string, opts?: { midway?: boolean; fromCity?: string; toCity?: string }) => {
@@ -802,7 +837,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const addStory = useCallback(
-    (storyData: any) => {
+    (storyData: NewStoryInput) => {
       const newStory = {
         id: `story-${Date.now()}`,
         authorName: profile.name,
