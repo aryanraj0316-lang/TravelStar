@@ -99,14 +99,18 @@ export interface Destination {
   featured: boolean;
 }
 
+// Matches backend/prisma/schema.prisma's WeatherLocation model exactly —
+// this used to describe a `city`/`temperature: number` shape that GET
+// /weather (backend/src/api/routes/weather.ts) never actually returns.
 export interface WeatherLocation {
   id: string;
-  city: string;
-  temperature: number;
+  name: string;
+  place: string;
+  temp: string;
   condition: string;
-  humidity?: number;
-  windSpeed?: number;
-  updatedAt?: IsoDateTime;
+  aqi: string;
+  humidity: string;
+  image: string;
 }
 
 // ── Stories and feed ──────────────────────────────────────────────────

@@ -3,11 +3,12 @@ import { logger } from '@/lib/logger';
 import { useQuery } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/query-keys';
 import { useApp, UserRole, type Trip } from '@/store/AppContext';
+import type { WeatherLocation } from '@/types/api';
 import { formatINR } from '@/lib/money';
 import { formatTripDuration, tripCoverImage, tripTransportLabel } from '@/lib/trip-display';
 import { ScreenEmpty, ScreenError, SkeletonCard } from '@/components/ui';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter, useNavigation } from 'expo-router';
+import { useRouter, useNavigation, type Href } from 'expo-router';
 import {
   AlertTriangle,
   Bell,
@@ -61,11 +62,22 @@ const roles: { value: UserRole; labelKey: string; subKey: string; Icon: typeof G
   { value: 'ORGANIZER', labelKey: 'home.roleOrganizer', subKey: 'home.roleOrganizerSub', Icon: Users, borderColors: ['#0066FF', '#7C3AED'] },
 ];
 
-const quickAccessItems: { labelKey: string; Icon: typeof MapPin; gradient: [string, string]; iconColor: string; isNew: boolean; route?: string }[] = [
+const quickAccessItems: { labelKey: string; Icon: typeof MapPin; gradient: [string, string]; iconColor: string; isNew: boolean; route?: Href }[] = [
   { labelKey: 'home.quickNearby', Icon: MapPin, gradient: ['#111322', '#1B1E30'], iconColor: '#38BDF8', isNew: false, route: '/nearby-trips' },
   { labelKey: 'home.quickBookings', Icon: CalendarCheck, gradient: ['#111322', '#1B1E30'], iconColor: '#34D399', isNew: false, route: '/bookings' },
   { labelKey: 'home.quickBudgetTracker', Icon: Wallet, gradient: ['#111322', '#1B1E30'], iconColor: '#F59E0B', isNew: true, route: '/budget-tracker' },
 ];
+
+// The merged feed (getFeed) returns real FeedItems (sourceType STORY|REEL),
+// getStories() falls back to plain Storys, and DEFAULT_STORIES below is its
+// own small mock shape — none of the three match exactly, so this captures
+// only the fields the story rail below actually reads.
+interface HomeFeedItem {
+  id: string;
+  coverImg?: string | null;
+  location?: string | null;
+  title?: string;
+}
 
 const DEFAULT_STORIES = [
   { id: 'ds-1', location: 'Sikkim', coverImg: 'https://images.unsplash.com/photo-1548013146-72479768bada?w=150&q=80', hasReel: true, title: 'Sikkim' },
@@ -101,11 +113,13 @@ const DEFAULT_ALERTS = [
 ];
 
 // ─── Apple-Style Live Character Formation Greeting Component ────────
+const GREETING_WORD_SEQUENCES = [
+  ['N', 'Na', 'Nam', 'Nama', 'Namas', 'Namast', 'Namaste', 'Namaste 🙏'],
+  ['न', 'नम', 'नमस्', 'नमस्त', 'नमस्ते', 'नमस्ते 🙏'],
+];
+
 function AppleMultilingualGreeting({ isFocused }: { isFocused: boolean }) {
-  const wordSequences = [
-    ['N', 'Na', 'Nam', 'Nama', 'Namas', 'Namast', 'Namaste', 'Namaste 🙏'],
-    ['न', 'नम', 'नमस्', 'नमस्त', 'नमस्ते', 'नमस्ते 🙏'],
-  ];
+  const wordSequences = GREETING_WORD_SEQUENCES;
 
   const [wordIdx, setWordIdx] = useState(0);
   const [stepIdx, setStepIdx] = useState(0);
@@ -116,8 +130,13 @@ function AppleMultilingualGreeting({ isFocused }: { isFocused: boolean }) {
     let isMounted = true;
     const currentSequence = wordSequences[wordIdx];
 
-    setStepIdx(0);
-    fadeAnim.setValue(1);
+    // Deferred to a timer rather than called synchronously here, so this
+    // effect body itself never calls setState directly (react-hooks/set-state-in-effect).
+    const resetTimer = setTimeout(() => {
+      if (!isMounted) return;
+      setStepIdx(0);
+      fadeAnim.setValue(1);
+    }, 0);
 
     let charTimer: ReturnType<typeof setInterval>;
     let stepCounter = 0;
@@ -154,9 +173,10 @@ function AppleMultilingualGreeting({ isFocused }: { isFocused: boolean }) {
 
     return () => {
       isMounted = false;
+      clearTimeout(resetTimer);
       clearTimeout(charTimer);
     };
-  }, [wordIdx, isFocused]);
+  }, [wordIdx, isFocused, fadeAnim, wordSequences]);
 
   const currentText = wordSequences[wordIdx][stepIdx] || '';
 
@@ -169,7 +189,7 @@ function AppleMultilingualGreeting({ isFocused }: { isFocused: boolean }) {
   );
 }
 
-function FloatingTouristWeatherCard({ locations, isFocused }: { locations: any[]; isFocused: boolean }) {
+function FloatingTouristWeatherCard({ locations, isFocused }: { locations: WeatherLocation[]; isFocused: boolean }) {
   const { t } = useTranslation();
   // Base image: always static at (0,0), fully visible
   const [baseIndex, setBaseIndex] = useState(0);
@@ -211,7 +231,7 @@ function FloatingTouristWeatherCard({ locations, isFocused }: { locations: any[]
     }, 3200);
 
     return () => clearInterval(interval);
-  }, [locations, isFocused]);
+  }, [locations, isFocused, slideAnim]);
 
   // Slide direction alternates based on the sliding image index
   const dir = slidingIndex !== null ? slidingIndex % 4 : 0;
@@ -226,7 +246,7 @@ function FloatingTouristWeatherCard({ locations, isFocused }: { locations: any[]
     outputRange: dir === 1 ? [-200, 0] : dir === 3 ? [200, 0] : [0, 0],
   });
 
-  const renderWeatherContent = (loc: any) => (
+  const renderWeatherContent = (loc: WeatherLocation) => (
     <>
       <Image source={{ uri: loc.image }} style={StyleSheet.absoluteFill} resizeMode="cover" />
       <LinearGradient
@@ -285,7 +305,21 @@ function FloatingTouristWeatherCard({ locations, isFocused }: { locations: any[]
   );
 }
 
-function RotatingMonsoonAlertCard({ alerts, isFocused }: { alerts: any[]; isFocused: boolean }) {
+// Not HazardAlert's real severity/category enums: DEFAULT_ALERTS below uses
+// human-readable display strings ('FLOOD & RAIN') rather than the API's
+// coded values ('FLOOD_RAIN' — see AlertCategory in @/types/api), and
+// getCategoryIcon()/getAlertColors() below match against the display-string
+// form either way, with a safe default for anything unrecognized.
+interface HomeAlertCard {
+  id: string;
+  severity: string;
+  title: string;
+  category: string;
+  desc: string;
+  image: string;
+}
+
+function RotatingMonsoonAlertCard({ alerts, isFocused }: { alerts: HomeAlertCard[]; isFocused: boolean }) {
   const { t } = useTranslation();
   const router = useRouter();
   const [alertIndex, setAlertIndex] = useState(0);
@@ -321,7 +355,7 @@ function RotatingMonsoonAlertCard({ alerts, isFocused }: { alerts: any[]; isFocu
     }, 5000); // 5 seconds interval
 
     return () => clearInterval(timer);
-  }, [alerts, isFocused]);
+  }, [alerts, isFocused, fadeAnim]);
 
   if (alerts.length === 0) return <View style={{ flex: 1 }} />;
   const activeAlert = alerts[alertIndex % alerts.length];
@@ -377,7 +411,7 @@ function RotatingMonsoonAlertCard({ alerts, isFocused }: { alerts: any[]; isFocu
         <TouchableOpacity
           style={styles.alertLink}
           activeOpacity={0.8}
-          onPress={() => router.push('/monsoon-advisory' as any)}
+          onPress={() => router.push('/monsoon-advisory')}
           hitSlop={{ top: 8, bottom: 10, left: 8, right: 8 }}
           accessibilityRole="button"
           accessibilityLabel={t('home.viewDetails')}
@@ -616,7 +650,7 @@ function HomeScreen() {
     logger.log('Screen mounted: HomeScreen');
   }, []);
   const navigation = useNavigation();
-  const [isFocused, setIsFocused] = useState(true);
+  const [isFocused, setIsFocused] = useState(() => navigation.isFocused());
 
   useEffect(() => {
     const unsubscribeFocus = navigation.addListener('focus', () => {
@@ -625,8 +659,6 @@ function HomeScreen() {
     const unsubscribeBlur = navigation.addListener('blur', () => {
       setIsFocused(false);
     });
-
-    setIsFocused(navigation.isFocused());
 
     return () => {
       unsubscribeFocus();
@@ -700,7 +732,7 @@ function HomeScreen() {
     return () => {
       unsubNotif();
     };
-  }, []);
+  }, [checkUnreadNotifications]);
 
   const infiniteTrendingDests = [...destinations, ...destinations];
 
@@ -844,10 +876,10 @@ function HomeScreen() {
                   // Update the profile context role to mirror this change globally
                   profile.role = role.value;
                   if (role.value === 'GUIDE') {
-                    router.push('/travel-guide' as any);
+                    router.push('/travel-guide');
                   }
                   if (role.value === 'ORGANIZER') {
-                    router.push('/group-organizer' as any);
+                    router.push('/group-organizer');
                   }
                 }}
                 accessibilityRole="button"
@@ -898,7 +930,7 @@ function HomeScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.storiesRow}
         >
-          {stories.map((story: any) => (
+          {stories.map((story: HomeFeedItem) => (
             <TouchableOpacity
               key={story.id}
               style={styles.storyItem}
@@ -919,7 +951,7 @@ function HomeScreen() {
                 style={styles.storyBorder}
               >
                 <View style={styles.storyInner}>
-                  <Image source={{ uri: story.coverImg }} style={styles.storyImage} />
+                  <Image source={{ uri: story.coverImg ?? undefined }} style={styles.storyImage} />
                 </View>
               </LinearGradient>
               <Text style={styles.storyName}>{story.location || story.title}</Text>
@@ -943,7 +975,7 @@ function HomeScreen() {
               activeOpacity={0.7}
               onPress={() => {
                 if (item.route) {
-                  router.push(item.route as any);
+                  router.push(item.route!);
                 }
               }}
               accessibilityRole="button"
@@ -1046,7 +1078,7 @@ function HomeScreen() {
               activeOpacity={0.9}
               onPress={() => {
                 router.push({
-                  pathname: '/destination-details' as any,
+                  pathname: '/destination-details',
                   params: { id: String(dest.id) }
                 });
               }}
@@ -1099,7 +1131,7 @@ function HomeScreen() {
         </ScrollView>
         {/* Pagination Dots */}
         <View style={styles.dotsRow}>
-          {destinations.map((_: any, idx: number) => (
+          {destinations.map((_, idx: number) => (
             <View
               key={idx}
               style={[
