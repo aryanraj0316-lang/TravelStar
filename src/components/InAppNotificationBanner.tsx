@@ -109,7 +109,7 @@ export const InAppNotificationBanner: React.FC = () => {
         {/* Dismiss */}
         <TouchableOpacity
           onPress={dismiss}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
           accessibilityRole="button"
           accessibilityLabel={t('common.dismiss')}
         >
