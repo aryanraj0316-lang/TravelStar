@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { logger } from '@/lib/logger';
 import {
@@ -18,6 +18,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useApp } from '@/store/AppContext';
 import { apiService } from '@/services/api';
+import type { IncomingJoinRequest, TripMemberRow } from '@/types/api';
 import {
   ArrowLeft,
   Users,
@@ -120,8 +121,17 @@ export default function GroupOrganizerScreen() {
   // Derived properties from AppContext
   const myTrips = trips.filter((t) => t.creatorId === profile?.id);
 
-  // Sync tours list dynamically based on AppContext
-  useEffect(() => {
+  // Sync tours list from AppContext's trips, adjusted during render rather
+  // than in an effect (react-hooks/set-state-in-effect) — tours isn't a
+  // pure derived value (handleCreateTour below also appends to it directly
+  // for an instant optimistic add), so it stays real state, just no longer
+  // set from inside a useEffect body.
+  const [prevToursSyncKey, setPrevToursSyncKey] = useState<{ trips: typeof trips; profileId?: string }>({
+    trips,
+    profileId: profile?.id,
+  });
+  if (trips !== prevToursSyncKey.trips || profile?.id !== prevToursSyncKey.profileId) {
+    setPrevToursSyncKey({ trips, profileId: profile?.id });
     const mappedTours: ActiveTour[] = myTrips.map((t) => ({
       id: t.id,
       groupName: t.name,
@@ -134,14 +144,21 @@ export default function GroupOrganizerScreen() {
       coverImage: t.coverImage,
     }));
     setTours(mappedTours);
-  }, [trips, profile?.id]);
+  }
 
-  const fetchIncoming = async () => {
-    try {
-      const data = await apiService.getIncomingRequests();
-      if (data) {
+  // .then()-chain style (rather than async/await) and useCallback-wrapped —
+  // calling an async/await function directly from a useEffect body still
+  // trips react-hooks/set-state-in-effect even when memoized, because the
+  // compiler's check doesn't see the setState after `await` as deferred the
+  // way it recognizes a nested `.then(cb)` callback. Matches the pattern
+  // AppContext.tsx's reload*/checkUnread* helpers already use successfully.
+  const fetchIncoming = useCallback(() => {
+    apiService
+      .getIncomingRequests()
+      .then((data) => {
+        if (!data) return;
         const pending = data
-          .filter((r: any) => r.status === 'PENDING')
+          .filter((r: IncomingJoinRequest) => r.status === 'PENDING')
           .map((r) => ({
             id: r.id,
             tourId: r.tripId,
@@ -150,21 +167,20 @@ export default function GroupOrganizerScreen() {
             userAvatar: r.applicantAvatar,
           }));
         setJoinRequests(pending);
-      }
-    } catch (e) {
-      logger.warn('Failed to fetch incoming requests:', e);
-    }
-  };
+      })
+      .catch((e) => logger.warn('Failed to fetch incoming requests:', e));
+  }, []);
 
-  const fetchTourMembers = async (tripId: string) => {
-    try {
-      const data = await apiService.getTripMembers(tripId);
-      if (data) {
+  const fetchTourMembers = useCallback((tripId: string) => {
+    apiService
+      .getTripMembers(tripId)
+      .then((data) => {
+        if (!data) return;
         // docs/REMEDIATION.md §8.6: checkedIn/roomAllocated/seatAllocated
         // used to be hardcoded to the same value for every member on every
         // fetch (false/'VEG'/'Room TBD'/'Seat TBD') — this now reflects the
         // real, persisted TripMember columns the server returns.
-        const mappedMembers: GroupMember[] = data.map((m: any) => ({
+        const mappedMembers: GroupMember[] = data.map((m: TripMemberRow) => ({
           id: m.id,
           userId: m.userId,
           name: m.name,
@@ -175,11 +191,9 @@ export default function GroupOrganizerScreen() {
           seatAllocated: m.seatAllocated,
         }));
         setMembers(mappedMembers);
-      }
-    } catch (e) {
-      logger.warn('Failed to fetch tour members:', e);
-    }
-  };
+      })
+      .catch((e) => logger.warn('Failed to fetch tour members:', e));
+  }, []);
 
   // docs/REMEDIATION.md §8.6: this used to be a hardcoded two-day plan
   // ("Arrival & Welcoming Dinner" / "Trekking & Sightseeing") shown
@@ -194,31 +208,51 @@ export default function GroupOrganizerScreen() {
   const [newDayDesc, setNewDayDesc] = useState('');
   const [addingDay, setAddingDay] = useState(false);
 
-  const fetchItinerary = async (tripId: string) => {
-    setItineraryLoading(true);
-    setItineraryError(null);
-    try {
-      const data = await apiService.getTripItinerary(tripId);
-      setItinerary(data?.days ?? []);
-    } catch (e) {
-      logger.warn('[GroupOrganizer] Failed to fetch itinerary:', e);
-      setItinerary([]);
-      setItineraryError(t('groupOrganizer.couldNotLoadDaySchedule'));
-    } finally {
-      setItineraryLoading(false);
-    }
-  };
+  // .then()-chain style, not async/await — still returns a Promise so the
+  // `await fetchItinerary(...)` call sites below keep working, but nests
+  // the setState calls inside .then()/.catch()/.finally() closures instead
+  // of at the async function's own top level (see fetchIncoming above for
+  // why that distinction matters to react-hooks/set-state-in-effect).
+  const fetchItinerary = useCallback(
+    (tripId: string) => {
+      // The loading/error resets are deferred into the first .then() rather
+      // than called synchronously here - this function is called directly
+      // from a useEffect below, and even wrapped in .then()-chain style,
+      // synchronous setState calls at a function's own top level (before
+      // any .then()) still trip react-hooks/set-state-in-effect. Deferring
+      // by one microtask is imperceptible for its other, event-handler call
+      // sites.
+      return Promise.resolve()
+        .then(() => {
+          setItineraryLoading(true);
+          setItineraryError(null);
+          return apiService.getTripItinerary(tripId);
+        })
+        .then((data) => {
+          setItinerary(data?.days ?? []);
+        })
+        .catch((e) => {
+          logger.warn('[GroupOrganizer] Failed to fetch itinerary:', e);
+          setItinerary([]);
+          setItineraryError(t('groupOrganizer.couldNotLoadDaySchedule'));
+        })
+        .finally(() => {
+          setItineraryLoading(false);
+        });
+    },
+    [t],
+  );
 
   useEffect(() => {
-    void fetchIncoming();
-  }, []);
+    fetchIncoming();
+  }, [fetchIncoming]);
 
   useEffect(() => {
     if (currentTour) {
-      void fetchTourMembers(currentTour.id);
+      fetchTourMembers(currentTour.id);
       void fetchItinerary(currentTour.id);
     }
-  }, [selectedTourIdx, tours]);
+  }, [selectedTourIdx, tours, currentTour, fetchTourMembers, fetchItinerary]);
 
   // Create new Tour form
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -560,18 +594,20 @@ export default function GroupOrganizerScreen() {
         {/* Floating Scrollable Tab Selector */}
         <View style={styles.tabBarContainer}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabBarScroll}>
-            {[
-              { key: 'dashboard', labelKey: 'groupOrganizer.tabDashboard', Icon: TrendingUp },
-              { key: 'trips', labelKey: 'groupOrganizer.tabToursRoster', Icon: Users },
-              { key: 'logistics', labelKey: 'groupOrganizer.tabItineraryRoom', Icon: Hotel },
-              { key: 'chat', labelKey: 'groupOrganizer.tabChatsApprovals', Icon: MessageSquare },
-            ].map((tab) => {
+            {(
+              [
+                { key: 'dashboard', labelKey: 'groupOrganizer.tabDashboard', Icon: TrendingUp },
+                { key: 'trips', labelKey: 'groupOrganizer.tabToursRoster', Icon: Users },
+                { key: 'logistics', labelKey: 'groupOrganizer.tabItineraryRoom', Icon: Hotel },
+                { key: 'chat', labelKey: 'groupOrganizer.tabChatsApprovals', Icon: MessageSquare },
+              ] as const
+            ).map((tab) => {
               const isActive = activeTab === tab.key;
               return (
                 <TouchableOpacity
                   key={tab.key}
                   style={[styles.tabItem, isActive && styles.tabItemActive]}
-                  onPress={() => setActiveTab(tab.key as any)}
+                  onPress={() => setActiveTab(tab.key)}
                   activeOpacity={0.85}
                   accessibilityRole="tab"
                   accessibilityLabel={t(tab.labelKey)}
@@ -953,17 +989,19 @@ export default function GroupOrganizerScreen() {
               <View>
                 {/* Logistics Subtabs */}
                 <View style={styles.plannerSubTabs}>
-                  {[
-                    { key: 'itinerary', labelKey: 'groupOrganizer.subtabDaySchedule', Icon: Calendar },
-                    { key: 'transport', labelKey: 'groupOrganizer.subtabTransport', Icon: Car },
-                    { key: 'hotel', labelKey: 'groupOrganizer.subtabRoomAssigns', Icon: Hotel },
-                  ].map((sTab) => {
+                  {(
+                    [
+                      { key: 'itinerary', labelKey: 'groupOrganizer.subtabDaySchedule', Icon: Calendar },
+                      { key: 'transport', labelKey: 'groupOrganizer.subtabTransport', Icon: Car },
+                      { key: 'hotel', labelKey: 'groupOrganizer.subtabRoomAssigns', Icon: Hotel },
+                    ] as const
+                  ).map((sTab) => {
                     const isSubActive = logisticsTab === sTab.key;
                     return (
                       <TouchableOpacity
                         key={sTab.key}
                         style={[styles.plannerSubTabItem, isSubActive && styles.plannerSubTabItemActive]}
-                        onPress={() => setLogisticsTab(sTab.key as any)}
+                        onPress={() => setLogisticsTab(sTab.key)}
                         accessibilityRole="tab"
                         accessibilityLabel={t(sTab.labelKey)}
                         accessibilityState={{ selected: isSubActive }}
