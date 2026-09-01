@@ -20,7 +20,7 @@ import {
 } from 'lucide-react-native';
 import { logger } from '@/lib/logger';
 import { toast } from '@/lib/feedback';
-import { C } from '@/theme/tokens';
+import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { Card } from '@/components/ui';
 
 
@@ -58,7 +58,7 @@ export default function SupportScreen() {
           <ArrowLeft size={18} color={C.white} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('support.title')}</Text>
-        <View style={{ width: 36 }} />
+        <View style={{ width: MIN_TOUCH_TARGET }} />
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
@@ -156,9 +156,9 @@ const styles = StyleSheet.create({
     borderBottomColor: C.border,
   },
   backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
+    borderRadius: MIN_TOUCH_TARGET / 2,
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
     alignItems: 'center',
     justifyContent: 'center',
