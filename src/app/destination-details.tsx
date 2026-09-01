@@ -22,7 +22,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { queryKeys } from '@/lib/query-keys';
 import { apiService } from '@/services/api';
-import { C } from '@/theme/tokens';
+import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { Button, Card, ScreenEmpty, ScreenError, ScreenLoading } from '@/components/ui';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -294,9 +294,9 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.08)',
   },
   circleHeaderBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
+    borderRadius: MIN_TOUCH_TARGET / 2,
     backgroundColor: 'rgba(17, 19, 34, 0.75)',
     alignItems: 'center',
     justifyContent: 'center',
