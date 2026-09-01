@@ -270,6 +270,11 @@ function WebMapScreen() {
     const pinsJson = JSON.stringify(mapPins ?? []);
     const hazardsJson = JSON.stringify(mapHazards ?? []);
     const routeJson = JSON.stringify(activeRouteCoords);
+    const i18nJson = JSON.stringify({
+      navigate: t('map.leafletNavigate'),
+      youAreHere: t('map.leafletYouAreHere'),
+      liveGpsLocation: t('map.leafletLiveGpsLocation'),
+    });
 
     return `
       <!DOCTYPE html>
@@ -344,6 +349,8 @@ function WebMapScreen() {
             subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
             attribution: '&copy; Google Maps'
           }).addTo(map);
+
+          const I18N = ${i18nJson};
 
           // Render Route Polyline & Segments
           const routeCoords = ${routeJson};
@@ -563,7 +570,7 @@ function WebMapScreen() {
               '<div class="popup-badge ' + badgeClass + '">' + pin.type + '</div>' +
               '<h4>' + pin.name + '</h4>' +
               '<p>' + pin.detail + '</p>' +
-              '<div class="popup-cta" onclick="startNavigationToPin(\'' + pin.id + '\', \'' + pin.name + '\', ' + pin.latitude + ', ' + pin.longitude + ')">Navigate \u2192</div></div>';
+              '<div class="popup-cta" onclick="startNavigationToPin(\'' + pin.id + '\', \'' + pin.name + '\', ' + pin.latitude + ', ' + pin.longitude + ')">' + I18N.navigate + '</div></div>';
 
             var marker = L.marker([pin.latitude, pin.longitude], { icon: customIcon })
               .addTo(map)
@@ -644,7 +651,7 @@ function WebMapScreen() {
                     });
                     selfMarker = L.marker(selfLatLng, { icon: selfIcon })
                       .addTo(map)
-                      .bindPopup('<b>You are here</b><br>Live GPS Location');
+                      .bindPopup('<b>' + I18N.youAreHere + '</b><br>' + I18N.liveGpsLocation);
                   } else {
                     selfMarker.setLatLng(selfLatLng);
                   }

@@ -87,7 +87,9 @@ const TILE_LAYERS: Record<string, { url: string; subdomains: string }> = {
 };
 
 // Build Leaflet HTML with premium markers
-function buildMapHTML(tileKey: string, routeCoords: RoutePoint[]) {
+type LeafletStrings = { navigate: string; youAreHere: string; liveGpsLocation: string };
+
+function buildMapHTML(tileKey: string, routeCoords: RoutePoint[], strings: LeafletStrings) {
   const tile = TILE_LAYERS[tileKey] || TILE_LAYERS.roadmap;
 
   return `
@@ -233,6 +235,7 @@ function buildMapHTML(tileKey: string, routeCoords: RoutePoint[]) {
     <script>
       (function() {
         var pathPoints = ${JSON.stringify(routeCoords.map(c => [c.latitude, c.longitude]))};
+        var I18N = ${JSON.stringify(strings)};
         var map = L.map('map', {
           zoomControl: false,
         attributionControl: false,
@@ -492,7 +495,7 @@ function buildMapHTML(tileKey: string, routeCoords: RoutePoint[]) {
           '<div class="popup-badge ' + BADGE_CLASS[pin.type] + '">' + pin.type + '</div>' +
           '<p class="popup-name">' + pin.name + '</p>' +
           '<p class="popup-detail">' + pin.detail + '</p>' +
-          '<div class="popup-cta">Navigate \\u2192</div></div>';
+          '<div class="popup-cta">' + I18N.navigate + '</div></div>';
 
         var marker = L.marker([pin.latitude, pin.longitude], { icon: icon })
           .addTo(map)
@@ -588,7 +591,7 @@ function buildMapHTML(tileKey: string, routeCoords: RoutePoint[]) {
                 });
                 selfMarker = L.marker(selfLatLng, { icon: selfIcon })
                   .addTo(map)
-                  .bindPopup('<b>You are here</b><br>Live GPS Location');
+                  .bindPopup('<b>' + I18N.youAreHere + '</b><br>' + I18N.liveGpsLocation);
               } else {
                 selfMarker.setLatLng(selfLatLng);
               }
@@ -948,8 +951,13 @@ function MapScreen() {
   const isMyTrip = isLoggedIn && !!(activeTrip && profile && profile.id && activeTrip.creatorId && activeTrip.creatorId === profile.id);
 
   const webViewSource = useMemo(() => {
-    return { html: buildMapHTML(tileLayer, activeRouteCoords) };
-  }, [tileLayer, activeRouteCoords]);
+    const leafletStrings: LeafletStrings = {
+      navigate: t('map.leafletNavigate'),
+      youAreHere: t('map.leafletYouAreHere'),
+      liveGpsLocation: t('map.leafletLiveGpsLocation'),
+    };
+    return { html: buildMapHTML(tileLayer, activeRouteCoords, leafletStrings) };
+  }, [tileLayer, activeRouteCoords, t]);
 
   return (
     <View style={styles.screenRoot}>

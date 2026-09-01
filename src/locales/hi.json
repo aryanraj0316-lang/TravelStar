@@ -690,7 +690,10 @@
     "routeSelector": "मार्ग चयनकर्ता",
     "categorySelector": "मानचित्र श्रेणी फ़िल्टर",
     "mapViewLabel": "मानचित्र दृश्य: {{label}}",
-    "iframeTitle": "वास्तविक विश्व मानचित्र"
+    "iframeTitle": "वास्तविक विश्व मानचित्र",
+    "leafletNavigate": "नेविगेट करें →",
+    "leafletYouAreHere": "आप यहां हैं",
+    "leafletLiveGpsLocation": "लाइव जीपीएस स्थान"
   },
   "groupOrganizer": {
     "goBack": "वापस जाएं",

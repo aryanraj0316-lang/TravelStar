@@ -690,7 +690,10 @@
     "routeSelector": "Route selector",
     "categorySelector": "Map category filter",
     "mapViewLabel": "MAP VIEW: {{label}}",
-    "iframeTitle": "Real World Map"
+    "iframeTitle": "Real World Map",
+    "leafletNavigate": "Navigate →",
+    "leafletYouAreHere": "You are here",
+    "leafletLiveGpsLocation": "Live GPS Location"
   },
   "groupOrganizer": {
     "goBack": "Go back",
