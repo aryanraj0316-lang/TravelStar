@@ -1236,7 +1236,29 @@ partial, exactly what's blocking full completion.
       eslint-plugin-react-hooks' new React Compiler rules (refs/purity/
       immutability/set-state-in-effect/preserve-manual-memoization) weren't
       being enforced when Phase 1 was last verified. Needs a decision — see
-      chat.)
+      chat.
+      **Resolved (2026-09-02):** user authorized the full cleanup. Went
+      from 215 problems (the count had already dropped some since the
+      381 figure above, from earlier incidental fixes) to 0 — real
+      root-cause fixes throughout, not suppressions: `no-explicit-any`
+      (95) mostly meant swapping in the real shape from `types/api.ts`
+      or the local usage site, which surfaced several silent production
+      bugs on the way (chat member roles always showing "Tourist"
+      regardless of who organized the trip; a live-weather tab reading
+      field names the API doesn't send, so it never displayed real
+      temperature/wind; an earnings chart that rendered blank once real
+      data loaded instead of falling back to mock; two chat
+      state/callback-declared-before-use ordering bugs). `no-floating-
+      promises` (28) and the `react-hooks/*` React-Compiler-compatibility
+      rules were fixed per-site (genuine await/catch, a real missing
+      effect dependency, or restructuring the actual pattern) rather
+      than blanket-disabled. 18 narrowly-scoped `eslint-disable-next-line`
+      remain, each with an inline comment explaining why (a confirmed
+      false positive, a documented React Compiler vs. react.dev pattern
+      conflict, or a genuine external-sync effect not safely convertible
+      to pure derivation) — no whole-rule or whole-file disables, no
+      `any`-adjacent escape hatches. `npx tsc --noEmit` clean throughout.
+      Phase 1's lint checkbox can be considered current again.)
 - [x] Phase 7 — Navigation and app architecture (done: §7.1 real
       expo-router (tabs) group replacing the fake ScrollView pager +
       dual-navigation bug (screens were both pager panels AND independent
@@ -2324,21 +2346,42 @@ partial, exactly what's blocking full completion.
       (TripDetailModal.tsx) kept its 48x24 shape and got vertical-only
       hitSlop rather than being resized into a square, since inflating
       a switch's box would misrepresent what it is.
-      §9.5 (hotlinked images) not started —
-      hard-blocked on real licensed imagery, which only the user can
-      provide; the object-storage/caching pipeline itself could still
-      be built ahead of that. Also still open from earlier in this
-      combined pass, unrelated to any single screen: the embedded
-      Leaflet/iframe HTML strings in map.tsx/map.web.tsx aren't
-      reachable by `t()`; a handful of screens (map.tsx/map.web.tsx,
-      travel-guide.tsx) carry undisclosed hardcoded placeholder data
-      flagged as a product decision rather than fixed; travel-guide.tsx
-      has a dead `itineraryDays`/`handleAddDay` feature never rendered
-      anywhere in its JSX; and the raw-ISO-date-instead-of-
-      formatDateRange() bug recurred independently in five screens
-      during this pass, still worth a lint rule or shared
-      `<DateRange>` component rather than continued screen-by-screen
-      catches.
+      **All remaining flagged findings closed out (2026-09-02),
+      except §9.5 which stays genuinely user-blocked:** the embedded
+      Leaflet HTML strings in map.tsx/map.web.tsx now resolve their
+      3 hardcoded English strings ("Navigate →", "You are here",
+      "Live GPS Location") via `t()` in the outer component and inject
+      them as a JSON `I18N` object into the WebView script, same
+      pattern already used for `routeCoords`/`pins`; new `map.leaflet*`
+      keys added to en.json/hi.json with real Hindi translations.
+      travel-guide.tsx's dead `itineraryDays`/`handleAddDay` feature
+      (never rendered anywhere in its JSX) removed. The raw-ISO-date-
+      instead-of-formatDateRange() bug, previously fixed independently
+      in five screens, turned out to have two more instances
+      (create.tsx's creation-detail stat cells, group-organizer.tsx's
+      announcement timestamps) — fixed with `formatDate`/`formatRelative`;
+      a grep sweep confirms no raw date-field renders remain anywhere in
+      src/app, src/components, src/screens. A guard sentence was added to
+      datetime.ts's header comment instead of a custom lint rule (judged
+      not worth the effort for two stragglers). Also tokenized both map
+      screens' own RN-chrome StyleSheets onto theme tokens (not the
+      Leaflet template strings, which correctly stay literal) —
+      map.web.tsx didn't import `@/theme/tokens` at all before, now does.
+      Left as literals, flagged rather than force-mapped: map.tsx's
+      GitHub-dark-style status panel (`#0D1117`/`#21262D`/`#30363D`/
+      `#484F58`/`#F0F6FC`/`#C9D1D9`) and a couple of one-off colors in
+      map.web.tsx with no matching token — remapping these would be a
+      visual redesign, not a mechanical swap.
+      The "undisclosed hardcoded placeholder data" item (map.tsx/
+      map.web.tsx, travel-guide.tsx) is a deliberate product-decision
+      flag, not a bug — left as-is, unchanged.
+      **§9.5 (hotlinked images) remains not started** — hard-blocked on
+      real licensed imagery, which only the user can provide; the
+      object-storage/caching pipeline itself could still be built ahead
+      of that. This is now the only open item in Phase 9.
+      `npx tsc --noEmit` clean; `npm run lint` at 0 problems repo-wide
+      (see Phase 1 lint-baseline note above — separately closed out this
+      session too, from 215 problems to 0, real fixes not suppressions).
 - [ ] Phase 10 — Performance (in progress — the list-virtualization and
       backend caching/pooling items done; bundle analysis, code-splitting,
       and a measured TTI budget not started):
