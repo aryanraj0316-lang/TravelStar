@@ -1,6 +1,7 @@
-import { useApp } from '@/store/AppContext';
+import { useApp, type Trip } from '@/store/AppContext';
 import { logger } from '@/lib/logger';
 import { apiService } from '@/services/api';
+import type { IncomingJoinRequest, TripMemberRow } from '@/types/api';
 import { errorToastMessage, toast } from '@/lib/feedback';
 import { uploadFileToUrl } from '@/lib/upload';
 import * as ImagePicker from 'expo-image-picker';
@@ -293,6 +294,16 @@ function CreateTripScreen() {
   const [privacy, setPrivacy] = useState<'PUBLIC' | 'PRIVATE' | 'INVITE_ONLY'>('PUBLIC');
   const [selectedCategory, setSelectedCategory] = useState('Adventure');
   const [verifiedCoords, setVerifiedCoords] = useState<Record<string, { latitude: number; longitude: number }>>({});
+  // Read inside the effect below instead of `verifiedCoords` directly, so
+  // the effect doesn't need it as a dependency (which would re-trigger the
+  // debounced fetch every time this same effect calls setVerifiedCoords).
+  // Synced in its own effect (runs after every render) rather than during
+  // render itself - writing to a ref during render is also disallowed
+  // (react-hooks/refs).
+  const verifiedCoordsRef = useRef(verifiedCoords);
+  useEffect(() => {
+    verifiedCoordsRef.current = verifiedCoords;
+  });
 
   // Dynamic geocoding via Nominatim with local fallback
   React.useEffect(() => {
@@ -302,7 +313,7 @@ function CreateTripScreen() {
         .map((c) => c.trim())
         .filter((c) => c !== '');
 
-      const newCoords = { ...verifiedCoords };
+      const newCoords = { ...verifiedCoordsRef.current };
       let changed = false;
 
       for (const city of cities) {
@@ -335,7 +346,7 @@ function CreateTripScreen() {
     };
 
     const timer = setTimeout(() => {
-      fetchGeocoding();
+      void fetchGeocoding();
     }, 800);
 
     return () => clearTimeout(timer);
@@ -343,7 +354,7 @@ function CreateTripScreen() {
 
   // Creations Modal state
   const [showCreationsModal, setShowCreationsModal] = useState(false);
-  const [selectedCreation, setSelectedCreation] = useState<any | null>(null);
+  const [selectedCreation, setSelectedCreation] = useState<Trip | null>(null);
 
   // Cover Image State (preset or gallery)
   const [coverImage, setCoverImage] = useState(PRESET_COVERS[0].url);
@@ -383,35 +394,38 @@ function CreateTripScreen() {
   const [selectedTripType, setSelectedTripType] = useState('Group');
   const [, setToastMsg] = useState<string | null>(null);
 
-  const [joinRequests, setJoinRequests] = useState<any[]>([]);
-  const [creationMembers, setCreationMembers] = useState<any[]>([]);
-  const fetchCreationMembers = async (tripId: string) => {
-    try {
-      const data = await apiService.getTripMembers(tripId);
-      if (data) {
-        setCreationMembers(data);
-      }
-    } catch (e) {
-      logger.warn('[Create] Failed to fetch trip members:', e);
-    }
-  };
-  const fetchIncomingRequests = async () => {
-    try {
-      const data = await apiService.getIncomingRequests();
-      if (data) {
-        setJoinRequests(data);
-      }
-      reloadIncomingRequestsCount();
-    } catch (e) {
-      logger.warn('[Create] Failed to fetch incoming requests:', e);
-    }
-  };
+  const [joinRequests, setJoinRequests] = useState<IncomingJoinRequest[]>([]);
+  const [creationMembers, setCreationMembers] = useState<TripMemberRow[]>([]);
+  // .then()-chain style, not async/await: fetchIncomingRequests is called
+  // directly from the effect below, and calling an async/await function
+  // from a useEffect body trips react-hooks/set-state-in-effect even when
+  // memoized, because the compiler traces into the callee and doesn't
+  // recognize a setState after `await` as deferred the way a nested
+  // .then(cb) is (see AppContext.tsx/group-organizer.tsx for the same
+  // pattern already applied).
+  const fetchCreationMembers = React.useCallback((tripId: string) => {
+    apiService
+      .getTripMembers(tripId)
+      .then((data) => {
+        if (data) setCreationMembers(data);
+      })
+      .catch((e) => logger.warn('[Create] Failed to fetch trip members:', e));
+  }, []);
+  const fetchIncomingRequests = React.useCallback(() => {
+    apiService
+      .getIncomingRequests()
+      .then((data) => {
+        if (data) setJoinRequests(data);
+        reloadIncomingRequestsCount();
+      })
+      .catch((e) => logger.warn('[Create] Failed to fetch incoming requests:', e));
+  }, [reloadIncomingRequestsCount]);
 
   React.useEffect(() => {
     if (profile?.id) {
       fetchIncomingRequests();
     }
-  }, [profile?.id]);
+  }, [profile?.id, fetchIncomingRequests]);
 
   // Essential Packing Checklist
   const [checklist, setChecklist] = useState([
@@ -517,6 +531,13 @@ function CreateTripScreen() {
     }
 
     const newTrip = {
+      // handleCreate only ever runs from the "Create Trip" button's onPress
+      // (see the single onPress={handleCreate} reference below) - it's
+      // never called during render, so Date.now() here is genuinely safe.
+      // react-hooks/purity flags it anyway because it can't verify a
+      // plain (non-useCallback) locally-defined function is render-only vs
+      // event-handler-only.
+      // eslint-disable-next-line react-hooks/purity
       id: `trip-${Date.now()}`,
       name: tripName,
       creator: t('createTrip.organizerSuffix', { name: profile?.name || 'Aarav Sharma' }),
@@ -569,6 +590,9 @@ function CreateTripScreen() {
       return;
     }
     const newTrip = {
+      // Same false positive as handleCreate above - only ever called from
+      // the "Save as Draft" button's onPress, never during render.
+      // eslint-disable-next-line react-hooks/purity
       id: `draft-${Date.now()}`,
       name: t('createTrip.draftPrefix', { name: tripName }),
       creator: t('createTrip.organizerSuffix', { name: profile?.name || 'Aarav Sharma' }),
