@@ -31,6 +31,15 @@ function isOfflineFailure(e: unknown): boolean {
 
 export type UserRole = 'TOURIST' | 'GUIDE' | 'ORGANIZER' | 'FAMILY_TRAVELER' | 'ADMIN';
 
+// Client-only (no backend model) — persisted inside the Profile blob via
+// updateProfile, not its own endpoint.
+export interface SavedPlace {
+  id: string;
+  name: string;
+  location: string;
+  image: string;
+}
+
 export interface UserProfile {
   id?: string;
   name: string;
@@ -47,7 +56,7 @@ export interface UserProfile {
   bio?: string;
   languages?: string;
   travelStyles?: string;
-  savedPlaces?: any[];
+  savedPlaces?: SavedPlace[];
   selectedLanguage?: string;
   pushNotifications?: boolean;
   locationSharing?: boolean;
