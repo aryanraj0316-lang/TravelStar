@@ -4,7 +4,7 @@ import { ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ArrowLeft } from 'lucide-react-native';
-import { C } from '@/theme/tokens';
+import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { Card } from '@/components/ui';
 
 
@@ -31,7 +31,7 @@ export default function TermsScreen() {
           <ArrowLeft size={18} color={C.white} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('legal.termsTitle')}</Text>
-        <View style={{ width: 36 }} />
+        <View style={{ width: MIN_TOUCH_TARGET }} />
       </View>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <Card>
@@ -56,9 +56,9 @@ const styles = StyleSheet.create({
     borderColor: C.border,
   },
   backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
+    borderRadius: MIN_TOUCH_TARGET / 2,
     backgroundColor: C.card,
     alignItems: 'center',
     justifyContent: 'center',
