@@ -1,4 +1,5 @@
 import { ThemedText } from '@/components/themed-text';
+import { MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { logger } from '@/lib/logger';
 import { toast } from '@/lib/feedback';
 import { getCurrentDeviceLocation } from '@/lib/device-location';
@@ -740,6 +741,7 @@ function WebMapScreen() {
             style={styles.backButton}
             onPress={() => router.navigate('/')}
             activeOpacity={0.8}
+            hitSlop={{ top: 3, bottom: 3, left: 3, right: 3 }}
             accessibilityRole="button"
             accessibilityLabel={t('map.goBack')}
           >
@@ -975,6 +977,7 @@ function WebMapScreen() {
                   onPress={() => setIsMainPanelCollapsed(!isMainPanelCollapsed)}
                   activeOpacity={0.8}
                   style={{ width: 28, height: 28, borderRadius: 14, overflow: 'hidden', marginLeft: 8 }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   accessibilityRole="button"
                   accessibilityLabel={isMainPanelCollapsed ? t('map.expandPanel') : t('map.collapsePanel')}
                 >
@@ -1078,6 +1081,7 @@ function WebMapScreen() {
                         onPress={() => setIsBottomPanelCollapsed(!isBottomPanelCollapsed)}
                         activeOpacity={0.8}
                         style={{ width: 28, height: 28, borderRadius: 14, overflow: 'hidden', marginRight: 6 }}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         accessibilityRole="button"
                         accessibilityLabel={isBottomPanelCollapsed ? t('map.expandPanel') : t('map.collapsePanel')}
                       >
@@ -1099,6 +1103,7 @@ function WebMapScreen() {
                         onPress={handleRecenter}
                         style={styles.closeLegBtn}
                         activeOpacity={0.8}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                         accessibilityRole="button"
                         accessibilityLabel={t('map.closeLegDetails')}
                       >
@@ -1214,6 +1219,7 @@ function WebMapScreen() {
                   style={styles.closeOverlayBtn}
                   onPress={() => setShowNavigationOverlay(false)}
                   activeOpacity={0.8}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   accessibilityRole="button"
                   accessibilityLabel={t('map.closeDirections')}
                 >
@@ -1332,6 +1338,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingVertical: 6,
     paddingHorizontal: 8,
+    minHeight: MIN_TOUCH_TARGET,
     borderWidth: 1,
     borderColor: 'rgba(48, 54, 61, 0.6)',
     shadowColor: '#000',
@@ -1387,6 +1394,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 6,
     paddingHorizontal: 8,
+    minHeight: MIN_TOUCH_TARGET,
     borderRadius: 6,
   },
   dropdownOptionRowActive: {
@@ -1415,9 +1423,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   sosControlBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
+    borderRadius: MIN_TOUCH_TARGET / 2,
     backgroundColor: '#EF4444',
     justifyContent: 'center',
     alignItems: 'center',
@@ -1502,9 +1510,9 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   mapControlBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
+    borderRadius: 13,
     borderWidth: 1,
     borderColor: 'rgba(48, 54, 61, 0.4)',
     alignItems: 'center',
