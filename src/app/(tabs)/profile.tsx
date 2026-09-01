@@ -1,6 +1,6 @@
 import { logger } from '@/lib/logger';
 import AuthScreen from '@/app/auth';
-import { useApp } from '@/store/AppContext';
+import { useApp, type SavedPlace } from '@/store/AppContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useNavigation, type ErrorBoundaryProps } from 'expo-router';
 import { RouteErrorFallback } from '@/components/route-error-fallback';
@@ -46,9 +46,14 @@ import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { Button, Chip, Input, Sheet } from '@/components/ui';
 import { getAppLanguage, setAppLanguage } from '@/lib/i18n';
 
-// Safe dynamic import to prevent native app crash if module is unlinked in old APK
-let ImagePicker: any = null;
+// Safe dynamic import to prevent native app crash if module is unlinked in old
+// APK. Deliberately require(), not import(): this needs to synchronously
+// catch a missing/unlinked native module at load time, which an async
+// dynamic import() can't replicate without restructuring this whole screen
+// around a promise.
+let ImagePicker: typeof import('expo-image-picker') | null = null;
 try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   ImagePicker = require('expo-image-picker');
 } catch {
   ImagePicker = null;
@@ -61,6 +66,33 @@ const AVATAR_PRESETS = [
   'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=80',
   'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=300&q=80',
   'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
+];
+
+const DEFAULT_SAVED_PLACES: SavedPlace[] = [
+  {
+    id: 'sp-1',
+    name: 'Taj Mahal',
+    location: 'Agra, Uttar Pradesh',
+    image: 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=150&q=80',
+  },
+  {
+    id: 'sp-2',
+    name: 'Vrindavan Mandir',
+    location: 'Vrindavan, Uttar Pradesh',
+    image: 'https://images.unsplash.com/photo-1548013146-72479768bada?w=150&q=80',
+  },
+  {
+    id: 'sp-3',
+    name: 'Munnar Tea Estates',
+    location: 'Munnar, Kerala',
+    image: 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=150&q=80',
+  },
+  {
+    id: 'sp-4',
+    name: 'Pangong Lake',
+    location: 'Leh-Ladakh, India',
+    image: 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=150&q=80',
+  },
 ];
 
 function ProfileScreen() {
@@ -86,7 +118,6 @@ function ProfileScreen() {
   // Input states
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showSavedPlacesModal, setShowSavedPlacesModal] = useState(false);
-  const [savedPlaces, setSavedPlaces] = useState<any[]>([]);
 
   // Language settings state
   const [showLanguageModal, setShowLanguageModal] = useState(false);
@@ -121,11 +152,16 @@ function ProfileScreen() {
   const [editLanguages, setEditLanguages] = useState('Hindi, English, Punjabi');
   const [editStyles, setEditStyles] = useState('Mountains, Backpacking, Photography');
 
-  useEffect(() => {
-    if (isLoggedIn) {
-      setShowAuthModal(false);
-    }
-  }, [isLoggedIn]);
+  // Adjusted during render rather than in an effect (react.dev's "adjust
+  // some state when a prop changes" pattern) — this avoids both the extra
+  // effect-triggered render pass and the react-hooks/set-state-in-effect
+  // violation a plain `useEffect(() => setShowAuthModal(false), [isLoggedIn])`
+  // would have.
+  const [prevIsLoggedIn, setPrevIsLoggedIn] = useState(isLoggedIn);
+  if (isLoggedIn !== prevIsLoggedIn) {
+    setPrevIsLoggedIn(isLoggedIn);
+    if (isLoggedIn) setShowAuthModal(false);
+  }
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
@@ -133,15 +169,19 @@ function ProfileScreen() {
       checkUnreadNotifications();
     });
     return unsubscribe;
-  }, [navigation]);
+  }, [navigation, checkUnreadNotifications]);
 
   useEffect(() => {
     return () => {
       setNavbarHidden(false);
     };
-  }, []);
+  }, [setNavbarHidden]);
 
-  useEffect(() => {
+  // Same adjust-during-render pattern: populate the edit fields the instant
+  // the modal transitions to open, without a setState-in-effect violation.
+  const [prevShowEditModal, setPrevShowEditModal] = useState(showEditModal);
+  if (showEditModal !== prevShowEditModal) {
+    setPrevShowEditModal(showEditModal);
     if (showEditModal) {
       setEditAvatar(profile.avatar || AVATAR_PRESETS[0]);
       setEditName(profile.name || '');
@@ -152,54 +192,30 @@ function ProfileScreen() {
       setEditLanguages(profile.languages || '');
       setEditStyles(profile.travelStyles || '');
     }
-  }, [showEditModal, profile]);
+  }
 
-  useEffect(() => {
-    if (profile.savedPlaces && Array.isArray(profile.savedPlaces)) {
-      setSavedPlaces(profile.savedPlaces);
-    } else {
-      setSavedPlaces([
-        {
-          id: 'sp-1',
-          name: 'Taj Mahal',
-          location: 'Agra, Uttar Pradesh',
-          image: 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=150&q=80',
-        },
-        {
-          id: 'sp-2',
-          name: 'Vrindavan Mandir',
-          location: 'Vrindavan, Uttar Pradesh',
-          image: 'https://images.unsplash.com/photo-1548013146-72479768bada?w=150&q=80',
-        },
-        {
-          id: 'sp-3',
-          name: 'Munnar Tea Estates',
-          location: 'Munnar, Kerala',
-          image: 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=150&q=80',
-        },
-        {
-          id: 'sp-4',
-          name: 'Pangong Lake',
-          location: 'Leh-Ladakh, India',
-          image: 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=150&q=80',
-        },
-      ]);
-    }
-  }, [profile.savedPlaces]);
+  // savedPlaces has no client-side mutation of its own — every change goes
+  // through updateProfile({ savedPlaces }) and comes back on profile — so
+  // it's a pure derived value, not state that needs an effect to sync it.
+  const savedPlaces: SavedPlace[] =
+    profile.savedPlaces && Array.isArray(profile.savedPlaces) ? profile.savedPlaces : DEFAULT_SAVED_PLACES;
 
-  useEffect(() => {
-    if (profile) {
-      if (profile.selectedLanguage) {
-        setSelectedLanguage(profile.selectedLanguage);
-      }
-      if (profile.pushNotifications !== undefined) {
-        setPushNotifications(profile.pushNotifications);
-      }
-      if (profile.locationSharing !== undefined) {
-        setLocationSharing(profile.locationSharing);
-      }
+  // Same adjust-during-render pattern as above: hydrate these local editable
+  // copies whenever the profile object itself changes (mirrors the original
+  // effect's `[profile]` dependency exactly).
+  const [prevProfileForSettings, setPrevProfileForSettings] = useState(profile);
+  if (profile !== prevProfileForSettings) {
+    setPrevProfileForSettings(profile);
+    if (profile.selectedLanguage) {
+      setSelectedLanguage(profile.selectedLanguage);
     }
-  }, [profile]);
+    if (profile.pushNotifications !== undefined) {
+      setPushNotifications(profile.pushNotifications);
+    }
+    if (profile.locationSharing !== undefined) {
+      setLocationSharing(profile.locationSharing);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -321,7 +337,7 @@ function ProfileScreen() {
       if (!result.canceled && result.assets && result.assets.length > 0) {
         await uploadPickedAvatar(result.assets[0]);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast(errorToastMessage(err, t('profile.couldNotOpenGallery')), 'error');
     }
   };
@@ -347,7 +363,7 @@ function ProfileScreen() {
       if (!result.canceled && result.assets && result.assets.length > 0) {
         await uploadPickedAvatar(result.assets[0]);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast(errorToastMessage(err, t('profile.couldNotOpenCamera')), 'error');
     }
   };
@@ -1079,7 +1095,6 @@ function ProfileScreen() {
                   <TouchableOpacity
                     onPress={() => {
                       const updated = savedPlaces.filter((p) => p.id !== place.id);
-                      setSavedPlaces(updated);
                       updateProfile({ savedPlaces: updated });
                     }}
                     style={styles.deletePlaceBtn}
