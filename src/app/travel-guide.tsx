@@ -61,7 +61,7 @@ import {
   AlertTriangle,
   CheckCircle,
 } from 'lucide-react-native';
-import { C } from '@/theme/tokens';
+import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -1439,7 +1439,7 @@ export default function TravelGuideScreen() {
                     <Text style={styles.descSec}>{t('travelGuide.managePackagesDesc')}</Text>
                   </View>
                   <TouchableOpacity
-                    style={[styles.addDayBtn, { width: 120, height: 35, marginTop: 0 }]}
+                    style={[styles.addDayBtn, { width: 120, height: MIN_TOUCH_TARGET, marginTop: 0 }]}
                     onPress={() => {
                       setEditingPackage(null);
                       setPkgTitle('');
@@ -1882,7 +1882,7 @@ export default function TravelGuideScreen() {
                     style={[
                       styles.cashoutBtn,
                       {
-                        height: 32,
+                        height: MIN_TOUCH_TARGET,
                         paddingHorizontal: 16,
                         backgroundColor: isBroadcasting ? C.rose : C.blue,
                         borderRadius: 8,
@@ -2192,8 +2192,8 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   backBtn: {
-    width: 34,
-    height: 34,
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
     borderRadius: 10,
     backgroundColor: 'rgba(255,255,255,0.04)',
     alignItems: 'center',
@@ -2246,8 +2246,10 @@ const styles = StyleSheet.create({
   tabItem: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 8,
     paddingHorizontal: 12,
+    minHeight: MIN_TOUCH_TARGET,
     borderRadius: 20,
     backgroundColor: 'rgba(255,255,255,0.03)',
     borderWidth: 1,
@@ -2562,6 +2564,9 @@ const styles = StyleSheet.create({
     borderColor: C.blue,
     paddingHorizontal: 12,
     paddingVertical: 7,
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
+    alignItems: 'center',
     borderRadius: 10,
   },
   applyLeadBtnText: {
@@ -2659,7 +2664,7 @@ const styles = StyleSheet.create({
   sendQuoteBtn: {
     backgroundColor: C.green,
     paddingHorizontal: 14,
-    height: 38,
+    height: MIN_TOUCH_TARGET,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
@@ -2698,7 +2703,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    height: 38,
+    height: MIN_TOUCH_TARGET,
     borderRadius: 12,
     backgroundColor: 'rgba(255,255,255,0.02)',
     borderWidth: 1.2,
@@ -2718,7 +2723,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    height: 36,
+    height: MIN_TOUCH_TARGET,
     borderRadius: 10,
     backgroundColor: 'rgba(255,255,255,0.02)',
     borderWidth: 1.2,
@@ -2895,7 +2900,9 @@ const styles = StyleSheet.create({
   plannerSubTabItem: {
     flex: 1,
     paddingVertical: 9,
+    minHeight: MIN_TOUCH_TARGET,
     alignItems: 'center',
+    justifyContent: 'center',
     borderRadius: 10,
     position: 'relative',
   },
@@ -3035,7 +3042,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    height: 36,
+    height: MIN_TOUCH_TARGET,
     borderRadius: 10,
     backgroundColor: 'rgba(255,255,255,0.02)',
     borderWidth: 1.2,
@@ -3057,7 +3064,7 @@ const styles = StyleSheet.create({
   estimateBtn: {
     flexDirection: 'row',
     backgroundColor: C.blue,
-    height: 42,
+    height: MIN_TOUCH_TARGET,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
@@ -3101,7 +3108,7 @@ const styles = StyleSheet.create({
   calculateBudgetBtn: {
     flexDirection: 'row',
     backgroundColor: C.blue,
-    height: 42,
+    height: MIN_TOUCH_TARGET,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
@@ -3179,7 +3186,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    height: 32,
+    height: MIN_TOUCH_TARGET,
     borderRadius: 8,
     backgroundColor: 'rgba(255,255,255,0.02)',
     borderWidth: 1.2,
@@ -3252,10 +3259,12 @@ const styles = StyleSheet.create({
   bookingLinkBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 4,
     backgroundColor: 'rgba(0,102,255,0.1)',
     paddingHorizontal: 8,
     paddingVertical: 5,
+    minHeight: MIN_TOUCH_TARGET,
     borderRadius: 8,
   },
   bookingLinkText: {
@@ -3274,6 +3283,8 @@ const styles = StyleSheet.create({
   weatherCityBtn: {
     paddingHorizontal: 12,
     paddingVertical: 6,
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
     borderRadius: 8,
     backgroundColor: 'rgba(255,255,255,0.02)',
     borderWidth: 1.2,
@@ -3525,7 +3536,7 @@ const styles = StyleSheet.create({
     gap: 6,
     borderWidth: 1.2,
     borderRadius: 8,
-    height: 32,
+    height: MIN_TOUCH_TARGET,
     marginTop: 12,
   },
   callActionBtnText: {
