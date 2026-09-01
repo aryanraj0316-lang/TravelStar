@@ -11,7 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { ArrowLeft, MapPin, Navigation, Users } from 'lucide-react-native';
-import { C } from '@/theme/tokens';
+import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { ScreenEmpty, ScreenError, ScreenLoading } from '@/components/ui';
 import type { NearbyTrip } from '@/types/api';
 
@@ -144,7 +144,7 @@ export default function NearbyTripsScreen() {
           <ArrowLeft size={18} color={C.white} />
         </TouchableOpacity>
         <Text style={styles.topNavTitle}>{t('nearbyTrips.title')}</Text>
-        <View style={{ width: 36 }} />
+        <View style={{ width: MIN_TOUCH_TARGET }} />
       </View>
 
       {/* Location banner */}
@@ -229,9 +229,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
+    borderRadius: MIN_TOUCH_TARGET / 2,
     backgroundColor: C.card,
     alignItems: 'center',
     justifyContent: 'center',
@@ -264,6 +264,7 @@ const styles = StyleSheet.create({
   locBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 5,
     backgroundColor: 'rgba(59,130,246,0.12)',
     paddingHorizontal: 10,
@@ -271,6 +272,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     borderColor: 'rgba(59,130,246,0.3)',
+    minHeight: MIN_TOUCH_TARGET,
   },
   locBtnText: { fontSize: 12, fontWeight: '700', color: C.blue },
   scrollContent: { paddingHorizontal: 16, paddingTop: 8 },
