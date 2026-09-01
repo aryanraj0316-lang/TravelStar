@@ -53,7 +53,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import { eventBus } from '@/services/event-bus';
-import { C } from '@/theme/tokens';
+import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { Input, ScreenEmpty } from '@/components/ui';
 
 // Coordinates registry for Indian cities
@@ -795,6 +795,7 @@ function CreateTripScreen() {
                 onPress={pickImageFromGallery}
                 activeOpacity={0.8}
                 disabled={coverUploading}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 accessibilityRole="button"
                 accessibilityLabel={t('createTrip.uploadCoverPhoto')}
               >
@@ -1557,6 +1558,7 @@ function CreateTripScreen() {
                 <TouchableOpacity
                   style={styles.monthNavBtn}
                   onPress={handlePrevMonth}
+                  hitSlop={{ top: 7, bottom: 7, left: 7, right: 7 }}
                   accessibilityRole="button"
                   accessibilityLabel={t('createTrip.previousMonth')}
                 >
@@ -1584,6 +1586,7 @@ function CreateTripScreen() {
                 <TouchableOpacity
                   style={styles.monthNavBtn}
                   onPress={handleNextMonth}
+                  hitSlop={{ top: 7, bottom: 7, left: 7, right: 7 }}
                   accessibilityRole="button"
                   accessibilityLabel={t('createTrip.nextMonth')}
                 >
@@ -1592,6 +1595,7 @@ function CreateTripScreen() {
                 <TouchableOpacity
                   style={styles.closeBtn}
                   onPress={() => setActiveDatePicker(null)}
+                  hitSlop={{ top: 7, bottom: 7, left: 7, right: 7 }}
                   accessibilityRole="button"
                   accessibilityLabel={t('createTrip.closeCalendar')}
                 >
@@ -2405,14 +2409,14 @@ const styles = StyleSheet.create({
   },
   dayCell: {
     width: '14.28%',
-    height: 36,
+    height: MIN_TOUCH_TARGET,
     alignItems: 'center',
     justifyContent: 'center',
     marginVertical: 2,
   },
   dayCellEmpty: {
     width: '14.28%',
-    height: 36,
+    height: MIN_TOUCH_TARGET,
   },
   dayCellSelected: {
     backgroundColor: C.blue,
@@ -2430,6 +2434,8 @@ const styles = StyleSheet.create({
   calendarConfirmBtn: {
     backgroundColor: C.blue,
     paddingVertical: 12,
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
     borderRadius: 14,
     alignItems: 'center',
   },
@@ -2533,6 +2539,8 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 6,
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: C.border,
   },
@@ -2581,6 +2589,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 8,
+    minHeight: MIN_TOUCH_TARGET,
   },
   categoryChipActive: {
     backgroundColor: 'rgba(59,130,246,0.15)',
@@ -2642,6 +2651,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     paddingVertical: 10,
+    minHeight: MIN_TOUCH_TARGET,
     borderRadius: 12,
   },
   tabItemActive: {
@@ -2774,9 +2784,9 @@ const styles = StyleSheet.create({
     gap: 24,
   },
   counterBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
+    borderRadius: MIN_TOUCH_TARGET / 2,
     backgroundColor: '#111422',
     borderWidth: 1,
     borderColor: '#252D4A',
@@ -2812,6 +2822,8 @@ const styles = StyleSheet.create({
     backgroundColor: C.cardAlt,
     paddingHorizontal: 12,
     paddingVertical: 7,
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
     borderRadius: 10,
     borderWidth: 1,
     borderColor: '#252D4A',
@@ -2906,17 +2918,17 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   acceptBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
+    borderRadius: 14,
     backgroundColor: C.green,
     alignItems: 'center',
     justifyContent: 'center',
   },
   rejectBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
+    borderRadius: 14,
     backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
@@ -2950,6 +2962,7 @@ const styles = StyleSheet.create({
     gap: 10,
     backgroundColor: C.cardAlt,
     padding: 12,
+    minHeight: MIN_TOUCH_TARGET,
     borderRadius: 12,
     marginBottom: 10,
     borderWidth: 1,
@@ -3124,9 +3137,9 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   creationsCloseBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
+    borderRadius: MIN_TOUCH_TARGET / 2,
     backgroundColor: 'rgba(255,255,255,0.06)',
     alignItems: 'center',
     justifyContent: 'center',
@@ -3247,6 +3260,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.06)',
     paddingHorizontal: 12,
     paddingVertical: 6,
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
     borderRadius: 8,
   },
   detailBackBtnText: {
@@ -3439,6 +3454,8 @@ const styles = StyleSheet.create({
     backgroundColor: C.green,
     paddingHorizontal: 10,
     paddingVertical: 6,
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
     borderRadius: 8,
   },
   detailAcceptText: {
@@ -3452,6 +3469,8 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(239,68,68,0.3)',
     paddingHorizontal: 10,
     paddingVertical: 6,
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
     borderRadius: 8,
   },
   detailRejectText: {
@@ -3473,6 +3492,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.blue,
     paddingHorizontal: 12,
     paddingVertical: 7,
+    minHeight: MIN_TOUCH_TARGET,
     borderRadius: 8,
     alignSelf: 'flex-start',
     marginTop: 10,
