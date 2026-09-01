@@ -4,6 +4,8 @@ import { registerForPushNotifications, unregisterPushNotifications } from '@/lib
 import { toast, errorToastMessage } from '@/lib/feedback';
 import { enqueueMutation, registerMutationHandler } from '@/lib/offline-mutation-queue';
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { queryKeys } from '@/lib/query-keys';
 import { apiService, clearTokens, ApiError } from '../services/api';
 import { socketService } from '../services/socket';
 import { eventBus } from '../services/event-bus';
@@ -371,7 +373,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // ratings and rates, and `verified: true` on all three. "Verified Guide"
   // is the trust signal users pay on (§2.6), so rendering fake verified
   // guides whenever GET /guides failed was the worst instance of this bug.
-  const [guides, setGuides] = useState<Guide[]>([]);
+  //
+  // On useQuery (REMEDIATION.md §6.3 follow-up) rather than useState+effect:
+  // unlike trips/sosAlerts/storiesList, nothing else in the app mutates this
+  // list optimistically or pushes into it from a socket event, so there's no
+  // second source of truth to keep in sync — a plain query is a strict
+  // improvement (caching, refetch-on-reconnect) with no entanglement risk.
+  const {
+    data: guides = [],
+    isLoading: guidesLoading,
+    isError: guidesErrored,
+  } = useQuery({
+    queryKey: queryKeys.guides(),
+    queryFn: async () => (await apiService.getGuides()) ?? [],
+  });
 
   // No hardcoded seed (docs/REMEDIATION.md §0.2 rule 4). This used to hold
   // two fabricated stories with invented authors, captions and Unsplash
@@ -379,9 +394,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // people — whenever GET /stories failed or legitimately returned nothing.
   const [storiesList, setStoriesList] = useState<Story[]>([]);
 
-  const [dataStatus, setDataStatus] = useState<DataStatus>({
+  const [dataStatus, setDataStatus] = useState<Omit<DataStatus, 'guides'>>({
     trips: 'loading',
-    guides: 'loading',
     stories: 'loading',
   });
   const [navbarHidden, setNavbarHidden] = useState(false);
@@ -527,20 +541,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       })
       .catch((e) => logger.warn('[Hydrate] Profile fetch failed (no session yet, or offline):', e));
-
-    apiService
-      .getGuides()
-      .then((remoteGuides) => {
-        // Set unconditionally: an empty list is a real answer ("no guides
-        // yet") and must render as an empty state, not silently leave
-        // whatever was there before.
-        setGuides(remoteGuides ?? []);
-        setDataStatus((prev) => ({ ...prev, guides: 'ready' }));
-      })
-      .catch((e) => {
-        logger.warn('[Hydrate] Guides fetch failed:', e);
-        setDataStatus((prev) => ({ ...prev, guides: 'error' }));
-      });
 
     apiService
       .getSOSAlerts()
@@ -864,6 +864,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [profile.name, profile.avatar],
   );
 
+  const combinedDataStatus: DataStatus = useMemo(
+    () => ({
+      ...dataStatus,
+      guides: guidesLoading ? 'loading' : guidesErrored ? 'error' : 'ready',
+    }),
+    [dataStatus, guidesLoading, guidesErrored],
+  );
+
   const providerValue = useMemo(
     () => ({
       currentRole,
@@ -902,7 +910,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       clearChatUnread,
       checkUnreadNotifications,
       hasUnreadNotification,
-      dataStatus,
+      dataStatus: combinedDataStatus,
     }),
     [
       currentRole,
@@ -937,7 +945,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       clearChatUnread,
       checkUnreadNotifications,
       hasUnreadNotification,
-      dataStatus,
+      combinedDataStatus,
     ],
   );
 
