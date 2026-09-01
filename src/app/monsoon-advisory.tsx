@@ -18,7 +18,7 @@ import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Dimensions, FlatList, Image, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { C } from '@/theme/tokens';
+import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { Card, ScreenEmpty, ScreenError, ScreenLoading } from '@/components/ui';
 
 interface HazardAlert {
@@ -351,9 +351,9 @@ const styles = StyleSheet.create({
     borderBottomColor: C.border,
   },
   backBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
+    borderRadius: MIN_TOUCH_TARGET / 2,
     backgroundColor: C.card,
     alignItems: 'center',
     justifyContent: 'center',
@@ -428,6 +428,7 @@ const styles = StyleSheet.create({
   filterTabItem: {
     flex: 1,
     paddingVertical: 8,
+    minHeight: MIN_TOUCH_TARGET,
     borderRadius: 18,
     borderWidth: 1,
     borderColor: C.border,
