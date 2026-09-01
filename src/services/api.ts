@@ -8,6 +8,7 @@ import { ApiErrorCode } from '@/types/api-error-codes';
 import type { Story } from '../store/AppContext';
 import type {
   EmergencyContact,
+  FeedItem,
   FeedPage,
   GuideEarnings,
   GuideLead,
@@ -914,10 +915,17 @@ export const apiService = {
   },
 
   // ── Unified Feed (Stories + Guide Reels merged) ──────
-  async getFeed(limit: number = 20, cursor?: string): Promise<FeedPage | null> {
+  // GET /feed returns { data: FeedItem[], meta: { cursor } } — a plain
+  // `request<FeedPage>()` call returned just the item array with `.items`/
+  // `.nextCursor` both undefined, so every caller's `Array.isArray(res.items)`
+  // check silently failed and the merged feed (with guide reels) never
+  // rendered; home-screen.tsx always fell through to stories-only. Fixed by
+  // using requestWithMeta, same as getTrips' search pagination.
+  async getFeed(limit: number = 20, cursor?: string): Promise<FeedPage> {
     const params = new URLSearchParams({ limit: String(limit) });
     if (cursor) params.set('cursor', cursor);
-    return request<FeedPage>(`/feed?${params.toString()}`);
+    const { data, meta } = await requestWithMeta<FeedItem[]>(`/feed?${params.toString()}`);
+    return { items: data, nextCursor: meta?.cursor ?? null };
   },
 
   // ── Guide Leads (pending JoinRequests as leads) ──────
