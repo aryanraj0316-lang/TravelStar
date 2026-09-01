@@ -34,7 +34,7 @@ import {
   X,
   Zap
 } from 'lucide-react-native';
-import React, { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
+import React, { useEffect, useMemo, useRef, useState, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Animated,
@@ -769,7 +769,7 @@ function MapScreen() {
   const sosPulse = useState(() => new Animated.Value(1))[0];
 
   useEffect(() => {
-    (async () => {
+    void (async () => {
       try {
         await Location.requestForegroundPermissionsAsync();
       } catch (e) {
@@ -791,7 +791,7 @@ function MapScreen() {
       tension: 50,
       useNativeDriver: true,
     }).start();
-  }, [showNavigationOverlay, bottomCardHeight]);
+  }, [showNavigationOverlay, bottomCardHeight, panelTranslateY]);
 
   const filterOptions: { value: MapFilter; labelKey: string; icon: typeof Compass }[] = [
     { value: 'ALL', labelKey: 'map.filterAllCategories', icon: Compass },
@@ -864,7 +864,7 @@ function MapScreen() {
         Animated.timing(sosPulse, { toValue: 1, duration: 800, useNativeDriver: true }),
       ])
     ).start();
-  }, []);
+  }, [sosPulse]);
 
   // Real device GPS (REMEDIATION.md §8.9) — previously this sent the
   // route's start coordinate (or a hardcoded New Delhi fallback), not
@@ -914,15 +914,15 @@ function MapScreen() {
     }
   }, [mapFilter]);
 
-  const postMapMessage = useCallback((msg: object) => {
+  const postMapMessage = (msg: object) => {
     webViewRef.current?.postMessage(JSON.stringify(msg));
-  }, []);
+  };
 
   // Helper: select a leg — updates React state AND tells the WebView to zoom
-  const selectLegFromReact = useCallback((idx: number | null) => {
+  const selectLegFromReact = (idx: number | null) => {
     setSelectedLegIndex(idx);
     postMapMessage({ type: 'SELECT_LEG', index: idx });
-  }, [postMapMessage]);
+  };
 
   const handleRecenter = () => {
     selectLegFromReact(null);
