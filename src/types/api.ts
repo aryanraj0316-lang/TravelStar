@@ -298,7 +298,15 @@ export interface GuideEarnings {
   completedTripsCount: number;
   /** Scoped to this guide — it used to be a global count (§5.7). */
   activeLeadsCount: number;
-  chartData: { label: string; value: number }[];
+  /**
+   * Pre-formatted server-side, same convention as WeatherLocation/
+   * LiveWeather — `amtText` and `height` (0-110, a bar-chart percentage)
+   * are ready to render as-is. This used to be typed `{label, value}[]`,
+   * which don't exist on the real objects (`day`/`amt`/`height`/`amtText`)
+   * — travel-guide.tsx's weekly chart read `c.value` as `undefined`
+   * everywhere, so every bar's height/max computation went NaN.
+   */
+  chartData: { day: string; amt: number; height: number; amtText: string }[];
   hasActivity: boolean;
 }
 

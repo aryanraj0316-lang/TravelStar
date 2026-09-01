@@ -33,7 +33,6 @@ import type {
 } from '@/types/api';
 import type { SOSAlert } from '@/store/AppContext';
 import { formatDate } from '@/lib/datetime';
-import { formatINRCompact } from '@/lib/money';
 import * as ImagePicker from 'expo-image-picker';
 import {
   ArrowLeft,
@@ -997,14 +996,7 @@ export default function TravelGuideScreen() {
               <View style={styles.chartContainer}>
                 {(
                   earnings?.chartData
-                    ? (() => {
-                        const maxValue = Math.max(...earnings.chartData.map((c) => c.value), 1);
-                        return earnings.chartData.map((c) => ({
-                          day: c.label,
-                          amtText: formatINRCompact(c.value),
-                          height: Math.max(5, Math.round((c.value / maxValue) * 110)),
-                        }));
-                      })()
+                    ? earnings.chartData
                     : [
                         { day: t('createTrip.weekdayMon'), amtText: '₹1.5k', height: 40 },
                         { day: t('createTrip.weekdayTue'), amtText: '₹2.2k', height: 65 },
