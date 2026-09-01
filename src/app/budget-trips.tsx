@@ -22,7 +22,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Briefcase, Calendar, Compass, IndianRupee, MapPin, User, Users } from 'lucide-react-native';
-import { C } from '@/theme/tokens';
+import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { Chip, ScreenEmpty, ScreenError, ScreenLoading } from '@/components/ui';
 
 // docs/REMEDIATION.md §8.15: this screen used to map real DB trips onto a
@@ -317,9 +317,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
+    borderRadius: MIN_TOUCH_TARGET / 2,
     backgroundColor: C.card,
     alignItems: 'center',
     justifyContent: 'center',
