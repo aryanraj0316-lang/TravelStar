@@ -52,7 +52,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { eventBus } from '@/services/event-bus';
-import { C } from '@/theme/tokens';
+import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { ScreenEmpty, ScreenError, ScreenLoading } from '@/components/ui';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/lib/i18n';
@@ -262,6 +262,7 @@ function TripResultCard({
           <TouchableOpacity
             style={[styles.heartBtn, { backgroundColor: 'rgba(0,0,0,0.4)' }]}
             onPress={() => onToggleLike(trip.id)}
+            hitSlop={{ top: 7, bottom: 7, left: 7, right: 7 }}
             accessibilityRole="button"
             accessibilityLabel={t('search.favoriteHint')}
             accessibilityState={{ selected: isLiked }}
@@ -742,7 +743,7 @@ function SearchScreen() {
               {sortOption !== 'popularity' && (
                 <View style={[styles.filterTagPill, { backgroundColor: C.accentLight, borderColor: C.accent }]}>
                   <Text style={[styles.filterTagText, { color: C.accent }]}>{t('search.sortLabel', { value: sortOption.replace('_', ' ') })}</Text>
-                  <TouchableOpacity onPress={() => setSortOption('popularity')} accessibilityRole="button" accessibilityLabel={t('search.removeFilterHint')}>
+                  <TouchableOpacity onPress={() => setSortOption('popularity')} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }} accessibilityRole="button" accessibilityLabel={t('search.removeFilterHint')}>
                     <X size={12} color={C.accent} style={{ marginLeft: 4 }} />
                   </TouchableOpacity>
                 </View>
@@ -752,7 +753,7 @@ function SearchScreen() {
                   <Text style={[styles.filterTagText, { color: C.accent }]}>
                     {t('search.maxBudget', { value: maxBudget.toLocaleString('en-IN') })}
                   </Text>
-                  <TouchableOpacity onPress={() => setMaxBudget(50000)} accessibilityRole="button" accessibilityLabel={t('search.removeFilterHint')}>
+                  <TouchableOpacity onPress={() => setMaxBudget(50000)} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }} accessibilityRole="button" accessibilityLabel={t('search.removeFilterHint')}>
                     <X size={12} color={C.accent} style={{ marginLeft: 4 }} />
                   </TouchableOpacity>
                 </View>
@@ -760,7 +761,7 @@ function SearchScreen() {
               {selectedDuration !== 'ALL' && (
                 <View style={[styles.filterTagPill, { backgroundColor: C.accentLight, borderColor: C.accent }]}>
                   <Text style={[styles.filterTagText, { color: C.accent }]}>{t('search.durationLabel', { value: t(DURATION_LABEL_KEYS[selectedDuration]) })}</Text>
-                  <TouchableOpacity onPress={() => setSelectedDuration('ALL')} accessibilityRole="button" accessibilityLabel={t('search.removeFilterHint')}>
+                  <TouchableOpacity onPress={() => setSelectedDuration('ALL')} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }} accessibilityRole="button" accessibilityLabel={t('search.removeFilterHint')}>
                     <X size={12} color={C.accent} style={{ marginLeft: 4 }} />
                   </TouchableOpacity>
                 </View>
@@ -768,7 +769,7 @@ function SearchScreen() {
               {verifiedOnly && (
                 <View style={[styles.filterTagPill, { backgroundColor: C.accentLight, borderColor: C.accent }]}>
                   <Text style={[styles.filterTagText, { color: C.accent }]}>{t('search.verifiedOrganizers')}</Text>
-                  <TouchableOpacity onPress={() => setVerifiedOnly(false)} accessibilityRole="button" accessibilityLabel={t('search.removeFilterHint')}>
+                  <TouchableOpacity onPress={() => setVerifiedOnly(false)} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }} accessibilityRole="button" accessibilityLabel={t('search.removeFilterHint')}>
                     <X size={12} color={C.accent} style={{ marginLeft: 4 }} />
                   </TouchableOpacity>
                 </View>
@@ -781,7 +782,7 @@ function SearchScreen() {
                   ]}
                 >
                   <Text style={[styles.filterTagText, { color: '#10B981' }]}>{t('search.guideIncludedFilter')}</Text>
-                  <TouchableOpacity onPress={() => setGuideRequired(false)} accessibilityRole="button" accessibilityLabel={t('search.removeFilterHint')}>
+                  <TouchableOpacity onPress={() => setGuideRequired(false)} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }} accessibilityRole="button" accessibilityLabel={t('search.removeFilterHint')}>
                     <X size={12} color="#10B981" style={{ marginLeft: 4 }} />
                   </TouchableOpacity>
                 </View>
@@ -789,7 +790,7 @@ function SearchScreen() {
               {selectedTransport !== 'ALL' && (
                 <View style={[styles.filterTagPill, { backgroundColor: C.accentLight, borderColor: C.accent }]}>
                   <Text style={[styles.filterTagText, { color: C.accent }]}>{t('search.transportLabel', { value: t(TRANSPORT_LABEL_KEYS[selectedTransport]) })}</Text>
-                  <TouchableOpacity onPress={() => setSelectedTransport('ALL')} accessibilityRole="button" accessibilityLabel={t('search.removeFilterHint')}>
+                  <TouchableOpacity onPress={() => setSelectedTransport('ALL')} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }} accessibilityRole="button" accessibilityLabel={t('search.removeFilterHint')}>
                     <X size={12} color={C.accent} style={{ marginLeft: 4 }} />
                   </TouchableOpacity>
                 </View>
@@ -802,12 +803,18 @@ function SearchScreen() {
                   ]}
                 >
                   <Text style={[styles.filterTagText, { color: '#F59E0B' }]}>{t('search.midwayJoin')}</Text>
-                  <TouchableOpacity onPress={() => setMidwayOnly(false)} accessibilityRole="button" accessibilityLabel={t('search.removeFilterHint')}>
+                  <TouchableOpacity onPress={() => setMidwayOnly(false)} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }} accessibilityRole="button" accessibilityLabel={t('search.removeFilterHint')}>
                     <X size={12} color="#F59E0B" style={{ marginLeft: 4 }} />
                   </TouchableOpacity>
                 </View>
               )}
-              <TouchableOpacity style={styles.clearAllPill} onPress={resetFilters} accessibilityRole="button" accessibilityLabel={t('search.clearAll')}>
+              <TouchableOpacity
+                style={styles.clearAllPill}
+                onPress={resetFilters}
+                hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel={t('search.clearAll')}
+              >
                 <RotateCcw size={12} color="#FF3B30" />
                 <Text style={{ fontSize: 12, fontWeight: '600', color: '#FF3B30', marginLeft: 4 }}>{t('search.clearAll')}</Text>
               </TouchableOpacity>
@@ -902,7 +909,13 @@ function SearchScreen() {
                   {t('search.tripsByPopularity', { count: filteredTrips.length })}
                 </Text>
                 {activeFilterCount > 0 && (
-                  <TouchableOpacity style={styles.resetInlineBtn} onPress={resetFilters} accessibilityRole="button" accessibilityLabel={t('search.resetFilters')}>
+                  <TouchableOpacity
+                    style={styles.resetInlineBtn}
+                    onPress={resetFilters}
+                    hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('search.resetFilters')}
+                  >
                     <Text style={{ fontSize: 12, fontWeight: '600', color: '#FF3B30' }}>{t('search.resetFilters')}</Text>
                   </TouchableOpacity>
                 )}
@@ -1029,7 +1042,13 @@ function SearchScreen() {
 
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                 {activeFilterCount > 0 && (
-                  <TouchableOpacity onPress={resetFilters} activeOpacity={0.7} accessibilityRole="button" accessibilityLabel={t('search.resetAll')}>
+                  <TouchableOpacity
+                    onPress={resetFilters}
+                    activeOpacity={0.7}
+                    hitSlop={{ top: 14, bottom: 14, left: 10, right: 10 }}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('search.resetAll')}
+                  >
                     <Text style={{ fontSize: 13, fontWeight: '600', color: '#FF3B30' }}>{t('search.resetAll')}</Text>
                   </TouchableOpacity>
                 )}
@@ -1039,6 +1058,7 @@ function SearchScreen() {
                     styles.closeIconBtn,
                     { backgroundColor: 'rgba(255,255,255,0.08)' },
                   ]}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                   accessibilityRole="button"
                   accessibilityLabel={t('common.close')}
                 >
@@ -1398,11 +1418,13 @@ const styles = StyleSheet.create({
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 20,
     gap: 6,
     borderWidth: 1,
+    minHeight: MIN_TOUCH_TARGET,
   },
   chipText: {
     fontSize: 13,
@@ -1613,12 +1635,14 @@ const styles = StyleSheet.create({
   joinBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: C.blue,
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 8,
     gap: 3,
     flexShrink: 0,
+    minHeight: MIN_TOUCH_TARGET,
   },
   joinBtnText: {
     color: '#FFF',
@@ -2002,6 +2026,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 18,
     borderWidth: 1,
+    minHeight: MIN_TOUCH_TARGET,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   filterSelectChipText: {
     fontSize: 12,
