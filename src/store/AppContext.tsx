@@ -505,9 +505,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         id: data.id || `notif-${Date.now()}`,
         title: data.title || 'Notification',
         content: data.content || 'Your request was updated.',
-        chatRoomId: data.chatRoomId,
-        tripId: data.tripId,
-        category: data.category,
+        chatRoomId: data.chatRoomId ?? undefined,
+        tripId: data.tripId ?? undefined,
+        category: data.category ?? undefined,
       });
     });
 

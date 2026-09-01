@@ -2,12 +2,25 @@ import { io, type Socket } from 'socket.io-client';
 import { getHostUrl } from './api';
 import { secureStorage } from './secureStorage';
 import { logger } from '@/lib/logger';
+import type { Message, SOSAlert } from '@/store/AppContext';
+import type { NotificationCategory } from '@/types/api';
 
-type MessageListener = (data: { roomId: string; message: any }) => void;
-type SOSListener = (data: any) => void;
-type LocationListener = (data: any) => void;
+type MessageListener = (data: { roomId: string; message: Message }) => void;
+type SOSListener = (data: SOSAlert) => void;
+type SOSResolvedListener = (data: { id: string }) => void;
+type LocationListener = (data: { userId: string; tripId: string; latitude: number; longitude: number }) => void;
 type AddedToChatListener = (data: { tripId: string; chatRoomId: string; tripName: string }) => void;
-type NotificationListener = (data: any) => void;
+type NotificationListener = (data: {
+  id?: string;
+  userId?: string | null;
+  type?: string;
+  title?: string;
+  content?: string;
+  unread?: boolean;
+  tripId?: string | null;
+  chatRoomId?: string | null;
+  category?: NotificationCategory | null;
+}) => void;
 type TypingListener = (data: { roomId: string; userId: string; userName: string; isTyping: boolean }) => void;
 
 class SocketService {
@@ -17,7 +30,7 @@ class SocketService {
   // these populated so listeners accumulated across logout/login cycles.
   private messageListeners: MessageListener[] = [];
   private sosListeners: SOSListener[] = [];
-  private sosResolvedListeners: SOSListener[] = [];
+  private sosResolvedListeners: SOSResolvedListener[] = [];
   private locationListeners: LocationListener[] = [];
   private addedToChatListeners: AddedToChatListener[] = [];
   private notificationListeners: NotificationListener[] = [];
@@ -47,15 +60,15 @@ class SocketService {
 
       this.socket.on('connect', () => {});
 
-      this.socket.on('messageReceived', (data: any) => {
+      this.socket.on('messageReceived', (data: { roomId: string; message: Message }) => {
         this.messageListeners.forEach((l) => l(data));
       });
 
-      this.socket.on('addedToChat', (data: any) => {
+      this.socket.on('addedToChat', (data: { tripId: string; chatRoomId: string; tripName: string }) => {
         this.addedToChatListeners.forEach((l) => l(data));
       });
 
-      this.socket.on('notificationReceived', (data: any) => {
+      this.socket.on('notificationReceived', (data: Parameters<NotificationListener>[0]) => {
         this.notificationListeners.forEach((l) => l(data));
       });
 
@@ -63,21 +76,21 @@ class SocketService {
         this.typingListeners.forEach((l) => l(data));
       });
 
-      this.socket.on('sosReceived', (data: any) => {
+      this.socket.on('sosReceived', (data: SOSAlert) => {
         this.sosListeners.forEach((l) => l(data));
       });
 
-      this.socket.on('sosResolved', (data: any) => {
+      this.socket.on('sosResolved', (data: { id: string }) => {
         this.sosResolvedListeners.forEach((l) => l(data));
       });
 
-      this.socket.on('locationUpdated', (data: any) => {
+      this.socket.on('locationUpdated', (data: { userId: string; tripId: string; latitude: number; longitude: number }) => {
         this.locationListeners.forEach((l) => l(data));
       });
 
       this.socket.on('disconnect', (reason: string) => {});
 
-      this.socket.on('connect_error', (err: any) => {
+      this.socket.on('connect_error', (err: Error) => {
         logger.warn(`[SocketService] Connection notice:`, err?.message || err);
       });
     } catch (e) {
@@ -173,7 +186,7 @@ class SocketService {
     };
   }
 
-  onSOSResolved(listener: SOSListener) {
+  onSOSResolved(listener: SOSResolvedListener) {
     this.sosResolvedListeners.push(listener);
     return () => {
       this.sosResolvedListeners = this.sosResolvedListeners.filter((l) => l !== listener);
