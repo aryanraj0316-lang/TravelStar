@@ -10,7 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiService } from '@/services/api';
 import { queryKeys } from '@/lib/query-keys';
 import { MyTripBooking, useApp } from '@/store/AppContext';
-import { C } from '@/theme/tokens';
+import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { formatDateRange } from '@/lib/datetime';
 import { formatINR } from '@/lib/money';
 import { ScreenEmpty, ScreenError, ScreenLoading } from '@/components/ui';
@@ -250,7 +250,7 @@ export default function BookingsScreen() {
           <ArrowLeft size={18} color={C.white} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('bookings.title')}</Text>
-        <View style={{ width: 40 }} />
+        <View style={{ width: MIN_TOUCH_TARGET }} />
       </View>
 
       {/* Tabs / Segment Filter */}
@@ -344,9 +344,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
+    borderRadius: MIN_TOUCH_TARGET / 2,
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
     alignItems: 'center',
     justifyContent: 'center',
@@ -366,7 +366,7 @@ const styles = StyleSheet.create({
   },
   tabBtn: {
     flex: 1,
-    height: 40,
+    height: MIN_TOUCH_TARGET,
   },
   activeTabGradient: {
     flex: 1,
