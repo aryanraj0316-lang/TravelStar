@@ -11,7 +11,7 @@ import { apiService } from '@/services/api';
 import { queryKeys } from '@/lib/query-keys';
 import { toast, errorToastMessage } from '@/lib/feedback';
 import { useApp } from '@/store/AppContext';
-import { C } from '@/theme/tokens';
+import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { Button, Card, Chip, Input, ScreenEmpty, ScreenError, ScreenLoading, Sheet } from '@/components/ui';
 
 // docs/REMEDIATION.md §8.12: this screen was pure local useState — a
@@ -108,6 +108,7 @@ function ExpenseRow({
           style={styles.deleteBtn}
           onPress={() => onDelete(expense.id)}
           disabled={deleteDisabled}
+          hitSlop={{ top: 9, bottom: 9, left: 9, right: 9 }}
           accessibilityRole="button"
           accessibilityLabel={t('budgetTracker.deleteExpenseLabel', { description: expense.description })}
         >
@@ -394,7 +395,7 @@ function Shell({ title, onBack, children }: { title: string; onBack: () => void;
           <ArrowLeft size={18} color={C.white} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{title}</Text>
-        <View style={{ width: 40 }} />
+        <View style={{ width: MIN_TOUCH_TARGET }} />
       </View>
       {children}
     </SafeAreaView>
@@ -411,9 +412,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
+    borderRadius: MIN_TOUCH_TARGET / 2,
     backgroundColor: 'rgba(255,255,255,0.05)',
     alignItems: 'center',
     justifyContent: 'center',
