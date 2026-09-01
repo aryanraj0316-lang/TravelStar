@@ -4,6 +4,7 @@ import { apiService } from '@/services/api';
 import type { IncomingJoinRequest, TripMemberRow } from '@/types/api';
 import { errorToastMessage, toast } from '@/lib/feedback';
 import { uploadFileToUrl } from '@/lib/upload';
+import { formatDate } from '@/lib/datetime';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, type ErrorBoundaryProps } from 'expo-router';
@@ -1919,11 +1920,13 @@ function CreateTripScreen() {
                   <View style={styles.detailStatsGrid}>
                     <View style={styles.detailStatCell}>
                       <Text style={styles.detailStatLabel}>{t('createTrip.startDateCaps')}</Text>
-                      <Text style={styles.detailStatVal}>{selectedCreation.startDate}</Text>
+                      <Text style={styles.detailStatVal}>{formatDate(selectedCreation.startDate)}</Text>
                     </View>
                     <View style={styles.detailStatCell}>
                       <Text style={styles.detailStatLabel}>{t('createTrip.endDateCaps')}</Text>
-                      <Text style={styles.detailStatVal}>{selectedCreation.endDate || selectedCreation.startDate}</Text>
+                      <Text style={styles.detailStatVal}>
+                        {formatDate(selectedCreation.endDate || selectedCreation.startDate)}
+                      </Text>
                     </View>
                     <View style={styles.detailStatCell}>
                       <Text style={styles.detailStatLabel}>{t('createTrip.budgetCaps')}</Text>

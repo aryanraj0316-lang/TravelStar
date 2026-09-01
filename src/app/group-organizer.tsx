@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { logger } from '@/lib/logger';
+import { formatRelative } from '@/lib/datetime';
 import {
   ScrollView,
   StyleSheet,
@@ -1250,7 +1251,7 @@ export default function GroupOrganizerScreen() {
                   <View key={ann.id} style={styles.announceCard}>
                     <View style={styles.announceCardHeader}>
                       <Text style={styles.announceCardTitle}>{ann.title}</Text>
-                      <Text style={styles.announceCardDate}>{ann.createdAt}</Text>
+                      <Text style={styles.announceCardDate}>{formatRelative(ann.createdAt)}</Text>
                     </View>
                     <Text style={styles.announceCardContent}>{ann.content}</Text>
                   </View>

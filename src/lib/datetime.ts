@@ -17,6 +17,10 @@
 // active app language (docs/REMEDIATION.md §9.4) so month/weekday names
 // and formatRelative's "ago"/"in" text render in Hindi when the UI is in
 // Hindi, not just the numbers.
+//
+// Never render a raw date/timestamp field directly in JSX (`{trip.startDate}`)
+// — that bug has recurred independently in seven screens across this
+// project. Always go through one of the formatters below.
 import i18n from '@/lib/i18n';
 
 export const FALLBACK_TIME_ZONE = 'Asia/Kolkata';
