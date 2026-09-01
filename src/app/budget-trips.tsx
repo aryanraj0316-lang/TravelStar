@@ -37,7 +37,7 @@ const PRESET_BUDGETS = [5000, 10000, 15000, 25000, 50000];
 
 type OrgFilter = 'ALL' | 'GUIDE' | 'ORGANIZER';
 
-type BudgetTrip = {
+export type BudgetTrip = {
   id: string;
   name: string;
   creator: string;

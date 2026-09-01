@@ -19,6 +19,7 @@ import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiService } from '../services/api';
+import type { AppNotification } from '@/types/api';
 import { useApp } from '../store/AppContext';
 import { logger } from '@/lib/logger';
 import { syncBadgeCount } from '@/lib/push';
@@ -165,12 +166,12 @@ export default function NotificationsScreen() {
     queryFn: async () => (await apiService.getAlerts()) ?? [],
   });
 
-  const unreadCount = notifications.filter((n: any) => n.unread).length;
+  const unreadCount = notifications.filter((n) => n.unread).length;
 
   const handleMarkAllRead = async () => {
     try {
       await apiService.markNotificationsRead();
-      queryClient.setQueryData(queryKeys.notifications(), (prev: any[] = []) =>
+      queryClient.setQueryData(queryKeys.notifications(), (prev: AppNotification[] = []) =>
         prev.map((n) => ({ ...n, unread: false }))
       );
       await refetchNotifications();
@@ -301,7 +302,7 @@ export default function NotificationsScreen() {
               </View>
             </View>
 
-            {notifications.filter(n => n.category === 'JOIN_ACCEPTED' || n.category === 'CHAT_ADDED').map((notif: any) => (
+            {notifications.filter(n => n.category === 'JOIN_ACCEPTED' || n.category === 'CHAT_ADDED').map((notif) => (
               <TouchableOpacity
                 key={notif.id}
                 style={[

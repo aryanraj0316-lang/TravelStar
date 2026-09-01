@@ -5,6 +5,10 @@ import { Platform } from 'react-native';
 const isWeb = Platform.OS === 'web' || typeof window !== 'undefined';
 const memoryStorage = new Map<string, string>();
 
+function isNativeModuleNullError(e: unknown): boolean {
+  return e instanceof Error && e.message.includes('Native module is null');
+}
+
 export const safeStorage = {
   async getItem(key: string): Promise<string | null> {
     try {
@@ -12,8 +16,8 @@ export const safeStorage = {
         return localStorage.getItem(key);
       }
       return await AsyncStorage.getItem(key);
-    } catch (e: any) {
-      if (e?.message?.includes('Native module is null')) {
+    } catch (e: unknown) {
+      if (isNativeModuleNullError(e)) {
         return memoryStorage.get(key) || null;
       }
       logger.warn(`[SafeStorage] getItem failed for ${key}:`, e);
@@ -28,9 +32,9 @@ export const safeStorage = {
         return;
       }
       await AsyncStorage.setItem(key, value);
-    } catch (e: any) {
+    } catch (e: unknown) {
       memoryStorage.set(key, value);
-      if (!e?.message?.includes('Native module is null')) {
+      if (!isNativeModuleNullError(e)) {
         logger.warn(`[SafeStorage] setItem failed for ${key}:`, e);
       }
     }
@@ -43,9 +47,9 @@ export const safeStorage = {
         return;
       }
       await AsyncStorage.removeItem(key);
-    } catch (e: any) {
+    } catch (e: unknown) {
       memoryStorage.delete(key);
-      if (!e?.message?.includes('Native module is null')) {
+      if (!isNativeModuleNullError(e)) {
         logger.warn(`[SafeStorage] removeItem failed for ${key}:`, e);
       }
     }

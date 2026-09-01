@@ -24,16 +24,20 @@ import {
   CheckCircle,
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useApp } from '@/store/AppContext';
+import { useApp, type Trip } from '@/store/AppContext';
 import { eventBus } from '@/services/event-bus';
 import { useRouter } from 'expo-router';
 import { toast } from '@/lib/feedback';
 import { formatDate } from '@/lib/datetime';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
+import type { BudgetTrip } from '@/app/budget-trips';
+import type { NearbyTrip } from '@/types/api';
+
+type TripLike = Trip | BudgetTrip | NearbyTrip;
 
 export interface TripDetailModalProps {
   visible: boolean;
-  trip: any;
+  trip: TripLike | null;
   onClose: () => void;
 }
 
@@ -57,29 +61,29 @@ export default function TripDetailModal({
 
   if (!trip) return null;
 
-  const tripName = trip.name || trip.title;
-  const organizerName = trip.creator || trip.organizerName;
-  const price = trip.budget !== undefined ? trip.budget : trip.pricePerPerson;
+  const tripName = trip.name;
+  const organizerName = trip.creator;
+  const price = trip.budget;
   const isMyTrip = isLoggedIn && !!(profile && profile.id && trip.creatorId && trip.creatorId === profile.id);
 
-  const handleMidwayJoinSelect = (t: any) => {
-    if (t.cities && t.cities.length > 2) {
-      setStartCity(t.cities[1]);
-      setEndCity(t.cities[t.cities.length - 1]);
+  const handleMidwayJoinSelect = () => {
+    if (trip.cities && trip.cities.length > 2) {
+      setStartCity(trip.cities[1]);
+      setEndCity(trip.cities[trip.cities.length - 1]);
       setMidwayJoin(true);
     } else {
       toast(t('tripDetailModal.midwayOnlyFor3Plus'), 'info');
     }
   };
 
-  const calculateMidwayPrice = (t: any) => {
-    const defaultPrice = t.budget !== undefined ? t.budget : t.pricePerPerson;
-    if (!t.cities || t.cities.length <= 1) return defaultPrice;
-    const startIdx = t.cities.indexOf(startCity);
-    const endIdx = t.cities.indexOf(endCity);
+  const calculateMidwayPrice = () => {
+    const defaultPrice = Number(trip.budget);
+    if (!trip.cities || trip.cities.length <= 1) return defaultPrice;
+    const startIdx = trip.cities.indexOf(startCity);
+    const endIdx = trip.cities.indexOf(endCity);
     if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) return defaultPrice;
-    
-    const segmentCount = t.cities.length - 1;
+
+    const segmentCount = trip.cities.length - 1;
     const travelledSegments = endIdx - startIdx;
     const ratio = travelledSegments / segmentCount;
     return Math.round(defaultPrice * ratio * 0.9);
@@ -120,7 +124,7 @@ export default function TripDetailModal({
                   ? t('tripDetailModal.midwayRequestSent', {
                       startCity,
                       endCity,
-                      price: calculateMidwayPrice(trip),
+                      price: calculateMidwayPrice(),
                     })
                   : t('tripDetailModal.joinRequestSent')}
               </Text>
@@ -276,7 +280,7 @@ export default function TripDetailModal({
                   </View>
                   <TouchableOpacity
                     onPress={() => {
-                      if (!midwayJoin) handleMidwayJoinSelect(trip);
+                      if (!midwayJoin) handleMidwayJoinSelect();
                       else setMidwayJoin(false);
                     }}
                     style={[
@@ -361,7 +365,7 @@ export default function TripDetailModal({
                     <View style={styles.priceCalcRow}>
                       <Text style={{ fontSize: 12, color: C.textSecondary }}>{t('tripDetailModal.automaticPriceAdjustment')}</Text>
                       <Text style={{ fontSize: 16, fontWeight: '700', color: '#2ECC71' }}>
-                        ₹{calculateMidwayPrice(trip)}{' '}
+                        ₹{calculateMidwayPrice()}{' '}
                         <Text style={{ fontSize: 12, color: C.textSecondary }}>{t('tripDetailModal.vsPrice', { price })}</Text>
                       </Text>
                     </View>
@@ -376,7 +380,7 @@ export default function TripDetailModal({
                       <Text style={[styles.pricingBarCurrency, { color: C.accent }]}>₹</Text>
                       <Text style={styles.pricingBarAmount}>
                         {(midwayJoin && startCity && endCity
-                          ? calculateMidwayPrice(trip)
+                          ? calculateMidwayPrice()
                           : price
                         ).toLocaleString('en-IN')}
                       </Text>
