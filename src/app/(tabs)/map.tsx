@@ -65,6 +65,7 @@ import { WebView } from 'react-native-webview';
 // nothing behind them. Both now come from the API (GET /map/pins,
 // GET /map/trips/:id/route) and are injected into Leaflet at runtime.
 type RoutePoint = { latitude: number; longitude: number; name: string };
+type MapFilter = 'ALL' | 'GUIDES' | 'GROUPS' | 'TOURISTS' | 'ATTRACTIONS' | 'NONE';
 
 const TILE_LAYERS: Record<string, { url: string; subdomains: string }> = {
   roadmap: {
@@ -675,7 +676,7 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 }
 
 // Generate leg details
-const getLegDetails = (startIndex: number, coords: any[]) => {
+const getLegDetails = (startIndex: number, coords: RoutePoint[]) => {
   const start = coords[startIndex];
   const end = coords[startIndex + 1];
   if (!start || !end) return null;
@@ -735,9 +736,9 @@ function MapScreen() {
     reloadJoinRequests();
     const unsubscribe = navigation.addListener('focus', reloadJoinRequests);
     return unsubscribe;
-  }, [navigation]);
+  }, [navigation, reloadJoinRequests]);
 
-  const [mapFilter, setMapFilter] = useState<'ALL' | 'GUIDES' | 'GROUPS' | 'TOURISTS' | 'ATTRACTIONS' | 'NONE'>('ALL');
+  const [mapFilter, setMapFilter] = useState<MapFilter>('ALL');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [sosTriggered, setSosTriggered] = useState(false);
   // docs/REMEDIATION.md §8.8: the confirmation card used to state a
@@ -792,7 +793,7 @@ function MapScreen() {
     }).start();
   }, [showNavigationOverlay, bottomCardHeight]);
 
-  const filterOptions = [
+  const filterOptions: { value: MapFilter; labelKey: string; icon: typeof Compass }[] = [
     { value: 'ALL', labelKey: 'map.filterAllCategories', icon: Compass },
     { value: 'GUIDES', labelKey: 'map.filterGuides', icon: Users },
     { value: 'GROUPS', labelKey: 'map.filterGroups', icon: Users },
@@ -1105,7 +1106,7 @@ function MapScreen() {
                         key={opt.value}
                         style={[styles.dropdownOptionRow, isSelected && styles.dropdownOptionRowActive]}
                         onPress={() => {
-                          setMapFilter(opt.value as any);
+                          setMapFilter(opt.value);
                           setIsDropdownOpen(false);
                         }}
                         activeOpacity={0.8}
