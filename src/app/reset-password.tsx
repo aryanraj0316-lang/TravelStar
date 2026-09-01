@@ -11,7 +11,7 @@ import { Button, Input } from '@/components/ui';
 import { apiService } from '@/services/api';
 import { logger } from '@/lib/logger';
 import { errorToastMessage, toast } from '@/lib/feedback';
-import { C, space } from '@/theme/tokens';
+import { C, MIN_TOUCH_TARGET, space } from '@/theme/tokens';
 
 // docs/REMEDIATION.md §8.1 — the other half of forgot-password.tsx. Reached
 // via the app's `travelstar://` scheme as `travelstar://reset-password?token=...`
@@ -67,7 +67,7 @@ export default function ResetPasswordScreen() {
             >
               <ArrowLeft size={20} color={C.white} />
             </TouchableOpacity>
-            <View style={{ width: 40 }} />
+            <View style={{ width: MIN_TOUCH_TARGET }} />
           </View>
 
           <View style={styles.heroWrap}>
@@ -89,6 +89,7 @@ export default function ResetPasswordScreen() {
                   style={{ marginTop: 18 }}
                   onPress={() => router.replace('/auth')}
                   activeOpacity={0.85}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                   accessibilityRole="button"
                   accessibilityLabel={t('resetPassword.goToLogIn')}
                 >
@@ -105,6 +106,7 @@ export default function ResetPasswordScreen() {
                   style={{ marginTop: 18 }}
                   onPress={() => router.replace('/forgot-password')}
                   activeOpacity={0.85}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                   accessibilityRole="button"
                   accessibilityLabel={t('resetPassword.requestNewLink')}
                 >
@@ -125,7 +127,7 @@ export default function ResetPasswordScreen() {
                   rightAccessory={
                     <TouchableOpacity
                       onPress={() => setShowPassword(!showPassword)}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      hitSlop={{ top: 13, bottom: 13, left: 13, right: 13 }}
                       accessibilityRole="button"
                       accessibilityLabel={showPassword ? t('resetPassword.hidePassword') : t('resetPassword.showPassword')}
                     >
@@ -166,9 +168,9 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
+    borderRadius: MIN_TOUCH_TARGET / 2,
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
     alignItems: 'center',
     justifyContent: 'center',
