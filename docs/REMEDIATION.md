@@ -1259,6 +1259,52 @@ partial, exactly what's blocking full completion.
       to pure derivation) — no whole-rule or whole-file disables, no
       `any`-adjacent escape hatches. `npx tsc --noEmit` clean throughout.
       Phase 1's lint checkbox can be considered current again.)
+      **§6.3 remaining-migration follow-up (2026-09-02):** re-evaluated
+      every item on the "remaining unmigrated" list above with fresh
+      eyes rather than assuming the earlier judgment still held.
+      search.tsx's likedTrips: same conclusion, still correctly
+      entangled with a working optimistic update+rollback, left alone.
+      stories.tsx: has no data-layer fetch of its own to migrate — it
+      only reads AppContext's storiesList and calls a mutation
+      (likeStory); nothing to do there. chat.tsx: inboxRooms is loaded
+      once via `loadInboxRooms()` but then merged with real-time
+      socket pushes updating the same state (unread counts, latest
+      message snippets) — the same entanglement class already
+      documented, left alone. map.tsx/map.web.tsx: already fully on
+      `useQuery` for their own fetches (tripRoute/mapPins/mapHazards)
+      — apparently migrated in an untracked prior pass; nothing left
+      to do, tracker corrected here. profile.tsx: has no independent
+      data-layer fetch either — reads `profile` from AppContext.
+      AppContext's own four fetches: `guides` migrated onto `useQuery`
+      (queryKeys.guides(), previously a dangling unused key) since
+      it's the only one of the four with zero entanglement — nothing
+      else in the app mutates it, and it turned out to have zero
+      consumers too (fetched, exposed via context, never read by any
+      screen; flagged, not removed, since deleting a public context
+      field is a separate call from this task). `trips`/`sosAlerts`/
+      `storiesList` re-confirmed still genuinely entangled (optimistic
+      create-trip push/rollback, real-time SOS socket push on top of
+      trigger/resolve, optimistic post-story push/rollback
+      respectively) and left alone. travel-guide.tsx's guide dashboard
+      (loadGuideProfile → 7 dependent fetches keyed off guideId, one
+      of which drives a 5s polling broadcast interval, two of which
+      get manually re-fetched after package CRUD mutations) is a
+      genuinely large, waterfall-shaped hand-rolled data layer of its
+      own — despite `queryKeys.guideProfile/guideEarnings/
+      guidePackages/guideReels/guideLiveStatus/guideLeads` already
+      sitting unused and ready for it, converting it properly (enabled:
+      !!guideId dependent queries, invalidateQueries instead of manual
+      refetch-after-mutation, the polling interval as a scheduled
+      useMutation) is its own dedicated migration, not a quick win in
+      this pass — a partial conversion would leave some of this
+      screen's state on useQuery and the rest hand-rolled, which is
+      worse for maintainability than the current fully-consistent
+      hand-rolled version. Flagged as the one real remaining Phase 6
+      candidate, deliberately not attempted here.
+      §6.4's server-side half (generating types from the backend's zod
+      schemas, or adopting monorepo tooling) remains the standing,
+      explicit user deferral — not attempted, per that decision.
+      `npx tsc --noEmit` and `npm run lint` (0 problems) both clean.
 - [x] Phase 7 — Navigation and app architecture (done: §7.1 real
       expo-router (tabs) group replacing the fake ScrollView pager +
       dual-navigation bug (screens were both pager panels AND independent
