@@ -1,5 +1,5 @@
 import { ThemedText } from '@/components/themed-text';
-import { MIN_TOUCH_TARGET } from '@/theme/tokens';
+import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { logger } from '@/lib/logger';
 import { toast } from '@/lib/feedback';
 import { getCurrentDeviceLocation } from '@/lib/device-location';
@@ -1360,7 +1360,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   dropdownTriggerText: {
-    color: '#FFF',
+    color: C.white,
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.3,
@@ -1409,12 +1409,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 102, 255, 0.08)',
   },
   dropdownOptionText: {
-    color: '#8B949E',
+    color: C.textMuted,
     fontSize: 12,
     fontWeight: '600',
   },
   dropdownOptionTextActive: {
-    color: '#0066FF',
+    color: C.blue,
     fontWeight: '700',
   },
   statusBar: {
@@ -1434,10 +1434,10 @@ const styles = StyleSheet.create({
     width: MIN_TOUCH_TARGET,
     height: MIN_TOUCH_TARGET,
     borderRadius: MIN_TOUCH_TARGET / 2,
-    backgroundColor: '#EF4444',
+    backgroundColor: C.red,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#EF4444',
+    shadowColor: C.red,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.5,
     shadowRadius: 8,
@@ -1445,7 +1445,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   sosText: {
-    color: '#FFF',
+    color: C.white,
     fontSize: 12,
     fontWeight: '900',
     marginTop: 1,
@@ -1465,14 +1465,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   sosAlertTitle: {
-    color: '#EF4444',
+    color: C.red,
     fontWeight: '900',
     fontSize: 17,
     marginTop: 16,
     textAlign: 'center',
   },
   sosAlertSub: {
-    color: '#7E8494',
+    color: C.textMuted,
     fontSize: 12,
     textAlign: 'center',
     marginTop: 10,
@@ -1485,7 +1485,7 @@ const styles = StyleSheet.create({
   },
   callAuthorityBtn: {
     flexDirection: 'row',
-    backgroundColor: '#EF4444',
+    backgroundColor: C.red,
     height: 48,
     borderRadius: 24,
     justifyContent: 'center',
@@ -1493,7 +1493,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   callAuthorityText: {
-    color: '#FFF',
+    color: C.white,
     fontSize: 14,
     fontWeight: '700',
   },
@@ -1501,12 +1501,12 @@ const styles = StyleSheet.create({
     height: 48,
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: '#7E8494',
+    borderColor: C.textMuted,
     justifyContent: 'center',
     alignItems: 'center',
   },
   cancelSOSText: {
-    color: '#7E8494',
+    color: C.textMuted,
     fontSize: 14,
     fontWeight: '700',
   },
@@ -1546,16 +1546,16 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   segmentTabActive: {
-    backgroundColor: '#10B981',
-    borderColor: '#10B981',
+    backgroundColor: C.green,
+    borderColor: C.green,
   },
   segmentTabText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#8B949E',
+    color: C.textMuted,
   },
   segmentTabTextActive: {
-    color: '#FFF',
+    color: C.white,
   },
   bottomCardContainer: {
     position: 'absolute',
@@ -1616,7 +1616,7 @@ const styles = StyleSheet.create({
   routeProgressFill: {
     height: '100%',
     borderRadius: 2,
-    backgroundColor: '#0066FF',
+    backgroundColor: C.blue,
   },
   bottomStatsRow: {
     flexDirection: 'row',
@@ -1628,7 +1628,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   bottomStatLabel: {
-    color: '#8B949E',
+    color: C.textMuted,
     fontSize: 12,
     fontWeight: '600',
   },
@@ -1666,7 +1666,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   legDetailBadgeText: {
-    color: '#8B949E',
+    color: C.textMuted,
     fontSize: 12,
     fontWeight: '700',
   },
@@ -1679,7 +1679,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   pitStopsTitle: {
-    color: '#8B949E',
+    color: C.textMuted,
     fontSize: 12,
     fontWeight: '700',
     marginBottom: 4,
@@ -1691,7 +1691,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   pitStopText: {
-    color: '#8B949E',
+    color: C.textMuted,
     fontSize: 12,
     fontWeight: '600',
   },
@@ -1720,12 +1720,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     height: 32,
     borderRadius: 8,
-    backgroundColor: '#10B981',
+    backgroundColor: C.green,
     alignItems: 'center',
     justifyContent: 'center',
   },
   startNavBtnText: {
-    color: '#FFF',
+    color: C.white,
     fontSize: 12,
     fontWeight: '800',
   },
@@ -1736,10 +1736,10 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: '#10B981',
+    backgroundColor: C.green,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#10B981',
+    shadowColor: C.green,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
     shadowRadius: 12,
@@ -1809,13 +1809,13 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   stepDistance: {
-    color: '#8B949E',
+    color: C.textMuted,
     fontSize: 12,
     fontWeight: '700',
     marginTop: 1,
   },
   navHandoffNote: {
-    color: '#8B949E',
+    color: C.textMuted,
     fontSize: 12,
     lineHeight: 17,
     marginTop: 12,
@@ -1824,12 +1824,12 @@ const styles = StyleSheet.create({
   startDrivingBtn: {
     height: 48,
     borderRadius: 14,
-    backgroundColor: '#0066FF',
+    backgroundColor: C.blue,
     alignItems: 'center',
     justifyContent: 'center',
   },
   startDrivingBtnText: {
-    color: '#FFF',
+    color: C.white,
     fontSize: 13,
     fontWeight: '800',
   },
@@ -1867,7 +1867,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   itineraryToggleText: {
-    color: '#0066FF',
+    color: C.blue,
     fontSize: 12,
     fontWeight: '800',
   },
@@ -1888,15 +1888,15 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   itineraryItemActive: {
-    backgroundColor: '#10B981',
+    backgroundColor: C.green,
   },
   itineraryItemText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#8B949E',
+    color: C.textMuted,
   },
   itineraryItemTextActive: {
-    color: '#FFF',
+    color: C.white,
     fontWeight: '800',
   },
   miniSwitcherBtn: {
@@ -1944,7 +1944,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   compactDetailsText: {
-    color: '#8B949E',
+    color: C.textMuted,
     fontSize: 12,
     fontWeight: '600',
   },
@@ -1959,12 +1959,12 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   segmentLegTitle: {
-    color: '#10B981',
+    color: C.green,
     fontSize: 12,
     fontWeight: '800',
   },
   segmentRoadText: {
-    color: '#8B949E',
+    color: C.textMuted,
     fontSize: 12,
     fontWeight: '600',
   },
@@ -1982,7 +1982,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   dbDetailsLabel: {
-    color: '#8B949E',
+    color: C.textMuted,
     fontWeight: '800',
     textTransform: 'uppercase',
     fontSize: 12,
@@ -2007,7 +2007,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 5,
   },
   facilityChipText: {
-    color: '#10B981',
+    color: C.green,
     fontSize: 12,
     fontWeight: '800',
   },
@@ -2017,7 +2017,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#8B5CF6',
+    shadowColor: C.purple,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
