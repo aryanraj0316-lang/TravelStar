@@ -74,6 +74,7 @@ export interface Trip {
   membersCount: number;
   coverImage?: string;
   category?: string;
+  travelStyle?: string;
   coordinates?: { latitude: number; longitude: number; name: string }[];
   chatRoomId?: string;
 }

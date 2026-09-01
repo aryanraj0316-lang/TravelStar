@@ -94,7 +94,7 @@ const QUICK_ACCESS = [
 // Plain functions, not components, so they use i18next's singleton
 // directly rather than the useTranslation() hook (same pattern as
 // datetime.ts).
-const getCategoryBadge = (trip: any): { labelKey: string; color: string; bg: string } | null => {
+const getCategoryBadge = (trip: Trip): { labelKey: string; color: string; bg: string } | null => {
   const cat = (trip.category || trip.travelStyle || '').toLowerCase();
   if (cat.includes('religious') || cat.includes('spiritual'))
     return { labelKey: 'search.badgePopular', color: '#FFFFFF', bg: '#6C5CE7' };
@@ -144,7 +144,7 @@ const computeDuration = (startDate: string | undefined, endDate: string | undefi
 // Kept separate from the translated label below for the same reason as
 // computeDurationDays: matching substrings of translated display text is
 // exactly the kind of thing that silently breaks in a second language.
-const deriveTransportCode = (trip: any): 'BIKE' | 'BUS' | 'AC' => {
+const deriveTransportCode = (trip: Trip): 'BIKE' | 'BUS' | 'AC' => {
   const name = (trip.name || '').toLowerCase();
   if (name.includes('bike') || name.includes('expedition')) return 'BIKE';
   if (name.includes('houseboat') || name.includes('backwaters')) return 'BUS';
@@ -152,7 +152,7 @@ const deriveTransportCode = (trip: any): 'BIKE' | 'BUS' | 'AC' => {
 };
 
 // Helper: derive transport label from trip name / category
-const deriveTransport = (trip: any): string => {
+const deriveTransport = (trip: Trip): string => {
   switch (deriveTransportCode(trip)) {
     case 'BIKE':
       return i18n.t('search.transportBikeFuelStay');
@@ -456,14 +456,14 @@ function SearchScreen() {
   // Join modal state — the actual join flow (including midway-join) lives
   // entirely inside <TripDetailModal>, which only takes visible/trip/onClose;
   // this screen just owns which trip is selected and whether it's shown.
-  const [selectedTrip, setSelectedTrip] = useState<any>(null);
+  const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
   const [showJoinModal, setShowJoinModal] = useState(false);
 
   // Animations
   const fadeAnim = useState(() => new Animated.Value(0))[0];
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
-  }, []);
+  }, [fadeAnim]);
 
   const openTrip = (trip: Trip) => {
     setSelectedTrip(trip);
@@ -475,7 +475,8 @@ function SearchScreen() {
     setLikedTrips((prev) => {
       const next = new Set(prev);
       wasLiked = next.has(id);
-      wasLiked ? next.delete(id) : next.add(id);
+      if (wasLiked) next.delete(id);
+      else next.add(id);
       return next;
     });
     // Persist to backend
@@ -483,7 +484,8 @@ function SearchScreen() {
       logger.warn('[Search] Like toggle failed, rolling back:', e);
       setLikedTrips((prev) => {
         const next = new Set(prev);
-        wasLiked ? next.add(id) : next.delete(id);
+        if (wasLiked) next.add(id);
+        else next.delete(id);
         return next;
       });
       toast(errorToastMessage(e, 'Could not update like.'), 'error');
@@ -569,7 +571,7 @@ function SearchScreen() {
 
   const trips: Trip[] = tripsPages?.pages.flatMap((page) => page.trips) ?? [];
 
-  const getPopularityScore = (t: any) => {
+  const getPopularityScore = (t: Trip) => {
     const total = t.totalSeats || 10;
     const available = t.availableSeats !== undefined ? t.availableSeats : total;
     const filled = total - available;
@@ -1072,17 +1074,19 @@ function SearchScreen() {
               <View style={styles.filterSection}>
                 <Text style={[styles.filterSectionTitle, { color: C.textSecondary }]}>{t('search.sortResultsBy')}</Text>
                 <View style={styles.filterChipsWrap}>
-                  {[
-                    { key: 'popularity', labelKey: 'search.sortPopularity' },
-                    { key: 'price_low', labelKey: 'search.sortPriceLow' },
-                    { key: 'price_high', labelKey: 'search.sortPriceHigh' },
-                    { key: 'rating', labelKey: 'search.sortHighestRated' },
-                  ].map((opt) => {
+                  {(
+                    [
+                      { key: 'popularity', labelKey: 'search.sortPopularity' },
+                      { key: 'price_low', labelKey: 'search.sortPriceLow' },
+                      { key: 'price_high', labelKey: 'search.sortPriceHigh' },
+                      { key: 'rating', labelKey: 'search.sortHighestRated' },
+                    ] as const
+                  ).map((opt) => {
                     const isSelected = sortOption === opt.key;
                     return (
                       <TouchableOpacity
                         key={opt.key}
-                        onPress={() => setSortOption(opt.key as any)}
+                        onPress={() => setSortOption(opt.key)}
                         style={[
                           styles.filterSelectChip,
                           {
@@ -1148,17 +1152,19 @@ function SearchScreen() {
               <View style={styles.filterSection}>
                 <Text style={[styles.filterSectionTitle, { color: C.textSecondary }]}>{t('search.tripDuration')}</Text>
                 <View style={styles.filterChipsWrap}>
-                  {[
-                    { key: 'ALL', labelKey: 'search.durationAny' },
-                    { key: 'SHORT', labelKey: 'search.duration1to3' },
-                    { key: 'MEDIUM', labelKey: 'search.duration4to7' },
-                    { key: 'LONG', labelKey: 'search.duration8plus' },
-                  ].map((dur) => {
+                  {(
+                    [
+                      { key: 'ALL', labelKey: 'search.durationAny' },
+                      { key: 'SHORT', labelKey: 'search.duration1to3' },
+                      { key: 'MEDIUM', labelKey: 'search.duration4to7' },
+                      { key: 'LONG', labelKey: 'search.duration8plus' },
+                    ] as const
+                  ).map((dur) => {
                     const isSelected = selectedDuration === dur.key;
                     return (
                       <TouchableOpacity
                         key={dur.key}
-                        onPress={() => setSelectedDuration(dur.key as any)}
+                        onPress={() => setSelectedDuration(dur.key)}
                         style={[
                           styles.filterSelectChip,
                           {
@@ -1183,16 +1189,18 @@ function SearchScreen() {
               <View style={styles.filterSection}>
                 <Text style={[styles.filterSectionTitle, { color: C.textSecondary }]}>{t('search.transportMode')}</Text>
                 <View style={styles.filterChipsWrap}>
-                  {[
-                    { key: 'ALL', labelKey: 'search.transportAllModes' },
-                    { key: 'BUS', labelKey: 'search.transportBus' },
-                    { key: 'BIKE', labelKey: 'search.transportBike' },
-                  ].map((tr) => {
+                  {(
+                    [
+                      { key: 'ALL', labelKey: 'search.transportAllModes' },
+                      { key: 'BUS', labelKey: 'search.transportBus' },
+                      { key: 'BIKE', labelKey: 'search.transportBike' },
+                    ] as const
+                  ).map((tr) => {
                     const isSelected = selectedTransport === tr.key;
                     return (
                       <TouchableOpacity
                         key={tr.key}
-                        onPress={() => setSelectedTransport(tr.key as any)}
+                        onPress={() => setSelectedTransport(tr.key)}
                         style={[
                           styles.filterSelectChip,
                           {
