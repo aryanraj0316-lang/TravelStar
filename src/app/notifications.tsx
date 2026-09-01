@@ -35,7 +35,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { C } from '@/theme/tokens';
+import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 
 
 
@@ -422,6 +422,7 @@ export default function NotificationsScreen() {
                     <TouchableOpacity
                       style={styles.altRouteBtn}
                       activeOpacity={0.8}
+                      hitSlop={{ top: 14, bottom: 14, left: 10, right: 10 }}
                       accessibilityRole="button"
                       accessibilityLabel={t('notifications.detourRoute')}
                     >
@@ -556,9 +557,9 @@ const styles = StyleSheet.create({
     borderColor: C.border,
   },
   backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
+    borderRadius: MIN_TOUCH_TARGET / 2,
     backgroundColor: C.card,
     alignItems: 'center',
     justifyContent: 'center',
@@ -590,9 +591,9 @@ const styles = StyleSheet.create({
     color: C.white,
   },
   markReadBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
+    borderRadius: MIN_TOUCH_TARGET / 2,
     backgroundColor: C.card,
     alignItems: 'center',
     justifyContent: 'center',
@@ -613,6 +614,8 @@ const styles = StyleSheet.create({
   tabItem: {
     paddingHorizontal: 16,
     paddingVertical: 8,
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
     borderRadius: 12,
     backgroundColor: C.card,
     borderWidth: 1,
