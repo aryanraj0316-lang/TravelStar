@@ -16,7 +16,7 @@ import {
   Animated,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { C } from '@/theme/tokens';
+import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 
 // docs/REMEDIATION.md §8.16: this screen previously fell back to a
 // hardcoded STORIES_DATABASE of fabricated creators/captions whenever the
@@ -275,6 +275,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.15)',
     paddingHorizontal: 20,
     paddingVertical: 10,
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
     borderRadius: 20,
   },
   emptyBtnText: {
