@@ -15,6 +15,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ApiError } from '@/services/api';
+import { logger } from '@/lib/logger';
 import { C, MIN_TOUCH_TARGET, fontSize, radii, space } from '@/theme/tokens';
 
 /** Prefer the server/network's own message over a generic fallback when the
@@ -62,7 +63,7 @@ function warnNoProvider(kind: string, detail: string): void {
   // No provider mounted yet (e.g. very early boot) — fail loudly in dev
   // instead of silently dropping the message, which is the exact failure
   // mode Alert.alert had on web.
-  if (__DEV__) console.warn(`[feedback] ${kind}() called before FeedbackProvider mounted:`, detail);
+  logger.warn(`[feedback] ${kind}() called before FeedbackProvider mounted:`, detail);
 }
 
 export function toast(message: string, type: ToastType = 'info'): void {
