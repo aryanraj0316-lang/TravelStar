@@ -777,9 +777,9 @@ export default function TravelGuideScreen() {
     ? [
         {
           city: t('travelGuide.guideLocationFallback'),
-          temp: liveWeatherData.temperature != null ? `${Math.round(liveWeatherData.temperature)}°C` : '—',
+          temp: liveWeatherData.temp || '—',
           condition: liveWeatherData.condition || t('travelGuide.loadingEllipsis'),
-          wind: liveWeatherData.windSpeed != null ? `${liveWeatherData.windSpeed} km/h` : '— km/h',
+          wind: liveWeatherData.windSpeed || '— km/h',
           sunrise: '05:30 AM',
           sunset: '07:00 PM',
           aqi: 30,

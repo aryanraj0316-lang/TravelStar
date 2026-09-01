@@ -395,11 +395,22 @@ export interface FeedPage {
 
 // ── Weather (live lookup) ─────────────────────────────────────────────
 
+// GET /weather/live (backend/src/api/routes/weather.ts) — every field below
+// is already display-formatted server-side (`temp: "24°C"`, `humidity:
+// "60%"`, `windSpeed: "12 km/h"`), matching WeatherLocation's convention.
+// This used to be typed as raw numbers under different field names
+// (`temperature`, no string units), which meant the one consumer
+// (travel-guide.tsx's live-weather tab) always fell back to its "—"
+// placeholder for temperature and appended a second " km/h" onto the
+// wind speed string it did read correctly by accident.
 export interface LiveWeather {
-  temperature: number;
+  latitude: number;
+  longitude: number;
+  temp: string;
   condition: string;
-  humidity?: number;
-  windSpeed?: number;
+  humidity: string;
+  windSpeed: string;
+  fetchedAt: IsoDateTime;
 }
 
 /** Endpoints whose only job is to succeed; the body carries a message. */
