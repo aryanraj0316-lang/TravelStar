@@ -3,7 +3,7 @@ import { MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { logger } from '@/lib/logger';
 import { toast } from '@/lib/feedback';
 import { getCurrentDeviceLocation } from '@/lib/device-location';
-import GlassCard from '@/components/ui/GlassCard';
+import { GlassCard } from '@/components/ui/GlassCard';
 import { useApp } from '@/store/AppContext';
 import { eventBus } from '@/services/event-bus';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -51,6 +51,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 // into invented coordinates. Routes and pin positions are now resolved
 // server-side (GET /map/trips/:id/route, GET /map/pins).
 type RoutePoint = { latitude: number; longitude: number; name: string };
+type MapFilter = 'ALL' | 'GUIDES' | 'GROUPS' | 'TOURISTS' | 'ATTRACTIONS' | 'NONE';
 
 // Ranchi to Vrindavan Route Cities Coordinates
 // docs/REMEDIATION.md §8.8: a hardcoded Ranchi→Delhi→Mathura→Vrindavan
@@ -70,7 +71,7 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return Math.round(R * c);
 }
 
-const getLegDetails = (startIndex: number, coords: any[]) => {
+const getLegDetails = (startIndex: number, coords: RoutePoint[]) => {
   const start = coords[startIndex];
   const end = coords[startIndex + 1];
   if (!start || !end) return null;
@@ -111,7 +112,7 @@ function WebMapScreen() {
   const router = useRouter();
   const { triggerSOS, trips } = useApp();
   const { tripId } = useLocalSearchParams<{ tripId: string }>();
-  const [mapFilter, setMapFilter] = useState<'ALL' | 'GUIDES' | 'GROUPS' | 'TOURISTS' | 'ATTRACTIONS' | 'NONE'>('ALL');
+  const [mapFilter, setMapFilter] = useState<MapFilter>('ALL');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [sosTriggered, setSosTriggered] = useState(false);
   // docs/REMEDIATION.md §8.8: the confirmation card used to state a
@@ -209,7 +210,7 @@ function WebMapScreen() {
 
   const [, setBottomCardHeight] = useState(180);
 
-  const filterOptions = [
+  const filterOptions: { value: MapFilter; labelKey: string; icon: typeof Compass }[] = [
     { value: 'ALL', labelKey: 'map.filterAllCategories', icon: Compass },
     { value: 'GUIDES', labelKey: 'map.filterGuides', icon: Users },
     { value: 'GROUPS', labelKey: 'map.filterGroups', icon: Users },
@@ -861,7 +862,7 @@ function WebMapScreen() {
                       key={opt.value}
                       style={[styles.dropdownOptionRow, isSelected && styles.dropdownOptionRowActive]}
                       onPress={() => {
-                        setMapFilter(opt.value as any);
+                        setMapFilter(opt.value);
                         setIsDropdownOpen(false);
                       }}
                       activeOpacity={0.8}
@@ -2014,10 +2015,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 4,
     elevation: 4,
-    // Web CSS gradient fallback
-    ...({
-      backgroundImage: 'linear-gradient(135deg, #0066FF, #00D2FF)',
-    } as any),
+    experimental_backgroundImage: 'linear-gradient(135deg, #0066FF, #00D2FF)',
   },
 });
 

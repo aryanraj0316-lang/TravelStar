@@ -7,7 +7,7 @@
 // in the sheet falls back to English with an honest toast rather than
 // silently pretending to support it (same "don't fake it" rule as
 // everywhere else in this codebase).
-import i18next from 'i18next';
+import i18next, { use as registerPlugin, changeLanguage } from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import * as Localization from 'expo-localization';
 import { safeStorage } from '@/services/storage';
@@ -55,8 +55,7 @@ export function initI18n(): void {
   if (initialized) return;
   initialized = true;
 
-  void i18next
-    .use(initReactI18next)
+  void registerPlugin(initReactI18next)
     .init({
       resources: {
         en: { translation: en },
@@ -79,7 +78,7 @@ export function initI18n(): void {
     .getItem(LANGUAGE_STORAGE_KEY)
     .then((stored) => {
       if (isSupported(stored) && stored !== i18next.language) {
-        void i18next.changeLanguage(stored);
+        void changeLanguage(stored);
       }
     })
     .catch((e) => logger.warn('[i18n] Failed to read stored language preference:', e));
@@ -87,7 +86,7 @@ export function initI18n(): void {
 
 /** Switches the active language and persists the choice. */
 export async function setAppLanguage(lang: SupportedLanguage): Promise<void> {
-  await i18next.changeLanguage(lang);
+  await changeLanguage(lang);
   try {
     await safeStorage.setItem(LANGUAGE_STORAGE_KEY, lang);
   } catch (e) {

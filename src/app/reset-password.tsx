@@ -6,7 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, Eye, EyeOff, Lock, ShieldAlert, ShieldCheck } from 'lucide-react-native';
 
-import GlassCard from '@/components/ui/GlassCard';
+import { GlassCard } from '@/components/ui/GlassCard';
 import { Button, Input } from '@/components/ui';
 import { apiService } from '@/services/api';
 import { logger } from '@/lib/logger';
