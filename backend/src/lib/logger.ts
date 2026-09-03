@@ -1,20 +1,21 @@
-/* eslint-disable no-console */
-// Structured JSON logging (docs/REMEDIATION.md Phase 11). Emits one JSON
-// object per line — level, timestamp, message, and any structured context —
-// which any log aggregator can parse, with a redaction pass so tokens,
-// passwords, Aadhaar numbers and raw coordinates never reach the logs.
+// Structured JSON logging (docs/REMEDIATION.md Phase 11), backed by pino.
+// Emits one JSON object per line — level, timestamp, message, and any
+// structured context — with a redaction pass so tokens, passwords, Aadhaar
+// numbers and raw coordinates never reach the logs, no matter how deeply
+// they're nested in whatever a call site logs.
 //
-// This is deliberately zero-dependency. Swapping the internals for `pino`
-// (npm i pino pino-http) is a drop-in follow-up: keep this same
-// `logger.log/warn/error/child` surface and hand the calls to a pino
-// instance. The redaction list below is the contract to preserve.
+// pino owns level filtering and fast JSON serialization; this module keeps
+// its own redact() pass in front of it (pino's own `redact` option matches
+// fixed paths, not an arbitrary-depth "redact this key wherever it appears"
+// rule, which is what request bodies and error objects logged wholesale
+// need) and its own flexible variadic call surface
+// (`logger.warn('[Auth]', message, { context })`), so none of this
+// codebase's ~125 existing call sites needed to change for the swap.
+import pino from 'pino';
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
-const LEVELS: Record<LogLevel, number> = { debug: 10, info: 20, warn: 30, error: 40 };
-
-const MIN_LEVEL: number =
-  LEVELS[(process.env.LOG_LEVEL as LogLevel) ?? (process.env.NODE_ENV === 'production' ? 'info' : 'debug')] ?? 20;
+const LEVEL: string = process.env.LOG_LEVEL ?? (process.env.NODE_ENV === 'production' ? 'info' : 'debug');
 
 // Keys whose values must never be logged in full, at any nesting depth.
 const REDACT_KEYS = new Set([
@@ -52,35 +53,31 @@ function redact(value: unknown, depth = 0): unknown {
   return value;
 }
 
-function emit(level: LogLevel, args: unknown[], bindings: Record<string, unknown>) {
-  if (LEVELS[level] < MIN_LEVEL) return;
-
-  const messageParts: string[] = [];
-  let context: Record<string, unknown> = {};
-  for (const arg of args) {
-    if (typeof arg === 'string' || typeof arg === 'number' || typeof arg === 'boolean') {
-      messageParts.push(String(arg));
-    } else if (arg instanceof Error) {
-      messageParts.push(arg.message);
-      context.err = redact(arg);
-    } else if (arg && typeof arg === 'object') {
-      context = { ...context, ...(redact(arg) as Record<string, unknown>) };
-    }
-  }
-
-  const record = {
-    level,
-    time: new Date().toISOString(),
-    msg: messageParts.join(' '),
-    ...bindings,
-    ...context,
-  };
-
-  const line = JSON.stringify(record);
-  if (level === 'error') console.error(line);
-  else if (level === 'warn') console.warn(line);
-  else console.log(line);
-}
+// Two instances with identical formatting, differing only in the
+// destination stream — preserves the pre-pino behavior of routing
+// info/debug to stdout and warn/error to stderr, which some log collectors
+// and terminal viewers still treat differently, rather than pino's own
+// default of one stream. Destination is `process.stdout`/`process.stderr`
+// themselves rather than the faster `pino.destination(fd)` (raw-fd
+// SonicBoom, which writes below the Node stream layer): this codebase logs
+// through the `logger` surface everywhere specifically so it's mockable in
+// tests, and a raw-fd write can't be intercepted that way.
+const pinoOptions: pino.LoggerOptions = {
+  level: LEVEL,
+  timestamp: pino.stdTimeFunctions.isoTime,
+  messageKey: 'msg',
+  formatters: {
+    level: (label) => ({ level: label }),
+  },
+  // pino auto-serializes a property named `err` with its own
+  // pino.stdSerializers.err by default, which would re-process (and
+  // reshape, adding a `type` field) the value this module's own redact()
+  // already turned into a safe plain object. redact() is the one and only
+  // serializer for anything this module logs.
+  serializers: {},
+};
+const pinoStdout = pino(pinoOptions, process.stdout);
+const pinoStderr = pino(pinoOptions, process.stderr);
 
 export interface Logger {
   log: (...args: unknown[]) => void;
@@ -92,15 +89,36 @@ export interface Logger {
   child: (bindings: Record<string, unknown>) => Logger;
 }
 
-function make(bindings: Record<string, unknown>): Logger {
+function make(stdoutTarget: pino.Logger, stderrTarget: pino.Logger): Logger {
+  function emit(level: LogLevel, args: unknown[]): void {
+    const messageParts: string[] = [];
+    let context: Record<string, unknown> = {};
+    for (const arg of args) {
+      if (typeof arg === 'string' || typeof arg === 'number' || typeof arg === 'boolean') {
+        messageParts.push(String(arg));
+      } else if (arg instanceof Error) {
+        messageParts.push(arg.message);
+        context.err = redact(arg);
+      } else if (arg && typeof arg === 'object') {
+        context = { ...context, ...(redact(arg) as Record<string, unknown>) };
+      }
+    }
+
+    const target = level === 'warn' || level === 'error' ? stderrTarget : stdoutTarget;
+    target[level](context, messageParts.join(' '));
+  }
+
   return {
-    log: (...a) => emit('info', a, bindings),
-    info: (...a) => emit('info', a, bindings),
-    warn: (...a) => emit('warn', a, bindings),
-    error: (...a) => emit('error', a, bindings),
-    debug: (...a) => emit('debug', a, bindings),
-    child: (extra) => make({ ...bindings, ...extra }),
+    log: (...a) => emit('info', a),
+    info: (...a) => emit('info', a),
+    warn: (...a) => emit('warn', a),
+    error: (...a) => emit('error', a),
+    debug: (...a) => emit('debug', a),
+    // Bindings (requestId/userId-style correlation IDs, never secrets) are
+    // not redacted, matching the pre-pino implementation — only the
+    // variadic per-call context above goes through redact().
+    child: (bindings) => make(stdoutTarget.child(bindings), stderrTarget.child(bindings)),
   };
 }
 
-export const logger: Logger = make({});
+export const logger: Logger = make(pinoStdout, pinoStderr);
