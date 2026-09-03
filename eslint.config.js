@@ -10,7 +10,7 @@ module.exports = defineConfig([
     // generate-licenses.js) — same reason eslint.config.js itself is
     // exempted: __dirname/require aren't configured as globals for the
     // app-source TS/TSX rules below, and these aren't app source.
-    ignores: ['dist/*', 'backend/**', 'eslint.config.js', 'scripts/**'],
+    ignores: ['dist/*', 'backend/**', 'eslint.config.js', 'scripts/**', 'jest.config.js', 'jest.setup.js'],
   },
   {
     files: ['**/*.ts', '**/*.tsx'],

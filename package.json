@@ -48,10 +48,14 @@
     "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
+    "@react-native/jest-preset": "^0.86.3",
+    "@types/jest": "^30.0.0",
     "@types/react": "~19.2.2",
     "eslint": "^9.0.0",
     "eslint-config-expo": "~57.0.1",
     "expo-atlas": "^0.4.3",
+    "jest": "^30.5.1",
+    "jest-expo": "^57.0.5",
     "prettier": "^3.9.6",
     "typescript": "~6.0.3"
   },
@@ -63,6 +67,7 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings=0",
+    "test": "jest",
     "format": "prettier --write .",
     "licenses:generate": "node scripts/generate-licenses.js"
   },
