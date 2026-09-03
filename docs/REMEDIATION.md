@@ -2683,3 +2683,58 @@ partial, exactly what's blocking full completion.
       need a device/emulator or load-test infra this environment does
       not have. §13.3's release checklist is almost entirely
       staging/device/store-account gated and not attempted here.
+
+## Final Verification (2026-09-03)
+
+Ran the doc's own §"FINAL VERIFICATION" checklist for real, on this repo,
+rather than assuming prior phase sign-offs still held:
+
+- `grep -rn "MOCK_\|SEED_\|_DATABASE =\|dummy\|Dummy\|placeholder"` — every
+  match manually reviewed (23 files, mostly `placeholder`/`placeholderTextColor`
+  form-field props and honestly-labeled interim content like
+  legal/terms.tsx's own "honest placeholder" comment). Zero real
+  violations.
+- `grep -rn "catch (e) {}\|catch {}\|\.catch(() => {})"` — clean; the only
+  two matches are comments documenting the absence of swallowed errors.
+- `grep -rn "super_secret\|localhost:5000\|10\.0\.2\.2\|http://"` —
+  clean; every match is a `__DEV__`-gated client fallback or a zod
+  schema's overridable dev default, both already required by §6.1/§2.7.
+- `grep -rn "findFirst()" backend/src/` — zero matches.
+- `grep -rn "Alert.alert\|console.log"` — zero real `Alert.alert(...)`
+  calls anywhere (only comments describing what was removed) — this
+  confirms §9.2 is actually complete; the tracker never explicitly
+  logged that milestone, so this corrects the record. The one
+  `console.log` (src/lib/logger.ts) is the frontend logger's own
+  intentional, eslint-disabled implementation.
+- `grep -n "Float" backend/prisma/schema.prisma` — found one real issue:
+  `Coupon.discount` was a Float that could hold a flat money amount.
+  Investigated, found the whole `Coupon` model (and `AppBanner`
+  alongside it) completely unreferenced anywhere in the app and both
+  tables empty in the live DB — vestigial from before payments were
+  removed for v1. User confirmed dropping both; done via a hand-written
+  migration (`prisma migrate dev` refuses to run non-interactively for
+  a DROP TABLE). See commit 1ca485d.
+- Root gates: `npm run typecheck && npm run lint && npm test` — all
+  clean (0 errors, 0 warnings, 6 suites / 79 tests).
+- Backend gates: `npm run typecheck && npm run lint && npm test && npm
+  run build` — all clean (25 suites / 166 tests against the real DB;
+  `dist/server.js` produced).
+- `npx expo-doctor` — was failing (17 packages behind the SDK 57
+  validated set, including jest at a major version ahead from Phase
+  13's setup). Aligned everything — see commit b308773. Now 21/21.
+
+Also live-verified the app still runs correctly after that dependency
+realignment (which touched react-native, expo, and expo-router): started
+the web preview, confirmed real data renders with no new console errors
+beyond ones already present before this session (a pre-existing
+nested-`<button>` hydration warning in the trending-destinations
+carousel — not touched this session, flagging for awareness — and
+expo-notifications' documented web limitation).
+
+**Not re-derived here:** a full 82-row finding-by-finding table. Each
+finding's resolution and guarding test is already recorded, in more
+detail than a table row could hold, in this file's own Progress section
+under its originating phase — cross-referencing the Appendix's finding
+index above against those phase entries is the authoritative record.
+The consolidated summary handed to the user alongside this session's
+work synthesizes that mapping instead of duplicating it here.
