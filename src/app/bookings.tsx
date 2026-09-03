@@ -9,7 +9,8 @@ import MessageCircle from 'lucide-react-native/icons/message-circle';
 import Users from 'lucide-react-native/icons/users';
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FlatList, Image, RefreshControl, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { FlatList, RefreshControl, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { apiService } from '@/services/api';
@@ -100,7 +101,13 @@ function BookingCard({
     <View style={styles.bookingCard}>
       {/* Card Image Header */}
       <View style={styles.cardImageContainer}>
-        <Image source={{ uri: booking.coverImage }} style={styles.cardImage} />
+        <Image
+          source={{ uri: booking.coverImage }}
+          style={styles.cardImage}
+          contentFit="cover"
+          transition={150}
+          cachePolicy="memory-disk"
+        />
         <LinearGradient colors={['rgba(7,9,19,0.15)', 'rgba(7,9,19,0.92)']} style={StyleSheet.absoluteFill} />
         <View style={styles.cardHeaderOverlay}>
           <StatusBadge status={booking.status} />

@@ -14,7 +14,8 @@ import ShieldAlert from 'lucide-react-native/icons/shield-alert';
 import Waves from 'lucide-react-native/icons/waves-horizontal';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Dimensions, FlatList, Image, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Dimensions, FlatList, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { Card, ScreenEmpty, ScreenError, ScreenLoading } from '@/components/ui';
@@ -135,7 +136,7 @@ function AlertCard({ alert }: { alert: HazardAlert }) {
 
       {/* disaster image */}
       <View style={styles.alertImageContainer}>
-        <Image source={{ uri: alert.image }} style={styles.alertImage} />
+        <Image source={{ uri: alert.image }} style={styles.alertImage} contentFit="cover" transition={150} cachePolicy="memory-disk" />
       </View>
 
       {/* Main Title & Description */}

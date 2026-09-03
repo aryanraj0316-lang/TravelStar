@@ -6,7 +6,8 @@ import { getCurrentDeviceLocation } from '@/lib/device-location';
 import { formatDateRange } from '@/lib/datetime';
 import TripDetailModal from '@/components/TripDetailModal';
 import { useQuery } from '@tanstack/react-query';
-import { FlatList, Image, RefreshControl, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { FlatList, RefreshControl, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -42,7 +43,7 @@ function NearbyTripCard({ trip, onPress }: { trip: NearbyTrip; onPress: (trip: N
   return (
     <TouchableOpacity activeOpacity={0.9} style={styles.tripCard} onPress={() => onPress(trip)}>
       <View style={styles.tripImgWrap}>
-        <Image source={{ uri: trip.coverImage }} style={styles.tripImg} />
+        <Image source={{ uri: trip.coverImage }} style={styles.tripImg} contentFit="cover" transition={150} cachePolicy="memory-disk" />
         <LinearGradient colors={['rgba(6,8,20,0.15)', 'rgba(6,8,20,0.9)']} style={StyleSheet.absoluteFill} />
         <View style={styles.distBadge}>
           <Navigation size={11} color={C.white} />

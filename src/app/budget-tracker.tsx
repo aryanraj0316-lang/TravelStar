@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FlatList, Image, RefreshControl, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { FlatList, RefreshControl, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -293,7 +294,13 @@ export default function BudgetTrackerScreen() {
                   <Text style={styles.sectionTitle}>{t('budgetTracker.whoOwesWhat')}</Text>
                   {budget.balances.map((b) => (
                     <View key={b.userId} style={styles.balanceRow}>
-                      <Image source={{ uri: b.avatar }} style={styles.balanceAvatar} />
+                      <Image
+                        source={{ uri: b.avatar }}
+                        style={styles.balanceAvatar}
+                        contentFit="cover"
+                        transition={150}
+                        cachePolicy="memory-disk"
+                      />
                       <View style={{ flex: 1 }}>
                         <Text style={styles.balanceName}>
                           {b.name}

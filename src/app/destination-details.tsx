@@ -15,7 +15,8 @@ import Sun from 'lucide-react-native/icons/sun';
 import X from 'lucide-react-native/icons/x';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Dimensions, Image, Modal, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Dimensions, Modal, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { queryKeys } from '@/lib/query-keys';
@@ -141,7 +142,13 @@ export default function DestinationDetailsScreen() {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {/* Hero cover photo */}
         <View style={styles.heroWrapper}>
-          <Image source={{ uri: destination.image }} style={styles.heroImage} />
+          <Image
+            source={{ uri: destination.image }}
+            style={styles.heroImage}
+            contentFit="cover"
+            transition={150}
+            cachePolicy="memory-disk"
+          />
           <LinearGradient
             colors={['rgba(6,8,20,0.2)', 'rgba(6,8,20,0.5)', C.bg]}
             style={StyleSheet.absoluteFill}
@@ -201,7 +208,13 @@ export default function DestinationDetailsScreen() {
                     accessibilityRole="imagebutton"
                     accessibilityLabel={t('destinationDetails.photoGalleryTitle', { name: destination.name })}
                   >
-                    <Image source={{ uri: imgUri }} style={styles.galleryImage} />
+                    <Image
+                      source={{ uri: imgUri }}
+                      style={styles.galleryImage}
+                      contentFit="cover"
+                      transition={150}
+                      cachePolicy="memory-disk"
+                    />
                     <LinearGradient
                       colors={['transparent', 'rgba(6,8,20,0.4)']}
                       style={StyleSheet.absoluteFill}
@@ -251,7 +264,8 @@ export default function DestinationDetailsScreen() {
             <Image
               source={{ uri: destination.gallery[activeImageIndex] }}
               style={styles.zoomedImage}
-              resizeMode="contain"
+              contentFit="contain"
+              cachePolicy="memory-disk"
             />
           )}
 
