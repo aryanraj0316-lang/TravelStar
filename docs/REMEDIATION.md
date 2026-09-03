@@ -2530,4 +2530,50 @@ partial, exactly what's blocking full completion.
       remaining PII, store privacy labels / Data Safety form, DPA/DSAR
       process. A data-export *file download* (share sheet) is a follow-up —
       the client currently logs the JSON and toasts.
-- [ ] Phase 13 — Testing and release readiness (not started)
+- [ ] Phase 13 — Testing and release readiness (in progress, started
+      2026-09-03 — full session resumed after a gap; first action was
+      re-verifying the tracker against the actual repo rather than
+      trusting it, since a substantial batch of finished-but-uncommitted
+      work was sitting in the working tree (see below).
+      §13.1 (jest config) was already effectively done for the backend —
+      backend/jest.config.js exists (ts-jest preset, a documented
+      testTimeout/maxWorkers tuned for the shared Neon DB) and was never
+      broken; the tracker's "not started" label for all of Phase 13 was
+      stale on this point specifically. Re-ran the full backend suite
+      cold to confirm: 22 suites, 128 tests, all passing against the
+      real DB.
+      The frontend had zero test infrastructure (no jest config, no test
+      script, no test files at all) despite §13.2 asking for pure-logic
+      unit coverage app-wide, not just backend. Built it this session:
+      jest-expo + jest + @types/jest (needed --legacy-peer-deps — see
+      commit for the exact dev-only peer version skew this pinned-SDK
+      combination hits), jest.config.js, jest.setup.js (AsyncStorage +
+      NetInfo mocks, which both packages ship but don't self-register).
+      75 tests across 5 suites: money.ts, datetime.ts, trip-display.ts
+      (the derived-field helpers behind several of this doc's own fixed
+      fabricated-data bugs), network-status.ts, and
+      offline-mutation-queue.ts. tsc --noEmit and lint both clean. See
+      commit 22ba3f6.
+      Before that, found and committed a complete-but-uncommitted batch
+      of work already sitting in the working tree from an earlier,
+      apparently interrupted session (33 files, verified clean via
+      typecheck/lint before committing rather than assumed safe):
+      converting every screen's `lucide-react-native` barrel import to
+      per-icon path imports (Metro doesn't tree-shake node_modules, so
+      the barrel pulls in the full ~2000-icon set) plus expo-atlas added
+      as a bundle-analysis dev dependency — Phase 10 scope, see commit
+      7349872 — and a one-line but real fix to backend/src/server.ts:
+      `import 'dotenv/config'` was missing as the literal first line, so
+      depending on import order deep in app.ts's own tree,
+      config/env.ts's zod validation could run before .env was actually
+      loaded into process.env (commit b17600d).
+      Remaining for §13.2: concurrency (seat-concurrency.test.ts already
+      covers the 50-simultaneous-joins case from §5.4 — confirmed
+      passing, not newly added this session), socket auth/room/SOS
+      scoping (socket-security.test.ts, likewise pre-existing and
+      passing) — wallet/duplicate-webhook concurrency tests are N/A,
+      both features were removed for v1 (§5.5/§5.6). E2E (Maestro/
+      Detox) and the socket-layer load test are not attempted — both
+      need a device/emulator or load-test infra this environment does
+      not have. §13.3's release checklist is almost entirely
+      staging/device/store-account gated and not attempted here.
