@@ -2421,10 +2421,25 @@ partial, exactly what's blocking full completion.
       The "undisclosed hardcoded placeholder data" item (map.tsx/
       map.web.tsx, travel-guide.tsx) is a deliberate product-decision
       flag, not a bug — left as-is, unchanged.
-      **§9.5 (hotlinked images) remains not started** — hard-blocked on
-      real licensed imagery, which only the user can provide; the
-      object-storage/caching pipeline itself could still be built ahead
-      of that. This is now the only open item in Phase 9.
+      **§9.5 (hotlinked images) — caching half done (2026-09-03), real
+      imagery still hard-blocked.** The doc's own "the caching pipeline
+      could still be built ahead of that" turned out to be concretely
+      true: only Avatar.tsx used expo-image; the other 6 <Image> call
+      sites across 5 screens (bookings.tsx, budget-tracker.tsx,
+      destination-details.tsx ×3, monsoon-advisory.tsx, nearby-trips.tsx)
+      were still React Native's bare Image (no disk cache, re-fetches on
+      every render). All migrated to expo-image with
+      contentFit/transition/cachePolicy="memory-disk", matching
+      Avatar.tsx's existing configuration. Verified live (see Phase 10
+      entry below for the full verification setup): a migrated image on
+      monsoon-advisory.tsx actually completes loading through the new
+      component (naturalWidth: 600), not just typechecks. Blurhash
+      placeholders remain genuinely undone: a real blurhash has to be
+      computed from the image at upload time and stored alongside its
+      URL, and no such field exists on Destination/Trip/Profile —
+      that's a schema change plus object-storage.ts wiring, not a prop.
+      The hotlinked Unsplash/Brave URLs themselves are still untouched —
+      still hard-blocked on the user providing real licensed imagery.
       `npx tsc --noEmit` clean; `npm run lint` at 0 problems repo-wide
       (see Phase 1 lint-baseline note above — separately closed out this
       session too, from 215 problems to 0, real fixes not suppressions).
@@ -2465,10 +2480,47 @@ partial, exactly what's blocking full completion.
         num_cpus-based default, which is the wrong side of the
         Neon-connection-budget relationship once more than one instance
         runs. `closeCache()` wired into server.ts's graceful shutdown.
-      Not done: bundle analysis / web code-splitting, a verified Hermes
-      check, a measured Android TTI budget, and virtualizing chat.tsx's
-      room-list sidebar (small per-user list, lower priority — flagged,
-      not fixed).
+      Not done: virtualizing chat.tsx's room-list sidebar (small per-user
+      list, lower priority — flagged, not fixed).
+      **Bundle analysis + Hermes check done (2026-09-03):** found a
+      complete-but-uncommitted fix already sitting in the working tree
+      from an earlier, apparently interrupted session — every screen
+      imported icons from the `lucide-react-native` barrel
+      (`from 'lucide-react-native'`), which pulls in the full ~2000-icon
+      set since Metro doesn't tree-shake node_modules; converted to
+      per-icon path imports across all 30 consuming files, with
+      expo-atlas added as the bundle-analysis dev dependency that must
+      have been used to find it. Verified this was real, working,
+      typecheck/lint-clean code before committing it (commit 7349872) —
+      it was not a false start.
+      Ran a fresh EXPO_ATLAS=true bundle-analysis pass on top of that
+      fix (`npx expo export --platform web`, parsed the resulting
+      `.expo/atlas.jsonl` by package): 3.39MB uncompressed total.
+      lucide-react-native is now 71.6KB — confirms the fix above
+      actually worked, versus what would have been several hundred KB
+      to 1MB+ pulling in the whole icon set. No further single-package
+      win remains: the next-largest contributors are app source itself
+      (1.09MB, expected for an app this size) and
+      react-native-reanimated (743.9KB), expo-router (440KB),
+      react-native-web (296.9KB), react-dom (175KB) — all legitimately
+      load-bearing, not accidental bloat.
+      Hermes: confirmed on. app.json has no `jsEngine` override: Expo's
+      own default is Hermes, and RN 0.86's New Architecture (also
+      unoverridden, also default-on) doesn't support JSC as an
+      alternative in most configurations regardless.
+      **Web code-splitting: investigated, genuinely blocked, not
+      implemented.** Expo Router's only code-splitting mechanism is
+      "async routes" (route-based Suspense + lazy bundling) — its own
+      docs mark it alpha and state it explicitly does "not support
+      native production apps yet." This app targets iOS, Android, and
+      web; adopting an alpha feature that doesn't work on two of the
+      three target platforms would mean shipping instability on native,
+      the opposite of what this whole program exists to fix. This is a
+      real upstream-maturity block, not a risk call made unilaterally —
+      re-check when Expo Router's async routes reach stable.
+      **Android TTI (<2s) measurement: not attempted** — no physical or
+      emulated Android device is available in this environment; this
+      needs the user or a device farm.
 - [ ] Phase 11 — Observability and operations (in progress — code-shaped
       parts done, secrets/live-wiring deferred per the 2026-08-27 user
       decision):
