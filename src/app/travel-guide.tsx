@@ -34,42 +34,40 @@ import type {
 import type { SOSAlert } from '@/store/AppContext';
 import { formatDate } from '@/lib/datetime';
 import * as ImagePicker from 'expo-image-picker';
-import {
-  ArrowLeft,
-  Search,
-  Users,
-  MapPin,
-  Calendar,
-  TrendingUp,
-  UploadCloud,
-  Image as ImageIcon,
-  Video,
-  Plus,
-  FileText,
-  Camera,
-  Clock,
-  Compass,
-  Car,
-  Train,
-  Plane,
-  Calculator,
-  Hotel,
-  Home,
-  Tent,
-  ExternalLink,
-  Sun,
-  CloudRain,
-  Wind,
-  Sunrise,
-  Sunset,
-  Activity,
-  ShieldAlert,
-  PhoneCall,
-  HeartPulse,
-  Shield,
-  AlertTriangle,
-  CheckCircle,
-} from 'lucide-react-native';
+import ArrowLeft from 'lucide-react-native/icons/arrow-left';
+import Search from 'lucide-react-native/icons/search';
+import Users from 'lucide-react-native/icons/users';
+import MapPin from 'lucide-react-native/icons/map-pin';
+import Calendar from 'lucide-react-native/icons/calendar';
+import TrendingUp from 'lucide-react-native/icons/trending-up';
+import UploadCloud from 'lucide-react-native/icons/cloud-upload';
+import ImageIcon from 'lucide-react-native/icons/image';
+import Video from 'lucide-react-native/icons/video';
+import Plus from 'lucide-react-native/icons/plus';
+import FileText from 'lucide-react-native/icons/file-text';
+import Camera from 'lucide-react-native/icons/camera';
+import Clock from 'lucide-react-native/icons/clock';
+import Compass from 'lucide-react-native/icons/compass';
+import Car from 'lucide-react-native/icons/car';
+import Train from 'lucide-react-native/icons/tram-front';
+import Plane from 'lucide-react-native/icons/plane';
+import Calculator from 'lucide-react-native/icons/calculator';
+import Hotel from 'lucide-react-native/icons/hotel';
+import Home from 'lucide-react-native/icons/house';
+import Tent from 'lucide-react-native/icons/tent';
+import ExternalLink from 'lucide-react-native/icons/external-link';
+import Sun from 'lucide-react-native/icons/sun';
+import CloudRain from 'lucide-react-native/icons/cloud-rain';
+import Wind from 'lucide-react-native/icons/wind';
+import Sunrise from 'lucide-react-native/icons/sunrise';
+import Sunset from 'lucide-react-native/icons/sunset';
+import Activity from 'lucide-react-native/icons/activity';
+import ShieldAlert from 'lucide-react-native/icons/shield-alert';
+import PhoneCall from 'lucide-react-native/icons/phone-call';
+import HeartPulse from 'lucide-react-native/icons/heart-pulse';
+import Shield from 'lucide-react-native/icons/shield';
+import AlertTriangle from 'lucide-react-native/icons/triangle-alert';
+import CheckCircle from 'lucide-react-native/icons/circle-check-big';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');

@@ -21,7 +21,14 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Briefcase, Calendar, Compass, IndianRupee, MapPin, User, Users } from 'lucide-react-native';
+import ArrowLeft from 'lucide-react-native/icons/arrow-left';
+import Briefcase from 'lucide-react-native/icons/briefcase';
+import Calendar from 'lucide-react-native/icons/calendar';
+import Compass from 'lucide-react-native/icons/compass';
+import IndianRupee from 'lucide-react-native/icons/indian-rupee';
+import MapPin from 'lucide-react-native/icons/map-pin';
+import User from 'lucide-react-native/icons/user';
+import Users from 'lucide-react-native/icons/users';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { Chip, ScreenEmpty, ScreenError, ScreenLoading } from '@/components/ui';
 

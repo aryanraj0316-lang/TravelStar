@@ -7,39 +7,37 @@ import { formatINR } from '@/lib/money';
 import { formatDateRange } from '@/lib/datetime';
 import { useRouter, type ErrorBoundaryProps } from 'expo-router';
 import { RouteErrorFallback } from '@/components/route-error-fallback';
-import {
-  AlertCircle,
-  AlertTriangle,
-  ArrowLeft,
-  BarChart2,
-  Calendar,
-  Check,
-  CheckCircle,
-  ChevronDown,
-  ChevronUp,
-  Clock,
-  Compass,
-  Copy,
-  CornerUpLeft,
-  DollarSign,
-  Download,
-  Image as ImageIcon,
-  LogOut,
-  MapPin,
-  MessageSquare,
-  MoreVertical,
-  Pin,
-  Plus,
-  Search,
-  Send,
-  Settings,
-  ShieldAlert,
-  Smile,
-  Globe as TranslateIcon,
-  Trash2,
-  Users as UsersIcon,
-  X,
-} from 'lucide-react-native';
+import AlertCircle from 'lucide-react-native/icons/circle-alert';
+import AlertTriangle from 'lucide-react-native/icons/triangle-alert';
+import ArrowLeft from 'lucide-react-native/icons/arrow-left';
+import BarChart2 from 'lucide-react-native/icons/chart-no-axes-column';
+import Calendar from 'lucide-react-native/icons/calendar';
+import Check from 'lucide-react-native/icons/check';
+import CheckCircle from 'lucide-react-native/icons/circle-check-big';
+import ChevronDown from 'lucide-react-native/icons/chevron-down';
+import ChevronUp from 'lucide-react-native/icons/chevron-up';
+import Clock from 'lucide-react-native/icons/clock';
+import Compass from 'lucide-react-native/icons/compass';
+import Copy from 'lucide-react-native/icons/copy';
+import CornerUpLeft from 'lucide-react-native/icons/corner-up-left';
+import DollarSign from 'lucide-react-native/icons/dollar-sign';
+import Download from 'lucide-react-native/icons/download';
+import ImageIcon from 'lucide-react-native/icons/image';
+import LogOut from 'lucide-react-native/icons/log-out';
+import MapPin from 'lucide-react-native/icons/map-pin';
+import MessageSquare from 'lucide-react-native/icons/message-square';
+import MoreVertical from 'lucide-react-native/icons/ellipsis-vertical';
+import Pin from 'lucide-react-native/icons/pin';
+import Plus from 'lucide-react-native/icons/plus';
+import Search from 'lucide-react-native/icons/search';
+import Send from 'lucide-react-native/icons/send';
+import Settings from 'lucide-react-native/icons/settings';
+import ShieldAlert from 'lucide-react-native/icons/shield-alert';
+import Smile from 'lucide-react-native/icons/smile';
+import TranslateIcon from 'lucide-react-native/icons/globe';
+import Trash2 from 'lucide-react-native/icons/trash-2';
+import UsersIcon from 'lucide-react-native/icons/users';
+import X from 'lucide-react-native/icons/x';
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {

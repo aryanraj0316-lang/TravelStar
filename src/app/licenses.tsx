@@ -3,7 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { FlatList, Linking, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, ExternalLink, Search } from 'lucide-react-native';
+import ArrowLeft from 'lucide-react-native/icons/arrow-left';
+import ExternalLink from 'lucide-react-native/icons/external-link';
+import Search from 'lucide-react-native/icons/search';
 
 import licensesData from '@/data/licenses.json';
 import { logger } from '@/lib/logger';

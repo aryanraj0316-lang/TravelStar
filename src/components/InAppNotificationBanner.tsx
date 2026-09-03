@@ -1,7 +1,9 @@
 import { eventBus, type InAppNotif } from '@/services/event-bus';
 import { useApp } from '@/store/AppContext';
 import { useRouter } from 'expo-router';
-import { CheckCheck, ChevronRight, X } from 'lucide-react-native';
+import CheckCheck from 'lucide-react-native/icons/check-check';
+import ChevronRight from 'lucide-react-native/icons/chevron-right';
+import X from 'lucide-react-native/icons/x';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {

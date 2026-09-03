@@ -6,14 +6,12 @@
 // to live in the deleted src/components/app-tabs.tsx (REMEDIATION.md §7.1).
 import { LinearGradient } from 'expo-linear-gradient';
 import { Tabs } from 'expo-router';
-import {
-  Home,
-  Map,
-  MessageSquare,
-  PlusCircle,
-  Search,
-  User,
-} from 'lucide-react-native';
+import Home from 'lucide-react-native/icons/house';
+import Map from 'lucide-react-native/icons/map';
+import MessageSquare from 'lucide-react-native/icons/message-square';
+import PlusCircle from 'lucide-react-native/icons/circle-plus';
+import Search from 'lucide-react-native/icons/search';
+import User from 'lucide-react-native/icons/user';
 import React, { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';

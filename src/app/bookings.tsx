@@ -1,7 +1,12 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Calendar, ChevronRight, MapPin, MessageCircle, Users } from 'lucide-react-native';
+import ArrowLeft from 'lucide-react-native/icons/arrow-left';
+import Calendar from 'lucide-react-native/icons/calendar';
+import ChevronRight from 'lucide-react-native/icons/chevron-right';
+import MapPin from 'lucide-react-native/icons/map-pin';
+import MessageCircle from 'lucide-react-native/icons/message-circle';
+import Users from 'lucide-react-native/icons/users';
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FlatList, Image, RefreshControl, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';

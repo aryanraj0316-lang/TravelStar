@@ -9,31 +9,29 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useNavigation, type ErrorBoundaryProps } from 'expo-router';
 import { RouteErrorFallback } from '@/components/route-error-fallback';
 import { BlurView } from 'expo-blur';
-import {
-  BadgePercent,
-  Bell,
-  Bike,
-  Bus,
-  Calendar,
-  Check,
-  ChevronRight,
-  Clock,
-  Grid2x2,
-  Headphones,
-  Heart,
-  Home as HomeIcon,
-  MapPin,
-  Mountain,
-  RotateCcw,
-  Search,
-  Shield,
-  SlidersHorizontal,
-  Sparkles,
-  UserCheck,
-  Users,
-  Wallet,
-  X,
-} from 'lucide-react-native';
+import BadgePercent from 'lucide-react-native/icons/badge-percent';
+import Bell from 'lucide-react-native/icons/bell';
+import Bike from 'lucide-react-native/icons/bike';
+import Bus from 'lucide-react-native/icons/bus';
+import Calendar from 'lucide-react-native/icons/calendar';
+import Check from 'lucide-react-native/icons/check';
+import ChevronRight from 'lucide-react-native/icons/chevron-right';
+import Clock from 'lucide-react-native/icons/clock';
+import Grid2x2 from 'lucide-react-native/icons/grid-2x2';
+import Headphones from 'lucide-react-native/icons/headphones';
+import Heart from 'lucide-react-native/icons/heart';
+import HomeIcon from 'lucide-react-native/icons/house';
+import MapPin from 'lucide-react-native/icons/map-pin';
+import Mountain from 'lucide-react-native/icons/mountain';
+import RotateCcw from 'lucide-react-native/icons/rotate-ccw';
+import Search from 'lucide-react-native/icons/search';
+import Shield from 'lucide-react-native/icons/shield';
+import SlidersHorizontal from 'lucide-react-native/icons/sliders-horizontal';
+import Sparkles from 'lucide-react-native/icons/sparkles';
+import UserCheck from 'lucide-react-native/icons/user-check';
+import Users from 'lucide-react-native/icons/users';
+import Wallet from 'lucide-react-native/icons/wallet';
+import X from 'lucide-react-native/icons/x';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,

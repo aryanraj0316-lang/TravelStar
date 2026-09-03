@@ -11,13 +11,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import {
-  ArrowLeft,
-  MessageSquare,
-  Mail,
-  PhoneCall,
-  LifeBuoy,
-} from 'lucide-react-native';
+import ArrowLeft from 'lucide-react-native/icons/arrow-left';
+import MessageSquare from 'lucide-react-native/icons/message-square';
+import Mail from 'lucide-react-native/icons/mail';
+import PhoneCall from 'lucide-react-native/icons/phone-call';
+import LifeBuoy from 'lucide-react-native/icons/life-buoy';
 import { logger } from '@/lib/logger';
 import { toast } from '@/lib/feedback';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';

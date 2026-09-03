@@ -1,19 +1,17 @@
 import { apiService } from '@/services/api';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import {
-  AlertTriangle,
-  ArrowLeft,
-  Car,
-  Check,
-  Clock,
-  CloudRain,
-  MapPin,
-  Mountain,
-  Phone,
-  ShieldAlert,
-  Waves,
-} from 'lucide-react-native';
+import AlertTriangle from 'lucide-react-native/icons/triangle-alert';
+import ArrowLeft from 'lucide-react-native/icons/arrow-left';
+import Car from 'lucide-react-native/icons/car';
+import Check from 'lucide-react-native/icons/check';
+import Clock from 'lucide-react-native/icons/clock';
+import CloudRain from 'lucide-react-native/icons/cloud-rain';
+import MapPin from 'lucide-react-native/icons/map-pin';
+import Mountain from 'lucide-react-native/icons/mountain';
+import Phone from 'lucide-react-native/icons/phone';
+import ShieldAlert from 'lucide-react-native/icons/shield-alert';
+import Waves from 'lucide-react-native/icons/waves-horizontal';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Dimensions, FlatList, Image, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';

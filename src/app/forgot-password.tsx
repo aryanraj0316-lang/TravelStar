@@ -4,7 +4,10 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, KeyboardAvoidingV
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, KeyRound, Mail, ShieldCheck } from 'lucide-react-native';
+import ArrowLeft from 'lucide-react-native/icons/arrow-left';
+import KeyRound from 'lucide-react-native/icons/key-round';
+import Mail from 'lucide-react-native/icons/mail';
+import ShieldCheck from 'lucide-react-native/icons/shield-check';
 
 import { GlassCard } from '@/components/ui/GlassCard';
 import { Button, Input } from '@/components/ui';

@@ -5,7 +5,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Car, Check, Hotel, Plus, ShoppingBag, Ticket, Trash2, Utensils } from 'lucide-react-native';
+import ArrowLeft from 'lucide-react-native/icons/arrow-left';
+import Car from 'lucide-react-native/icons/car';
+import Check from 'lucide-react-native/icons/check';
+import Hotel from 'lucide-react-native/icons/hotel';
+import Plus from 'lucide-react-native/icons/plus';
+import ShoppingBag from 'lucide-react-native/icons/shopping-bag';
+import Ticket from 'lucide-react-native/icons/ticket';
+import Trash2 from 'lucide-react-native/icons/trash-2';
+import Utensils from 'lucide-react-native/icons/utensils';
 
 import { apiService } from '@/services/api';
 import { queryKeys } from '@/lib/query-keys';

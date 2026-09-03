@@ -9,20 +9,18 @@ import {
   StyleSheet,
   Dimensions,
 } from 'react-native';
-import {
-  X,
-  Calendar,
-  MapPin,
-  Users,
-  Shield,
-  UserCheck,
-  Hotel,
-  Utensils,
-  Bike,
-  Bus,
-  Navigation,
-  CheckCircle,
-} from 'lucide-react-native';
+import X from 'lucide-react-native/icons/x';
+import Calendar from 'lucide-react-native/icons/calendar';
+import MapPin from 'lucide-react-native/icons/map-pin';
+import Users from 'lucide-react-native/icons/users';
+import Shield from 'lucide-react-native/icons/shield';
+import UserCheck from 'lucide-react-native/icons/user-check';
+import Hotel from 'lucide-react-native/icons/hotel';
+import Utensils from 'lucide-react-native/icons/utensils';
+import Bike from 'lucide-react-native/icons/bike';
+import Bus from 'lucide-react-native/icons/bus';
+import Navigation from 'lucide-react-native/icons/navigation';
+import CheckCircle from 'lucide-react-native/icons/circle-check-big';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, type Trip } from '@/store/AppContext';
 import { eventBus } from '@/services/event-bus';

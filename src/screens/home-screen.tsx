@@ -9,29 +9,27 @@ import { formatTripDuration, tripCoverImage, tripTransportLabel } from '@/lib/tr
 import { ScreenEmpty, ScreenError, SkeletonCard } from '@/components/ui';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useNavigation, type Href } from 'expo-router';
-import {
-  AlertTriangle,
-  Bell,
-  CalendarCheck,
-  Car,
-  Check,
-  ChevronRight,
-  Clock,
-  CloudRain,
-  CloudSnow,
-  Globe,
-  Heart,
-  Map,
-  MapPin,
-  MessageSquare,
-  Mountain,
-  Plane,
-  Star,
-  Sun,
-  Users,
-  Wallet,
-  Waves
-} from 'lucide-react-native';
+import AlertTriangle from 'lucide-react-native/icons/triangle-alert';
+import Bell from 'lucide-react-native/icons/bell';
+import CalendarCheck from 'lucide-react-native/icons/calendar-check';
+import Car from 'lucide-react-native/icons/car';
+import Check from 'lucide-react-native/icons/check';
+import ChevronRight from 'lucide-react-native/icons/chevron-right';
+import Clock from 'lucide-react-native/icons/clock';
+import CloudRain from 'lucide-react-native/icons/cloud-rain';
+import CloudSnow from 'lucide-react-native/icons/cloud-snow';
+import Globe from 'lucide-react-native/icons/globe';
+import Heart from 'lucide-react-native/icons/heart';
+import Map from 'lucide-react-native/icons/map';
+import MapPin from 'lucide-react-native/icons/map-pin';
+import MessageSquare from 'lucide-react-native/icons/message-square';
+import Mountain from 'lucide-react-native/icons/mountain';
+import Plane from 'lucide-react-native/icons/plane';
+import Star from 'lucide-react-native/icons/star';
+import Sun from 'lucide-react-native/icons/sun';
+import Users from 'lucide-react-native/icons/users';
+import Wallet from 'lucide-react-native/icons/wallet';
+import Waves from 'lucide-react-native/icons/waves-horizontal';
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {

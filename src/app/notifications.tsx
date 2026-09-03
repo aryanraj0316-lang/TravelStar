@@ -1,20 +1,18 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import {
-  ArrowLeft,
-  Calendar,
-  Car,
-  CheckCheck,
-  ChevronRight,
-  Clock,
-  CloudRain,
-  MapPin,
-  Mountain,
-  Navigation,
-  Plane,
-  ShieldAlert,
-  Waves,
-} from 'lucide-react-native';
+import ArrowLeft from 'lucide-react-native/icons/arrow-left';
+import Calendar from 'lucide-react-native/icons/calendar';
+import Car from 'lucide-react-native/icons/car';
+import CheckCheck from 'lucide-react-native/icons/check-check';
+import ChevronRight from 'lucide-react-native/icons/chevron-right';
+import Clock from 'lucide-react-native/icons/clock';
+import CloudRain from 'lucide-react-native/icons/cloud-rain';
+import MapPin from 'lucide-react-native/icons/map-pin';
+import Mountain from 'lucide-react-native/icons/mountain';
+import Navigation from 'lucide-react-native/icons/navigation';
+import Plane from 'lucide-react-native/icons/plane';
+import ShieldAlert from 'lucide-react-native/icons/shield-alert';
+import Waves from 'lucide-react-native/icons/waves-horizontal';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';

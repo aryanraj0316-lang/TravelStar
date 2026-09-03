@@ -10,13 +10,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import {
-  ArrowLeft,
-  Globe,
-  FileText,
-  Shield,
-  Info,
-} from 'lucide-react-native';
+import ArrowLeft from 'lucide-react-native/icons/arrow-left';
+import Globe from 'lucide-react-native/icons/globe';
+import FileText from 'lucide-react-native/icons/file-text';
+import Shield from 'lucide-react-native/icons/shield';
+import Info from 'lucide-react-native/icons/info';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { Card } from '@/components/ui';
 

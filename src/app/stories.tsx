@@ -3,7 +3,8 @@ import { apiService } from '@/services/api';
 import { logger } from '@/lib/logger';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Heart, X } from 'lucide-react-native';
+import Heart from 'lucide-react-native/icons/heart';
+import X from 'lucide-react-native/icons/x';
 import React, { useRef, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import {

@@ -3,7 +3,8 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Check, ChevronDown } from 'lucide-react-native';
+import Check from 'lucide-react-native/icons/check';
+import ChevronDown from 'lucide-react-native/icons/chevron-down';
 import { C, MIN_TOUCH_TARGET, fontSize, fontWeight, radii, space } from '@/theme/tokens';
 import { Sheet } from './Sheet';
 

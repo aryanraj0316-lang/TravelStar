@@ -1,20 +1,18 @@
 import { useQuery } from '@tanstack/react-query';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import {
-  ArrowLeft,
-  Award,
-  Coffee,
-  Compass,
-  Globe,
-  Heart,
-  Home,
-  MapPinned,
-  Sparkles,
-  Star,
-  Sun,
-  X,
-} from 'lucide-react-native';
+import ArrowLeft from 'lucide-react-native/icons/arrow-left';
+import Award from 'lucide-react-native/icons/award';
+import Coffee from 'lucide-react-native/icons/coffee';
+import Compass from 'lucide-react-native/icons/compass';
+import Globe from 'lucide-react-native/icons/globe';
+import Heart from 'lucide-react-native/icons/heart';
+import Home from 'lucide-react-native/icons/house';
+import MapPinned from 'lucide-react-native/icons/map-pinned';
+import Sparkles from 'lucide-react-native/icons/sparkles';
+import Star from 'lucide-react-native/icons/star';
+import Sun from 'lucide-react-native/icons/sun';
+import X from 'lucide-react-native/icons/x';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Dimensions, Image, Modal, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';

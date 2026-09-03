@@ -20,24 +20,22 @@ import { useRouter } from 'expo-router';
 import { useApp } from '@/store/AppContext';
 import { apiService } from '@/services/api';
 import type { IncomingJoinRequest, TripMemberRow } from '@/types/api';
-import {
-  ArrowLeft,
-  Users,
-  MessageSquare,
-  DollarSign,
-  Calendar,
-  TrendingUp,
-  Plus,
-  Clock,
-  Car,
-  Hotel,
-  ExternalLink,
-  Activity,
-  CheckCircle,
-  X,
-  Check,
-  Send,
-} from 'lucide-react-native';
+import ArrowLeft from 'lucide-react-native/icons/arrow-left';
+import Users from 'lucide-react-native/icons/users';
+import MessageSquare from 'lucide-react-native/icons/message-square';
+import DollarSign from 'lucide-react-native/icons/dollar-sign';
+import Calendar from 'lucide-react-native/icons/calendar';
+import TrendingUp from 'lucide-react-native/icons/trending-up';
+import Plus from 'lucide-react-native/icons/plus';
+import Clock from 'lucide-react-native/icons/clock';
+import Car from 'lucide-react-native/icons/car';
+import Hotel from 'lucide-react-native/icons/hotel';
+import ExternalLink from 'lucide-react-native/icons/external-link';
+import Activity from 'lucide-react-native/icons/activity';
+import CheckCircle from 'lucide-react-native/icons/circle-check-big';
+import X from 'lucide-react-native/icons/x';
+import Check from 'lucide-react-native/icons/check';
+import Send from 'lucide-react-native/icons/send';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { showPrompt, toast, useConfirm } from '@/lib/feedback';
 import { Button, Input, Sheet } from '@/components/ui';

@@ -9,32 +9,30 @@ import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, type ErrorBoundaryProps } from 'expo-router';
 import { RouteErrorFallback } from '@/components/route-error-fallback';
-import {
-  Calendar as CalendarIcon,
-  Car,
-  Check,
-  CheckSquare,
-  ChevronRight,
-  Clock,
-  Compass,
-  Globe,
-  Hotel,
-  Image as ImageIcon,
-  IndianRupee,
-  Lock,
-  Mail,
-  MapPin,
-  Navigation,
-  Sparkles,
-  Square,
-  User,
-  MessageSquare,
-  UserPlus,
-  Users,
-  Utensils,
-  X,
-  XCircle,
-} from 'lucide-react-native';
+import CalendarIcon from 'lucide-react-native/icons/calendar';
+import Car from 'lucide-react-native/icons/car';
+import Check from 'lucide-react-native/icons/check';
+import CheckSquare from 'lucide-react-native/icons/square-check-big';
+import ChevronRight from 'lucide-react-native/icons/chevron-right';
+import Clock from 'lucide-react-native/icons/clock';
+import Compass from 'lucide-react-native/icons/compass';
+import Globe from 'lucide-react-native/icons/globe';
+import Hotel from 'lucide-react-native/icons/hotel';
+import ImageIcon from 'lucide-react-native/icons/image';
+import IndianRupee from 'lucide-react-native/icons/indian-rupee';
+import Lock from 'lucide-react-native/icons/lock';
+import Mail from 'lucide-react-native/icons/mail';
+import MapPin from 'lucide-react-native/icons/map-pin';
+import Navigation from 'lucide-react-native/icons/navigation';
+import Sparkles from 'lucide-react-native/icons/sparkles';
+import Square from 'lucide-react-native/icons/square';
+import User from 'lucide-react-native/icons/user';
+import MessageSquare from 'lucide-react-native/icons/message-square';
+import UserPlus from 'lucide-react-native/icons/user-plus';
+import Users from 'lucide-react-native/icons/users';
+import Utensils from 'lucide-react-native/icons/utensils';
+import X from 'lucide-react-native/icons/x';
+import XCircle from 'lucide-react-native/icons/circle-x';
 import React, { useRef, useState, useEffect, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {

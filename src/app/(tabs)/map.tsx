@@ -10,30 +10,28 @@ import { useQuery } from '@tanstack/react-query';
 import { apiService } from '@/services/api';
 import { RouteErrorFallback } from '@/components/route-error-fallback';
 import { eventBus } from '@/services/event-bus';
-import {
-  AlertCircle,
-  ArrowLeft,
-  Car,
-  ChevronDown,
-  ChevronUp,
-  Clock,
-  Compass,
-  EyeOff,
-  Layers,
-  Locate,
-  Minus,
-  Navigation,
-  Phone,
-  Plus,
-  Route,
-  ShieldAlert,
-  Star,
-  Check,
-  User,
-  Users,
-  X,
-  Zap
-} from 'lucide-react-native';
+import AlertCircle from 'lucide-react-native/icons/circle-alert';
+import ArrowLeft from 'lucide-react-native/icons/arrow-left';
+import Car from 'lucide-react-native/icons/car';
+import ChevronDown from 'lucide-react-native/icons/chevron-down';
+import ChevronUp from 'lucide-react-native/icons/chevron-up';
+import Clock from 'lucide-react-native/icons/clock';
+import Compass from 'lucide-react-native/icons/compass';
+import EyeOff from 'lucide-react-native/icons/eye-off';
+import Layers from 'lucide-react-native/icons/layers';
+import Locate from 'lucide-react-native/icons/locate';
+import Minus from 'lucide-react-native/icons/minus';
+import Navigation from 'lucide-react-native/icons/navigation';
+import Phone from 'lucide-react-native/icons/phone';
+import Plus from 'lucide-react-native/icons/plus';
+import Route from 'lucide-react-native/icons/route';
+import ShieldAlert from 'lucide-react-native/icons/shield-alert';
+import Star from 'lucide-react-native/icons/star';
+import Check from 'lucide-react-native/icons/check';
+import User from 'lucide-react-native/icons/user';
+import Users from 'lucide-react-native/icons/users';
+import X from 'lucide-react-native/icons/x';
+import Zap from 'lucide-react-native/icons/zap';
 import React, { useEffect, useMemo, useRef, useState, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {

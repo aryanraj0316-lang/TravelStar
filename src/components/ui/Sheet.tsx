@@ -3,7 +3,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { X } from 'lucide-react-native';
+import X from 'lucide-react-native/icons/x';
 import { C, MIN_TOUCH_TARGET, fontSize, fontWeight, radii, space } from '@/theme/tokens';
 
 export interface SheetProps {

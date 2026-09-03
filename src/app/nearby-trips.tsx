@@ -10,7 +10,10 @@ import { FlatList, Image, RefreshControl, StatusBar, StyleSheet, Text, Touchable
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, MapPin, Navigation, Users } from 'lucide-react-native';
+import ArrowLeft from 'lucide-react-native/icons/arrow-left';
+import MapPin from 'lucide-react-native/icons/map-pin';
+import Navigation from 'lucide-react-native/icons/navigation';
+import Users from 'lucide-react-native/icons/users';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { ScreenEmpty, ScreenError, ScreenLoading } from '@/components/ui';
 import type { NearbyTrip } from '@/types/api';

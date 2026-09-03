@@ -4,26 +4,24 @@ import { useApp, type SavedPlace } from '@/store/AppContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useNavigation, type ErrorBoundaryProps } from 'expo-router';
 import { RouteErrorFallback } from '@/components/route-error-fallback';
-import {
-  Bell,
-  Bookmark,
-  Briefcase,
-  Camera,
-  Check,
-  CheckCircle,
-  ChevronRight,
-  CreditCard,
-  Download,
-  Globe,
-  HelpCircle,
-  Image as ImageIcon,
-  LifeBuoy,
-  LogOut,
-  MapPin,
-  Pencil,
-  Trash2,
-  X,
-} from 'lucide-react-native';
+import Bell from 'lucide-react-native/icons/bell';
+import Bookmark from 'lucide-react-native/icons/bookmark';
+import Briefcase from 'lucide-react-native/icons/briefcase';
+import Camera from 'lucide-react-native/icons/camera';
+import Check from 'lucide-react-native/icons/check';
+import CheckCircle from 'lucide-react-native/icons/circle-check-big';
+import ChevronRight from 'lucide-react-native/icons/chevron-right';
+import CreditCard from 'lucide-react-native/icons/credit-card';
+import Download from 'lucide-react-native/icons/download';
+import Globe from 'lucide-react-native/icons/globe';
+import HelpCircle from 'lucide-react-native/icons/circle-question-mark';
+import ImageIcon from 'lucide-react-native/icons/image';
+import LifeBuoy from 'lucide-react-native/icons/life-buoy';
+import LogOut from 'lucide-react-native/icons/log-out';
+import MapPin from 'lucide-react-native/icons/map-pin';
+import Pencil from 'lucide-react-native/icons/pencil';
+import Trash2 from 'lucide-react-native/icons/trash-2';
+import X from 'lucide-react-native/icons/x';
 import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
