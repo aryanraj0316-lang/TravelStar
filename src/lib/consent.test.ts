@@ -1,3 +1,5 @@
+import { CONSENT_CATEGORIES, CURRENT_POLICY_VERSION, recordConsent } from './consent';
+
 const mockRecordConsent = jest.fn();
 
 jest.mock('@/services/api', () => ({
@@ -6,8 +8,6 @@ jest.mock('@/services/api', () => ({
 
 const mockWarn = jest.fn();
 jest.mock('@/lib/logger', () => ({ logger: { warn: (...args: unknown[]) => mockWarn(...args) } }));
-
-import { CONSENT_CATEGORIES, CURRENT_POLICY_VERSION, recordConsent } from './consent';
 
 beforeEach(() => {
   mockRecordConsent.mockReset();
@@ -37,7 +37,7 @@ describe('recordConsent', () => {
     mockRecordConsent.mockRejectedValue(new Error('network down'));
     expect(() => recordConsent('NOTIFICATIONS', true)).not.toThrow();
     // Let the rejected promise's .catch() microtask run.
-    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise<void>((resolve) => setImmediate(resolve));
     expect(mockWarn).toHaveBeenCalledWith(
       expect.stringContaining('NOTIFICATIONS=true'),
       expect.any(Error),
