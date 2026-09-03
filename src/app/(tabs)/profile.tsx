@@ -38,6 +38,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { eventBus } from '@/services/event-bus';
 import { apiService, type NotificationPreferences } from '@/services/api';
 import { registerForPushNotifications, unregisterPushNotifications } from '@/lib/push';
+import { recordConsent } from '@/lib/consent';
 import { toast, errorToastMessage, showAlert, useConfirm } from '@/lib/feedback';
 import { uploadFileToUrl } from '@/lib/upload';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
@@ -244,6 +245,10 @@ function ProfileScreen() {
         if (result.status === 'denied') {
           setPushNotifications(false);
           toast(t('profile.pushBlockedMessage'), 'info');
+          // A real OS-level denial — the user was actually asked. The
+          // 'not-configured'/'unsupported' branch below is not: the OS
+          // never prompted, so there is no decision to record.
+          recordConsent('NOTIFICATIONS', false);
           return;
         }
         if (result.status === 'not-configured' || result.status === 'unsupported') {
@@ -256,8 +261,10 @@ function ProfileScreen() {
           );
           return;
         }
+        recordConsent('NOTIFICATIONS', true);
       } else {
         await unregisterPushNotifications();
+        recordConsent('NOTIFICATIONS', false);
       }
       const saved = await apiService.updateNotificationPreferences({ pushNotifications: next });
       setPushPrefs(saved);
@@ -320,6 +327,7 @@ function ProfileScreen() {
         return;
       }
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      recordConsent('PHOTOS', !!permissionResult?.granted);
       if (!permissionResult?.granted) {
         toast(t('profile.galleryPermissionRequired'), 'error');
         return;
@@ -347,6 +355,7 @@ function ProfileScreen() {
         return;
       }
       const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+      recordConsent('CAMERA', !!permissionResult?.granted);
       if (!permissionResult?.granted) {
         toast(t('profile.cameraPermissionRequired'), 'error');
         return;
@@ -726,6 +735,7 @@ function ProfileScreen() {
                   const newValue = !locationSharing;
                   setLocationSharing(newValue);
                   updateProfile({ locationSharing: newValue });
+                  recordConsent('LOCATION', newValue);
                 }}
                 style={[styles.switchTrack, { backgroundColor: locationSharing ? '#0066FF' : '#2C2F48' }]}
                 hitSlop={{ top: 10, bottom: 10, left: 0, right: 0 }}

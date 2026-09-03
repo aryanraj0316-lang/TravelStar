@@ -17,6 +17,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { errorToastMessage, toast, useConfirm } from '@/lib/feedback';
 import { uploadFileToUrl } from '@/lib/upload';
+import { recordConsent } from '@/lib/consent';
 import { Button, Input, ScreenEmpty, ScreenLoading, Sheet } from '@/components/ui';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -383,6 +384,7 @@ export default function TravelGuideScreen() {
   const handlePickVideo = async () => {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      recordConsent('PHOTOS', permission.granted);
       if (!permission.granted) {
         toast(t('travelGuide.galleryPermissionRequiredReels'), 'error');
         return;
@@ -492,6 +494,7 @@ export default function TravelGuideScreen() {
   const pickAndUploadImage = async (onUploaded: (publicUrl: string) => void) => {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      recordConsent('PHOTOS', permission.granted);
       if (!permission.granted) {
         toast(t('travelGuide.galleryPermissionRequiredPhoto'), 'error');
         return;

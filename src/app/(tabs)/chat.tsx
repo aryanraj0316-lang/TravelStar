@@ -3,6 +3,7 @@ import { logger } from '@/lib/logger';
 import { errorToastMessage, showAlert, toast, useConfirm } from '@/lib/feedback';
 import { getCurrentDeviceLocation } from '@/lib/device-location';
 import { uploadFileToUrl } from '@/lib/upload';
+import { recordConsent } from '@/lib/consent';
 import { formatINR } from '@/lib/money';
 import { formatDateRange } from '@/lib/datetime';
 import { useRouter, type ErrorBoundaryProps } from 'expo-router';
@@ -1538,6 +1539,7 @@ function ChatScreen() {
         return;
       }
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      recordConsent('PHOTOS', !!permissionResult?.granted);
       if (!permissionResult?.granted) {
         await showAlert('Permission required', 'Allow photo access to send a picture to this group.');
         return;

@@ -209,6 +209,23 @@ export interface NotificationPreferences {
   pushSeasonal: boolean;
 }
 
+// Explicit consent capture (docs/REMEDIATION.md §12.3) — append-only on the
+// server, so GET returns only the latest row per category.
+export type ConsentCategory = 'LOCATION' | 'CAMERA' | 'PHOTOS' | 'NOTIFICATIONS';
+
+export interface ConsentRecordRow {
+  id: string;
+  category: ConsentCategory;
+  granted: boolean;
+  policyVersion: string;
+  createdAt: string;
+}
+
+export interface ConsentState {
+  current: Record<ConsentCategory, ConsentRecordRow | null>;
+  policyVersion: string;
+}
+
 /** The §0.2.1 API response envelope, as parsed straight off the wire — every
  * field is optional/loosely typed here because this is what a non-2xx or
  * malformed response looks like before it's been checked; `data`'s real
@@ -736,6 +753,17 @@ export const apiService = {
       method: 'PUT',
       body: JSON.stringify(updates),
     });
+  },
+
+  async recordConsent(category: ConsentCategory, granted: boolean, policyVersion: string): Promise<ConsentRecordRow> {
+    return request('/consent', {
+      method: 'POST',
+      body: JSON.stringify({ category, granted, policyVersion }),
+    });
+  },
+
+  async getConsentState(): Promise<ConsentState> {
+    return request('/consent');
   },
 
   async getUnreadNotificationCount(): Promise<{ count: number }> {

@@ -4,6 +4,7 @@ import { apiService } from '@/services/api';
 import type { IncomingJoinRequest, TripMemberRow } from '@/types/api';
 import { errorToastMessage, toast } from '@/lib/feedback';
 import { uploadFileToUrl } from '@/lib/upload';
+import { recordConsent } from '@/lib/consent';
 import { formatDate } from '@/lib/datetime';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -461,6 +462,7 @@ function CreateTripScreen() {
   const pickImageFromGallery = async () => {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      recordConsent('PHOTOS', permission.granted);
       if (!permission.granted) {
         toast(t('createTrip.galleryPermissionRequired'), 'error');
         return;
