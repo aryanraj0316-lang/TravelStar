@@ -140,6 +140,16 @@ enum TripStatus {
   COMPLETED
 }
 
+// The permission categories this app actually requests (docs/REMEDIATION.md
+// §12.3). No KYC entry — identity verification was removed outright in
+// §12.1, so there is nothing to consent to there.
+enum ConsentCategory {
+  LOCATION
+  CAMERA
+  PHOTOS
+  NOTIFICATIONS
+}
+
 model User {
   id                 String             @id @default(uuid())
   email              String?            @unique
@@ -186,6 +196,9 @@ model User {
   notifications      Notification[]
   notificationReads  NotificationRead[]
   deviceTokens       DeviceToken[]
+
+  // Privacy & consent
+  consentRecords ConsentRecord[]
 
   // Social Relations
   followers Follow[]  @relation("Following")
@@ -766,6 +779,11 @@ model LiveLocation {
   updatedAt DateTime @default(now())
 
   @@index([userId])
+  // Both the live map's freshness filter (routes/map.ts, "gte: freshAfter")
+  // and the retention purge job (lib/data-retention.ts, "lt: cutoff") filter
+  // and order on this column — it was missing from Phase 4's original
+  // indexing sweep.
+  @@index([updatedAt])
 }
 
 model Review {
@@ -908,6 +926,25 @@ model DeviceToken {
   lastSeenAt DateTime @default(now())
 
   @@index([userId])
+}
+
+// Append-only consent log (docs/REMEDIATION.md §12.3 — "explicit, granular
+// consent capture for location, camera, photos, and notifications, with
+// timestamps and the policy version consented to"). A row is written every
+// time a user grants or revokes one category — never updated in place —
+// so the history itself is the audit trail a DPDP/GDPR-style request needs,
+// not just a snapshot of the current state. "Current" is simply the latest
+// row per (userId, category).
+model ConsentRecord {
+  id            String          @id @default(uuid())
+  userId        String
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category      ConsentCategory
+  granted       Boolean
+  policyVersion String
+  createdAt     DateTime        @default(now())
+
+  @@index([userId, category, createdAt])
 }
 
 // Per-user read state for broadcast notifications (userId: null on

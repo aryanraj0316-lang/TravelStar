@@ -7,6 +7,7 @@ import { env } from './config/env';
 import { createSocketServer } from './socket-server';
 import { initObservability, captureException, flushObservability } from './lib/observability';
 import { closeCache } from './lib/cache';
+import { startRetentionScheduler, stopRetentionScheduler } from './lib/data-retention';
 
 initObservability();
 
@@ -19,6 +20,8 @@ server.listen(env.PORT, () => {
   logger.info(`TravelStar server is running on port ${env.PORT}`);
 });
 
+startRetentionScheduler();
+
 // ── Graceful shutdown (docs/REMEDIATION.md Phase 11) ────────────────
 // SIGTERM (orchestrator stop) / SIGINT (Ctrl-C): stop accepting new
 // connections, close sockets, disconnect Prisma, flush error reporting,
@@ -29,6 +32,7 @@ async function shutdown(signal: string): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
   logger.info(`[shutdown] received ${signal}, draining…`);
+  stopRetentionScheduler();
 
   const hardExit = setTimeout(() => {
     logger.error('[shutdown] drain timed out, forcing exit');
