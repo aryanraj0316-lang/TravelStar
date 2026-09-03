@@ -847,24 +847,6 @@ model Follow {
   @@index([followingId])
 }
 
-model AppBanner {
-  id        String   @id @default(uuid())
-  imageUrl  String
-  linkUrl   String?
-  title     String?
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-}
-
-model Coupon {
-  id        String   @id @default(uuid())
-  code      String   @unique
-  discount  Float // Percent or Flat amount
-  isPercent Boolean  @default(true)
-  expiresAt DateTime
-  active    Boolean  @default(true)
-}
-
 model AdminLog {
   id        String   @id @default(uuid())
   adminId   String
