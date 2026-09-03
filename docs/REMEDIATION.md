@@ -2501,7 +2501,27 @@ partial, exactly what's blocking full completion.
       Not done (needs the user / infra): real Sentry DSN + `npm i
       @sentry/node`, source-map upload per release, metrics/dashboards/
       alerts, backups + tested restore + RPO/RTO, runbooks, branch
-      protection, CD pipeline. `pino` swap left as a follow-up.
+      protection, CD pipeline.
+      **`pino` swap done (2026-09-03):** the zero-dep implementation was
+      always documented as a "drop-in follow-up" and Phase 11 names pino
+      specifically, not just "a structured logger". Added a 30-case
+      regression test (logger.test.ts) locking in the existing behavior —
+      level filtering, JSON shape, and critically the redact() pass that
+      keeps Aadhaar/tokens/coordinates out of the logs — *before* touching
+      the implementation. Two real gotchas found while swapping: pino
+      auto-serializes any property named exactly `err` with its own
+      stdSerializers.err, silently reshaping (adding a spurious `type`
+      field to) data this module's own redact() had already made safe —
+      fixed with `serializers: {}`; and pino.destination(fd) writes below
+      the Node stream layer, bypassing console.*/process.stdout entirely,
+      which would have made log output unmockable in tests going forward
+      — fixed by destining to process.stdout/process.stderr themselves
+      instead, keeping the info/debug-to-stdout, warn/error-to-stderr
+      split. redact() itself is unchanged and still sits in front of pino
+      (pino's own `redact` option matches fixed paths, not "this key
+      wherever it appears"). None of the ~125 existing logger.* call
+      sites needed to change. Full backend suite green after: 23 suites,
+      158 tests. See commit 37043ac.
 - [ ] Phase 12 — Legal, privacy, and compliance (in progress — the
       code-side items done, the legal/policy work deferred to the user):
       • §12.1 KYC ripped out per the 2026-08-27 decision. Migration
@@ -2525,11 +2545,45 @@ partial, exactly what's blocking full completion.
         §8.9. §12.9 (licence attribution) done in §8.20.
       Not done (needs the user / legal counsel): real hosted+versioned
       ToS & Privacy Policy (terms.tsx/privacy.tsx are honest placeholders
-      from §8.20), granular timestamped consent capture, data-retention
-      purge jobs (esp. LiveLocation), field-level encryption for any
-      remaining PII, store privacy labels / Data Safety form, DPA/DSAR
-      process. A data-export *file download* (share sheet) is a follow-up —
-      the client currently logs the JSON and toasts.
+      from §8.20), field-level encryption for any remaining PII, store
+      privacy labels / Data Safety form, DPA/DSAR process. A data-export
+      *file download* (share sheet) is a follow-up — the client currently
+      logs the JSON and toasts.
+      **§12.3 (granular timestamped consent capture) done (2026-09-03):**
+      new append-only ConsentRecord model (one row per grant/revoke, not
+      an overwritten column, so the row history is the audit trail a
+      DPDP/GDPR-style request needs) + POST/GET /consent
+      (backend/src/api/routes/consent.ts), 5 new backend tests. No KYC
+      category — removed outright in §12.1, nothing to consent to there.
+      Wired into every actual permission decision, capturing the real
+      outcome rather than an assumption: profile.tsx's locationSharing
+      toggle (LOCATION), profile.tsx's push toggle
+      (NOTIFICATIONS — skips the not-configured/unsupported branch, since
+      the OS never actually prompted there), and all 6
+      ImagePicker permission-request call sites across profile.tsx,
+      create.tsx, travel-guide.tsx, and chat.tsx (CAMERA/PHOTOS).
+      Deliberately NOT hooked into device-location.ts's SOS trigger —
+      that's an emergency GPS lookup, not a consent-gateable decision, and
+      the locationSharing toggle is already the real "do you consent"
+      moment for this category. CURRENT_POLICY_VERSION
+      (backend/src/lib/consent.ts, mirrored client-side per the standing
+      §6.4 no-shared-types decision) is a placeholder marker until real
+      legal copy exists to version. See commits 1354162, 300279a.
+      **§12.5 (data-retention purge jobs, "location history especially")
+      done (2026-09-03):** LiveLocation is one row per user, continuously
+      overwritten (not a growing history log) — but a stale row sat in
+      the database forever once someone stopped broadcasting, well past
+      the 30-minute freshness window the live map already applies at read
+      time (§8.8). New lib/data-retention.ts purges rows older than 24h,
+      scheduled hourly in-process plus an immediate run on boot, wired
+      into graceful shutdown. 3 new tests. Also added the
+      LiveLocation.updatedAt index this query (and, it turned out,
+      map.ts's pre-existing freshness filter) needed — missing since
+      Phase 4's original indexing sweep. Other data classes (chat
+      history, notifications, SOSAlert — the last deliberately kept:
+      safety-incident records need longer retention for accountability,
+      not purging) were not brought into scope; the doc's own callout was
+      specific to location history. See commit 1354162.
 - [ ] Phase 13 — Testing and release readiness (in progress, started
       2026-09-03 — full session resumed after a gap; first action was
       re-verifying the tracker against the actual repo rather than
