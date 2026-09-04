@@ -9,6 +9,7 @@
 // don't show a false "offline" banner during that initial null window.
 import { useEffect, useState } from 'react';
 import NetInfo, { type NetInfoState } from '@react-native-community/netinfo';
+import { logger } from '@/lib/logger';
 
 function deriveOnline(state: NetInfoState): boolean {
   return !!state.isConnected && state.isInternetReachable !== false;
@@ -17,12 +18,19 @@ function deriveOnline(state: NetInfoState): boolean {
 let currentlyOnline = true;
 const listeners = new Set<(online: boolean) => void>();
 
-NetInfo.addEventListener((state) => {
-  const online = deriveOnline(state);
-  if (online === currentlyOnline) return;
-  currentlyOnline = online;
-  listeners.forEach((l) => l(online));
-});
+try {
+  NetInfo.addEventListener((state) => {
+    const online = deriveOnline(state);
+    if (online === currentlyOnline) return;
+    currentlyOnline = online;
+    listeners.forEach((l) => l(online));
+  });
+} catch (e) {
+  // Registration itself throwing (rather than a later event) would mean the
+  // native module isn't available at all — nothing here retries, so this is
+  // worth knowing about rather than silently assuming "always online".
+  logger.warn('[NetworkStatus] Failed to register NetInfo listener:', e);
+}
 
 /** Current online state, for non-component code (e.g. the mutation queue). */
 export function isOnline(): boolean {

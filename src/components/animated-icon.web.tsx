@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
-import { StyleSheet, View } from 'react-native';
-import Animated, { Keyframe, Easing } from 'react-native-reanimated';
+import { useEffect, useState } from 'react';
+import { Animated, Easing, StyleSheet, View } from 'react-native';
 
 import classes from './animated-icon.module.css';
 const DURATION = 300;
@@ -9,63 +9,51 @@ export function AnimatedSplashOverlay() {
   return null;
 }
 
-const keyframe = new Keyframe({
-  0: {
-    transform: [{ scale: 0 }],
-  },
-  60: {
-    transform: [{ scale: 1.2 }],
-    easing: Easing.elastic(1.2),
-  },
-  100: {
-    transform: [{ scale: 1 }],
-    easing: Easing.elastic(1.2),
-  },
-});
-
-const logoKeyframe = new Keyframe({
-  0: {
-    opacity: 0,
-  },
-  60: {
-    transform: [{ scale: 1.2 }],
-    opacity: 0,
-    easing: Easing.elastic(1.2),
-  },
-  100: {
-    transform: [{ scale: 1 }],
-    opacity: 1,
-    easing: Easing.elastic(1.2),
-  },
-});
-
-const glowKeyframe = new Keyframe({
-  0: {
-    transform: [{ rotateZ: '-180deg' }, { scale: 0.8 }],
-    opacity: 0,
-  },
-  [DURATION / 1000]: {
-    transform: [{ rotateZ: '0deg' }, { scale: 1 }],
-    opacity: 1,
-    easing: Easing.elastic(0.7),
-  },
-  100: {
-    transform: [{ rotateZ: '7200deg' }],
-  },
-});
-
 export function AnimatedIcon() {
+  const [glowAnim] = useState(() => new Animated.Value(0));
+  const [bgAnim] = useState(() => new Animated.Value(0));
+  const [logoAnim] = useState(() => new Animated.Value(0));
+
+  useEffect(() => {
+    Animated.timing(glowAnim, {
+      toValue: 1,
+      duration: DURATION * 4,
+      easing: Easing.elastic(0.7),
+      useNativeDriver: true,
+    }).start();
+    Animated.timing(bgAnim, {
+      toValue: 1,
+      duration: DURATION,
+      easing: Easing.elastic(1.2),
+      useNativeDriver: true,
+    }).start();
+    Animated.timing(logoAnim, {
+      toValue: 1,
+      duration: DURATION,
+      easing: Easing.elastic(1.2),
+      useNativeDriver: true,
+    }).start();
+  }, [glowAnim, bgAnim, logoAnim]);
+
+  const glowRotate = glowAnim.interpolate({ inputRange: [0, 1], outputRange: ['-180deg', '0deg'] });
+  const bgScale = bgAnim.interpolate({ inputRange: [0, 0.6, 1], outputRange: [0, 1.2, 1] });
+  const logoScale = logoAnim.interpolate({ inputRange: [0, 0.6, 1], outputRange: [1.2, 1.2, 1] });
+
   return (
     <View style={styles.iconContainer}>
-      <Animated.View entering={glowKeyframe.duration(60 * 1000 * 4)} style={styles.glow}>
+      <Animated.View
+        style={[styles.glow, { opacity: glowAnim, transform: [{ rotateZ: glowRotate }, { scale: glowAnim }] }]}
+      >
         <Image style={styles.glow} source={require('@/assets/images/logo-glow.png')} />
       </Animated.View>
 
-      <Animated.View style={styles.background} entering={keyframe.duration(DURATION)}>
+      <Animated.View style={[styles.background, { transform: [{ scale: bgScale }] }]}>
         <div className={classes.expoLogoBackground} />
       </Animated.View>
 
-      <Animated.View style={styles.imageContainer} entering={logoKeyframe.duration(DURATION)}>
+      <Animated.View
+        style={[styles.imageContainer, { opacity: logoAnim, transform: [{ scale: logoScale }] }]}
+      >
         <Image style={styles.image} source={require('@/assets/images/expo-logo.png')} />
       </Animated.View>
     </View>

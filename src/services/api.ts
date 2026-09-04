@@ -3,9 +3,8 @@ import { eventBus } from './event-bus';
 import { logger } from '@/lib/logger';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
-import { DestinationDetail, Guide, MyTripBooking, SOSAlert, Trip, UserProfile } from '../store/AppContext';
+import type { DestinationDetail, Guide, MyTripBooking, SOSAlert, Story, Trip, UserProfile } from '../store/AppContext';
 import { ApiErrorCode } from '@/types/api-error-codes';
-import type { Story } from '../store/AppContext';
 import type {
   EmergencyContact,
   FeedItem,

@@ -31,13 +31,26 @@ export function useNotificationRouter(): void {
       }
     };
 
-    // Cold start: the tap that launched the app.
-    void Notifications.getLastNotificationResponseAsync().then(go);
+    try {
+      // Cold start: the tap that launched the app.
+      if (typeof Notifications.getLastNotificationResponseAsync === 'function') {
+        Notifications.getLastNotificationResponseAsync()
+          .then(go)
+          .catch((error: unknown) => logger.warn('[Push] getLastNotificationResponseAsync failed:', error));
+      }
 
-    const subscription = Notifications.addNotificationResponseReceivedListener(go);
+      if (typeof Notifications.addNotificationResponseReceivedListener === 'function') {
+        const subscription = Notifications.addNotificationResponseReceivedListener(go);
+        return () => {
+          cancelled = true;
+          subscription.remove();
+        };
+      }
+    } catch (error) {
+      logger.warn('[Push] Notification listeners unsupported:', error);
+    }
     return () => {
       cancelled = true;
-      subscription.remove();
     };
   }, [router]);
 

@@ -60,7 +60,7 @@ export default function ResetPasswordScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           <View style={styles.headerRow}>
             <TouchableOpacity
@@ -125,6 +125,8 @@ export default function ResetPasswordScreen() {
                   icon={<Lock size={18} color={C.textSec} />}
                   placeholder="••••••••"
                   secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  autoCorrect={false}
                   value={password}
                   onChangeText={setPassword}
                   accessibilityLabel={t('resetPassword.newPasswordA11y')}
@@ -146,6 +148,8 @@ export default function ResetPasswordScreen() {
                   icon={<Lock size={18} color={C.textSec} />}
                   placeholder="••••••••"
                   secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  autoCorrect={false}
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
                   accessibilityLabel={t('resetPassword.confirmPasswordA11y')}

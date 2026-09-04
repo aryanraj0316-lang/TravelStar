@@ -851,6 +851,8 @@ function ProfileScreen() {
               <Input
                 placeholder={t('profile.currentPassword')}
                 secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
                 value={deletePassword}
                 onChangeText={setDeletePassword}
                 accessibilityLabel={t('profile.currentPassword')}

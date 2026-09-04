@@ -12,16 +12,10 @@ import MessageSquare from 'lucide-react-native/icons/message-square';
 import PlusCircle from 'lucide-react-native/icons/circle-plus';
 import Search from 'lucide-react-native/icons/search';
 import User from 'lucide-react-native/icons/user';
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { Animated, Easing, Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-  Easing,
-} from 'react-native-reanimated';
 
 import { eventBus } from '@/services/event-bus';
 import { useApp } from '@/store/AppContext';
@@ -67,18 +61,21 @@ const AnimatedTabButton = React.memo(function AnimatedTabButton({
   showDot?: boolean;
 }) {
   const { t } = useTranslation();
-  const scale = useSharedValue(isFocused ? 1 : 0);
+  const [scaleAnim] = useState(() => new Animated.Value(isFocused ? 1 : 0));
 
   useEffect(() => {
-    scale.value = withTiming(isFocused ? 1 : 0, {
+    Animated.timing(scaleAnim, {
+      toValue: isFocused ? 1 : 0,
       duration: 120,
       easing: Easing.out(Easing.ease),
-    });
-  }, [isFocused, scale]);
+      useNativeDriver: true,
+    }).start();
+  }, [isFocused, scaleAnim]);
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value * 0.12 + 0.94 }],
-  }));
+  const scale = scaleAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.94, 1.06],
+  });
 
   const Icon = TAB_ICONS[routeName] || Home;
   const labelKey = TAB_LABEL_KEYS[routeName];
@@ -92,7 +89,7 @@ const AnimatedTabButton = React.memo(function AnimatedTabButton({
       accessibilityLabel={label}
       accessibilityState={{ selected: isFocused }}
     >
-      <Animated.View style={animatedStyle}>
+      <Animated.View style={{ transform: [{ scale }] }}>
         {isFocused ? (
           <LinearGradient
             colors={['#0044CC', '#0066FF']}
@@ -144,21 +141,25 @@ export function AppTabBar({ state, navigation }: AppTabBarProps) {
     (currentRouteName === 'chat' && activeRoomId !== null) ||
     (currentRouteName !== 'index' && navbarHidden);
 
-  const dockTranslateY = useSharedValue(0);
+  const [dockTranslateY] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
-    dockTranslateY.value = withTiming(shouldHideTabBar ? 150 : 0, {
+    Animated.timing(dockTranslateY, {
+      toValue: shouldHideTabBar ? 150 : 0,
       duration: 150,
       easing: Easing.out(Easing.ease),
-    });
+      useNativeDriver: true,
+    }).start();
   }, [shouldHideTabBar, dockTranslateY]);
 
   useEffect(() => {
     const unsub = eventBus.on('toggleNavbar', (hidden: boolean) => {
-      dockTranslateY.value = withTiming(hidden ? 150 : 0, {
+      Animated.timing(dockTranslateY, {
+        toValue: hidden ? 150 : 0,
         duration: 150,
         easing: Easing.out(Easing.ease),
-      });
+        useNativeDriver: true,
+      }).start();
     });
     return unsub;
   }, [dockTranslateY]);
@@ -172,15 +173,17 @@ export function AppTabBar({ state, navigation }: AppTabBarProps) {
     eventBus.emit('tabChanged', currentRouteName);
   }, [currentRouteName]);
 
-  const dockAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: dockTranslateY.value }],
-    display: shouldHideTabBar ? 'none' : 'flex',
-  }));
-
   const bottomOffset = Math.max(insets.bottom, 12);
 
   return (
-    <Animated.View style={[styles.floatingDockWrap, { bottom: bottomOffset }, dockAnimatedStyle]}>
+    <Animated.View
+      style={[
+        styles.floatingDockWrap,
+        { bottom: bottomOffset },
+        { transform: [{ translateY: dockTranslateY }] },
+        shouldHideTabBar ? { display: 'none' } : undefined,
+      ]}
+    >
       <LinearGradient
         colors={isDark ? ['#0C1020', '#050710'] : ['#FFFFFF', '#F1F5F9']}
         start={{ x: 0, y: 0 }}

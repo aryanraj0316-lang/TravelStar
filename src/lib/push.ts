@@ -47,14 +47,18 @@ function getEasProjectId(): string | null {
  * How a notification behaves while the app is in the foreground. Set once
  * at module scope so it is in place before any notification can arrive.
  */
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+try {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
+} catch (e) {
+  logger.warn('[Push] setNotificationHandler failed:', e);
+}
 
 /**
  * Ask for permission, mint an Expo push token, and register it with the
@@ -143,7 +147,9 @@ export function routeForNotificationData(data: Record<string, unknown> | undefin
 export async function syncBadgeCount(): Promise<void> {
   try {
     const { count } = await apiService.getUnreadNotificationCount();
-    await Notifications.setBadgeCountAsync(count);
+    if (typeof Notifications.setBadgeCountAsync === 'function') {
+      await Notifications.setBadgeCountAsync(count);
+    }
   } catch (error) {
     logger.warn('[Push] Badge sync failed:', error);
   }
