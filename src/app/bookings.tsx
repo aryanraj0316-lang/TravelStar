@@ -368,7 +368,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: C.white,
+    color: C.text,
   },
   tabsRow: {
     flexDirection: 'row',

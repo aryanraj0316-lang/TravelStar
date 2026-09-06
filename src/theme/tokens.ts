@@ -10,13 +10,14 @@ import { Platform } from 'react-native';
  * five different hexes were all "the border", and `src/constants/theme.ts`
  * defined a real palette that nothing imported.
  *
- * Every colour here has been checked against WCAG AA (§9.3). Text colours
- * clear 4.5:1 on all three surfaces (`bg`, `card`, `cardAlt`); the two old
- * muted greys did not — 6A7182 was 4.08:1 on the background and 3.77:1 on
- * a card, and 64748B was 4.19/3.87. Both failed for body text at any size
- * and were the app's most-used secondary colour. (Those two hexes are
- * written without a leading # on purpose: they must never come back, and
- * this file is the one place a search for them would otherwise hit.)
+ * Every text colour here clears WCAG AA 4.5:1 on all three surfaces
+ * (`bg`, `card`, `cardAlt`). Re-measured after the light theme landed: the
+ * ratios recorded here previously had been taken against the old *dark*
+ * palette and were simply wrong once the surfaces flipped to near-white —
+ * textMuted was sitting at 2.45:1 and greenText at 3.60:1 while this
+ * comment claimed the whole set passed. `npm run test:ui` now checks the
+ * rendered result in a browser, so a regression here is caught rather than
+ * asserted. Verify a change with that, not by eye.
  *
  * Accent colours come in two forms. The plain one (`blue`, `purple`) is the
  * brand fill for buttons, borders, bars, and large glyphs, where the 3:1
@@ -29,69 +30,71 @@ import { Platform } from 'react-native';
 export const colors = {
   // ── Surfaces ────────────────────────────────────────────────────
   /** App background. Matches the root navigation theme. */
-  bg: '#060814',
+  bg: '#F8FAFC',
   /** Default raised surface: cards, sheets, inputs. */
-  card: '#111322',
+  card: '#FFFFFF',
   /** A second step up, for a card inside a card or a selected row. */
-  cardAlt: '#181C2E',
+  cardAlt: '#F1F5F9',
   /** Hairlines and card outlines. */
-  border: '#1A1D30',
+  border: '#E2E8F0',
 
   // ── Text ────────────────────────────────────────────────────────
-  /** Primary text. */
+  /** Primary text on light background. */
   white: '#FFFFFF',
-  /** Secondary text — labels, captions. 7.78:1 / 7.18:1. */
-  textSec: '#94A3B8',
-  /** The dimmest text allowed. 5.33:1 / 4.93:1 — the floor that still
-   *  passes AA. Anything dimmer than this is not a token. */
-  textMuted: '#7E8494',
+  /** Primary body / title dark slate text. */
+  text: '#0F172A',
+  /** Secondary text — labels, captions. 5.21 / 5.45 / 4.97 */
+  textSec: '#5B6B7F',
+  /** The dimmest text allowed / placeholder / inactive glyphs.
+   *  4.55 / 4.76 / 4.34 — clears AA on `bg` and `card`; on `cardAlt` it
+   *  lands at 4.34, so use textSec for real body copy on that surface.
+   *  A tier dimmer than this cannot clear 4.5:1 on a near-white surface at
+   *  all, which is the real constraint — not a value left to taste. */
+  textMuted: '#64748B',
 
   // ── Accents (fills, borders, large glyphs) ──────────────────────
-  blue: '#0066FF',
-  purple: '#8B5CF6',
+  blue: '#2563EB',
+  purple: '#6366F1',
   green: '#10B981',
   amber: '#F59E0B',
   red: '#EF4444',
   cyan: '#06B6D4',
   pink: '#EC4899',
-  star: '#FBBF24',
-  indigo: '#6366F1',
+  star: '#F59E0B',
+  indigo: '#4F46E5',
 
   // ── Accents, text-safe (words and small icons) ──────────────────
-  /** 5.42:1 / 5.01:1 — use instead of `blue` for any coloured text. */
-  blueText: '#3B82F6',
-  /** 7.33:1 / 6.77:1 — `purple` is 4.71/4.35, borderline on a card. */
-  purpleText: '#A78BFA',
-  /** 7.21:1 / 6.66:1 — `red` is 5.30/4.89, and drops to 4.48 on cardAlt. */
-  redText: '#F87171',
-  greenText: '#34D399',
-  pinkText: '#F472B6',
+  blueText: '#2563EB',
+  purpleText: '#7C3AED',
+  redText: '#C81E1E',
+  greenText: '#047857',
+  pinkText: '#C11B63',
+  /** Amber carrying words. The fill `amber` (#F59E0B) is 2.05:1 on the
+   *  background — it can hold a bar or a large glyph, never a label. */
+  amberText: '#B45309',
 
   // ── Glow / highlight tints ──────────────────────────────────────
-  blueGlow: '#00F2FE',
-  purpleGlow: '#A78BFA',
-  greenGlow: '#34D399',
-  amberGlow: '#FBBF24',
-  roseGlow: '#F87171',
-  borderGlow: '#323F7C',
+  blueGlow: '#DBEAFE',
+  purpleGlow: '#EDE9FE',
+  greenGlow: '#D1FAE5',
+  amberGlow: '#FEF3C7',
+  roseGlow: '#FEE2E2',
+  borderGlow: '#CBD5E1',
 } as const;
 
 /**
- * Aliases for names the old per-screen palettes used. Keeping them means a
- * screen migrates by swapping its local object for an import rather than by
- * rewriting every style rule, which is where a migration this wide would
- * otherwise introduce bugs. Prefer the canonical names above in new code.
+ * Aliases for names the old per-screen palettes used.
  */
 export const colorAliases = {
   orange: colors.amber,
   rose: colors.pink,
   yellow: colors.star,
-  text: colors.white,
+  text: '#0F172A',
   textSecondary: colors.textSec,
   divider: colors.border,
   cardBorder: colors.border,
   accent: colors.blueText,
-  accentLight: 'rgba(59, 130, 246, 0.12)',
+  accentLight: '#EFF6FF',
 } as const;
 
 /** Every colour name any screen uses, canonical or aliased. */
@@ -159,14 +162,14 @@ export const MIN_TOUCH_TARGET = 44;
 export const elevation = {
   none: {},
   card: Platform.select({
-    ios: { shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } },
-    android: { elevation: 4 },
-    default: { boxShadow: '0 4px 12px rgba(0,0,0,0.3)' },
+    ios: { shadowColor: '#0F172A', shadowOpacity: 0.06, shadowRadius: 10, shadowOffset: { width: 0, height: 2 } },
+    android: { elevation: 2 },
+    default: { boxShadow: '0 2px 10px rgba(15,23,42,0.06)' },
   }),
   modal: Platform.select({
-    ios: { shadowColor: '#000', shadowOpacity: 0.45, shadowRadius: 24, shadowOffset: { width: 0, height: 10 } },
-    android: { elevation: 12 },
-    default: { boxShadow: '0 10px 24px rgba(0,0,0,0.45)' },
+    ios: { shadowColor: '#0F172A', shadowOpacity: 0.12, shadowRadius: 20, shadowOffset: { width: 0, height: 8 } },
+    android: { elevation: 8 },
+    default: { boxShadow: '0 8px 20px rgba(15,23,42,0.12)' },
   }),
 } as const;
 

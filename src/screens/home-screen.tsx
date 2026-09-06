@@ -1,23 +1,27 @@
-import { apiService } from '@/services/api';
-import { logger } from '@/lib/logger';
-import { useQuery } from '@tanstack/react-query';
-import { queryKeys } from '@/lib/query-keys';
-import { useApp, UserRole, type Trip } from '@/store/AppContext';
-import type { WeatherLocation } from '@/types/api';
-import { formatINR } from '@/lib/money';
-import { formatTripDuration, tripCoverImage, tripTransportLabel } from '@/lib/trip-display';
 import { ScreenEmpty, ScreenError, SkeletonCard } from '@/components/ui';
+import { logger } from '@/lib/logger';
+import { formatINR } from '@/lib/money';
+import { queryKeys } from '@/lib/query-keys';
+import { formatTripDuration, tripCoverImage, tripTransportLabel } from '@/lib/trip-display';
+import { apiService } from '@/services/api';
+import { eventBus } from '@/services/event-bus';
+import { useApp, UserRole, type Trip } from '@/store/AppContext';
+import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
+import type { WeatherLocation } from '@/types/api';
+import { useQuery } from '@tanstack/react-query';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter, useNavigation, type Href } from 'expo-router';
-import AlertTriangle from 'lucide-react-native/icons/triangle-alert';
+import { useNavigation, useRouter, type Href } from 'expo-router';
 import Bell from 'lucide-react-native/icons/bell';
 import CalendarCheck from 'lucide-react-native/icons/calendar-check';
+import Camera from 'lucide-react-native/icons/camera';
 import Car from 'lucide-react-native/icons/car';
 import Check from 'lucide-react-native/icons/check';
 import ChevronRight from 'lucide-react-native/icons/chevron-right';
 import Clock from 'lucide-react-native/icons/clock';
 import CloudRain from 'lucide-react-native/icons/cloud-rain';
-import CloudSnow from 'lucide-react-native/icons/cloud-snow';
+import Compass from 'lucide-react-native/icons/compass';
+import Film from 'lucide-react-native/icons/film';
+import Flame from 'lucide-react-native/icons/flame';
 import Globe from 'lucide-react-native/icons/globe';
 import Heart from 'lucide-react-native/icons/heart';
 import Map from 'lucide-react-native/icons/map';
@@ -25,30 +29,35 @@ import MapPin from 'lucide-react-native/icons/map-pin';
 import MessageSquare from 'lucide-react-native/icons/message-square';
 import Mountain from 'lucide-react-native/icons/mountain';
 import Plane from 'lucide-react-native/icons/plane';
+import Plus from 'lucide-react-native/icons/plus';
 import Star from 'lucide-react-native/icons/star';
 import Sun from 'lucide-react-native/icons/sun';
+import AlertTriangle from 'lucide-react-native/icons/triangle-alert';
 import Users from 'lucide-react-native/icons/users';
 import Wallet from 'lucide-react-native/icons/wallet';
 import Waves from 'lucide-react-native/icons/waves-horizontal';
-import React, { useEffect, useRef, useState } from 'react';
+import X from 'lucide-react-native/icons/x';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Animated,
   Dimensions,
   Easing,
   Image,
+  ImageBackground,
+  Modal,
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { eventBus } from '@/services/event-bus';
-import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const HERO_BANNER_WIDTH = SCREEN_WIDTH;
+const HERO_BANNER_HEIGHT = Math.round(SCREEN_WIDTH * (355 / 1024));
 const TRENDING_CARD_WIDTH = SCREEN_WIDTH * 0.52;
 
 // ─── Color Palette synchronized with search page theme ───────────────
@@ -66,10 +75,62 @@ const quickAccessItems: { labelKey: string; Icon: typeof MapPin; gradient: [stri
   { labelKey: 'home.quickBudgetTracker', Icon: Wallet, gradient: ['#111322', '#1B1E30'], iconColor: '#F59E0B', isNew: true, route: '/budget-tracker' },
 ];
 
-// The merged feed (getFeed) returns real FeedItems (sourceType STORY|REEL),
-// getStories() falls back to plain Storys, and DEFAULT_STORIES below is its
-// own small mock shape — none of the three match exactly, so this captures
-// only the fields the story rail below actually reads.
+// ─── Instagram Stories Prompt Data (Empty State Highlights) ───────────
+interface InstagramStoryPrompt {
+  id: string;
+  title: string;
+  badge?: string;
+  Icon: typeof Camera;
+  gradient: [string, string, ...string[]];
+  action: 'CREATE_STORY' | 'VIEW_STORIES' | 'EXPLORE_NEARBY' | 'BUDGET_TRIPS' | 'GROUP_ORGANIZER';
+}
+
+const INSTAGRAM_PROMPTS: InstagramStoryPrompt[] = [
+  {
+    id: 'prompt-add-yours',
+    title: 'Add Yours',
+    badge: 'NEW',
+    Icon: Camera,
+    gradient: ['#F58529', '#DD2A7B', '#8134AF'],
+    action: 'CREATE_STORY',
+  },
+  {
+    id: 'prompt-reels',
+    title: 'Top Reels',
+    badge: 'HOT',
+    Icon: Film,
+    gradient: ['#8B5CF6', '#3B82F6', '#06B6D4'],
+    action: 'VIEW_STORIES',
+  },
+  {
+    id: 'prompt-gems',
+    title: 'Hidden Gems',
+    badge: 'EXPLORE',
+    Icon: Compass,
+    gradient: ['#06B6D4', '#10B981', '#34D399'],
+    action: 'EXPLORE_NEARBY',
+  },
+  {
+    id: 'prompt-trending',
+    title: 'Trending',
+    badge: '🔥',
+    Icon: Flame,
+    gradient: ['#F59E0B', '#EF4444', '#EC4899'],
+    action: 'BUDGET_TRIPS',
+  },
+  {
+    id: 'prompt-solo',
+    title: 'Solo Vibes',
+    badge: 'TRIPS',
+    Icon: Globe,
+    gradient: ['#2563EB', '#6366F1', '#8B5CF6'],
+    action: 'GROUP_ORGANIZER',
+  },
+];
+
+// The merged feed (getFeed) returns real FeedItems (sourceType STORY|REEL);
+// getStories() falls back to plain Storys. This captures only the fields
+// the story rail below actually reads.
 interface HomeFeedItem {
   id: string;
   coverImg?: string | null;
@@ -77,46 +138,13 @@ interface HomeFeedItem {
   title?: string;
 }
 
-const DEFAULT_STORIES = [
-  { id: 'ds-1', location: 'Sikkim', coverImg: 'https://images.unsplash.com/photo-1548013146-72479768bada?w=150&q=80', hasReel: true, title: 'Sikkim' },
-  { id: 'ds-2', location: 'Jaipur', coverImg: 'https://images.unsplash.com/photo-1599661046289-e31897846e41?w=150&q=80', hasReel: false, title: 'Jaipur' },
-  { id: 'ds-3', location: 'Goa', coverImg: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=150&q=80', hasReel: false, title: 'Goa' },
-  { id: 'ds-4', location: 'Manali', coverImg: 'https://images.unsplash.com/photo-1605649487212-47bdab064df7?w=150&q=80', hasReel: true, title: 'Manali' },
-  { id: 'ds-5', location: 'Munnar', coverImg: 'https://images.unsplash.com/photo-1593693397690-362cb9666fc2?w=150&q=80', hasReel: false, title: 'Munnar' },
-];
-
-const DEFAULT_DESTINATIONS = [
-  { id: 'dd-1', name: 'Ladakh', tags: 'Adventure • Mountains', rating: 4.8, image: 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=400&q=80', rank: 1 },
-  { id: 'dd-2', name: 'Andaman', tags: 'Beaches • Relaxation', rating: 4.7, image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=400&q=80', rank: 2 },
-  { id: 'dd-3', name: 'Goa', tags: 'Nightlife • Beaches', rating: 4.6, image: 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=400&q=80', rank: 3 },
-  { id: 'dd-4', name: 'Kerala', tags: 'Nature • Backwaters', rating: 4.9, image: 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=400&q=80', rank: 4 },
-  { id: 'dd-5', name: 'Manali', tags: 'Snow • Hill Station', rating: 4.8, image: 'https://images.unsplash.com/photo-1605649487212-47bdab064df7?w=400&q=80', rank: 5 },
-  { id: 'dd-6', name: 'Varanasi', tags: 'Ghats • Ganga River', rating: 4.9, image: 'https://images.unsplash.com/photo-1571536802807-30451e3955d8?w=500&q=80', rank: 6 },
-  { id: 'dd-7', name: 'Udaipur', tags: 'Palaces • Romance', rating: 4.9, image: 'https://images.unsplash.com/photo-1615836245337-f5b9b2303f10?w=400&q=80', rank: 7 },
-  { id: 'dd-8', name: 'Darjeeling', tags: 'Tea Gardens • Views', rating: 4.6, image: 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=400&q=80', rank: 8 },
-];
-
-const DEFAULT_WEATHER = [
-  { id: 'dw-1', name: 'New Delhi', place: 'India Gate', temp: '32°C', condition: 'Partly Sunny', aqi: 'Good AQI • 42', humidity: '48%', image: 'https://images.unsplash.com/photo-1587474260584-136574528ed5?w=500&q=80' },
-  { id: 'dw-2', name: 'Agra', place: 'Taj Mahal', temp: '34°C', condition: 'Sunny & Clear', aqi: 'Moderate AQI • 58', humidity: '42%', image: 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=500&q=80' },
-  { id: 'dw-3', name: 'Jaipur', place: 'Hawa Mahal', temp: '35°C', condition: 'Warm & Sunny', aqi: 'Moderate AQI • 65', humidity: '35%', image: 'https://images.unsplash.com/photo-1599661046289-e31897846e41?w=500&q=80' },
-  { id: 'dw-4', name: 'Srinagar', place: 'Dal Lake', temp: '21°C', condition: 'Pleasant Breeze', aqi: 'Excellent AQI • 18', humidity: '60%', image: 'https://images.unsplash.com/photo-1598091383021-15ddea10925d?w=500&q=80' },
-  { id: 'dw-5', name: 'Varanasi', place: 'Kashi Ghats', temp: '30°C', condition: 'Clear Sky', aqi: 'Good AQI • 45', humidity: '52%', image: 'https://images.unsplash.com/photo-1571536802807-30451e3955d8?w=500&q=80' },
-  { id: 'dw-6', name: 'Munnar', place: 'Tea Gardens', temp: '22°C', condition: 'Mist & Clouds', aqi: 'Pure AQI • 12', humidity: '75%', image: 'https://images.unsplash.com/photo-1593693397690-362cb9666fc2?w=500&q=80' },
-];
-
-const DEFAULT_ALERTS = [
-  { id: 'da-1', severity: 'CRITICAL', title: 'Monsoon Warning (Ladakh Routes)', category: 'FLOOD & RAIN', desc: 'Heavy monsoon rain warning along Ladakh routes.', image: 'https://images.unsplash.com/photo-1518156677180-95a2893f3e9f?w=600&q=80' },
-  { id: 'da-2', severity: 'WARNING', title: 'Cloudburst Warning (North Sikkim)', category: 'CLOUDBURST', desc: 'Met office predicts high risk of localized cloudbursts.', image: 'https://images.unsplash.com/photo-1534274988757-a28bf1a57c17?w=600&q=80' },
-];
-
 // ─── Apple-Style Live Character Formation Greeting Component ────────
 const GREETING_WORD_SEQUENCES = [
   ['N', 'Na', 'Nam', 'Nama', 'Namas', 'Namast', 'Namaste', 'Namaste 🙏'],
   ['न', 'नम', 'नमस्', 'नमस्त', 'नमस्ते', 'नमस्ते 🙏'],
 ];
 
-function AppleMultilingualGreeting({ isFocused }: { isFocused: boolean }) {
+function AppleMultilingualGreetingBase({ isFocused }: { isFocused: boolean }) {
   const wordSequences = GREETING_WORD_SEQUENCES;
 
   const [wordIdx, setWordIdx] = useState(0);
@@ -187,13 +215,29 @@ function AppleMultilingualGreeting({ isFocused }: { isFocused: boolean }) {
   );
 }
 
-function FloatingTouristWeatherCard({ locations, isFocused }: { locations: WeatherLocation[]; isFocused: boolean }) {
+// Far enough that a card is fully off the (max ~220pt wide) weather card
+// before the incoming one lands, so neither is ever half-visible mid-slide.
+const SLIDE_DISTANCE = 260;
+
+/** Stable empty default for the alerts query — see its use site. */
+const EMPTY_ALERTS: HomeAlertCard[] = [];
+
+function FloatingTouristWeatherCardBase({ locations, isFocused }: { locations: WeatherLocation[]; isFocused: boolean }) {
   const { t } = useTranslation();
-  // Base image: always static at (0,0), fully visible
+  // Base image: at (0,0) at rest, slides out while the next one slides in.
   const [baseIndex, setBaseIndex] = useState(0);
   // Sliding image: only exists while animating, starts off-screen and slides to (0,0)
   const [slidingIndex, setSlidingIndex] = useState<number | null>(null);
-  const slideAnim = useState(() => new Animated.Value(0))[0];
+  // Two values, not one. The base layer's transform prop must never be
+  // removed: with useNativeDriver the native side owns that view's
+  // transform, and dropping the prop (the old `slidingItem ? … : null`)
+  // does not push a reset back down — the layer stayed parked at the
+  // exit position (-SLIDE_DISTANCE, i.e. off-screen behind `overflow:
+  // hidden`) after every slide, which is the card "going white" once the
+  // incoming layer unmounted. Giving the outgoing layer its own value
+  // means it can be snapped back to rest the moment it is promoted.
+  const enterAnim = useState(() => new Animated.Value(0))[0];
+  const exitAnim = useState(() => new Animated.Value(0))[0];
   const baseIndexRef = useRef(0);
   const isAnimatingRef = useRef(false);
 
@@ -205,109 +249,131 @@ function FloatingTouristWeatherCard({ locations, isFocused }: { locations: Weath
 
       const nextIdx = (baseIndexRef.current + 1) % locations.length;
 
-      // 1. Add the sliding layer (starts off-screen because slideAnim is 0)
-      slideAnim.setValue(0);
+      // 1. Add the sliding layer (starts off-screen because enterAnim is 0)
+      enterAnim.setValue(0);
+      exitAnim.setValue(0);
       setSlidingIndex(nextIdx);
 
-      // 2. Animate it from off-screen to (0,0)
-      Animated.timing(slideAnim, {
-        toValue: 1,
-        duration: 600,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start(({ finished }) => {
+      // 2. Slide the new one in while the old one slides out.
+      Animated.parallel([
+        Animated.timing(enterAnim, {
+          toValue: 1,
+          duration: 600,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(exitAnim, {
+          toValue: 1,
+          duration: 600,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]).start(({ finished }) => {
         if (finished) {
-          // 3. Animation done — sliding layer now fully covers base.
-          //    Promote: make base show this image, remove sliding layer.
-          //    Both layers show the same image at (0,0), so swap is invisible.
+          // 3. Promote: base takes over the image the sliding layer is
+          //    already showing at (0,0), and snaps back to rest in the same
+          //    tick. The sliding layer is still mounted on top for this
+          //    frame, so the base moving underneath it is never seen.
           baseIndexRef.current = nextIdx;
           setBaseIndex(nextIdx);
           setSlidingIndex(null);
+          exitAnim.setValue(0);
         }
         isAnimatingRef.current = false;
       });
     }, 3200);
 
     return () => clearInterval(interval);
-  }, [locations, isFocused, slideAnim]);
+  }, [locations, isFocused, enterAnim, exitAnim]);
 
-  // Slide direction alternates based on the sliding image index
+  // Slide direction alternates based on the sliding image index. The
+  // outgoing card exits along the same axis the incoming one enters on, so
+  // the two never occupy the card at once — the previous card is gone by
+  // the time the new one lands.
   const dir = slidingIndex !== null ? slidingIndex % 4 : 0;
+  const axis = dir === 0 || dir === 2 ? 'x' : 'y';
+  const from = dir === 0 || dir === 1 ? -SLIDE_DISTANCE : SLIDE_DISTANCE;
 
-  const translateX = slideAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: dir === 0 ? [-200, 0] : dir === 2 ? [200, 0] : [0, 0],
-  });
-
-  const translateY = slideAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: dir === 1 ? [-200, 0] : dir === 3 ? [200, 0] : [0, 0],
-  });
+  // Home screen re-renders often (feed/destinations/weather/alerts/guides/
+  // stories/notifications are all separate useQuery hooks living in the
+  // same component, so any one of them settling re-renders everyone).
+  // Recomputing .interpolate() on every one of those incidental re-renders
+  // handed the native-driven Animated.View a brand-new node mid-slide, and
+  // re-attaching a native transform to a fresh node while it's animating is
+  // exactly the kind of thing that flashes to a default/extreme position
+  // for a frame — which, inside this card's `overflow: hidden`, reads as a
+  // blank flash. Memoizing keeps the same node across re-renders that don't
+  // actually change the slide direction/distance.
+  const { enterTransform, exitTransform } = useMemo(() => {
+    const enterTranslate = enterAnim.interpolate({ inputRange: [0, 1], outputRange: [from, 0] });
+    const exitTranslate = exitAnim.interpolate({ inputRange: [0, 1], outputRange: [0, -from] });
+    return {
+      enterTransform: axis === 'x' ? [{ translateX: enterTranslate }] : [{ translateY: enterTranslate }],
+      exitTransform: axis === 'x' ? [{ translateX: exitTranslate }] : [{ translateY: exitTranslate }],
+    };
+  }, [axis, from, enterAnim, exitAnim]);
 
   const renderWeatherContent = (loc: WeatherLocation) => (
-    <>
-      <Image source={{ uri: loc.image }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-      <LinearGradient
-        colors={['rgba(13,15,26,0.35)', 'rgba(13,15,26,0.92)']}
-        style={StyleSheet.absoluteFill}
-      />
-      <View style={styles.weatherContent}>
-        <View style={styles.locationRow}>
-          <MapPin size={13} color={C.green} />
-          <Text style={styles.locationText}>{loc.name}</Text>
-          <Text style={styles.placeText}>• {loc.place}</Text>
-        </View>
-        <View style={styles.tempRow}>
-          <Text style={styles.tempText}>{loc.temp}</Text>
-          <Sun size={32} color={C.orange} />
-        </View>
-        <Text style={styles.weatherCondition}>{loc.condition}</Text>
-        <Text style={styles.aqiText}>{loc.aqi}</Text>
-        <View style={styles.weatherBottom}>
-          <Text style={styles.weatherDetail}>{t('home.humidity', { value: loc.humidity })}</Text>
-          <View style={styles.badgeLive}>
-            <View style={styles.liveDot} />
-            <Text style={styles.liveText}>{t('home.live')}</Text>
-          </View>
+    <View style={styles.weatherCardInner}>
+      <View style={styles.locationRow}>
+        <MapPin size={12} color="#10B981" />
+        <Text style={styles.locationText} numberOfLines={1}>{loc.name} • {loc.place}</Text>
+      </View>
+      <View style={styles.tempRow}>
+        <Text style={styles.tempText}>{loc.temp}</Text>
+        <Sun size={26} color="#F59E0B" />
+      </View>
+      <Text style={styles.weatherCondition}>{loc.condition}</Text>
+      <View style={styles.aqiRow}>
+        <Text style={styles.aqiLabel}>Air Quality </Text>
+        <Text style={styles.aqiValue}>{loc.aqi.replace(' AQI', '')}</Text>
+      </View>
+      <Text style={styles.weatherDetail}>{t('home.humidity', { value: loc.humidity })}</Text>
+      <View style={styles.weatherThumbWrap}>
+        <Image source={{ uri: loc.image }} style={styles.weatherThumb} resizeMode="cover" />
+        <View style={styles.badgeLive}>
+          <Text style={styles.liveText}>• LIVE</Text>
         </View>
       </View>
-    </>
+    </View>
   );
 
-  if (locations.length === 0) return <View style={styles.weatherCard} />;
+  if (locations.length === 0) {
+    // Real "no weather data yet" state — never a fabricated temperature/AQI
+    // reading for a city nobody configured (see the query above).
+    return (
+      <View style={[styles.weatherCard, styles.weatherEmptyWrap]}>
+        <CloudRain size={22} color="#94A3B8" strokeWidth={1.8} />
+        <Text style={styles.weatherEmptyText}>{t('home.weatherEmpty')}</Text>
+      </View>
+    );
+  }
   const baseItem = locations[baseIndex % locations.length];
   const slidingItem = slidingIndex !== null ? locations[slidingIndex % locations.length] : null;
 
   return (
     <View style={styles.weatherCard}>
-      {/* Base layer: always static, always visible, never animates */}
-      <View style={StyleSheet.absoluteFill}>
-        {renderWeatherContent(baseItem)}
-      </View>
-
-      {/* Sliding layer: only rendered while animating, slides from off-screen to (0,0) */}
-      {slidingItem && (
-        <Animated.View
-          style={[
-            StyleSheet.absoluteFill,
-            {
-              transform: [{ translateX }, { translateY }],
-              zIndex: 10,
-            },
-          ]}
-        >
-          {renderWeatherContent(slidingItem)}
+      {/* elevation (for the drop shadow) and overflow: hidden (to clip the
+          sliding layers) must not live on the same view — Android disposes
+          of that combination by intermittently failing to composite
+          animated children, which is exactly the "goes blank" flash. The
+          shadow stays on weatherCard; clipping moves to this inner view. */}
+      <View style={styles.weatherClip}>
+        <Animated.View style={[StyleSheet.absoluteFill, styles.weatherLayer, { transform: exitTransform }]}>
+          {renderWeatherContent(baseItem)}
         </Animated.View>
-      )}
+        {slidingItem && (
+          <Animated.View
+            style={[StyleSheet.absoluteFill, styles.weatherLayer, { transform: enterTransform, zIndex: 10 }]}
+          >
+            {renderWeatherContent(slidingItem)}
+          </Animated.View>
+        )}
+      </View>
     </View>
   );
 }
 
-// Not HazardAlert's real severity/category enums: DEFAULT_ALERTS below uses
-// human-readable display strings ('FLOOD & RAIN') rather than the API's
-// coded values ('FLOOD_RAIN' — see AlertCategory in @/types/api), and
-// getCategoryIcon()/getAlertColors() below match against the display-string
-// form either way, with a safe default for anything unrecognized.
 interface HomeAlertCard {
   id: string;
   severity: string;
@@ -317,7 +383,7 @@ interface HomeAlertCard {
   image: string;
 }
 
-function RotatingMonsoonAlertCard({ alerts, isFocused }: { alerts: HomeAlertCard[]; isFocused: boolean }) {
+function RotatingMonsoonAlertCardBase({ alerts, isFocused }: { alerts: HomeAlertCard[]; isFocused: boolean }) {
   const { t } = useTranslation();
   const router = useRouter();
   const [alertIndex, setAlertIndex] = useState(0);
@@ -355,21 +421,35 @@ function RotatingMonsoonAlertCard({ alerts, isFocused }: { alerts: HomeAlertCard
     return () => clearInterval(timer);
   }, [alerts, isFocused, fadeAnim]);
 
-  if (alerts.length === 0) return <View style={{ flex: 1 }} />;
+  // No fake "Monsoon Warning" placeholder here — an empty active-alerts
+  // response is real, good news, not something to paper over with sample
+  // hazard data (that would be actively misleading on a safety card).
+  if (alerts.length === 0) {
+    return (
+      <View style={styles.advisoryCard}>
+        <View style={[styles.advisoryIconWrap, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
+          <Check size={18} color="#10B981" />
+        </View>
+        <Text style={styles.advisoryTitle}>All Clear</Text>
+        <Text style={styles.advisoryDesc}>No active hazard alerts on your routes right now.</Text>
+      </View>
+    );
+  }
   const activeAlert = alerts[alertIndex % alerts.length];
 
   const getCategoryIcon = (category: string, severity: string) => {
     const iconColor = severity === 'CRITICAL' ? '#EF4444' : severity === 'WARNING' ? '#F59E0B' : '#0066FF';
+    // Matches the API's actual coded category values (AlertCategory in
+    // @/types/api / the createAlertSchema enum in backend/alerts.ts), not
+    // display-formatted strings — those never came back from a real alert.
     switch (category) {
       case 'LANDSLIDE':
         return <Mountain size={14} color={iconColor} />;
-      case 'FLOOD & RAIN':
+      case 'FLOOD_RAIN':
         return <Waves size={14} color={iconColor} />;
-      case 'SNOWFALL':
-        return <CloudSnow size={14} color={iconColor} />;
       case 'CLOUDBURST':
         return <CloudRain size={14} color={iconColor} />;
-      case 'TRAFFIC RUSH':
+      case 'TRAFFIC_RUSH':
         return <Car size={14} color={iconColor} />;
       default:
         return <AlertTriangle size={14} color={iconColor} />;
@@ -390,39 +470,31 @@ function RotatingMonsoonAlertCard({ alerts, isFocused }: { alerts: HomeAlertCard
   const colors = getAlertColors(activeAlert.severity);
 
   return (
-    <Animated.View style={[styles.alertCard, styles.monsoonCard, { flex: 1, opacity: fadeAnim, overflow: 'hidden', position: 'relative', padding: 0 }]}>
-      <Image source={{ uri: activeAlert.image }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-      <LinearGradient
-        colors={['rgba(21,17,14,0.3)', 'rgba(21,17,14,0.92)']}
-        style={StyleSheet.absoluteFill}
-      />
-      <View style={{ flex: 1, padding: 10, justifyContent: 'space-between', zIndex: 2 }}>
-        <View style={[styles.alertIconWrap, { backgroundColor: colors.iconBg }]}>
-          {getCategoryIcon(activeAlert.category, activeAlert.severity)}
-        </View>
-        <Text style={[styles.alertTitle, { color: colors.text }]} numberOfLines={1}>
-          {activeAlert.title}
-        </Text>
-        <Text style={[styles.alertDesc, { color: '#E2E8F0', textShadowColor: '#000', textShadowOffset: { width: 0.5, height: 0.5 }, textShadowRadius: 1 }]} numberOfLines={3}>
-          {activeAlert.desc}
-        </Text>
-        <TouchableOpacity
-          style={styles.alertLink}
-          activeOpacity={0.8}
-          onPress={() => router.push('/monsoon-advisory')}
-          hitSlop={{ top: 8, bottom: 10, left: 8, right: 8 }}
-          accessibilityRole="button"
-          accessibilityLabel={t('home.viewDetails')}
-        >
-          <Text style={[styles.alertLinkText, { color: colors.text }]}>{t('home.viewDetails')}</Text>
-          <ChevronRight size={11} color={colors.text} />
-        </TouchableOpacity>
+    <Animated.View style={[styles.advisoryCard, { opacity: fadeAnim }]}>
+      <View style={styles.advisoryIconWrap}>
+        <AlertTriangle size={18} color="#DC2626" />
       </View>
+      <Text style={styles.advisoryTitle} numberOfLines={2}>
+        {activeAlert.title}
+      </Text>
+      <Text style={styles.advisoryDesc} numberOfLines={4}>
+        {activeAlert.desc}
+      </Text>
+      <TouchableOpacity
+        style={styles.advisoryLink}
+        activeOpacity={0.8}
+        onPress={() => router.push('/monsoon-advisory')}
+        hitSlop={{ top: 8, bottom: 10, left: 8, right: 8 }}
+        accessibilityRole="button"
+        accessibilityLabel={t('home.viewDetails')}
+      >
+        <Text style={styles.advisoryLinkText}>{t('home.viewDetails')} &gt;</Text>
+      </TouchableOpacity>
     </Animated.View>
   );
 }
 
-function FeaturedTripsCarousel({ isFocused }: { isFocused: boolean }) {
+function FeaturedTripsCarouselBase({ isFocused }: { isFocused: boolean }) {
   const { t } = useTranslation();
   const { trips, setActiveRoomId, dataStatus, refreshTrips } = useApp();
   const router = useRouter();
@@ -440,17 +512,39 @@ function FeaturedTripsCarousel({ isFocused }: { isFocused: boolean }) {
     const stepWidth = cardWidth + 10;
     const singleSetWidth = stepWidth * organizerTrips.length;
 
-    const interval = setInterval(() => {
-      if (!isInteracting.current) {
-        scrollX.current += 0.85;
-        if (scrollX.current >= singleSetWidth) {
-          scrollX.current -= singleSetWidth;
-        }
-        carouselRef.current?.scrollTo({ x: scrollX.current, animated: false });
-      }
-    }, 30);
+    // Frame-aligned rather than a 30ms setInterval. The old timer fired ~33
+    // times a second whether or not the device could paint that often, so on
+    // a phone it queued scrollTo work faster than the JS thread could drain
+    // it and competed with every other interaction. requestAnimationFrame
+    // runs at most once per frame and stops while the app is backgrounded.
+    // Speed is unchanged: the previous 0.85px per 30ms is 28.33px/second,
+    // now expressed as distance × elapsed time so it stays constant at any
+    // frame rate instead of drifting with timer lag.
+    const PX_PER_MS = 0.85 / 30;
+    const MIN_STEP_MS = 30; // keep the original 33/s cadence, not 60/s
+    let raf = 0;
+    let last = Date.now();
 
-    return () => clearInterval(interval);
+    const step = () => {
+      const now = Date.now();
+      const elapsed = now - last;
+      // Only move on frames at least a step apart, so this does the same
+      // amount of scroll work per second as the old timer did — never more.
+      if (elapsed >= MIN_STEP_MS) {
+        last = now;
+        if (!isInteracting.current) {
+          scrollX.current += PX_PER_MS * elapsed;
+          if (scrollX.current >= singleSetWidth) {
+            scrollX.current -= singleSetWidth;
+          }
+          carouselRef.current?.scrollTo({ x: scrollX.current, animated: false });
+        }
+      }
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+
+    return () => cancelAnimationFrame(raf);
   }, [organizerTrips, isFocused]);
 
   // The trip's own cover image or nothing. This used to look the id up in a
@@ -641,6 +735,18 @@ function FeaturedTripsCarousel({ isFocused }: { isFocused: boolean }) {
   );
 }
 
+// This screen runs six independent useQuery hooks (feed, stories,
+// destinations, weather, alerts, guides) plus the AppContext subscription,
+// and they settle at different times. Every one of those settling used to
+// re-render all four of these children — each of which drives its own
+// animation loop and rebuilds its Animated interpolations on render. None of
+// them read anything from the parent beyond the props below, so memoising
+// them means a query resolving no longer interrupts an animation mid-flight.
+const AppleMultilingualGreeting = React.memo(AppleMultilingualGreetingBase);
+const FloatingTouristWeatherCard = React.memo(FloatingTouristWeatherCardBase);
+const RotatingMonsoonAlertCard = React.memo(RotatingMonsoonAlertCardBase);
+const FeaturedTripsCarousel = React.memo(FeaturedTripsCarouselBase);
+
 // ─── Component ──────────────────────────────────────────────────────
 function HomeScreen() {
   const { t } = useTranslation();
@@ -667,17 +773,28 @@ function HomeScreen() {
   const { currentRole, setCurrentRole, profile, isLoggedIn, hasUnreadNotification, checkUnreadNotifications } = useApp();
   const router = useRouter();
   const [activeDot, setActiveDot] = useState(0);
+  const [showAuthPromptModal, setShowAuthPromptModal] = useState(false);
   const trendingRef = useRef<ScrollView>(null);
   const scrollXRef = useRef(0);
   const isInteractingRef = useRef(false);
   const lastScrollYRef = useRef(0);
   const navbarHiddenRef = useRef(false);
 
+  const handleAddStoryPress = () => {
+    if (!isLoggedIn) {
+      setShowAuthPromptModal(true);
+    } else {
+      router.push('/create');
+    }
+  };
+
   // ── Dynamic DB state (REMEDIATION.md §6.3: via TanStack Query) ─────
-  // Each falls back to its DEFAULT_* constant exactly as before when the
-  // backend has nothing yet — that mock-vs-real question is Phase 8 scope,
-  // not touched here; only the fetch mechanism changed.
-  const { data: stories = DEFAULT_STORIES } = useQuery({
+  // Stories, alerts, destinations and weather all show a real empty state
+  // (storiesEmptyWrap / "All Clear" / trendingEmptyWrap / the weather
+  // card's own empty branch) instead of a fabricated fallback — a backend
+  // that has no destinations or weather rows yet is a true "nothing here",
+  // not something to paper over with invented content.
+  const { data: stories = [] } = useQuery({
     queryKey: queryKeys.feed(),
     queryFn: async () => {
       // Unified feed (stories + guide reels merged) from backend, falling
@@ -689,31 +806,34 @@ function HomeScreen() {
         logger.warn('[Home] Feed fetch failed, falling back to stories only:', e);
       }
       const data = await apiService.getStories();
-      return data && data.length > 0 ? data : DEFAULT_STORIES;
+      return data ?? [];
     },
   });
 
-  const { data: destinations = DEFAULT_DESTINATIONS } = useQuery({
+  const { data: destinations = [] } = useQuery({
     queryKey: queryKeys.destinations(),
     queryFn: async () => {
       const data = await apiService.getDestinations();
-      return data && data.length > 0 ? data : DEFAULT_DESTINATIONS;
+      return data ?? [];
     },
   });
 
-  const { data: weatherLocations = DEFAULT_WEATHER } = useQuery({
+  const { data: weatherLocations = [] } = useQuery({
     queryKey: queryKeys.weatherLocations(),
     queryFn: async () => {
       const data = await apiService.getWeatherLocations();
-      return data && data.length > 0 ? data : DEFAULT_WEATHER;
+      return data ?? [];
     },
   });
 
-  const { data: alerts = DEFAULT_ALERTS } = useQuery({
+  // EMPTY_ALERTS, not a `[]` literal: a fresh array on each render is a new
+  // reference, which would defeat the React.memo on RotatingMonsoonAlertCard
+  // every time this screen re-rendered while the query was still pending.
+  const { data: alerts = EMPTY_ALERTS } = useQuery({
     queryKey: queryKeys.alerts(),
     queryFn: async () => {
       const data = await apiService.getAlerts();
-      return data && data.length > 0 ? data : DEFAULT_ALERTS;
+      return data ?? [];
     },
   });
 
@@ -738,24 +858,27 @@ function HomeScreen() {
     if (!isFocused || destinations.length <= 1) return;
     const itemWidth = TRENDING_CARD_WIDTH + 12;
 
+    // `activeDot` is read through the state updater rather than the closure,
+    // so this interval is armed once for the life of the carousel. With it in
+    // the dependency array the effect tore down and re-armed a fresh timer on
+    // every tick — three timers a second of pure churn, for an animation that
+    // only moves once every three seconds.
     const interval = setInterval(() => {
-      if (!isInteractingRef.current) {
-        let nextDot = activeDot + 1;
-        if (nextDot >= destinations.length) {
-          nextDot = 0;
-        }
-        setActiveDot(nextDot);
+      if (isInteractingRef.current) return;
+      setActiveDot((prev) => {
+        const nextDot = prev + 1 >= destinations.length ? 0 : prev + 1;
         scrollXRef.current = nextDot * itemWidth;
         trendingRef.current?.scrollTo({ x: scrollXRef.current, animated: true });
-      }
+        return nextDot;
+      });
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [destinations, activeDot, isFocused]);
+  }, [destinations, isFocused]);
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
@@ -763,7 +886,7 @@ function HomeScreen() {
         onScroll={(e) => {
           const y = e.nativeEvent.contentOffset.y;
           const diff = y - lastScrollYRef.current;
-          
+
           if (y <= 15) {
             if (navbarHiddenRef.current) {
               navbarHiddenRef.current = false;
@@ -785,93 +908,96 @@ function HomeScreen() {
         }}
       >
         {/* ════════════════════════════════════════════════
-            HEADER — Greeting + Avatar
+            HERO BANNER — Image at Top Behind Header
             ════════════════════════════════════════════════ */}
-        <View style={styles.header}>
-          <View style={{ flex: 1 }}>
-            <AppleMultilingualGreeting isFocused={isFocused} />
-            <Text style={styles.userName}>{profile.name}</Text>
-            <Text style={styles.userSub}>{t('home.userSub')}</Text>
-          </View>
-          <View style={styles.headerRight}>
-            {!isLoggedIn && (
-              <TouchableOpacity
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  minHeight: MIN_TOUCH_TARGET,
-                  backgroundColor: 'rgba(0, 102, 255, 0.2)',
-                  paddingHorizontal: 10,
-                  paddingVertical: 6,
-                  borderRadius: 16,
-                  borderWidth: 1,
-                  borderColor: 'rgba(0, 102, 255, 0.4)',
-                  marginRight: 8,
-                }}
-                activeOpacity={0.8}
-                onPress={() => router.push('/auth')}
-                accessibilityRole="button"
-                accessibilityLabel={t('home.loginSignUp')}
-              >
-                <Text style={{ fontSize: 12, fontWeight: '700', color: '#60A5FA', marginRight: 4 }}>
-                  {t('home.loginSignUp')}
-                </Text>
-                <ChevronRight size={12} color="#60A5FA" />
-              </TouchableOpacity>
-            )}
+        <ImageBackground
+          source={require('@/assets/images/hero-banner.jpg')}
+          style={styles.heroBannerWrap}
+          imageStyle={styles.heroBannerImage}
+          resizeMode="contain"
+        >
+          <View style={styles.topHeader}>
+            <View style={{ flex: 1 }}>
+              <AppleMultilingualGreeting isFocused={isFocused} />
+              <Text style={styles.userName} numberOfLines={1}>
+                {profile.name || 'Guest Traveler'}
+              </Text>
+              <Text style={styles.userSub} numberOfLines={1}>
+                Explore more. Experience better.
+              </Text>
+            </View>
+            <View style={styles.headerRight}>
+              <View style={styles.headerIconsRow}>
+                <TouchableOpacity
+                  style={styles.bellWrap}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  onPress={() => router.push('/notifications')}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('home.notificationsLabel')}
+                  accessibilityHint={hasUnreadNotification ? t('home.notificationsUnreadHint') : undefined}
+                >
+                  <Bell size={18} color="#334155" strokeWidth={1.8} />
+                  {hasUnreadNotification && <View style={styles.bellDot} />}
+                </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.bellWrap}
-              activeOpacity={0.7}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              onPress={() => router.push('/notifications')}
-              accessibilityRole="button"
-              accessibilityLabel={t('home.notificationsLabel')}
-              accessibilityHint={hasUnreadNotification ? t('home.notificationsUnreadHint') : undefined}
-            >
-              <Bell size={16} color={C.white} strokeWidth={1.8} />
-              {hasUnreadNotification && <View style={styles.bellDot} />}
-            </TouchableOpacity>
-            <TouchableOpacity
-              activeOpacity={0.85}
-              style={styles.avatarWrap}
-              onPress={() => router.navigate('/profile')}
-              hitSlop={{ top: 2, bottom: 2, left: 2, right: 2 }}
-              accessibilityRole="button"
-              accessibilityLabel={t('home.profileLabel')}
-            >
-              <LinearGradient
-                colors={['#0066FF', '#7C3AED']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.avatarBorder}
-              >
-                <Image
-                  source={{ uri: profile.avatar }}
-                  style={styles.avatar}
-                />
-              </LinearGradient>
-            </TouchableOpacity>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  style={styles.avatarWrap}
+                  onPress={() => router.navigate('/profile')}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('home.profileLabel')}
+                >
+                  <Image
+                    source={{ uri: profile.avatar }}
+                    style={styles.avatar}
+                  />
+                </TouchableOpacity>
+              </View>
+
+              {!isLoggedIn && (
+                <TouchableOpacity
+                  style={styles.loginPillBtn}
+                  activeOpacity={0.8}
+                  onPress={() => router.push('/auth')}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('home.loginSignUp')}
+                >
+                  <Text style={styles.loginPillText}>
+                    Login / Sign Up
+                  </Text>
+                  <ChevronRight size={12} color="#2563EB" />
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
-        </View>
+        </ImageBackground>
 
         {/* ════════════════════════════════════════════════
-            ROLE TABS — Horizontal scroll with gradient borders
+            ROLE CARDS — Overlapping Lower Half of Hero Image Banner
             ════════════════════════════════════════════════ */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.roleTabs}
-        >
+        <View style={styles.roleTabsRow}>
           {roles.map((role) => {
             const isActive = currentRole === role.value;
+            const iconBg =
+              role.value === 'TOURIST'
+                ? isActive ? '#2563EB' : '#EFF6FF'
+                : role.value === 'GUIDE'
+                  ? '#ECFDF5'
+                  : '#FFF7ED';
+            const iconColor =
+              role.value === 'TOURIST'
+                ? isActive ? '#FFFFFF' : '#2563EB'
+                : role.value === 'GUIDE'
+                  ? '#10B981'
+                  : '#F97316';
+
             return (
               <TouchableOpacity
                 key={role.value}
-                activeOpacity={0.8}
+                activeOpacity={0.85}
                 onPress={() => {
                   setCurrentRole(role.value);
-                  // Update the profile context role to mirror this change globally
                   profile.role = role.value;
                   if (role.value === 'GUIDE') {
                     router.push('/travel-guide');
@@ -880,54 +1006,70 @@ function HomeScreen() {
                     router.push('/group-organizer');
                   }
                 }}
+                style={[styles.roleCard, isActive && styles.roleCardActive]}
                 accessibilityRole="button"
                 accessibilityLabel={`${t(role.labelKey)}, ${t(role.subKey)}`}
                 accessibilityHint={t('home.roleSelectHint')}
                 accessibilityState={{ selected: isActive }}
               >
-                <LinearGradient
-                  colors={
-                    isActive
-                      ? ['#0066FF', '#6366F1', '#8B5CF6']
-                      : ['#1A1D30', '#1A1D30']
-                  }
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.roleTabBorder}
-                >
-                  <View style={[styles.roleTabInner, isActive && { backgroundColor: 'rgba(0, 102, 255, 0.12)' }]}>
-                    <role.Icon size={18} color={isActive ? C.white : C.textSec} strokeWidth={2} />
-                    <View>
-                      <Text style={[styles.roleLabel, { color: C.white }]}>{t(role.labelKey)}</Text>
-                      <Text style={styles.roleSub}>{t(role.subKey)}</Text>
-                    </View>
-                  </View>
-                </LinearGradient>
+                <View style={[styles.roleIconCircle, { backgroundColor: iconBg }]}>
+                  <role.Icon size={18} color={iconColor} strokeWidth={2.2} />
+                </View>
+                <Text style={styles.roleLabel}>{t(role.labelKey)}</Text>
+                <Text style={styles.roleSub}>{t(role.subKey)}</Text>
+                {isActive && <View style={styles.roleActiveIndicator} />}
               </TouchableOpacity>
             );
           })}
-        </ScrollView>
+        </View>
 
         {/* ════════════════════════════════════════════════
-            TRAVEL REELS & STORIES
+            TRAVEL REELS & STORIES — Blue Ring Story Circles & Add Story
             ════════════════════════════════════════════════ */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>{t('home.reelsAndStories')}</Text>
+          <Text style={styles.sectionTitle}>{t('home.reelsAndStories') || 'Travel Reels & Stories'}</Text>
           <TouchableOpacity
             style={styles.viewAllBtn}
             hitSlop={{ top: 14, bottom: 14, left: 10, right: 10 }}
+            onPress={() => router.push('/stories')}
             accessibilityRole="button"
             accessibilityLabel={t('home.viewAll')}
           >
             <Text style={styles.viewAllText}>{t('home.viewAll')}</Text>
-            <ChevronRight size={14} color={C.blue} />
+            <ChevronRight size={14} color="#2563EB" />
           </TouchableOpacity>
         </View>
+
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.storiesRow}
         >
+          {/* Your Story circle with Plus badge */}
+          <TouchableOpacity
+            style={styles.storyItem}
+            activeOpacity={0.8}
+            onPress={handleAddStoryPress}
+            accessibilityRole="button"
+            accessibilityLabel={t('home.addStory')}
+          >
+            <View style={styles.addStoryRing}>
+              {profile?.avatar ? (
+                <Image source={{ uri: profile.avatar }} style={styles.storyImage} />
+              ) : (
+                <View style={styles.addStoryAvatarFallback}>
+                  <Camera size={24} color="#2563EB" strokeWidth={1.8} />
+                </View>
+              )}
+              <View style={styles.addStoryPlusBadge}>
+                <Plus size={12} color="#FFFFFF" strokeWidth={3} />
+              </View>
+            </View>
+            <Text style={styles.storyName} numberOfLines={1}>
+              {t('home.yourStory')}
+            </Text>
+          </TouchableOpacity>
+
           {stories.map((story: HomeFeedItem) => (
             <TouchableOpacity
               key={story.id}
@@ -942,62 +1084,52 @@ function HomeScreen() {
               accessibilityRole="button"
               accessibilityLabel={t('home.storyLabel', { location: story.location || story.title })}
             >
-              <LinearGradient
-                colors={['#00E5FF', '#0066FF', '#0891B2']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.storyBorder}
-              >
-                <View style={styles.storyInner}>
-                  <Image source={{ uri: story.coverImg ?? undefined }} style={styles.storyImage} />
-                </View>
-              </LinearGradient>
-              <Text style={styles.storyName}>{story.location || story.title}</Text>
+              <View style={styles.storyRing}>
+                <Image source={{ uri: story.coverImg ?? undefined }} style={styles.storyImage} />
+              </View>
+              <Text style={styles.storyName} numberOfLines={2}>
+                {story.location || story.title}
+              </Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
 
         {/* ════════════════════════════════════════════════
-            QUICK ACCESS GRID — Squircle tiles
+            QUICK ACCESS ROW — 3 White Cards
             ════════════════════════════════════════════════ */}
-        <LinearGradient
-          colors={['#111322', '#0A0C16']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.quickCard}
-        >
-          {quickAccessItems.map((item, index) => (
-            <TouchableOpacity
-              key={index}
-              style={styles.quickItem}
-              activeOpacity={0.7}
-              onPress={() => {
-                if (item.route) {
-                  router.push(item.route!);
-                }
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={t(item.labelKey)}
-            >
-              <View style={{ position: 'relative' }}>
-                <LinearGradient
-                  colors={item.gradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.quickIconTile}
-                >
-                  <item.Icon size={15} color={item.iconColor} strokeWidth={2.2} />
-                </LinearGradient>
-                {item.isNew && (
-                  <View style={styles.newBadgeGold}>
-                    <Text style={styles.newBadgeGoldText}>{t('home.new')}</Text>
+        <View style={styles.quickAccessRow}>
+          {quickAccessItems.map((item, index) => {
+            const iconBg = index === 0 ? '#EFF6FF' : index === 1 ? '#ECFDF5' : '#FFF7ED';
+            const iconCol = index === 0 ? '#2563EB' : index === 1 ? '#10B981' : '#F59E0B';
+
+            return (
+              <TouchableOpacity
+                key={index}
+                style={styles.quickCardItem}
+                activeOpacity={0.8}
+                onPress={() => {
+                  if (item.route) {
+                    router.push(item.route!);
+                  }
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={t(item.labelKey)}
+              >
+                <View style={{ position: 'relative' }}>
+                  <View style={[styles.quickIconCircle, { backgroundColor: iconBg }]}>
+                    <item.Icon size={20} color={iconCol} strokeWidth={2.2} />
                   </View>
-                )}
-              </View>
-              <Text style={styles.quickLabel}>{t(item.labelKey)}</Text>
-            </TouchableOpacity>
-          ))}
-        </LinearGradient>
+                  {item.isNew && (
+                    <View style={styles.newBadgePill}>
+                      <Text style={styles.newBadgeText}>NEW</Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={styles.quickLabel}>{t(item.labelKey)}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
 
         {/* ════════════════════════════════════════════════
             WEATHER & ALERTS — Two column
@@ -1036,113 +1168,236 @@ function HomeScreen() {
             <ChevronRight size={14} color={C.blue} />
           </TouchableOpacity>
         </View>
-        <ScrollView
-          ref={trendingRef}
-          horizontal
-          snapToInterval={TRENDING_CARD_WIDTH + 12}
-          decelerationRate="fast"
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.trendingRow}
-          scrollEventThrottle={16}
-          onTouchStart={() => {
-            isInteractingRef.current = true;
-          }}
-          onTouchEnd={() => {
-            setTimeout(() => {
-              isInteractingRef.current = false;
-            }, 1200);
-          }}
-          onScrollBeginDrag={() => {
-            isInteractingRef.current = true;
-          }}
-          onScrollEndDrag={(e) => {
-            scrollXRef.current = e.nativeEvent.contentOffset.x;
-            setTimeout(() => {
-              isInteractingRef.current = false;
-            }, 1200);
-          }}
-          onMomentumScrollEnd={(e) => {
-            const x = e.nativeEvent.contentOffset.x;
-            scrollXRef.current = x;
-            const currentIdx = Math.round(x / (TRENDING_CARD_WIDTH + 12)) % destinations.length;
-            setActiveDot(currentIdx);
-            isInteractingRef.current = false;
-          }}
-        >
-          {infiniteTrendingDests.map((dest, index) => (
-            <TouchableOpacity
-              key={`${dest.id}-${index}`}
-              style={styles.trendingCard}
-              activeOpacity={0.9}
-              onPress={() => {
-                router.push({
-                  pathname: '/destination-details',
-                  params: { id: String(dest.id) }
-                });
+        {destinations.length === 0 ? (
+          // No fabricated Ladakh/Goa/Kerala cards here — an empty backend
+          // destinations list is shown as empty, not stood in for.
+          <View style={styles.storiesEmptyWrap}>
+            <Text style={styles.storiesEmptyText}>{t('home.destinationsEmpty')}</Text>
+          </View>
+        ) : (
+          <>
+            <ScrollView
+              ref={trendingRef}
+              horizontal
+              snapToInterval={TRENDING_CARD_WIDTH + 12}
+              decelerationRate="fast"
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.trendingRow}
+              scrollEventThrottle={16}
+              onTouchStart={() => {
+                isInteractingRef.current = true;
               }}
-              accessibilityRole="button"
-              accessibilityLabel={t('home.destinationCardLabel', { name: dest.name, rating: dest.rating })}
+              onTouchEnd={() => {
+                setTimeout(() => {
+                  isInteractingRef.current = false;
+                }, 1200);
+              }}
+              onScrollBeginDrag={() => {
+                isInteractingRef.current = true;
+              }}
+              onScrollEndDrag={(e) => {
+                scrollXRef.current = e.nativeEvent.contentOffset.x;
+                setTimeout(() => {
+                  isInteractingRef.current = false;
+                }, 1200);
+              }}
+              onMomentumScrollEnd={(e) => {
+                const x = e.nativeEvent.contentOffset.x;
+                scrollXRef.current = x;
+                const currentIdx = Math.round(x / (TRENDING_CARD_WIDTH + 12)) % destinations.length;
+                setActiveDot(currentIdx);
+                isInteractingRef.current = false;
+              }}
             >
-              <Image
-                source={{ uri: dest.image }}
-                style={StyleSheet.absoluteFill}
-                resizeMode="cover"
-              />
-              <LinearGradient
-                colors={['transparent', 'rgba(0,0,0,0.78)']}
-                style={styles.trendingOverlay}
-              />
-              {/* Hanging Vertical Ribbon Tag for Rank */}
-              <View style={styles.rankRibbonWrap}>
-                <LinearGradient
-                  colors={['#FFD700', '#F59E0B', '#B45309']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 0, y: 1 }}
-                  style={styles.rankRibbonBody}
+              {infiniteTrendingDests.map((dest, index) => (
+                // No accessibilityRole="button" here (unlike other cards) — this
+                // one has its own nested button (the heart, below), and
+                // react-native-web renders that role as a literal <button>. Two
+                // nested <button> elements is invalid HTML; the browser's own
+                // DOM validation rejects it, which is a web-only crash with no
+                // native-side symptom (there's no such DOM rule on iOS/Android).
+                // onPress/activeOpacity below are unaffected — only the ARIA
+                // role/HTML tag choice changes.
+                <TouchableOpacity
+                  key={`${dest.id}-${index}`}
+                  style={styles.trendingCard}
+                  activeOpacity={0.9}
+                  onPress={() => {
+                    router.push({
+                      pathname: '/destination-details',
+                      params: { id: String(dest.id) }
+                    });
+                  }}
+                  accessibilityLabel={t('home.destinationCardLabel', { name: dest.name, rating: dest.rating })}
                 >
-                  <Text style={styles.rankRibbonText}>
-                    #{destinations.length > 0 ? (index % destinations.length) + 1 : index + 1}
-                  </Text>
-                </LinearGradient>
-              </View>
-              {/* Heart Button */}
-              <TouchableOpacity
-                style={styles.heartBtn}
-                activeOpacity={0.7}
-                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                accessibilityRole="button"
-                accessibilityLabel={t('home.favoriteHint')}
-              >
-                <Heart size={16} color={C.white} strokeWidth={2} />
-              </TouchableOpacity>
-              {/* Bottom Info */}
-              <View style={styles.trendingInfo}>
-                <Text style={styles.trendingName}>{dest.name}</Text>
-                <Text style={styles.trendingTags}>{dest.tags}</Text>
-                <View style={styles.ratingRow}>
-                  <Star size={12} color={C.star} fill={C.star} />
-                  <Text style={styles.ratingText}>{dest.rating}</Text>
-                </View>
-              </View>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-        {/* Pagination Dots */}
-        <View style={styles.dotsRow}>
-          {destinations.map((_, idx: number) => (
-            <View
-              key={idx}
-              style={[
-                styles.dot,
-                activeDot === idx ? styles.dotActive : styles.dotInactive,
-              ]}
-            />
-          ))}
-        </View>
+                  <Image
+                    source={{ uri: dest.image }}
+                    style={StyleSheet.absoluteFill}
+                    resizeMode="cover"
+                  />
+                  <LinearGradient
+                    colors={['transparent', 'rgba(0,0,0,0.78)']}
+                    style={styles.trendingOverlay}
+                  />
+                  {/* Hanging Vertical Ribbon Tag for Rank */}
+                  <View style={styles.rankRibbonWrap}>
+                    <LinearGradient
+                      colors={['#FFD700', '#F59E0B', '#B45309']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 0, y: 1 }}
+                      style={styles.rankRibbonBody}
+                    >
+                      <Text style={styles.rankRibbonText}>
+                        #{destinations.length > 0 ? (index % destinations.length) + 1 : index + 1}
+                      </Text>
+                    </LinearGradient>
+                  </View>
+                  {/* Heart Button */}
+                  <TouchableOpacity
+                    style={styles.heartBtn}
+                    activeOpacity={0.7}
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('home.favoriteHint')}
+                  >
+                    <Heart size={16} color={C.white} strokeWidth={2} />
+                  </TouchableOpacity>
+                  {/* Bottom Info */}
+                  <View style={styles.trendingInfo}>
+                    <Text style={styles.trendingName}>{dest.name}</Text>
+                    <Text style={styles.trendingTags}>{dest.tags}</Text>
+                    <View style={styles.ratingRow}>
+                      <Star size={12} color={C.star} fill={C.star} />
+                      <Text style={styles.ratingText}>{dest.rating}</Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            {/* Pagination Dots */}
+            <View style={styles.dotsRow}>
+              {destinations.map((_, idx: number) => (
+                <View
+                  key={idx}
+                  style={[
+                    styles.dot,
+                    activeDot === idx ? styles.dotActive : styles.dotInactive,
+                  ]}
+                />
+              ))}
+            </View>
+          </>
+        )}
 
         {/* Bottom spacer for tab bar */}
         <View style={{ height: 120 }} />
       </ScrollView>
+
+      {/* ── Add Story / Sign Up Prompt Modal ── */}
+      <Modal
+        visible={showAuthPromptModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowAuthPromptModal(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setShowAuthPromptModal(false)}
+          />
+          <View style={styles.authModalCard}>
+            {/* Close button */}
+            <TouchableOpacity
+              style={styles.modalCloseBtn}
+              onPress={() => setShowAuthPromptModal(false)}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityRole="button"
+              accessibilityLabel={t('common.close')}
+            >
+              <X size={18} color="#64748B" />
+            </TouchableOpacity>
+
+            {/* Header Icon */}
+            <View style={styles.modalIconWrap}>
+              <LinearGradient
+                colors={['#2563EB', '#38BDF8']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.modalIconGradient}
+              >
+                <Camera size={28} color="#FFFFFF" strokeWidth={2} />
+              </LinearGradient>
+            </View>
+
+            {/* Modal Title & Desc */}
+            <Text style={styles.authModalTitle}>
+              {t('home.shareStoryModalTitle')}
+            </Text>
+            <Text style={styles.authModalDesc}>
+              {t('home.shareStoryModalDesc')}
+            </Text>
+
+            {/* Value props / perks */}
+            <View style={styles.authModalPerks}>
+              <View style={styles.authModalPerkRow}>
+                <View style={styles.perkCheckCircle}>
+                  <Check size={12} color="#10B981" strokeWidth={3} />
+                </View>
+                <Text style={styles.perkText}>{t('home.shareStoryBenefit1')}</Text>
+              </View>
+              <View style={styles.authModalPerkRow}>
+                <View style={styles.perkCheckCircle}>
+                  <Check size={12} color="#10B981" strokeWidth={3} />
+                </View>
+                <Text style={styles.perkText}>{t('home.shareStoryBenefit2')}</Text>
+              </View>
+              <View style={styles.authModalPerkRow}>
+                <View style={styles.perkCheckCircle}>
+                  <Check size={12} color="#10B981" strokeWidth={3} />
+                </View>
+                <Text style={styles.perkText}>{t('home.shareStoryBenefit3')}</Text>
+              </View>
+            </View>
+
+            {/* Actions */}
+            <TouchableOpacity
+              style={styles.authModalPrimaryBtn}
+              activeOpacity={0.85}
+              onPress={() => {
+                setShowAuthPromptModal(false);
+                router.push('/auth');
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={t('home.continueToSignUp')}
+            >
+              <LinearGradient
+                colors={['#2563EB', '#1D4ED8']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.authModalPrimaryGradient}
+              >
+                <Text style={styles.authModalPrimaryText}>
+                  {t('home.continueToSignUp')}
+                </Text>
+                <ChevronRight size={16} color="#FFFFFF" strokeWidth={2.5} />
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.authModalSecondaryBtn}
+              activeOpacity={0.7}
+              onPress={() => setShowAuthPromptModal(false)}
+              accessibilityRole="button"
+              accessibilityLabel={t('home.maybeLater')}
+            >
+              <Text style={styles.authModalSecondaryText}>
+                {t('home.maybeLater')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1304,191 +1559,244 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // ── Header ──────────────────────────────────────────
-  header: {
+  // ── Top Header (Inside ImageBackground) ─────────────
+  topHeader: {
     flexDirection: 'row',
     alignItems: 'flex-start',
+    justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingTop: 8,
-    marginBottom: 16,
+    paddingTop: 10,
   },
   appleGreetingContainer: {
-    height: 24,
+    height: 22,
     justifyContent: 'center',
-    marginBottom: 3,
+    marginBottom: 2,
   },
   appleGreetingRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   appleGreetingText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
-    color: C.textSec,
+    color: '#2563EB',
     letterSpacing: 0.2,
   },
   userName: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: '800',
-    color: C.white,
+    color: '#0F172A',
     letterSpacing: -0.5,
     marginBottom: 2,
   },
   userSub: {
-    fontSize: 13,
-    color: C.textSec,
+    fontSize: 12.5,
+    color: '#475569',
+    fontWeight: '500',
   },
   headerRight: {
     flexDirection: 'column',
     alignItems: 'flex-end',
-    gap: 4,
-    paddingTop: 0,
+    gap: 6,
+  },
+  headerIconsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  loginPillBtn: {
+    marginTop: 0,
+    marginRight: -20,
+    transform: [{ scale: 0.8 }],
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  loginPillText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#2563EB',
+    marginRight: 4,
   },
   bellWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderColor: '#E2E8F0',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: C.amber,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.35,
-    shadowRadius: 6,
-    alignSelf: 'flex-end',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
   },
   bellDot: {
     position: 'absolute',
-    top: 2,
-    right: 2,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: C.red,
-    borderWidth: 1.5,
-    borderColor: C.bg,
+    top: 6,
+    right: 6,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#EF4444',
   },
   avatarWrap: {
-    marginTop: 2,
-  },
-  avatarBorder: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    padding: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
   },
   avatar: {
     width: 38,
     height: 38,
     borderRadius: 19,
-    borderWidth: 1.5,
-    borderColor: C.bg,
   },
 
-  // ── Role Tabs Gradient Outline ──────────────────────
-  roleTabs: {
+  // ── Hero Banner (Full Length, Exact Aspect Ratio, Zero Distortion) ──
+  heroBannerWrap: {
+    width: HERO_BANNER_WIDTH,
+    height: HERO_BANNER_HEIGHT,
+    backgroundColor: 'transparent',
+  },
+  heroBannerImage: {
+    width: HERO_BANNER_WIDTH,
+    height: HERO_BANNER_HEIGHT,
+  },
+
+  // ── Role Cards ──────────────────────────────────────
+  roleTabsRow: {
+    flexDirection: 'row',
     paddingHorizontal: 20,
     gap: 10,
-    marginBottom: 18,
+    marginBottom: 20,
+    marginTop: 14,
+    zIndex: 10,
   },
-  roleTabBorder: {
+  roleCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    padding: 1.5,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  roleTabInner: {
-    flexDirection: 'row',
+  roleCardActive: {
+    borderColor: '#BFDBFE',
+  },
+  roleIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
-    gap: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 14.5,
-    backgroundColor: C.card,
-    minWidth: 140,
+    justifyContent: 'center',
+    marginBottom: 8,
   },
   roleLabel: {
     fontSize: 13,
     fontWeight: '700',
-    color: C.white,
+    color: '#0F172A',
   },
   roleSub: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.55)',
-    marginTop: 1,
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  roleActiveIndicator: {
+    height: 3,
+    width: 32,
+    backgroundColor: '#2563EB',
+    borderRadius: 2,
+    marginTop: 8,
   },
 
   // ── Search Bar ──────────────────────────────────────
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: C.card,
+    backgroundColor: '#FFFFFF',
     marginHorizontal: 20,
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderRadius: 14,
     marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     gap: 10,
   },
   searchPlaceholder: {
     flex: 1,
     fontSize: 14,
-    color: C.textSec,
+    color: '#64748B',
   },
 
-  // ── Quick Access Grid ───────────────────────────────
-  quickCard: {
+  // ── Quick Access Row ────────────────────────────────
+  quickAccessRow: {
     flexDirection: 'row',
-    marginHorizontal: 36,
-    borderRadius: 20,
-    paddingVertical: 10,
-    paddingHorizontal: 10,
+    paddingHorizontal: 20,
+    gap: 10,
     marginBottom: 20,
-    borderWidth: 1,
-    borderColor: C.border,
-    shadowColor: C.blue,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    elevation: 3,
   },
-  quickItem: {
+  quickCardItem: {
     flex: 1,
-    alignItems: 'center',
-  },
-  quickIconTile: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 4,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: '#E2E8F0',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  quickIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
   },
   quickLabel: {
     fontSize: 12,
     fontWeight: '600',
-    color: C.white,
+    color: '#0F172A',
     textAlign: 'center',
   },
-  newBadgeGold: {
+  newBadgePill: {
     position: 'absolute',
-    top: -5,
+    top: -4,
     right: -10,
-    backgroundColor: C.amber,
-    paddingHorizontal: 4,
+    backgroundColor: '#C2410C',
+    paddingHorizontal: 5,
     paddingVertical: 1,
-    borderRadius: 5,
-    borderWidth: 1,
-    borderColor: '#0F1224',
+    borderRadius: 6,
   },
-  newBadgeGoldText: {
-    fontSize: 12,
+  newBadgeText: {
+    fontSize: 9,
     fontWeight: '800',
-    color: '#111827',
+    color: '#FFFFFF',
   },
 
   // ── Weather & Alerts ────────────────────────────────
@@ -1500,14 +1808,54 @@ const styles = StyleSheet.create({
   },
   weatherCard: {
     flex: 1,
-    height: 190,
-    borderRadius: 16,
-    overflow: 'hidden',
+    minHeight: 210,
+    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
     position: 'relative',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
   },
-  weatherContent: {
+  weatherEmptyWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+  },
+  weatherEmptyText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    textAlign: 'center',
+  },
+  // Carries the border + overflow: hidden that used to live on weatherCard
+  // itself — see the comment at its JSX usage for why elevation and
+  // overflow: hidden can't share one view on Android.
+  weatherClip: {
     flex: 1,
-    padding: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+  },
+  // Opaque: without a background the outgoing card reads straight through
+  // the incoming one mid-slide and both are visible at once.
+  weatherLayer: {
+    backgroundColor: '#FFFFFF',
+  },
+  storiesEmptyWrap: {
+    paddingVertical: 18,
+    paddingHorizontal: 4,
+  },
+  storiesEmptyText: {
+    fontSize: 13,
+    color: '#64748B',
+  },
+  weatherCardInner: {
+    flex: 1,
+    padding: 12,
     justifyContent: 'space-between',
   },
   locationRow: {
@@ -1516,196 +1864,120 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   locationText: {
-    fontSize: 12,
-    color: C.white,
-    fontWeight: '700',
-  },
-  placeText: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.75)',
-    fontWeight: '500',
+    fontSize: 11.5,
+    color: '#334155',
+    fontWeight: '600',
   },
   tempRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: -4,
+    marginTop: 2,
   },
   tempText: {
-    fontSize: 38,
+    fontSize: 32,
     fontWeight: '800',
-    color: C.white,
+    color: '#0F172A',
   },
   weatherCondition: {
     fontSize: 12,
-    color: 'rgba(255,255,255,0.8)',
-    marginTop: -6,
+    color: '#64748B',
+    marginTop: -2,
   },
-  aqiText: {
-    fontSize: 12,
-    color: C.green,
+  aqiRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginTop: 2,
   },
-  weatherBottom: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  aqiLabel: {
+    fontSize: 11,
+    color: '#64748B',
+  },
+  aqiValue: {
+    fontSize: 11,
+    color: '#047857',
+    fontWeight: '700',
   },
   weatherDetail: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.55)',
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  weatherThumbWrap: {
+    height: 64,
+    borderRadius: 10,
+    overflow: 'hidden',
+    marginTop: 6,
+    position: 'relative',
+  },
+  weatherThumb: {
+    width: '100%',
+    height: '100%',
   },
   badgeLive: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(239,68,68,0.2)',
+    position: 'absolute',
+    bottom: 4,
+    left: 4,
+    backgroundColor: '#2563EB',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(239,68,68,0.4)',
-  },
-  liveDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    backgroundColor: C.red,
   },
   liveText: {
-    fontSize: 12,
+    fontSize: 9,
     fontWeight: '800',
-    color: C.red,
+    color: '#FFFFFF',
     letterSpacing: 0.5,
   },
 
-  // ── Alerts ──
+  // ── Advisory / Alerts ──
   alertsColumn: {
     flex: 1,
-    gap: 10,
   },
-  alertCard: {
+  advisoryCard: {
     flex: 1,
-    backgroundColor: C.card,
-    borderRadius: 14,
-    padding: 10,
+    backgroundColor: '#FEF2F2',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#FEE2E2',
+    padding: 14,
     justifyContent: 'space-between',
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
   },
-  monsoonCard: {
-    backgroundColor: '#24160E',
-    borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.35)',
-  },
-  tripCardWrap: {
-    backgroundColor: '#131726',
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.3)',
-  },
-  alertIconWrap: {
-    width: 24,
-    height: 24,
-    borderRadius: 8,
+  advisoryIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FEE2E2',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 2,
   },
-  alertTitle: {
+  advisoryTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#DC2626',
+    marginTop: 8,
+    lineHeight: 17,
+  },
+  advisoryDesc: {
+    fontSize: 11,
+    color: '#475569',
+    lineHeight: 15,
+    marginTop: 4,
+  },
+  advisoryLink: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  advisoryLinkText: {
     fontSize: 12,
     fontWeight: '700',
-    color: C.white,
-    marginTop: 1,
-  },
-  alertDesc: {
-    fontSize: 12,
-    color: C.textSec,
-    lineHeight: 11,
-  },
-  alertLink: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    marginTop: 2,
-  },
-  alertLinkText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: C.blue,
-  },
-  tripHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  tripLiveBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    backgroundColor: 'rgba(16,185,129,0.15)',
-    paddingHorizontal: 5,
-    paddingVertical: 1.5,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(16,185,129,0.3)',
-  },
-  tripLiveDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: C.green,
-  },
-  tripLiveText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: C.green,
-    letterSpacing: 0.3,
-  },
-  tripTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginVertical: 2,
-  },
-  routeGraphic: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: 44,
-    height: 14,
-  },
-  routeDotBlue: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: C.blueText,
-  },
-  routeLinePath: {
-    flex: 1,
-    height: 2,
-    backgroundColor: 'rgba(59, 130, 246, 0.45)',
-    marginHorizontal: 2,
-  },
-  routeDotGreen: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: C.green,
-    borderWidth: 1.5,
-    borderColor: '#131726',
-  },
-  timerWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    backgroundColor: 'rgba(245,158,11,0.15)',
-    paddingHorizontal: 5,
-    paddingVertical: 1.5,
-    borderRadius: 5,
-    alignSelf: 'flex-start',
-    marginTop: 1,
-  },
-  timerText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: C.orange,
+    color: '#DC2626',
   },
 
   // ── Section Headers ─────────────────────────────────
@@ -1717,9 +1989,9 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700',
-    color: C.white,
+    color: '#0F172A',
   },
   viewAllBtn: {
     flexDirection: 'row',
@@ -1727,63 +1999,209 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   viewAllText: {
-    fontSize: 12,
-    color: C.blue,
+    fontSize: 13,
+    color: '#2563EB',
     fontWeight: '600',
   },
 
-  // ── Stories ─────────────────────────────────────────
+  // ── Stories & Add Story ──────────────────────────────
   storiesRow: {
     paddingHorizontal: 20,
-    gap: 18,
-    marginBottom: 28,
+    gap: 14,
+    marginBottom: 24,
+    alignItems: 'center',
   },
   storyItem: {
     alignItems: 'center',
-    width: 68,
+    width: 76,
   },
-  storyBorder: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
+  addStoryRing: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    borderWidth: 2,
+    borderColor: '#93C5FD',
+    borderStyle: 'dashed',
+    padding: 2.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    backgroundColor: '#EFF6FF',
+  },
+  addStoryAvatarFallback: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    backgroundColor: '#DBEAFE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addStoryPlusBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#2563EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  storyRing: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    borderWidth: 2.5,
+    borderColor: '#2563EB',
     padding: 2.5,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  storyInner: {
-    width: 63,
-    height: 63,
-    borderRadius: 31.5,
-    backgroundColor: C.bg,
-    padding: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   storyImage: {
-    width: 59,
-    height: 59,
-    borderRadius: 29.5,
-  },
-  reelBadge: {
-    position: 'absolute',
-    bottom: 18,
-    backgroundColor: C.red,
-    paddingHorizontal: 6,
-    paddingVertical: 1.5,
-    borderRadius: 4,
-    borderWidth: 1.5,
-    borderColor: C.bg,
-  },
-  reelBadgeText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: C.white,
+    width: 62,
+    height: 62,
+    borderRadius: 31,
   },
   storyName: {
     marginTop: 6,
     fontSize: 12,
-    color: C.textSec,
-    fontWeight: '500',
+    color: '#0F172A',
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+
+  // ── Auth Prompt Modal ──
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  authModalCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 24,
+    alignItems: 'center',
+    position: 'relative',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  modalCloseBtn: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
+  modalIconWrap: {
+    marginBottom: 16,
+    marginTop: 4,
+  },
+  modalIconGradient: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  authModalTitle: {
+    fontSize: 19,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  authModalDesc: {
+    fontSize: 13,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 18,
+    paddingHorizontal: 8,
+  },
+  authModalPerks: {
+    width: '100%',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    padding: 12,
+    gap: 10,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+  },
+  authModalPerkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  perkCheckCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#ECFDF5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  perkText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#334155',
+    flex: 1,
+  },
+  authModalPrimaryBtn: {
+    width: '100%',
+    borderRadius: 14,
+    overflow: 'hidden',
+    marginBottom: 10,
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  authModalPrimaryGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    gap: 6,
+  },
+  authModalPrimaryText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  authModalSecondaryBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  authModalSecondaryText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
   },
 
   // ── Trending Destinations ───────────────────────────

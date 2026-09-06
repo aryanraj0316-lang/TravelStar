@@ -45,12 +45,12 @@ export function Input({ label, error, hint, containerStyle, icon, rightAccessory
 
 const styles = StyleSheet.create({
   wrap: { gap: space[1] },
-  label: { color: C.textSec, fontSize: fontSize.sm, fontWeight: fontWeight.medium },
+  label: { color: C.text, fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
   box: {
     minHeight: MIN_TOUCH_TARGET,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: C.cardAlt,
+    backgroundColor: '#FFFFFF',
     borderRadius: radii.md,
     borderWidth: 1,
     borderColor: C.border,
@@ -60,11 +60,11 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     paddingVertical: space[3],
-    color: C.white,
+    color: C.text,
     fontSize: fontSize.base,
   },
   inputWithIcon: { paddingLeft: 0 },
   inputError: { borderColor: C.redText },
   error: { color: C.redText, fontSize: fontSize.xs },
-  hint: { color: C.textMuted, fontSize: fontSize.xs },
+  hint: { color: C.textSec, fontSize: fontSize.xs },
 });

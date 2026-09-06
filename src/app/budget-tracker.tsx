@@ -436,7 +436,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
   },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: C.white },
+  headerTitle: { fontSize: 18, fontWeight: '700', color: C.text },
   tripChips: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingBottom: 12 },
   scrollContent: { paddingHorizontal: 16, paddingTop: 4 },
   summaryCard: { borderRadius: 20, padding: 18, gap: 6, marginBottom: 16 },

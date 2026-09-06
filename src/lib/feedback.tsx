@@ -18,10 +18,22 @@ import { ApiError } from '@/services/api';
 import { logger } from '@/lib/logger';
 import { C, MIN_TOUCH_TARGET, fontSize, radii, space } from '@/theme/tokens';
 
+/** VALIDATION_FAILED responses carry per-field detail (backend/src/middleware/error.ts),
+ * e.g. { path: 'password', message: 'Password must be at least 10 characters.' } — but
+ * the envelope's top-level message is always the generic "Please check the details you
+ * entered." That's fine for logs, but useless as user-facing copy, so prefer the first
+ * field's actual reason when one is present. */
+function firstValidationMessage(details: unknown): string | null {
+  if (!Array.isArray(details) || details.length === 0) return null;
+  const first = details[0] as { message?: unknown } | undefined;
+  return typeof first?.message === 'string' ? first.message : null;
+}
+
 /** Prefer the server/network's own message over a generic fallback when the
  * caught value is an ApiError — every other thrown value falls back. */
 export function errorToastMessage(err: unknown, fallback: string): string {
-  return err instanceof ApiError ? err.message : fallback;
+  if (!(err instanceof ApiError)) return fallback;
+  return firstValidationMessage(err.details) ?? err.message;
 }
 
 type ToastType = 'success' | 'error' | 'info';
@@ -288,7 +300,7 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   toastText: {
-    color: C.white,
+    color: C.text,
     fontSize: fontSize.sm,
   },
   overlay: {
@@ -308,7 +320,7 @@ const styles = StyleSheet.create({
     maxWidth: 400,
   },
   dialogTitle: {
-    color: C.white,
+    color: C.text,
     fontSize: fontSize.md,
     fontWeight: '700',
     marginBottom: space[2],
@@ -324,7 +336,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.border,
     borderRadius: radii.sm,
-    color: C.white,
+    color: C.text,
     fontSize: fontSize.base,
     paddingHorizontal: space[3],
     minHeight: MIN_TOUCH_TARGET,

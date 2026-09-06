@@ -47,17 +47,18 @@ const TAB_LABEL_KEYS: Record<string, string> = {
   profile: 'nav.profile',
 };
 
+import Plus from 'lucide-react-native/icons/plus';
+
 const AnimatedTabButton = React.memo(function AnimatedTabButton({
   routeName,
   isFocused,
   onPress,
-  isDark,
   showDot,
 }: {
   routeName: string;
   isFocused: boolean;
   onPress: () => void;
-  isDark: boolean;
+  isDark?: boolean;
   showDot?: boolean;
 }) {
   const { t } = useTranslation();
@@ -74,12 +75,31 @@ const AnimatedTabButton = React.memo(function AnimatedTabButton({
 
   const scale = scaleAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.94, 1.06],
+    outputRange: [0.94, 1.04],
   });
 
   const Icon = TAB_ICONS[routeName] || Home;
   const labelKey = TAB_LABEL_KEYS[routeName];
   const label = labelKey ? t(labelKey) : routeName;
+
+  // Center button special treatment (Image 1 purple circular button)
+  if (routeName === 'create') {
+    return (
+      <Pressable
+        onPress={onPress}
+        style={styles.centerTabButton}
+        accessibilityRole="tab"
+        accessibilityLabel={label}
+        accessibilityState={{ selected: isFocused }}
+      >
+        <Animated.View style={{ transform: [{ scale }] }}>
+          <View style={styles.centerActionCircle}>
+            <Plus size={24} color="#FFFFFF" strokeWidth={2.8} />
+          </View>
+        </Animated.View>
+      </Pressable>
+    );
+  }
 
   return (
     <Pressable
@@ -91,21 +111,17 @@ const AnimatedTabButton = React.memo(function AnimatedTabButton({
     >
       <Animated.View style={{ transform: [{ scale }] }}>
         {isFocused ? (
-          <LinearGradient
-            colors={['#0044CC', '#0066FF']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.activePillCapsule}
-          >
-            <Icon size={20} color="#FFFFFF" strokeWidth={2.4} />
-          </LinearGradient>
+          <View style={styles.activePillCapsule}>
+            <Icon size={20} color="#2563EB" strokeWidth={2.4} />
+            <Text style={styles.activeTabLabel}>{label}</Text>
+          </View>
         ) : (
           <View style={styles.inactiveTabBox}>
             <View style={{ position: 'relative' }}>
-              <Icon size={20} color={isDark ? '#94A3B8' : '#7E8494'} strokeWidth={1.8} />
+              <Icon size={20} color="#64748B" strokeWidth={1.8} />
               {showDot && <View style={styles.tabDot} />}
             </View>
-            <Text style={[styles.inactiveTabLabel, { color: isDark ? '#94A3B8' : '#7E8494' }]}>
+            <Text style={styles.inactiveTabLabel}>
               {label}
             </Text>
           </View>
@@ -184,11 +200,8 @@ export function AppTabBar({ state, navigation }: AppTabBarProps) {
         shouldHideTabBar ? { display: 'none' } : undefined,
       ]}
     >
-      <LinearGradient
-        colors={isDark ? ['#0C1020', '#050710'] : ['#FFFFFF', '#F1F5F9']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={[styles.tabBarContainer, { borderColor: isDark ? '#1A1D30' : '#CBD5E1' }]}
+      <View
+        style={styles.tabBarContainer}
       >
         {state.routes.map((route, index) => {
           const isFocused = state.index === index;
@@ -220,7 +233,7 @@ export function AppTabBar({ state, navigation }: AppTabBarProps) {
             </View>
           );
         })}
-      </LinearGradient>
+      </View>
     </Animated.View>
   );
 }
@@ -236,41 +249,65 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 6,
+    paddingVertical: 8,
     paddingHorizontal: 6,
-    borderRadius: 30,
-    borderWidth: 1.5,
-    shadowColor: C.blue,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 18,
-    elevation: 8,
+    borderRadius: 32,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 6,
   },
   tabButton: {
     alignItems: 'center',
     justifyContent: 'center',
   },
+  centerTabButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: -4,
+  },
+  centerActionCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#6366F1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#6366F1',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 5,
+  },
   activePillCapsule: {
     alignItems: 'center',
     justifyContent: 'center',
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    shadowColor: C.blue,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 16,
+  },
+  activeTabLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#2563EB',
+    marginTop: 2,
+    textAlign: 'center',
   },
   inactiveTabBox: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 4,
-    paddingVertical: 2,
+    paddingVertical: 4,
   },
   inactiveTabLabel: {
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#64748B',
     marginTop: 2,
     textAlign: 'center',
   },
@@ -283,6 +320,6 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: C.red,
     borderWidth: 1.5,
-    borderColor: '#0C1020',
+    borderColor: '#FFFFFF',
   },
 });

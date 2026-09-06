@@ -8,6 +8,7 @@ import { createSocketServer } from './socket-server';
 import { initObservability, captureException, flushObservability } from './lib/observability';
 import { closeCache } from './lib/cache';
 import { startRetentionScheduler, stopRetentionScheduler } from './lib/data-retention';
+import { startHazardFeedScheduler, stopHazardFeedScheduler } from './lib/hazard-feed';
 
 initObservability();
 
@@ -21,6 +22,7 @@ server.listen(env.PORT, () => {
 });
 
 startRetentionScheduler();
+startHazardFeedScheduler();
 
 // ── Graceful shutdown (docs/REMEDIATION.md Phase 11) ────────────────
 // SIGTERM (orchestrator stop) / SIGINT (Ctrl-C): stop accepting new
@@ -33,6 +35,7 @@ async function shutdown(signal: string): Promise<void> {
   shuttingDown = true;
   logger.info(`[shutdown] received ${signal}, draining…`);
   stopRetentionScheduler();
+  stopHazardFeedScheduler();
 
   const hardExit = setTimeout(() => {
     logger.error('[shutdown] drain timed out, forcing exit');

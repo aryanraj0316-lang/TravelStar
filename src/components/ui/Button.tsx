@@ -108,7 +108,7 @@ const variantStyles = StyleSheet.create({
 
 const labelStyles = StyleSheet.create({
   primary: { color: C.white },
-  secondary: { color: C.white },
+  secondary: { color: C.text },
   ghost: { color: C.blueText },
   destructive: { color: C.redText },
 });

@@ -26,6 +26,7 @@ import interactionRoutes from './api/routes/interactions';
 import chatRoutes from './api/routes/chats';
 import feedRoutes from './api/routes/feed';
 import consentRoutes from './api/routes/consent';
+import bookingRoutes from './api/routes/bookings';
 import { errorHandler } from './middleware/error';
 
 const app = express();
@@ -176,6 +177,7 @@ app.use('/api/v1/interactions', interactionRoutes);
 app.use('/api/v1/chats', chatRoutes);
 app.use('/api/v1/feed', feedRoutes);
 app.use('/api/v1/consent', consentRoutes);
+app.use('/api/v1/bookings', bookingRoutes);
 
 // Liveness — no dependencies. If the process is up, this returns 200.
 app.get('/health', (req, res) => {

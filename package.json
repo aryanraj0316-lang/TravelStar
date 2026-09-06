@@ -54,6 +54,7 @@
     "expo-atlas": "^0.4.3",
     "jest": "~29.7.0",
     "jest-expo": "^57.0.5",
+    "playwright": "^1.63.0",
     "prettier": "^3.9.6",
     "typescript": "~6.0.3"
   },
@@ -67,7 +68,8 @@
     "lint": "eslint . --max-warnings=0",
     "test": "jest",
     "format": "prettier --write .",
-    "licenses:generate": "node scripts/generate-licenses.js"
+    "licenses:generate": "node scripts/generate-licenses.js",
+    "test:ui": "node e2e/ui-audit.js"
   },
   "private": true
 }

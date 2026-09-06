@@ -140,7 +140,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 16,
     fontWeight: '800',
-    color: C.white,
+    color: C.text,
   },
   scrollContent: {
     paddingHorizontal: 16,
@@ -162,7 +162,7 @@ const styles = StyleSheet.create({
   brandName: {
     fontSize: 20,
     fontWeight: '800',
-    color: C.white,
+    color: C.text,
   },
   versionText: {
     fontSize: 12,
@@ -188,7 +188,7 @@ const styles = StyleSheet.create({
   legalLabelText: {
     fontSize: 12,
     fontWeight: '600',
-    color: C.white,
+    color: C.text,
   },
   legalDivider: {
     height: 1,

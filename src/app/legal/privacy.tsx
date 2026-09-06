@@ -60,7 +60,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerTitle: { fontSize: 16, fontWeight: '800', color: C.white },
+  headerTitle: { fontSize: 16, fontWeight: '800', color: C.text },
   scrollContent: { padding: 16 },
   pendingText: { fontSize: 13, lineHeight: 20, color: C.textSec },
 });

@@ -129,7 +129,11 @@ export async function getRefreshToken(): Promise<string | null> {
 // revoking the whole session over what was really just a timing accident.
 let refreshInFlight: Promise<string | null> | null = null;
 
-async function refreshAccessToken(): Promise<string | null> {
+// Exported so socket.ts can trigger the same refresh on a socket auth
+// failure — the socket may be the first thing to notice an expired token
+// (e.g. the user is idle in a chat with no REST calls firing), in which
+// case nothing else would ever refresh it.
+export async function refreshAccessToken(): Promise<string | null> {
   if (refreshInFlight) return refreshInFlight;
 
   refreshInFlight = (async () => {
@@ -362,6 +366,22 @@ async function requestEnvelope<T>(
       const code: ApiErrorCode = json?.error?.code ?? 'UNKNOWN';
       const message: string = json?.error?.message ?? `Request failed (${res.status}).`;
       logger.warn(`[API] ${method} ${endpoint} -> ${res.status} ${code} (request ${requestId})`);
+
+      // A valid, unexpired token whose account no longer exists server-side
+      // (the account was deleted, or the database was reset) — every
+      // USER_NOT_FOUND response in the backend is this same "look up the
+      // authenticated caller's own row" check (auth.ts's /profile,
+      // /delete-account, etc.; trips.ts's create-trip), never a lookup of
+      // someone else's account, so treating it as a dead session here is
+      // safe everywhere it can occur. Without this, the client stays
+      // "logged in" against nothing and every write fails with an opaque
+      // ApiError instead of the same clean re-auth prompt a 401 gets below.
+      if (code === 'USER_NOT_FOUND') {
+        await clearTokens();
+        eventBus.emit('sessionExpired', undefined);
+        throw new ApiError(code, 'Your account is no longer available. Please sign in again.', res.status, json?.error?.details, requestId);
+      }
+
       throw new ApiError(code, message, res.status, json?.error?.details, requestId);
     }
 

@@ -1,0 +1,26 @@
+[
+  {
+    "route": "/",
+    "name": "home (tabs index)",
+    "issues": [
+      {
+        "kind": "LOW_CONTRAST",
+        "detail": "\"All Clear\" rgb(220, 38, 38) on rgb(254, 242, 242) = 4.41:1 (needs 4.5:1)"
+      },
+      {
+        "kind": "SMALL_TAP_TARGET",
+        "detail": "25 under 44x44: \"Login / Sign Up\"(131x30), \"Notifications\"(38x38), \"Open your profile\"(38x38), \"View all\"(62x17)"
+      },
+      {
+        "kind": "PAGE_ERROR",
+        "detail": "Error: Minified React error #418; visit https://react.dev/errors/418?args[]=HTML&args[]= for the full message or use the non-minified dev environment for full errors and additional helpful warnings."
+      },
+      {
+        "kind": "FAILED_REQUEST",
+        "detail": "HEAD http://localhost:8099/ — net::ERR_ABORTED"
+      }
+    ],
+    "textLength": 1052,
+    "screenshot": "C:\\Users\\LENOVO\\Desktop\\TravelStar\\e2e\\shots\\_.png"
+  }
+]

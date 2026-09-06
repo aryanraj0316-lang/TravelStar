@@ -242,7 +242,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.border,
   },
-  topNavTitle: { fontSize: 16, fontWeight: '800', color: C.white },
+  topNavTitle: { fontSize: 16, fontWeight: '800', color: C.text },
   locBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -304,15 +304,15 @@ const styles = StyleSheet.create({
   },
   distBadgeText: { fontSize: 12, fontWeight: '800', color: C.white },
   tripBody: { padding: 14, gap: 7 },
-  tripTitle: { fontSize: 14.5, fontWeight: '800', color: C.white },
+  tripTitle: { fontSize: 14.5, fontWeight: '800', color: C.text },
   tripRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  tripRowText: { fontSize: 12, fontWeight: '600', color: C.green, flex: 1 },
+  tripRowText: { fontSize: 12, fontWeight: '600', color: C.greenText, flex: 1 },
   tripMetaRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
   tripMetaText: { fontSize: 12, color: C.textMuted, fontWeight: '600' },
-  tripPrice: { fontSize: 13.5, fontWeight: '800', color: C.amber },
+  tripPrice: { fontSize: 13.5, fontWeight: '800', color: C.amberText },
   tripDates: { fontSize: 12, color: C.textMuted },
 });

@@ -1,20 +1,29 @@
-import { logger } from '@/lib/logger';
 import AuthScreen from '@/app/auth';
-import { useApp, type SavedPlace } from '@/store/AppContext';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter, useNavigation, type ErrorBoundaryProps } from 'expo-router';
 import { RouteErrorFallback } from '@/components/route-error-fallback';
+import { Button, Chip, Input, Sheet } from '@/components/ui';
+import { recordConsent } from '@/lib/consent';
+import { errorToastMessage, showAlert, toast, useConfirm } from '@/lib/feedback';
+import { getAppLanguage, setAppLanguage } from '@/lib/i18n';
+import { logger } from '@/lib/logger';
+import { registerForPushNotifications, unregisterPushNotifications } from '@/lib/push';
+import { uploadFileToUrl } from '@/lib/upload';
+import { apiService, type NotificationPreferences } from '@/services/api';
+import { eventBus } from '@/services/event-bus';
+import { useApp, type SavedPlace } from '@/store/AppContext';
+import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useNavigation, useRouter, type ErrorBoundaryProps } from 'expo-router';
 import Bell from 'lucide-react-native/icons/bell';
 import Bookmark from 'lucide-react-native/icons/bookmark';
 import Briefcase from 'lucide-react-native/icons/briefcase';
 import Camera from 'lucide-react-native/icons/camera';
 import Check from 'lucide-react-native/icons/check';
-import CheckCircle from 'lucide-react-native/icons/circle-check-big';
 import ChevronRight from 'lucide-react-native/icons/chevron-right';
+import CheckCircle from 'lucide-react-native/icons/circle-check-big';
+import HelpCircle from 'lucide-react-native/icons/circle-question-mark';
 import CreditCard from 'lucide-react-native/icons/credit-card';
 import Download from 'lucide-react-native/icons/download';
 import Globe from 'lucide-react-native/icons/globe';
-import HelpCircle from 'lucide-react-native/icons/circle-question-mark';
 import ImageIcon from 'lucide-react-native/icons/image';
 import LifeBuoy from 'lucide-react-native/icons/life-buoy';
 import LogOut from 'lucide-react-native/icons/log-out';
@@ -22,7 +31,7 @@ import MapPin from 'lucide-react-native/icons/map-pin';
 import Pencil from 'lucide-react-native/icons/pencil';
 import Trash2 from 'lucide-react-native/icons/trash-2';
 import X from 'lucide-react-native/icons/x';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
@@ -35,15 +44,6 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { eventBus } from '@/services/event-bus';
-import { apiService, type NotificationPreferences } from '@/services/api';
-import { registerForPushNotifications, unregisterPushNotifications } from '@/lib/push';
-import { recordConsent } from '@/lib/consent';
-import { toast, errorToastMessage, showAlert, useConfirm } from '@/lib/feedback';
-import { uploadFileToUrl } from '@/lib/upload';
-import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
-import { Button, Chip, Input, Sheet } from '@/components/ui';
-import { getAppLanguage, setAppLanguage } from '@/lib/i18n';
 
 // Safe dynamic import to prevent native app crash if module is unlinked in old
 // APK. Deliberately require(), not import(): this needs to synchronously
@@ -65,33 +65,6 @@ const AVATAR_PRESETS = [
   'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=80',
   'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=300&q=80',
   'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
-];
-
-const DEFAULT_SAVED_PLACES: SavedPlace[] = [
-  {
-    id: 'sp-1',
-    name: 'Taj Mahal',
-    location: 'Agra, Uttar Pradesh',
-    image: 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=150&q=80',
-  },
-  {
-    id: 'sp-2',
-    name: 'Vrindavan Mandir',
-    location: 'Vrindavan, Uttar Pradesh',
-    image: 'https://images.unsplash.com/photo-1548013146-72479768bada?w=150&q=80',
-  },
-  {
-    id: 'sp-3',
-    name: 'Munnar Tea Estates',
-    location: 'Munnar, Kerala',
-    image: 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=150&q=80',
-  },
-  {
-    id: 'sp-4',
-    name: 'Pangong Lake',
-    location: 'Leh-Ladakh, India',
-    image: 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=150&q=80',
-  },
 ];
 
 function ProfileScreen() {
@@ -143,13 +116,19 @@ function ProfileScreen() {
   // to object storage; the avatar picker UI disables itself and shows a
   // spinner during this window (see pickImageFromDevice/takePhotoWithCamera).
   const [avatarUploading, setAvatarUploading] = useState(false);
-  const [editName, setEditName] = useState(profile.name || 'Aarav Sharma');
-  const [editGender, setEditGender] = useState(profile.gender || 'Male');
-  const [editBio, setEditBio] = useState('Backpacker & Mountain Enthusiast 🏔️ | Exploring Incredible India 🇮🇳');
-  const [editPhone, setEditPhone] = useState('+91 98765 43210');
-  const [editEmergencyPhone, setEditEmergencyPhone] = useState('+91 98111 22334');
-  const [editLanguages, setEditLanguages] = useState('Hindi, English, Punjabi');
-  const [editStyles, setEditStyles] = useState('Mountains, Backpacking, Photography');
+  // These all used to seed from a fake fixture ('Aarav Sharma', a hardcoded
+  // '+91' phone/emergency pair, 'Hindi, English, Punjabi', a canned bio and
+  // travel-style string) instead of the real profile or a genuine blank —
+  // the "hydrate on modal open" block below immediately overwrites these
+  // with the real values anyway, so an empty string here is never user
+  // visible, just no longer a lie if it ever were.
+  const [editName, setEditName] = useState(profile.name || '');
+  const [editGender, setEditGender] = useState(profile.gender || 'Private');
+  const [editBio, setEditBio] = useState(profile.bio || '');
+  const [editPhone, setEditPhone] = useState(profile.phoneNumber || '');
+  const [editEmergencyPhone, setEditEmergencyPhone] = useState(profile.emergencyContact || '');
+  const [editLanguages, setEditLanguages] = useState(profile.languages || '');
+  const [editStyles, setEditStyles] = useState(profile.travelStyles || '');
 
   // Adjusted during render rather than in an effect (react.dev's "adjust
   // some state when a prop changes" pattern) — this avoids both the extra
@@ -184,7 +163,7 @@ function ProfileScreen() {
     if (showEditModal) {
       setEditAvatar(profile.avatar || AVATAR_PRESETS[0]);
       setEditName(profile.name || '');
-      setEditGender(profile.gender || 'Male');
+      setEditGender(profile.gender || 'Private');
       setEditBio(profile.bio || '');
       setEditPhone(profile.phoneNumber || '');
       setEditEmergencyPhone(profile.emergencyContact || '');
@@ -196,8 +175,11 @@ function ProfileScreen() {
   // savedPlaces has no client-side mutation of its own — every change goes
   // through updateProfile({ savedPlaces }) and comes back on profile — so
   // it's a pure derived value, not state that needs an effect to sync it.
+  // No fabricated Taj Mahal/Vrindavan/Munnar/Pangong fallback here: a user
+  // who hasn't saved anything yet has an empty list, and that's what the
+  // savedPlacesEmpty state below is for.
   const savedPlaces: SavedPlace[] =
-    profile.savedPlaces && Array.isArray(profile.savedPlaces) ? profile.savedPlaces : DEFAULT_SAVED_PLACES;
+    profile.savedPlaces && Array.isArray(profile.savedPlaces) ? profile.savedPlaces : [];
 
   // Same adjust-during-render pattern as above: hydrate these local editable
   // copies whenever the profile object itself changes (mirrors the original
@@ -546,11 +528,18 @@ function ProfileScreen() {
 
             <View style={styles.nameSection}>
               <View style={styles.nameRow}>
-                <Text style={styles.userName}>{profile.name || 'Aarav Sharma'}</Text>
-                <CheckCircle size={15} color="#00D1FF" fill="#00D1FF" style={{ marginLeft: 6 }} />
+                <Text style={styles.userName}>{profile.name || 'Guest Traveler'}</Text>
+                {/* Only a genuinely verified profile gets the badge — this
+                    used to render for every user regardless of isVerified,
+                    exactly the fake trust signal §2.6 removed server-side. */}
+                {profile.isVerified && (
+                  <CheckCircle size={15} color="#00D1FF" fill="#00D1FF" style={{ marginLeft: 6 }} />
+                )}
               </View>
 
-              <Text style={styles.userBio}>{profile.bio || 'Love exploring new places...'}</Text>
+              <Text style={[styles.userBio, !profile.bio && styles.userBioEmpty]}>
+                {profile.bio || t('profile.bioEmpty')}
+              </Text>
             </View>
           </View>
         </View>
@@ -564,23 +553,29 @@ function ProfileScreen() {
           <View style={styles.menuCard}>
             <View style={styles.profileDetailRow}>
               <Text style={styles.profileDetailLabel}>{t('profile.mobilePhone')}</Text>
-              <Text style={styles.profileDetailValue}>{profile.phoneNumber || '+91 98765 43210'}</Text>
+              <Text style={[styles.profileDetailValue, !profile.phoneNumber && styles.profileDetailValueEmpty]}>
+                {profile.phoneNumber || t('profile.notAddedYet')}
+              </Text>
             </View>
             <View style={styles.profileDetailDivider} />
             <View style={styles.profileDetailRow}>
               <Text style={styles.profileDetailLabel}>{t('profile.emergencySosContact')}</Text>
-              <Text style={styles.profileDetailValue}>{profile.emergencyContact || '+91 98111 22334'}</Text>
+              <Text style={[styles.profileDetailValue, !profile.emergencyContact && styles.profileDetailValueEmpty]}>
+                {profile.emergencyContact || t('profile.notAddedYet')}
+              </Text>
             </View>
             <View style={styles.profileDetailDivider} />
             <View style={styles.profileDetailRow}>
               <Text style={styles.profileDetailLabel}>{t('profile.languagesSpoken')}</Text>
-              <Text style={styles.profileDetailValue}>{profile.languages || 'Hindi, English, Punjabi'}</Text>
+              <Text style={[styles.profileDetailValue, !profile.languages && styles.profileDetailValueEmpty]}>
+                {profile.languages || t('profile.notAddedYet')}
+              </Text>
             </View>
             <View style={styles.profileDetailDivider} />
             <View style={styles.profileDetailRow}>
               <Text style={styles.profileDetailLabel}>{t('profile.adventureStyles')}</Text>
-              <Text style={styles.profileDetailValue}>
-                {profile.travelStyles || 'Mountains, Backpacking, Photography'}
+              <Text style={[styles.profileDetailValue, !profile.travelStyles && styles.profileDetailValueEmpty]}>
+                {profile.travelStyles || t('profile.notAddedYet')}
               </Text>
             </View>
           </View>
@@ -1394,6 +1389,9 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     paddingHorizontal: 12,
   },
+  userBioEmpty: {
+    opacity: 0.6,
+  },
 
   // Settings
   switchTrack: {
@@ -1615,6 +1613,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#E1E4EC',
     marginTop: 4,
+  },
+  profileDetailValueEmpty: {
+    color: '#6B7280',
+    fontWeight: '400',
+    fontStyle: 'italic',
   },
   profileDetailDivider: {
     height: 1,

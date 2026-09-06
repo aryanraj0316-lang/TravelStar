@@ -470,9 +470,13 @@ router.put('/profile', async (req, res) => {
     const userId = requireUserId(req);
 
     if (updates.phoneNumber !== undefined) {
+      // phoneNumber is @unique — write null for "no phone", never ''. Postgres
+      // allows any number of NULLs under a unique constraint but treats ''
+      // as a real, colliding value, so the second user to clear this field
+      // would otherwise hit a unique-constraint violation here.
       await prisma.user.update({
         where: { id: userId },
-        data: { phoneNumber: updates.phoneNumber },
+        data: { phoneNumber: updates.phoneNumber === '' ? null : updates.phoneNumber },
       });
     }
 

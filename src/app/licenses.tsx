@@ -128,7 +128,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 16,
     fontWeight: '800',
-    color: C.white,
+    color: C.text,
   },
   searchWrap: {
     marginHorizontal: 16,
@@ -155,7 +155,7 @@ const styles = StyleSheet.create({
   rowName: {
     fontSize: 13,
     fontWeight: '700',
-    color: C.white,
+    color: C.text,
   },
   rowMeta: {
     fontSize: 12,

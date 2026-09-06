@@ -1148,36 +1148,12 @@ function ChatScreen() {
       }
     });
 
-    // Fallback static list of members if message history and database are empty
-    if (membersMap.size <= 1) {
-      const mockMembers = [
-        {
-          name: 'Neha Sharma',
-          avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80',
-          role: 'Tourist',
-        },
-        {
-          name: 'Vikram Singh',
-          avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80',
-          role: 'Tourist',
-        },
-        {
-          name: 'Suman Gupta',
-          avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=150&q=80',
-          role: 'Tourist',
-        },
-        {
-          name: 'Aditya Sen',
-          avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80',
-          role: 'Tourist',
-        },
-      ];
-      mockMembers.forEach((m) => {
-        {
-          membersMap.set(m.name, m);
-        }
-      });
-    }
+    // No fallback static member list here. A group with no database
+    // members yet and no message history genuinely has nobody else in it
+    // — the member/settings UI below renders that as a real "just you"
+    // state rather than four fabricated tourists (Neha Sharma, Vikram
+    // Singh, Suman Gupta, Aditya Sen) that used to appear in every empty
+    // group regardless of who was actually in it.
 
     return Array.from(membersMap.values());
   }, [currentMessages, dbMembers]);

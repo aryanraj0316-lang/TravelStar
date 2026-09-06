@@ -1,9 +1,19 @@
 import { Platform } from 'react-native';
 import * as Device from 'expo-device';
-import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { apiService } from '@/services/api';
 import { logger } from '@/lib/logger';
+
+// expo-notifications throws at *import* time (not just when a function is
+// called) for remote push on Android inside Expo Go — SDK 53+ removed that
+// capability entirely (docs/versions/v57.0.0/sdk/notifications). This
+// module is pulled in from AppContext.tsx before any screen renders, so a
+// static import here crashed every screen in Expo Go on Android. Loading it
+// conditionally keeps a real dev-client/standalone build unaffected and
+// makes Expo Go on Android behave the same as "push not configured" instead
+// of a hard crash.
+const isExpoGoAndroid = Platform.OS === 'android' && Constants.executionEnvironment === 'storeClient';
+const Notifications = isExpoGoAndroid ? null : (require('expo-notifications') as typeof import('expo-notifications'));
 
 /**
  * Real push-notification registration (docs/REMEDIATION.md §8.18).
@@ -47,17 +57,19 @@ function getEasProjectId(): string | null {
  * How a notification behaves while the app is in the foreground. Set once
  * at module scope so it is in place before any notification can arrive.
  */
-try {
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldPlaySound: true,
-      shouldSetBadge: true,
-      shouldShowBanner: true,
-      shouldShowList: true,
-    }),
-  });
-} catch (e) {
-  logger.warn('[Push] setNotificationHandler failed:', e);
+if (Notifications) {
+  try {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldPlaySound: true,
+        shouldSetBadge: true,
+        shouldShowBanner: true,
+        shouldShowList: true,
+      }),
+    });
+  } catch (e) {
+    logger.warn('[Push] setNotificationHandler failed:', e);
+  }
 }
 
 /**
@@ -67,6 +79,7 @@ try {
  * duplicating it.
  */
 export async function registerForPushNotifications(): Promise<PushRegistrationResult> {
+  if (!Notifications) return { status: 'unsupported' };
   // A simulator has no push entitlement and cannot receive a real token.
   if (!Device.isDevice) return { status: 'unsupported' };
 
@@ -108,6 +121,7 @@ export async function registerForPushNotifications(): Promise<PushRegistrationRe
  * account's notifications until the token happens to be reassigned.
  */
 export async function unregisterPushNotifications(): Promise<void> {
+  if (!Notifications) return;
   const projectId = getEasProjectId();
   if (!projectId || !Device.isDevice) return;
   try {
@@ -145,6 +159,7 @@ export function routeForNotificationData(data: Record<string, unknown> | undefin
 
 /** Sync the app-icon badge to the server's unread count. */
 export async function syncBadgeCount(): Promise<void> {
+  if (!Notifications) return;
   try {
     const { count } = await apiService.getUnreadNotificationCount();
     if (typeof Notifications.setBadgeCountAsync === 'function') {

@@ -107,7 +107,7 @@ const styles = StyleSheet.create({
   glyphError: { borderColor: C.redText },
   glyphText: { color: C.textMuted, fontSize: fontSize.lg, fontWeight: fontWeight.bold },
   title: {
-    color: C.white,
+    color: C.text,
     fontSize: fontSize.md,
     fontWeight: fontWeight.semibold,
     textAlign: 'center',

@@ -34,6 +34,13 @@ import Users from 'lucide-react-native/icons/users';
 import Utensils from 'lucide-react-native/icons/utensils';
 import X from 'lucide-react-native/icons/x';
 import XCircle from 'lucide-react-native/icons/circle-x';
+import FileText from 'lucide-react-native/icons/file-text';
+import Landmark from 'lucide-react-native/icons/landmark';
+import MountainIcon from 'lucide-react-native/icons/mountain';
+import Palmtree from 'lucide-react-native/icons/tree-palm';
+import Waves from 'lucide-react-native/icons/waves-horizontal';
+import Trees from 'lucide-react-native/icons/trees';
+import HomeIcon from 'lucide-react-native/icons/house';
 import React, { useRef, useState, useEffect, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -249,11 +256,11 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 
 const PRESET_COVERS = [
-  { labelKey: 'createTrip.presetTajMahal', url: 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1000&q=80' },
-  { labelKey: 'createTrip.presetMountain', url: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=800&q=80' },
-  { labelKey: 'createTrip.presetBeach', url: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80' },
-  { labelKey: 'createTrip.presetValleyLake', url: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&q=80' },
-  { labelKey: 'createTrip.presetDesert', url: 'https://images.unsplash.com/photo-1547234935-80c7145ec969?w=800&q=80' },
+  { labelKey: 'createTrip.presetTajMahal', label: 'Taj Mahal', url: 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1000&q=80', icon: '🏛️', color: '#6366F1' },
+  { labelKey: 'createTrip.presetMountain', label: 'Mountain', url: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=800&q=80', icon: '🏔️', color: '#10B981' },
+  { labelKey: 'createTrip.presetBeach', label: 'Beach', url: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80', icon: '🏖️', color: '#0284C7' },
+  { labelKey: 'createTrip.presetValleyLake', label: 'Valley/Lake', url: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&q=80', icon: '🏞️', color: '#0D9488' },
+  { labelKey: 'createTrip.presetDesert', label: 'Forest', url: 'https://images.unsplash.com/photo-1547234935-80c7145ec969?w=800&q=80', icon: '🌲', color: '#16A34A' },
 ];
 
 const TRIP_CATEGORIES = ['Adventure', 'Religious', 'Family', 'Road Trip', 'Beach', 'Wildlife', 'Heritage', 'Honeymoon'];
@@ -541,7 +548,7 @@ function CreateTripScreen() {
       // eslint-disable-next-line react-hooks/purity
       id: `trip-${Date.now()}`,
       name: tripName,
-      creator: t('createTrip.organizerSuffix', { name: profile?.name || 'Aarav Sharma' }),
+      creator: t('createTrip.organizerSuffix', { name: profile?.name || 'Guest Traveler' }),
       creatorId: profile?.id,
       cities: parsedCities,
       startDate,
@@ -596,7 +603,7 @@ function CreateTripScreen() {
       // eslint-disable-next-line react-hooks/purity
       id: `draft-${Date.now()}`,
       name: t('createTrip.draftPrefix', { name: tripName }),
-      creator: t('createTrip.organizerSuffix', { name: profile?.name || 'Aarav Sharma' }),
+      creator: t('createTrip.organizerSuffix', { name: profile?.name || 'Guest Traveler' }),
       creatorId: profile?.id,
       cities: parsedCities.length > 0 ? parsedCities : ['Delhi', t('createTrip.destinationFallback')],
       startDate,
@@ -745,7 +752,7 @@ function CreateTripScreen() {
             lastScrollYRef.current = y;
           }}
         >
-          {/* ─── ORGANIZER CREATIONS NOTIFICATION BANNER (TOP LEVEL) ─── */}
+          {/* ─── ORGANIZER CONSOLE / MY CREATIONS BANNER (TOP LEVEL) ─── */}
           {(() => {
             const myTrips = trips.filter((t) => !!(profile && profile.id && t.creatorId === profile.id));
             const pendingCount = joinRequests.filter((req) => req.status === 'PENDING').length;
@@ -753,7 +760,7 @@ function CreateTripScreen() {
 
             return (
               <TouchableOpacity
-                style={styles.notificationBannerTouch}
+                style={styles.notificationBanner}
                 onPress={() => {
                   fetchIncomingRequests();
                   setShowCreationsModal(true);
@@ -762,36 +769,22 @@ function CreateTripScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={t('createTrip.myCreations')}
               >
-                <LinearGradient
-                  colors={hasAlert ? ['#2A1B54', '#150D33'] : ['#1E123C', '#0E0720']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={[styles.notificationBanner, hasAlert && styles.notificationBannerActive]}
-                >
-                  <View style={styles.notificationMain}>
-                    <View style={[styles.notificationIconWrap, hasAlert && styles.notificationIconWrapAlert]}>
-                      <Compass size={15} color={hasAlert ? '#F59E0B' : '#8B5CF6'} />
-                      {hasAlert && <View style={styles.notificationRedDot} />}
-                    </View>
-                    <View style={styles.notificationTextColumn}>
-                      <Text style={styles.notificationAppName}>{t('createTrip.organizerConsole')}</Text>
-                      <Text style={styles.notificationTitle}>{t('createTrip.myCreations')}</Text>
-                      <Text style={styles.notificationDescText} numberOfLines={1}>
-                        {hasAlert
-                          ? t('createTrip.pendingApproval', { count: pendingCount })
-                          : t('createTrip.routesPublished', { count: myTrips.length })}
-                      </Text>
-                    </View>
+                <View style={styles.notificationMain}>
+                  <View style={styles.notificationIconWrap}>
+                    <Compass size={22} color="#7C3AED" />
+                    {hasAlert && <View style={styles.notificationRedDot} />}
                   </View>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    {hasAlert && (
-                      <View style={styles.notificationAlertPill}>
-                        <Text style={styles.notificationAlertPillText}>{t('createTrip.actionRequired')}</Text>
-                      </View>
-                    )}
-                    <ChevronRight size={13} color={hasAlert ? '#F59E0B' : '#8B5CF6'} />
+                  <View style={styles.notificationTextColumn}>
+                    <Text style={styles.notificationAppName}>{t('createTrip.organizerConsole')}</Text>
+                    <Text style={styles.notificationTitle}>{t('createTrip.myCreations')}</Text>
+                    <Text style={styles.notificationDescText} numberOfLines={1}>
+                      {hasAlert
+                        ? t('createTrip.pendingApproval', { count: pendingCount })
+                        : t('createTrip.routesPublished', { count: myTrips.length })}
+                    </Text>
                   </View>
-                </LinearGradient>
+                </View>
+                <ChevronRight size={18} color="#7C3AED" />
               </TouchableOpacity>
             );
           })()}
@@ -806,37 +799,45 @@ function CreateTripScreen() {
             SCENIC TOURIST HERO BANNER WITH IMAGE OVERLAY
             ════════════════════════════════════════════════ */}
           <View style={styles.heroWrap}>
-            <Image source={{ uri: customCoverUri || coverImage }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-            <LinearGradient colors={['rgba(18,21,36,0.2)', 'rgba(0,0,0,0.85)']} style={StyleSheet.absoluteFill} />
+            <Image
+              source={{ uri: customCoverUri || coverImage }}
+              style={StyleSheet.absoluteFill}
+              resizeMode="cover"
+            />
+            <LinearGradient
+              colors={['rgba(15,23,42,0.15)', 'rgba(15,23,42,0.55)', 'rgba(15,23,42,0.85)']}
+              style={StyleSheet.absoluteFill}
+            />
 
             <View style={styles.heroBadgeRow}>
               <View style={styles.heroBadge}>
-                <Sparkles size={12} color={C.amber} />
+                <Sparkles size={12} color="#EA580C" />
                 <Text style={styles.heroBadgeText}>{t('createTrip.organizerSuite')}</Text>
               </View>
-              {/* Gallery pick button inside hero — clean pill */}
+
               <TouchableOpacity
-                style={styles.galleryPickBtn}
+                style={styles.heroUploadBtn}
                 onPress={pickImageFromGallery}
-                activeOpacity={0.8}
+                activeOpacity={0.85}
                 disabled={coverUploading}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 accessibilityRole="button"
                 accessibilityLabel={t('createTrip.uploadCoverPhoto')}
               >
                 {coverUploading ? (
-                  <ActivityIndicator size="small" color={C.white} />
+                  <ActivityIndicator size="small" color="#0F172A" />
                 ) : (
-                  <ImageIcon size={13} color={customCoverUri ? C.green : C.white} />
+                  <ImageIcon size={13} color="#0F172A" />
                 )}
-                <Text style={[styles.galleryPickBtnText, customCoverUri && { color: C.green }]}>
-                  {coverUploading ? t('createTrip.uploading') : customCoverUri ? t('createTrip.customPhoto') : t('createTrip.uploadPhoto')}
+                <Text style={styles.heroUploadBtnText}>
+                  {coverUploading ? t('createTrip.uploading') : t('createTrip.uploadPhoto')}
                 </Text>
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.heroTitle}>{t('createTrip.heroTitle')}</Text>
-            <Text style={styles.heroSub}>{t('createTrip.heroSub')}</Text>
+            <View style={styles.heroTextWrap}>
+              <Text style={styles.heroTitle}>{t('createTrip.heroTitle')}</Text>
+              <Text style={styles.heroSub}>{t('createTrip.heroSub')}</Text>
+            </View>
           </View>
 
           {/* ────────────────────────────────────────────
@@ -845,19 +846,15 @@ function CreateTripScreen() {
           <View style={styles.coverSectionWrap}>
             {/* Gallery Picker Card */}
             <TouchableOpacity
-              style={[styles.galleryCard, customCoverUri && styles.galleryCardSelected]}
+              style={styles.galleryCard}
               onPress={pickImageFromGallery}
               activeOpacity={0.85}
               disabled={coverUploading}
               accessibilityRole="button"
               accessibilityLabel={customCoverUri ? t('createTrip.customCoverApplied') : t('createTrip.uploadCoverPhoto')}
             >
-              <View style={[styles.galleryIconCircle, customCoverUri && styles.galleryIconCircleSelected]}>
-                {coverUploading ? (
-                  <ActivityIndicator size="small" color={C.blue} />
-                ) : (
-                  <ImageIcon size={20} color={customCoverUri ? C.green : C.blue} />
-                )}
+              <View style={styles.galleryIconCircle}>
+                <ImageIcon size={20} color="#6366F1" />
               </View>
               <View style={styles.galleryCardContent}>
                 <Text style={styles.galleryCardTitle}>
@@ -871,8 +868,8 @@ function CreateTripScreen() {
                       : t('createTrip.selectCoverHint')}
                 </Text>
               </View>
-              <View style={[styles.galleryChevron, customCoverUri && styles.galleryChevronSelected]}>
-                <Text style={[styles.galleryChevronText, customCoverUri && styles.galleryChevronTextSelected]}>
+              <View style={styles.galleryBrowsePill}>
+                <Text style={styles.galleryBrowsePillText}>
                   {customCoverUri ? t('createTrip.change') : t('createTrip.browse')}
                 </Text>
               </View>
@@ -887,12 +884,12 @@ function CreateTripScreen() {
 
             {/* Preset chips strip */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.presetsList}>
-              {PRESET_COVERS.map((cov) => {
+              {PRESET_COVERS.map((cov, idx) => {
                 const isSelected = !customCoverUri && coverImage === cov.url;
                 return (
                   <TouchableOpacity
                     key={cov.labelKey}
-                    style={[styles.presetChip, isSelected && styles.presetChipActive]}
+                    style={[styles.presetCard, isSelected && styles.presetCardActive]}
                     onPress={() => {
                       setCustomCoverUri(null);
                       setCoverImage(cov.url);
@@ -902,7 +899,16 @@ function CreateTripScreen() {
                     accessibilityLabel={t(cov.labelKey)}
                     accessibilityState={{ selected: isSelected }}
                   >
-                    <Text style={[styles.presetChipText, isSelected && styles.presetChipTextActive]}>{t(cov.labelKey)}</Text>
+                    <View style={styles.presetIconWrap}>
+                      {idx === 0 && <Landmark size={24} color="#D97706" />}
+                      {idx === 1 && <MountainIcon size={24} color="#10B981" />}
+                      {idx === 2 && <Palmtree size={24} color="#0284C7" />}
+                      {idx === 3 && <Waves size={24} color="#0D9488" />}
+                      {idx === 4 && <Trees size={24} color="#16A34A" />}
+                    </View>
+                    <Text style={[styles.presetCardText, isSelected && styles.presetCardTextActive]} numberOfLines={1}>
+                      {cov.label}
+                    </Text>
                   </TouchableOpacity>
                 );
               })}
@@ -921,7 +927,7 @@ function CreateTripScreen() {
               accessibilityLabel={t('createTrip.tabPlan')}
               accessibilityState={{ selected: activeTab === 'PLANNER' }}
             >
-              <Compass size={14} color={activeTab === 'PLANNER' ? C.white : C.textSec} />
+              <HomeIcon size={14} color={activeTab === 'PLANNER' ? '#FFFFFF' : '#64748B'} />
               <Text style={[styles.tabText, activeTab === 'PLANNER' && styles.tabTextActive]}>{t('createTrip.tabPlan')}</Text>
             </TouchableOpacity>
 
@@ -933,7 +939,7 @@ function CreateTripScreen() {
               accessibilityLabel={t('createTrip.tabTimeline')}
               accessibilityState={{ selected: activeTab === 'TIMELINE' }}
             >
-              <Clock size={14} color={activeTab === 'TIMELINE' ? C.white : C.textSec} />
+              <Clock size={14} color={activeTab === 'TIMELINE' ? '#FFFFFF' : '#64748B'} />
               <Text style={[styles.tabText, activeTab === 'TIMELINE' && styles.tabTextActive]}>{t('createTrip.tabTimeline')}</Text>
             </TouchableOpacity>
 
@@ -945,7 +951,7 @@ function CreateTripScreen() {
               accessibilityLabel={t('createTrip.tabTravelers')}
               accessibilityState={{ selected: activeTab === 'TRAVELERS' }}
             >
-              <Users size={14} color={activeTab === 'TRAVELERS' ? C.white : C.textSec} />
+              <Users size={14} color={activeTab === 'TRAVELERS' ? '#FFFFFF' : '#64748B'} />
               <Text style={[styles.tabText, activeTab === 'TRAVELERS' && styles.tabTextActive]}>{t('createTrip.tabTravelers')}</Text>
             </TouchableOpacity>
 
@@ -957,7 +963,7 @@ function CreateTripScreen() {
               accessibilityLabel={t('createTrip.tabChecklist')}
               accessibilityState={{ selected: activeTab === 'CHECKLIST' }}
             >
-              <CheckSquare size={14} color={activeTab === 'CHECKLIST' ? C.white : C.textSec} />
+              <CheckSquare size={14} color={activeTab === 'CHECKLIST' ? '#FFFFFF' : '#64748B'} />
               <Text style={[styles.tabText, activeTab === 'CHECKLIST' && styles.tabTextActive]}>{t('createTrip.tabChecklist')}</Text>
             </TouchableOpacity>
           </View>
@@ -967,9 +973,9 @@ function CreateTripScreen() {
             <View style={styles.formContainer}>
               {/* 1. BASIC INFORMATION */}
               <View style={styles.sectionHeaderRow}>
-                <LinearGradient colors={['#3B82F6', '#1E40AF']} style={styles.stepBadge}>
+                <View style={styles.stepBadge}>
                   <Text style={styles.stepBadgeText}>01</Text>
-                </LinearGradient>
+                </View>
                 <Text style={styles.sectionTitle}>{t('createTrip.step1Title')}</Text>
               </View>
 
@@ -978,7 +984,7 @@ function CreateTripScreen() {
                 placeholder={t('createTrip.tripNamePlaceholder')}
                 value={tripName}
                 onChangeText={setTripName}
-                icon={<Compass size={17} color={C.blue} />}
+                icon={<FileText size={17} color="#6366F1" />}
                 containerStyle={styles.inputGroup}
               />
 
@@ -2073,56 +2079,75 @@ const styles = StyleSheet.create({
     paddingBottom: 140,
   },
   heroWrap: {
-    borderRadius: 24,
-    padding: 20,
+    borderRadius: 22,
+    padding: 18,
     marginBottom: 16,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-    height: 160,
-    justifyContent: 'center',
+    height: 190,
+    justifyContent: 'space-between',
   },
   heroBadgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 8,
   },
   heroBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(245, 158, 11, 0.25)',
+    backgroundColor: '#FFEDD5',
     paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingVertical: 5,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.4)',
+    borderColor: '#FED7AA',
   },
   heroBadgeText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '800',
-    color: C.amber,
+    color: '#EA580C',
     letterSpacing: 0.5,
+  },
+  heroUploadBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  heroUploadBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  heroTextWrap: {
+    marginTop: 'auto',
   },
   heroTitle: {
     fontSize: 22,
     fontWeight: '800',
-    color: C.white,
+    color: '#FFFFFF',
     marginBottom: 4,
   },
   heroSub: {
-    fontSize: 12,
-    color: '#E2E8F0',
+    fontSize: 12.5,
+    color: 'rgba(255,255,255,0.9)',
     lineHeight: 17,
   },
 
   formContainer: {
-    backgroundColor: C.card,
-    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
     padding: 18,
     borderWidth: 1,
-    borderColor: C.border,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
   },
 
   sectionHeaderRow: {
@@ -2133,21 +2158,22 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   stepBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#5B46E8',
     alignItems: 'center',
     justifyContent: 'center',
   },
   stepBadgeText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '800',
-    color: C.white,
+    color: '#FFFFFF',
   },
   sectionTitle: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
-    color: C.white,
+    color: '#0F172A',
     letterSpacing: 0.2,
   },
 
@@ -2479,127 +2505,6 @@ const styles = StyleSheet.create({
     color: C.blue,
   },
 
-  // ── Cover Photo Redesign styles ──
-  coverSectionWrap: {
-    marginBottom: 16,
-  },
-  galleryCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: C.card,
-    borderRadius: 16,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: C.border,
-    marginBottom: 14,
-  },
-  galleryCardSelected: {
-    borderColor: 'rgba(16,185,129,0.3)',
-    backgroundColor: 'rgba(16,185,129,0.02)',
-  },
-  galleryIconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(59,130,246,0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  galleryIconCircleSelected: {
-    backgroundColor: 'rgba(16,185,129,0.08)',
-  },
-  galleryCardContent: {
-    flex: 1,
-  },
-  galleryCardTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: C.white,
-    marginBottom: 2,
-  },
-  galleryCardSub: {
-    fontSize: 12,
-    color: C.textMuted,
-    lineHeight: 13,
-  },
-  galleryChevron: {
-    backgroundColor: 'rgba(59,130,246,0.12)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  galleryChevronSelected: {
-    backgroundColor: 'rgba(16,185,129,0.12)',
-  },
-  galleryChevronText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: C.blue,
-  },
-  galleryChevronTextSelected: {
-    color: C.green,
-  },
-  coverDivider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
-  coverDividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-  },
-  coverDividerText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: C.textMuted,
-    paddingHorizontal: 12,
-    letterSpacing: 0.6,
-  },
-  presetsList: {
-    gap: 8,
-  },
-  presetChip: {
-    backgroundColor: C.card,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    minHeight: MIN_TOUCH_TARGET,
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: C.border,
-  },
-  presetChipActive: {
-    backgroundColor: 'rgba(59,130,246,0.12)',
-    borderColor: C.blue,
-  },
-  presetChipText: {
-    fontSize: 12,
-    color: C.textSec,
-    fontWeight: '600',
-  },
-  presetChipTextActive: {
-    color: C.white,
-    fontWeight: '700',
-  },
-
-  // ── Gallery pick button on Hero ──
-  galleryPickBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    paddingHorizontal: 9,
-    paddingVertical: 4.5,
-    borderRadius: 8,
-  },
-  galleryPickBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: C.white,
-  },
 
   // ── Category Chips selector styles ──
   categoryRow: {
@@ -2664,12 +2569,17 @@ const styles = StyleSheet.create({
   // ── Tab Switcher Row ──
   tabsRow: {
     flexDirection: 'row',
-    backgroundColor: '#111422',
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 4,
     borderWidth: 1,
-    borderColor: '#1E243B',
+    borderColor: '#E2E8F0',
     marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
   },
   tabItem: {
     flex: 1,
@@ -2677,21 +2587,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingVertical: 10,
+    paddingVertical: 9,
     minHeight: MIN_TOUCH_TARGET,
     borderRadius: 12,
   },
   tabItemActive: {
-    backgroundColor: C.blueText,
+    backgroundColor: '#5B46E8',
   },
   tabText: {
     fontSize: 12,
     fontWeight: '600',
-    color: C.textSec,
+    color: '#64748B',
   },
   tabTextActive: {
-    color: C.white,
-    fontWeight: '800',
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
 
   // ── Timeline Tab Styles ──
@@ -3012,27 +2922,28 @@ const styles = StyleSheet.create({
 
   // ── Organizer Operations Notification Banner styles ──
   notificationBannerTouch: {
-    marginBottom: 20,
+    marginBottom: 16,
     borderRadius: 18,
-    overflow: 'hidden',
   },
   notificationBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
+    borderColor: '#EDE9FE',
     borderRadius: 18,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 6,
+    shadowColor: '#6366F1',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+    marginBottom: 16,
   },
   notificationBannerActive: {
-    borderColor: 'rgba(245, 158, 11, 0.2)',
+    borderColor: 'rgba(245, 158, 11, 0.4)',
   },
   notificationMain: {
     flexDirection: 'row',
@@ -3041,19 +2952,16 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   notificationIconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 9,
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#EDE9FE',
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
   notificationIconWrapAlert: {
-    backgroundColor: 'rgba(245, 158, 11, 0.08)',
-    borderColor: 'rgba(245, 158, 11, 0.2)',
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
   },
   notificationRedDot: {
     position: 'absolute',
@@ -3074,10 +2982,12 @@ const styles = StyleSheet.create({
     marginBottom: 2.5,
   },
   notificationAppName: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '800',
-    color: C.textMuted,
+    color: '#7C3AED',
     letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginBottom: 2,
   },
   notificationTime: {
     fontSize: 12,
@@ -3086,15 +2996,15 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   notificationTitle: {
-    fontSize: 12.5,
-    fontWeight: '700',
-    color: '#F8FAFC',
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0F172A',
     marginBottom: 2,
   },
   notificationDescText: {
-    fontSize: 12,
-    color: C.textSec,
-    lineHeight: 14,
+    fontSize: 12.5,
+    color: '#64748B',
+    lineHeight: 16,
   },
   notificationAlertPill: {
     backgroundColor: 'rgba(245, 158, 11, 0.12)',
@@ -3111,21 +3021,130 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   sectionDividerWrap: {
-    marginTop: 6,
     marginBottom: 16,
-    paddingHorizontal: 4,
+    paddingHorizontal: 2,
   },
   sectionDividerTitle: {
-    fontSize: 12,
+    fontSize: 15,
     fontWeight: '800',
-    color: C.textSec,
-    letterSpacing: 1.2,
+    color: '#0F172A',
+    letterSpacing: 0.5,
     marginBottom: 4,
   },
   sectionDividerSub: {
-    fontSize: 12,
-    color: C.textMuted,
-    lineHeight: 14,
+    fontSize: 13,
+    color: '#64748B',
+    lineHeight: 18,
+  },
+
+  // ── Cover Photo Section styles ──
+  coverSectionWrap: {
+    marginBottom: 16,
+  },
+  galleryCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 14,
+    gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  galleryIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderStyle: 'dashed',
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  galleryCardContent: {
+    flex: 1,
+  },
+  galleryCardTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  galleryCardSub: {
+    fontSize: 11.5,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  galleryBrowsePill: {
+    borderWidth: 1.5,
+    borderColor: '#C4B5FD',
+    backgroundColor: '#F5F3FF',
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 14,
+  },
+  galleryBrowsePillText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#5B46E8',
+  },
+
+  // ── Preset Selector ──
+  coverDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 14,
+    gap: 10,
+  },
+  coverDividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E2E8F0',
+  },
+  coverDividerText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#94A3B8',
+    letterSpacing: 0.8,
+  },
+  presetsList: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingVertical: 4,
+  },
+  presetCard: {
+    width: 76,
+    height: 80,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 8,
+  },
+  presetCardActive: {
+    borderColor: '#5B46E8',
+    backgroundColor: '#F5F3FF',
+  },
+  presetIconWrap: {
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+  presetCardText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  presetCardTextActive: {
+    color: '#5B46E8',
   },
 
   // ── Creations list modal styles ──

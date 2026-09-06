@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { SplashScreen } from 'expo-router';
+import { SplashScreen, useRouter } from 'expo-router';
 import { logger } from '@/lib/logger';
 import { useEffect, useState } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
@@ -13,13 +13,22 @@ const DURATION = 500;
 // resolves) and hides the splash unconditionally, producing a visible
 // flash of logged-out UI before the real session state is known
 // (REMEDIATION.md §7.5). Waits on AppContext's `sessionRestored` instead.
+//
+// A device that hasn't completed onboarding yet gets redirected to it
+// while the splash is still covering the screen, so the app never flashes
+// its normal tabs first — the redirect and the splash's hide both key off
+// the same `sessionRestored` flip, in this one effect.
 export function AnimatedSplashOverlay() {
-  const { sessionRestored } = useApp();
+  const { sessionRestored, hasOnboarded } = useApp();
+  const router = useRouter();
   const [visible, setVisible] = useState(true);
   const [opacity] = useState(() => new Animated.Value(1));
 
   useEffect(() => {
     if (!sessionRestored) return;
+    if (!hasOnboarded) {
+      router.replace('/onboarding');
+    }
     SplashScreen.hideAsync()
       .catch((e) => logger.warn('[Splash] hideAsync failed:', e))
       .finally(() => {
@@ -31,7 +40,7 @@ export function AnimatedSplashOverlay() {
           setVisible(false);
         });
       });
-  }, [sessionRestored, opacity]);
+  }, [sessionRestored, hasOnboarded, opacity, router]);
 
   if (!visible) return null;
 

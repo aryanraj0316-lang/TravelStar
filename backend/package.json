@@ -12,6 +12,7 @@
     "lint": "eslint . --max-warnings=0",
     "format": "prettier --write .",
     "seed:reference": "ts-node prisma/seed-reference-data.ts",
+    "db:empty": "ts-node prisma/empty-db.ts",
     "test": "jest"
   },
   "dependencies": {

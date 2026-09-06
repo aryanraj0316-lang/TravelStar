@@ -113,17 +113,9 @@ router.get('/', async (req, res) => {
       expertise: g.expertisePlaces || ['Jaipur', 'Vrindavan'],
     }));
 
-    if (mapped.length === 0) {
-      mapped.push({
-        id: 'guide-1',
-        name: 'Rajesh Kumar',
-        rating: 4.9,
-        languages: ['Hindi', 'English'],
-        dailyRate: '2200',
-        expertise: ['Vrindavan', 'Agra'],
-      });
-    }
-
+    // An empty list is returned as empty. This used to fall back to a
+    // fabricated "Rajesh Kumar" guide, which a user could try to view or
+    // contact and which no other endpoint knew anything about.
     return res.status(200).json({ ok: true, data: mapped, meta: { cursor: nextCursor } });
   } catch (err) {
     logger.error('[Guides] Get guides list error:', err);

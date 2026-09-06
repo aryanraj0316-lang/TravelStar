@@ -575,7 +575,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: '800',
-    color: C.white,
+    color: C.text,
     letterSpacing: -0.3,
   },
   unreadBadge: {

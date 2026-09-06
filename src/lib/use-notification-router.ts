@@ -1,9 +1,15 @@
 import { useEffect } from 'react';
-import { AppState } from 'react-native';
-import * as Notifications from 'expo-notifications';
+import { AppState, Platform } from 'react-native';
+import Constants from 'expo-constants';
+import type * as NotificationsType from 'expo-notifications';
 import { useRouter } from 'expo-router';
 import { routeForNotificationData, syncBadgeCount } from '@/lib/push';
 import { logger } from '@/lib/logger';
+
+// See src/lib/push.ts for why this can't be a static import: it throws at
+// import time for remote push on Android inside Expo Go.
+const isExpoGoAndroid = Platform.OS === 'android' && Constants.executionEnvironment === 'storeClient';
+const Notifications = isExpoGoAndroid ? null : (require('expo-notifications') as typeof NotificationsType);
 
 /**
  * Deep links from a notification tap, plus app-icon badge upkeep
@@ -20,7 +26,7 @@ export function useNotificationRouter(): void {
   useEffect(() => {
     let cancelled = false;
 
-    const go = (response: Notifications.NotificationResponse | null) => {
+    const go = (response: NotificationsType.NotificationResponse | null) => {
       if (!response || cancelled) return;
       const data = response.notification.request.content.data as Record<string, unknown> | undefined;
       const path = routeForNotificationData(data);
@@ -30,6 +36,12 @@ export function useNotificationRouter(): void {
         logger.warn('[Push] Could not open the notification target:', error);
       }
     };
+
+    if (!Notifications) {
+      return () => {
+        cancelled = true;
+      };
+    }
 
     try {
       // Cold start: the tap that launched the app.

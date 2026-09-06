@@ -183,6 +183,11 @@ interface AppContextType {
   updateProfile: (profile: Partial<UserProfile>) => void;
   isLoggedIn: boolean;
   sessionRestored: boolean;
+  /** True once the one-time first-launch onboarding flow has been shown
+   *  (completed or skipped) and persisted locally. Meaningless before
+   *  `sessionRestored` — see the hydrate effect below. */
+  hasOnboarded: boolean;
+  completeOnboarding: () => void;
   login: () => void;
   logout: () => void;
   trips: Trip[];
@@ -255,27 +260,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return unsub;
   }, []);
   // Placeholder shown only until the real profile loads (or the session
-  // restores as logged-out, at which point GUEST_PROFILE above takes over).
-  // `walletBalance`/`rewardPoints` used to be fabricated non-zero numbers
-  // (2450.0 / 120) here — a real fresh wallet always starts at 0
-  // (backend/src/api/routes/auth.ts's register route), so a fabricated
-  // balance could flash before the real fetch resolves. `isVerified: true`
-  // was also wrong for the same reason: nothing is verified before a real
-  // profile says so.
-  const [profile, setProfile] = useState<UserProfile>({
-    name: 'Aarav Sharma',
-    avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
-    role: 'TOURIST',
-    isVerified: false,
-    guideLicenseStatus: 'NONE',
-    walletBalance: 0,
-    rewardPoints: 0,
-  });
+  // restores as logged-out, at which point this is what it settles on
+  // anyway). Reuses GUEST_PROFILE itself rather than a second hand-typed
+  // copy — this used to hardcode the name 'Aarav Sharma' and a stock photo
+  // here, a specific fake identity that could flash on a cold launch before
+  // the real profile (or the logged-out state) resolved. `walletBalance`/
+  // `rewardPoints` used to be fabricated non-zero numbers (2450.0 / 120)
+  // here too — a real fresh wallet always starts at 0 (backend/src/api/
+  // routes/auth.ts's register route), so a fabricated balance could flash
+  // before the real fetch resolves. `isVerified: true` was also wrong for
+  // the same reason: nothing is verified before a real profile says so.
+  const [profile, setProfile] = useState<UserProfile>(GUEST_PROFILE);
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   // True once the local session read (isLoggedIn/savedProfile from
   // storage) has settled — see the hydrate effect below and §7.5.
   const [sessionRestored, setSessionRestored] = useState(false);
+  const [hasOnboarded, setHasOnboarded] = useState(false);
+
+  // TODO(prod): re-enable safeStorage.setItem('hasOnboarded', 'true') here
+  // once the onboarding flow is finalised — removed during development so
+  // the onboarding screen shows on every fresh app launch.
+  const completeOnboarding = useCallback(() => {
+    setHasOnboarded(true);
+  }, []);
 
   // Declared here (rather than down by the other chat/SOS state, where they
   // used to live) because `logout` below reads their setters — the React
@@ -514,6 +522,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setProfile(JSON.parse(val));
         }
       }),
+      // TODO(prod): re-enable reading hasOnboarded from storage once the
+      // onboarding flow is finalised. Skipped during development so it
+      // always shows on app launch.
+      // safeStorage.getItem('hasOnboarded').then((val) => {
+      //   if (val === 'true') setHasOnboarded(true);
+      // }),
     ]).then((results) => {
       results.forEach((r) => {
         if (r.status === 'rejected') logger.warn('[Hydrate] Reading local session failed:', r.reason);
@@ -880,6 +894,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updateProfile,
       isLoggedIn,
       sessionRestored,
+      hasOnboarded,
+      completeOnboarding,
       login,
       logout,
       trips,
@@ -918,6 +934,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updateProfile,
       isLoggedIn,
       sessionRestored,
+      hasOnboarded,
+      completeOnboarding,
       login,
       logout,
       trips,

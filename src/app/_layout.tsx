@@ -1,6 +1,6 @@
 import '@/global.css';
 
-import { DarkTheme, ThemeProvider, Stack, type ErrorBoundaryProps, SplashScreen } from 'expo-router';
+import { DefaultTheme, ThemeProvider, Stack, type ErrorBoundaryProps, SplashScreen } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { useEffect } from 'react';
@@ -33,15 +33,15 @@ export function ErrorBoundary(props: ErrorBoundaryProps) {
 
 void SplashScreen.preventAutoHideAsync().catch((e) => logger.warn('[Splash] preventAutoHideAsync failed:', e));
 
-// The app is dark-mode only for now — see docs/REMEDIATION.md §1.3. A real
-// light theme is Phase 9 design-system work; until then we don't pretend to
-// support one.
 const AppTheme = {
-  ...DarkTheme,
+  ...DefaultTheme,
   colors: {
-    ...DarkTheme.colors,
+    ...DefaultTheme.colors,
     background: C.bg,
     card: C.card,
+    text: C.text,
+    border: C.border,
+    primary: C.blue,
   },
 };
 
@@ -72,6 +72,7 @@ export default function RootLayout() {
               <OfflineBanner />
               <Stack screenOptions={{ headerShown: false }}>
                 <Stack.Screen name="(tabs)" />
+                <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
                 <Stack.Screen name="auth" options={{ presentation: 'modal' }} />
                 <Stack.Screen name="stories" options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
               </Stack>

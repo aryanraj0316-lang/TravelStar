@@ -285,8 +285,8 @@ export default function MonsoonAdvisoryScreen() {
                       style={[
                         styles.filterTabText,
                         isActive && styles.filterTabTextActive,
-                        tab.key === 'CRITICAL' && { color: C.red },
-                        tab.key === 'WARNING' && { color: C.orange },
+                        tab.key === 'CRITICAL' && { color: C.redText },
+                        tab.key === 'WARNING' && { color: C.amberText },
                         tab.key === 'ADVISORY' && { color: C.blue },
                         isActive && { color: C.white },
                       ]}
@@ -366,7 +366,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 20,
     fontWeight: '800',
-    color: C.white,
+    color: C.text,
     letterSpacing: 0.3,
   },
   liveBadge: {

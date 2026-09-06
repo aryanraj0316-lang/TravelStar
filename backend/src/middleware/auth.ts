@@ -93,7 +93,13 @@ export const authenticateJWT = (
         next();
         return;
       }
-      res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'Forbidden: Invalid or expired token' } });
+      // 401, not 403: an invalid/expired token is a failure to authenticate,
+      // not a valid session lacking permission — and the client's silent
+      // refresh-token flow (src/services/api.ts) only triggers on 401. A
+      // naturally expired access token (15 min TTL) hitting this as 403
+      // meant every user saw a raw "Forbidden" error on their next request
+      // instead of a transparent refresh.
+      res.status(401).json({ ok: false, error: { code: 'UNAUTHORIZED', message: 'Unauthorized: Invalid or expired token' } });
       return;
     }
     req.user = {

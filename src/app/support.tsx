@@ -164,7 +164,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 16,
     fontWeight: '800',
-    color: C.white,
+    color: C.text,
   },
   scrollContent: {
     paddingHorizontal: 16,
@@ -178,7 +178,7 @@ const styles = StyleSheet.create({
   greetingTitle: {
     fontSize: 20,
     fontWeight: '800',
-    color: C.white,
+    color: C.text,
     textAlign: 'center',
   },
   greetingSubtitle: {
@@ -209,7 +209,7 @@ const styles = StyleSheet.create({
   contactTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: C.white,
+    color: C.text,
   },
   contactSubtitle: {
     fontSize: 12,

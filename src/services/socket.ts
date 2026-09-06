@@ -1,5 +1,5 @@
 import { io, type Socket } from 'socket.io-client';
-import { getHostUrl } from './api';
+import { getHostUrl, refreshAccessToken } from './api';
 import { secureStorage } from './secureStorage';
 import { logger } from '@/lib/logger';
 import type { Message, SOSAlert } from '@/store/AppContext';
@@ -55,7 +55,21 @@ class SocketService {
         reconnectionDelay: 1000,
         // The server verifies this JWT in its io.use() middleware — identity
         // is never taken from a client-suppliable query param.
-        auth: { token },
+        //
+        // A function, not a static `{ token }` object: the access token has
+        // a 15-minute TTL, and requestEnvelope() in api.ts silently refreshes
+        // it on the REST side when it expires. A static object here would
+        // keep resending the token captured at the original connect() call
+        // on every reconnection attempt, forever — this re-reads whatever is
+        // currently in storage each time socket.io (re)connects, so a
+        // reconnect after the REST flow has already refreshed picks up the
+        // new token instead of retrying with the dead one.
+        auth: (cb) => {
+          secureStorage
+            .getItem('accessToken')
+            .then((current) => cb({ token: current }))
+            .catch(() => cb({ token: null }));
+        },
       });
 
       this.socket.on('connect', () => {});
@@ -92,6 +106,17 @@ class SocketService {
 
       this.socket.on('connect_error', (err: Error) => {
         logger.warn(`[SocketService] Connection notice:`, err?.message || err);
+        // The server's socketAuthMiddleware rejects with this exact message
+        // for a missing/invalid/expired token. Refresh proactively instead
+        // of waiting on some unrelated REST call to notice — the socket may
+        // be the only thing talking to the server right now (e.g. idle in a
+        // chat). socket.io's own reconnection backoff (reconnection: true
+        // above) will retry on its normal schedule regardless; this just
+        // gives the next attempt a real token to pick up via the auth
+        // callback, rather than retrying the same dead one for 10 attempts.
+        if (err?.message === 'UNAUTHORIZED') {
+          void refreshAccessToken();
+        }
       });
     } catch (e) {
       logger.warn('[SocketService] Error initializing Socket.io client:', e);
