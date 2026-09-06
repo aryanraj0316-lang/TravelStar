@@ -5,7 +5,7 @@
 // instead of the ad-hoc TabContext + horizontal-ScrollView pager that used
 // to live in the deleted src/components/app-tabs.tsx (REMEDIATION.md §7.1).
 import { LinearGradient } from 'expo-linear-gradient';
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import Home from 'lucide-react-native/icons/house';
 import Map from 'lucide-react-native/icons/map';
 import MessageSquare from 'lucide-react-native/icons/message-square';
@@ -136,12 +136,14 @@ export function AppTabBar({ state, navigation }: AppTabBarProps) {
   const isDark = scheme === 'dark' || true;
   const insets = useSafeAreaInsets();
 
+  const router = useRouter();
   const {
     activeRoomId,
     navbarHidden,
     setNavbarHidden,
     pendingRequestsCount,
     hasUnreadChat,
+    isLoggedIn,
   } = useApp();
 
   const currentRouteName = state.routes[state.index].name;
@@ -207,6 +209,11 @@ export function AppTabBar({ state, navigation }: AppTabBarProps) {
           const isFocused = state.index === index;
 
           const onPress = () => {
+            if (route.name === 'profile' && !isLoggedIn) {
+              router.push('/auth?mode=SIGNUP');
+              return;
+            }
+
             const event = navigation.emit({
               type: 'tabPress',
               target: route.key,

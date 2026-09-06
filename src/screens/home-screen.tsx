@@ -33,6 +33,7 @@ import Plus from 'lucide-react-native/icons/plus';
 import Star from 'lucide-react-native/icons/star';
 import Sun from 'lucide-react-native/icons/sun';
 import AlertTriangle from 'lucide-react-native/icons/triangle-alert';
+import User from 'lucide-react-native/icons/user';
 import Users from 'lucide-react-native/icons/users';
 import Wallet from 'lucide-react-native/icons/wallet';
 import Waves from 'lucide-react-native/icons/waves-horizontal';
@@ -944,14 +945,26 @@ function HomeScreen() {
                 <TouchableOpacity
                   activeOpacity={0.85}
                   style={styles.avatarWrap}
-                  onPress={() => router.navigate('/profile')}
+                  onPress={() => {
+                    if (!isLoggedIn) {
+                      router.push('/auth?mode=SIGNUP');
+                    } else {
+                      router.navigate('/profile');
+                    }
+                  }}
                   accessibilityRole="button"
                   accessibilityLabel={t('home.profileLabel')}
                 >
-                  <Image
-                    source={{ uri: profile.avatar }}
-                    style={styles.avatar}
-                  />
+                  {isLoggedIn && profile.avatar ? (
+                    <Image
+                      source={{ uri: profile.avatar }}
+                      style={styles.avatar}
+                    />
+                  ) : (
+                    <View style={styles.anonymousAvatarSmall}>
+                      <User size={18} color="#64748B" strokeWidth={2} />
+                    </View>
+                  )}
                 </TouchableOpacity>
               </View>
 
@@ -1664,6 +1677,13 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
+  },
+  anonymousAvatarSmall: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   // ── Hero Banner (Full Length, Exact Aspect Ratio, Zero Distortion) ──

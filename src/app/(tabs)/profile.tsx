@@ -30,6 +30,7 @@ import LogOut from 'lucide-react-native/icons/log-out';
 import MapPin from 'lucide-react-native/icons/map-pin';
 import Pencil from 'lucide-react-native/icons/pencil';
 import Trash2 from 'lucide-react-native/icons/trash-2';
+import User from 'lucide-react-native/icons/user';
 import X from 'lucide-react-native/icons/x';
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -491,9 +492,15 @@ function ProfileScreen() {
             <TouchableOpacity
               style={styles.topActionBtn}
               activeOpacity={0.7}
-              onPress={() => setShowEditModal(true)}
+              onPress={() => {
+                if (!isLoggedIn) {
+                  router.push('/auth?mode=SIGNUP');
+                  return;
+                }
+                setShowEditModal(true);
+              }}
               accessibilityRole="button"
-              accessibilityLabel={t('profile.editProfile')}
+              accessibilityLabel={isLoggedIn ? t('profile.editProfile') : (t('common.login') || 'Sign In')}
             >
               <Pencil size={16} color="#FFF" />
             </TouchableOpacity>
@@ -513,7 +520,18 @@ function ProfileScreen() {
 
           <View style={styles.profileHeaderContent}>
             {/* Circular Avatar with Glowing Cyan Gradient Border Ring */}
-            <View style={styles.avatarHaloContainer}>
+            <TouchableOpacity
+              activeOpacity={isLoggedIn ? 1 : 0.8}
+              onPress={() => {
+                if (!isLoggedIn) {
+                  router.push('/auth?mode=SIGNUP');
+                }
+              }}
+              style={styles.avatarHaloContainer}
+              disabled={isLoggedIn}
+              accessibilityRole={isLoggedIn ? 'none' : 'button'}
+              accessibilityLabel={isLoggedIn ? t('profile.profilePhoto') : (t('common.login') || 'Sign In')}
+            >
               <LinearGradient
                 colors={['#00F2FE', '#00D1FF', '#00F2FE']}
                 start={{ x: 0, y: 0 }}
@@ -521,14 +539,20 @@ function ProfileScreen() {
                 style={styles.avatarGradientRing}
               >
                 <View style={styles.avatarInnerGap}>
-                  <Image source={{ uri: profile.avatar || AVATAR_PRESETS[0] }} style={styles.avatar} />
+                  {isLoggedIn && profile.avatar ? (
+                    <Image source={{ uri: profile.avatar }} style={styles.avatar} />
+                  ) : (
+                    <View style={styles.anonymousAvatar}>
+                      <User size={44} color="#94A3B8" strokeWidth={1.8} />
+                    </View>
+                  )}
                 </View>
               </LinearGradient>
-            </View>
+            </TouchableOpacity>
 
             <View style={styles.nameSection}>
               <View style={styles.nameRow}>
-                <Text style={styles.userName}>{profile.name || 'Guest Traveler'}</Text>
+                <Text style={styles.userName}>{profile.name || (isLoggedIn ? 'Traveler' : 'Guest Traveler')}</Text>
                 {/* Only a genuinely verified profile gets the badge — this
                     used to render for every user regardless of isVerified,
                     exactly the fake trust signal §2.6 removed server-side. */}
@@ -538,8 +562,20 @@ function ProfileScreen() {
               </View>
 
               <Text style={[styles.userBio, !profile.bio && styles.userBioEmpty]}>
-                {profile.bio || t('profile.bioEmpty')}
+                {profile.bio || (isLoggedIn ? t('profile.bioEmpty') : 'Sign in to access your saved trips, bookings, and rewards.')}
               </Text>
+
+              {!isLoggedIn && (
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  style={styles.guestLoginPromptBtn}
+                  onPress={() => router.push('/auth?mode=SIGNUP')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Sign In or Create Account"
+                >
+                  <Text style={styles.guestLoginPromptText}>Sign In / Create Account →</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         </View>
@@ -815,17 +851,19 @@ function ProfileScreen() {
 
             <View style={styles.menuDivider} />
 
-            {/* Sign Out of Account */}
+            {/* Sign Out or Sign In to Account */}
             <TouchableOpacity
               style={styles.menuItem}
               activeOpacity={0.7}
-              onPress={handleLogout}
+              onPress={isLoggedIn ? handleLogout : () => router.push('/auth?mode=SIGNUP')}
               accessibilityRole="button"
-              accessibilityLabel={t('profile.signOutOfAccount')}
+              accessibilityLabel={isLoggedIn ? t('profile.signOutOfAccount') : 'Log In / Sign Up'}
             >
               <View style={styles.menuItemLeft}>
-                <LogOut size={17} color="#FF453A" style={{ opacity: 0.9 }} />
-                <Text style={[styles.menuItemText, { color: '#FF453A' }]}>{t('profile.signOutOfAccount')}</Text>
+                <LogOut size={17} color={isLoggedIn ? '#FF453A' : '#00D1FF'} style={{ opacity: 0.9 }} />
+                <Text style={[styles.menuItemText, { color: isLoggedIn ? '#FF453A' : '#00D1FF' }]}>
+                  {isLoggedIn ? t('profile.signOutOfAccount') : 'Log In / Sign Up'}
+                </Text>
               </View>
               <ChevronRight size={14} color="#8B949E" />
             </TouchableOpacity>
@@ -1359,6 +1397,31 @@ const styles = StyleSheet.create({
     width: 84,
     height: 84,
     borderRadius: 42,
+  },
+  anonymousAvatar: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    backgroundColor: '#161928',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  guestLoginPromptBtn: {
+    marginTop: 12,
+    paddingVertical: 7,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 242, 254, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 242, 254, 0.35)',
+  },
+  guestLoginPromptText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#00F2FE',
+    letterSpacing: 0.2,
   },
   profileHeaderContent: {
     alignItems: 'center',

@@ -228,7 +228,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 // docs/REMEDIATION.md §2.12.
 const GUEST_PROFILE: UserProfile = {
   name: 'Guest Traveler',
-  avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
+  avatar: '',
   role: 'TOURIST',
   isVerified: false,
   guideLicenseStatus: 'NONE',
