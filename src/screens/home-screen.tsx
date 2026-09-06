@@ -31,6 +31,7 @@ import Mountain from 'lucide-react-native/icons/mountain';
 import Plane from 'lucide-react-native/icons/plane';
 import Plus from 'lucide-react-native/icons/plus';
 import Star from 'lucide-react-native/icons/star';
+import ShieldCheck from 'lucide-react-native/icons/shield-check';
 import Sun from 'lucide-react-native/icons/sun';
 import AlertTriangle from 'lucide-react-native/icons/triangle-alert';
 import User from 'lucide-react-native/icons/user';
@@ -427,12 +428,39 @@ function RotatingMonsoonAlertCardBase({ alerts, isFocused }: { alerts: HomeAlert
   // hazard data (that would be actively misleading on a safety card).
   if (alerts.length === 0) {
     return (
-      <View style={styles.advisoryCard}>
-        <View style={[styles.advisoryIconWrap, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
-          <Check size={18} color="#10B981" />
+      <View style={styles.allClearCard}>
+        {/* Top Header Row */}
+        <View style={styles.allClearHeaderRow}>
+          <View style={styles.allClearHeaderBadge}>
+            <View style={styles.allClearLiveDot} />
+            <Text style={styles.allClearHeaderText}>{t('home.routeSafety') || 'Route Safety'}</Text>
+          </View>
+          <ShieldCheck size={16} color="#059669" strokeWidth={2.2} />
         </View>
-        <Text style={styles.advisoryTitle}>All Clear</Text>
-        <Text style={styles.advisoryDesc}>No active hazard alerts on your routes right now.</Text>
+
+        {/* Minimal Center Content */}
+        <View style={styles.allClearCenter}>
+          <View style={styles.allClearIconCircle}>
+            <Check size={20} color="#059669" strokeWidth={2.6} />
+          </View>
+          <Text style={styles.allClearTitle}>{t('home.allClear') || 'All Clear'}</Text>
+          <Text style={styles.allClearSubtitle}>
+            {t('home.allClearMinimalDesc') || 'All monitored routes are safe and running normally.'}
+          </Text>
+        </View>
+
+        {/* Minimal Action Link */}
+        <TouchableOpacity
+          style={styles.allClearLink}
+          activeOpacity={0.7}
+          onPress={() => router.push('/monsoon-advisory')}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel={t('home.viewDetails')}
+        >
+          <Text style={styles.allClearLinkText}>{t('home.viewDetails')}</Text>
+          <ChevronRight size={13} color="#059669" strokeWidth={2.4} />
+        </TouchableOpacity>
       </View>
     );
   }
@@ -839,19 +867,21 @@ function HomeScreen() {
   });
 
   useEffect(() => {
-    apiService.getNotifications().then((data) => {
-      if (data) checkUnreadNotifications();
-    }).catch((e) => logger.warn('[Home] Notification badge check failed:', e));
+    if (isLoggedIn) {
+      apiService.getNotifications().then((data) => {
+        if (data) checkUnreadNotifications();
+      }).catch((e) => logger.warn('[Home] Notification badge check failed:', e));
+    }
 
     // Listen for real-time notifications to refresh the badge
     const unsubNotif = eventBus.on('inAppNotification', () => {
-      checkUnreadNotifications();
+      if (isLoggedIn) checkUnreadNotifications();
     });
 
     return () => {
       unsubNotif();
     };
-  }, [checkUnreadNotifications]);
+  }, [checkUnreadNotifications, isLoggedIn]);
 
   const infiniteTrendingDests = [...destinations, ...destinations];
 
@@ -1954,13 +1984,92 @@ const styles = StyleSheet.create({
   alertsColumn: {
     flex: 1,
   },
+  allClearCard: {
+    flex: 1,
+    minHeight: 210,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 16,
+    justifyContent: 'space-between',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  allClearHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  allClearHeaderBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  allClearLiveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+  },
+  allClearHeaderText: {
+    fontSize: 12,
+    color: '#475569',
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  allClearCenter: {
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  allClearIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  allClearTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.3,
+  },
+  allClearSubtitle: {
+    fontSize: 11.5,
+    color: '#64748B',
+    lineHeight: 16,
+    textAlign: 'center',
+    marginTop: 4,
+    paddingHorizontal: 4,
+  },
+  allClearLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 4,
+  },
+  allClearLinkText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#059669',
+  },
   advisoryCard: {
     flex: 1,
+    minHeight: 210,
     backgroundColor: '#FEF2F2',
     borderRadius: 18,
     borderWidth: 1,
     borderColor: '#FEE2E2',
-    padding: 14,
+    padding: 12,
     justifyContent: 'space-between',
     shadowColor: '#EF4444',
     shadowOffset: { width: 0, height: 2 },

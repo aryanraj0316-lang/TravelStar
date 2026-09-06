@@ -873,6 +873,25 @@ export const apiService = {
     return request<GuideProfile>('/guides/profile');
   },
 
+  // The backend endpoint (POST /guides/profile) has existed since the guide
+  // feature was built — nothing in the client ever called it, so there was
+  // no way to actually become a guide through the app. Always starts
+  // PENDING; only an admin's POST /guides/:id/verify can move it to VERIFIED.
+  async applyGuideProfile(data: {
+    licenseNumber: string;
+    licensePhotoUrl?: string;
+    experienceYears: number;
+    expertisePlaces: string[];
+    languagesSpoken: string[];
+    hourlyRate: number;
+    dailyRate: number;
+  }): Promise<GuideProfile | null> {
+    return request('/guides/profile', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
   async getEarnings(guideId: string): Promise<GuideEarnings | null> {
     return request<GuideEarnings>(`/guides/${guideId}/earnings`);
   },

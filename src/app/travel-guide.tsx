@@ -18,11 +18,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { errorToastMessage, toast, useConfirm } from '@/lib/feedback';
 import { uploadFileToUrl } from '@/lib/upload';
 import { recordConsent } from '@/lib/consent';
-import { Button, Input, ScreenEmpty, ScreenLoading, Sheet } from '@/components/ui';
+import { Button, Input, ScreenEmpty, ScreenError, ScreenLoading, Sheet } from '@/components/ui';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useApp } from '@/store/AppContext';
-import { apiService } from '@/services/api';
+import { apiService, ApiError } from '@/services/api';
 import type {
   GuideLead,
   GuideProfile,
@@ -33,7 +33,8 @@ import type {
   LiveWeather,
 } from '@/types/api';
 import type { SOSAlert } from '@/store/AppContext';
-import { formatDate } from '@/lib/datetime';
+import { formatDate, formatDateShort } from '@/lib/datetime';
+import { getCurrentDeviceLocation } from '@/lib/device-location';
 import * as ImagePicker from 'expo-image-picker';
 import ArrowLeft from 'lucide-react-native/icons/arrow-left';
 import Search from 'lucide-react-native/icons/search';
@@ -54,15 +55,8 @@ import Train from 'lucide-react-native/icons/tram-front';
 import Plane from 'lucide-react-native/icons/plane';
 import Calculator from 'lucide-react-native/icons/calculator';
 import Hotel from 'lucide-react-native/icons/hotel';
-import Home from 'lucide-react-native/icons/house';
-import Tent from 'lucide-react-native/icons/tent';
-import ExternalLink from 'lucide-react-native/icons/external-link';
 import Sun from 'lucide-react-native/icons/sun';
-import CloudRain from 'lucide-react-native/icons/cloud-rain';
 import Wind from 'lucide-react-native/icons/wind';
-import Sunrise from 'lucide-react-native/icons/sunrise';
-import Sunset from 'lucide-react-native/icons/sunset';
-import Activity from 'lucide-react-native/icons/activity';
 import ShieldAlert from 'lucide-react-native/icons/shield-alert';
 import PhoneCall from 'lucide-react-native/icons/phone-call';
 import HeartPulse from 'lucide-react-native/icons/heart-pulse';
@@ -89,7 +83,10 @@ interface UploadedMedia {
   title: string;
   category: 'LOCATION' | 'PRICING';
   image: string;
-  location: string;
+  /** Real user input for a locally-tracked STORY upload; GuideReel has no
+   *  location field at all, so a mapped REEL leaves this unset rather than
+   *  showing an invented "Guided Tour Route" for every reel. */
+  location?: string;
   price?: string;
   likes: number;
   date: string;
@@ -100,20 +97,6 @@ const TRANSIT_MODE_LABEL_KEYS: Record<'BIKE' | 'CAR' | 'TRAIN' | 'PLANE', string
   CAR: 'travelGuide.modeCarSuv',
   TRAIN: 'travelGuide.modeTrain',
   PLANE: 'travelGuide.modeFlight',
-};
-
-const CROWD_LABEL_KEYS: Record<'LOW' | 'MODERATE' | 'HIGH' | 'CRITICAL', string> = {
-  LOW: 'travelGuide.crowdLow',
-  MODERATE: 'travelGuide.crowdModerate',
-  HIGH: 'travelGuide.crowdHigh',
-  CRITICAL: 'travelGuide.crowdCritical',
-};
-
-const AQI_LABEL_KEYS: Record<'EXCELLENT' | 'GOOD' | 'POOR' | 'HAZARDOUS', string> = {
-  EXCELLENT: 'travelGuide.aqiExcellent',
-  GOOD: 'travelGuide.aqiGood',
-  POOR: 'travelGuide.aqiPoor',
-  HAZARDOUS: 'travelGuide.aqiHazardous',
 };
 
 const ALERT_TYPE_LABEL_KEYS: Record<string, string> = {
@@ -136,18 +119,17 @@ const BUDGET_CATEGORY_LABEL_KEYS: Record<string, string> = {
   Misc: 'travelGuide.budgetCategoryMisc',
 };
 
+// Sunrise/sunset, AQI, crowd level, and a 5-day forecast all used to render
+// here too — entirely invented, with no field on LiveWeather (src/types/
+// api.ts: latitude/longitude/temp/condition/humidity/windSpeed/fetchedAt
+// only) or any other real source backing any of them. Removed rather than
+// kept faked, same call as the group-organizer.tsx GPS-map/driver-info
+// features this mirrors. Only what LiveWeather actually returns stays.
 interface WeatherData {
   city: string;
   temp: string;
   condition: string;
   wind: string;
-  sunrise: string;
-  sunset: string;
-  aqi: number;
-  aqiStatus: 'EXCELLENT' | 'GOOD' | 'POOR' | 'HAZARDOUS';
-  aqiColor: string;
-  crowdLevel: 'LOW' | 'MODERATE' | 'HIGH' | 'CRITICAL';
-  crowdColor: string;
 }
 
 export default function TravelGuideScreen() {
@@ -158,7 +140,20 @@ export default function TravelGuideScreen() {
 
   const [activeTab, setActiveTab] = useState<'leads' | 'upload' | 'planning' | 'weather' | 'safety'>('leads');
   const [guideProfile, setGuideProfile] = useState<GuideProfile | null>(null);
-  const [, setLoading] = useState(true);
+  // Distinguishes "still checking" from "checked, and there really is no
+  // guide profile yet" from "the check itself failed" — collapsing all
+  // three into one `guideProfile === null` used to render the exact same
+  // full dashboard (with fabricated stats standing in for the missing
+  // data) in every case, including for a brand-new user who has never
+  // applied to be a guide at all and has no way to do so from this screen.
+  const [guideStatus, setGuideStatus] = useState<'loading' | 'notApplied' | 'ready' | 'error'>('loading');
+  const [applying, setApplying] = useState(false);
+  const [applyLicenseNumber, setApplyLicenseNumber] = useState('');
+  const [applyExperienceYears, setApplyExperienceYears] = useState('');
+  const [applyExpertisePlaces, setApplyExpertisePlaces] = useState('');
+  const [applyLanguagesSpoken, setApplyLanguagesSpoken] = useState('');
+  const [applyHourlyRate, setApplyHourlyRate] = useState('');
+  const [applyDailyRate, setApplyDailyRate] = useState('');
   const [earnings, setEarnings] = useState<GuideEarnings | null>(null);
   const [packages, setPackages] = useState<GuidePackage[]>([]);
   const [reels, setReels] = useState<GuideReel[]>([]);
@@ -169,6 +164,7 @@ export default function TravelGuideScreen() {
   // Live weather state (fetched from API)
   const [liveWeatherData, setLiveWeatherData] = useState<LiveWeather | null>(null);
   const [, setWeatherLoading] = useState(false);
+  const [weatherLocationUnavailable, setWeatherLocationUnavailable] = useState(false);
 
   // Safety state (fetched from API). monsoonAdvisories/userEmergencyContacts
   // were fetched into write-only state (never read anywhere in this
@@ -196,26 +192,73 @@ export default function TravelGuideScreen() {
   const [quoteInputs, setQuoteInputs] = useState<Record<string, string>>({});
 
   const loadGuideProfile = async () => {
+    setGuideStatus('loading');
     try {
-      setLoading(true);
-      const res = await apiService.getMyGuideProfile();
-      if (res) {
-        const guide = res;
-        setGuideProfile(guide);
-        // Deliberately not awaited — these run in parallel, each with its
-        // own try/catch (see below), so one failing doesn't block the rest.
-        void fetchEarnings(guide.id);
-        void fetchPackages(guide.id);
-        void fetchReels(guide.id);
-        void fetchLiveStatus(guide.id);
-        void fetchLeads(guide.id);
-        void fetchSafetyData();
-        void fetchLiveWeather(guide.id);
+      const guide = await apiService.getMyGuideProfile();
+      if (!guide) {
+        setGuideStatus('notApplied');
+        return;
       }
+      setGuideProfile(guide);
+      setGuideStatus('ready');
+      // Deliberately not awaited — these run in parallel, each with its
+      // own try/catch (see below), so one failing doesn't block the rest.
+      void fetchEarnings(guide.id);
+      void fetchPackages(guide.id);
+      void fetchReels(guide.id);
+      void fetchLiveStatus(guide.id);
+      void fetchLeads(guide.id);
+      void fetchSafetyData();
+      void fetchLiveWeather(guide.id);
     } catch (e) {
+      // GUIDE_PROFILE_NOT_FOUND is the expected, ordinary state for anyone
+      // who hasn't applied yet — not an error to log or retry.
+      if (e instanceof ApiError && e.code === 'GUIDE_PROFILE_NOT_FOUND') {
+        setGuideStatus('notApplied');
+        return;
+      }
       logger.warn('[TravelGuide] Load profile failed:', e);
+      setGuideStatus('error');
+    }
+  };
+
+  const handleApplyToBeGuide = async () => {
+    const experienceYears = parseInt(applyExperienceYears, 10);
+    const hourlyRate = parseFloat(applyHourlyRate);
+    const dailyRate = parseFloat(applyDailyRate);
+    const expertisePlaces = applyExpertisePlaces.split(',').map((s) => s.trim()).filter(Boolean);
+    const languagesSpoken = applyLanguagesSpoken.split(',').map((s) => s.trim()).filter(Boolean);
+
+    if (
+      !applyLicenseNumber.trim() ||
+      !Number.isFinite(experienceYears) ||
+      expertisePlaces.length === 0 ||
+      languagesSpoken.length === 0 ||
+      !Number.isFinite(hourlyRate) ||
+      !Number.isFinite(dailyRate)
+    ) {
+      toast(t('travelGuide.applyFieldsRequired'), 'error');
+      return;
+    }
+
+    setApplying(true);
+    try {
+      const guide = await apiService.applyGuideProfile({
+        licenseNumber: applyLicenseNumber.trim(),
+        experienceYears,
+        expertisePlaces,
+        languagesSpoken,
+        hourlyRate,
+        dailyRate,
+      });
+      if (!guide) throw new Error('No guide profile returned.');
+      setGuideProfile(guide);
+      setGuideStatus('ready');
+      toast(t('travelGuide.applySubmitted'), 'success');
+    } catch (e) {
+      toast(errorToastMessage(e, t('travelGuide.applyFailed')), 'error');
     } finally {
-      setLoading(false);
+      setApplying(false);
     }
   };
 
@@ -248,11 +291,28 @@ export default function TravelGuideScreen() {
   const fetchLiveWeather = async (guideId: string) => {
     try {
       setWeatherLoading(true);
-      // Use guide's last-known position if available
+      // Prefer the guide's last-broadcast live position; a hardcoded
+      // Jaipur coordinate used to stand in whenever this was unset, which
+      // silently showed every guide who had never gone live the weather
+      // for a city they may never have been to. Falling back to the
+      // device's real current position — never a guessed one — matches
+      // src/lib/device-location.ts's rule for every other location use in
+      // the app.
       const statusRes = await apiService.getGuideLiveStatus(guideId);
       const loc = statusRes?.location;
-      const lat = loc?.latitude || 26.9124;
-      const lon = loc?.longitude || 75.7873;
+      let lat = loc?.latitude;
+      let lon = loc?.longitude;
+      if (lat == null || lon == null) {
+        const device = await getCurrentDeviceLocation();
+        if (device.ok) {
+          lat = device.latitude;
+          lon = device.longitude;
+        }
+      }
+      if (lat == null || lon == null) {
+        setWeatherLocationUnavailable(true);
+        return;
+      }
       const weatherRes = await apiService.getLiveWeather(lat, lon);
       if (weatherRes) {
         setLiveWeatherData(weatherRes);
@@ -308,12 +368,31 @@ export default function TravelGuideScreen() {
     }
   };
 
+  // This used to broadcast a random point jittered around Jaipur's
+  // coordinates regardless of where the guide actually was — tourists
+  // trusting a guide's "live location" would see a fake position with no
+  // relation to reality. Real device GPS only, same rule as every other
+  // location use in the app (src/lib/device-location.ts); a guide who
+  // denies location permission simply cannot go live, rather than going
+  // live with an invented position.
   const triggerLiveBroadcast = async () => {
     if (!guideProfile) return;
-    const lat = 26.9124 + (Math.random() - 0.5) * 0.01;
-    const lon = 75.7873 + (Math.random() - 0.5) * 0.01;
+    const device = await getCurrentDeviceLocation();
+    if (!device.ok) {
+      setIsBroadcasting(false);
+      toast(
+        device.reason === 'PERMISSION_DENIED'
+          ? t('travelGuide.locationPermissionRequiredForLive')
+          : t('travelGuide.locationUnavailableForLive'),
+        'error',
+      );
+      return;
+    }
     try {
-      const res = await apiService.updateGuideLiveStatus(guideProfile.id, { latitude: lat, longitude: lon });
+      const res = await apiService.updateGuideLiveStatus(guideProfile.id, {
+        latitude: device.latitude,
+        longitude: device.longitude,
+      });
       if (res) {
         setLiveStatus((prev) => (prev ? { ...prev, location: res } : { location: res, activeGuiding: null }));
       }
@@ -694,118 +773,24 @@ export default function TravelGuideScreen() {
     });
   };
 
-  // Accommodations
-  const [accomTab, setAccomTab] = useState<'HOTELS' | 'HOSTELS' | 'HOMESTAYS' | 'CAMPING'>('HOTELS');
-  const accommodationsData = {
-    HOTELS: [
-      {
-        name: 'Raddison Palace',
-        location: 'Jaipur',
-        rate: '₹4,500/night',
-        rating: 4.8,
-        image: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=200&q=80',
-      },
-      {
-        name: 'Hotel Snow Retreat',
-        location: 'Manali',
-        rate: '₹3,200/night',
-        rating: 4.5,
-        image: 'https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=200&q=80',
-      },
-    ],
-    HOSTELS: [
-      {
-        name: 'Zostel Heritage',
-        location: 'Jaipur Outskirts',
-        rate: '₹800/night',
-        rating: 4.6,
-        image: 'https://images.unsplash.com/photo-1555854877-bab0e564b8d5?w=200&q=80',
-      },
-      {
-        name: 'The Backpackers Nest',
-        location: 'Goa',
-        rate: '₹650/night',
-        rating: 4.3,
-        image: 'https://images.unsplash.com/photo-1623625434462-e5e42318ae4f?w=200&q=80',
-      },
-    ],
-    HOMESTAYS: [
-      {
-        name: 'Verdant Meadows Homestay',
-        location: 'Munnar Hills',
-        rate: '₹1,800/night',
-        rating: 4.9,
-        image: 'https://images.unsplash.com/photo-1618773928121-c32242e63f39?w=200&q=80',
-      },
-      {
-        name: 'Sikkimese Traditional Stay',
-        location: 'Gangtok',
-        rate: '₹2,000/night',
-        rating: 4.7,
-        image: 'https://images.unsplash.com/photo-1582719508461-905c673771fd?w=200&q=80',
-      },
-    ],
-    CAMPING: [
-      {
-        name: 'Pangong Lake Echo Camps',
-        location: 'Ladakh',
-        rate: '₹3,500/night',
-        rating: 4.8,
-        image: 'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?w=200&q=80',
-      },
-      {
-        name: 'Riverside Woods Camping',
-        location: 'Rishikesh',
-        rate: '₹1,500/night',
-        rating: 4.4,
-        image: 'https://images.unsplash.com/photo-1537905569824-f89f14cceb68?w=200&q=80',
-      },
-    ],
-  };
-
-  const handleBookingRedirect = (accomName: string) => {
-    toast(t('travelGuide.partnerRedirection', { name: accomName }), 'info');
-  };
+  // Accommodations: no accommodation-booking model exists yet — see the
+  // comment on the lodging sub-tab's render below for why the previous
+  // fully-invented listings were removed rather than kept.
 
   // ────────────────────────────────────────────────────────
-  // TABS 4: LIVE WEATHER, FORECAST, AQI & CROWD LEVEL
+  // TABS 4: LIVE WEATHER
   // ────────────────────────────────────────────────────────
-  const [selectedWeatherIdx, setSelectedWeatherIdx] = useState(0);
-
-  // Build weather display from live API data or defaults
-  const weatherLocations: WeatherData[] = liveWeatherData
-    ? [
-        {
-          city: t('travelGuide.guideLocationFallback'),
-          temp: liveWeatherData.temp || '—',
-          condition: liveWeatherData.condition || t('travelGuide.loadingEllipsis'),
-          wind: liveWeatherData.windSpeed || '— km/h',
-          sunrise: '05:30 AM',
-          sunset: '07:00 PM',
-          aqi: 30,
-          aqiStatus: 'GOOD' as const,
-          aqiColor: C.cyan,
-          crowdLevel: 'MODERATE' as const,
-          crowdColor: C.cyan,
-        },
-      ]
-    : [
-        {
-          city: t('travelGuide.loadingEllipsis'),
-          temp: '—',
-          condition: t('travelGuide.fetchingWeatherData'),
-          wind: '—',
-          sunrise: '—',
-          sunset: '—',
-          aqi: 0,
-          aqiStatus: 'GOOD' as const,
-          aqiColor: C.cyan,
-          crowdLevel: 'LOW' as const,
-          crowdColor: C.green,
-        },
-      ];
-
-  const currentW = weatherLocations[selectedWeatherIdx] || weatherLocations[0];
+  // Only ever one real location (wherever the guide's device/last broadcast
+  // actually is) — the multi-city selector this used to have made no sense
+  // once every other city in it was fake anyway.
+  const currentW: WeatherData | null = liveWeatherData
+    ? {
+        city: t('travelGuide.guideLocationFallback'),
+        temp: liveWeatherData.temp || '—',
+        condition: liveWeatherData.condition || '—',
+        wind: liveWeatherData.windSpeed || '—',
+      }
+    : null;
 
   // ────────────────────────────────────────────────────────
   // TABS 5: SAFETY HUB & EMERGENCY CONTACTS
@@ -867,17 +852,24 @@ export default function TravelGuideScreen() {
         }))
       : [{ id: 'empty', type: 'INFO', location: t('travelGuide.allClear'), message: t('travelGuide.noActiveSosAlerts') }];
 
+  // Real zero week, shown only until the actual GuideEarnings response
+  // (which always has this same shape) arrives — see the chart render below.
+  const EMPTY_WEEK_CHART = [
+    { day: t('createTrip.weekdayMon'), amt: 0, height: 5, amtText: '₹0' },
+    { day: t('createTrip.weekdayTue'), amt: 0, height: 5, amtText: '₹0' },
+    { day: t('createTrip.weekdayWed'), amt: 0, height: 5, amtText: '₹0' },
+    { day: t('createTrip.weekdayThu'), amt: 0, height: 5, amtText: '₹0' },
+    { day: t('createTrip.weekdayFri'), amt: 0, height: 5, amtText: '₹0' },
+    { day: t('createTrip.weekdaySat'), amt: 0, height: 5, amtText: '₹0' },
+    { day: t('createTrip.weekdaySun'), amt: 0, height: 5, amtText: '₹0' },
+  ];
+
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-      {/* Modern Neon Header */}
-      <LinearGradient
-        colors={['rgba(20,24,47,0.8)', 'rgba(6,8,20,0.95)']}
-        style={styles.headerGradient}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
-      >
+      {/* Executive Clean Header */}
+      <View style={styles.headerGradient}>
         <View style={styles.header}>
           <TouchableOpacity
             activeOpacity={0.7}
@@ -892,24 +884,32 @@ export default function TravelGuideScreen() {
             accessibilityRole="button"
             accessibilityLabel={t('travelGuide.goBack')}
           >
-            <ArrowLeft size={18} color={C.white} />
+            <ArrowLeft size={18} color={C.text} />
           </TouchableOpacity>
           <View style={styles.headerTitleWrap}>
             <Text style={styles.headerTitle}>{t('travelGuide.headerTitle')}</Text>
             <Text style={styles.headerSub}>{t('travelGuide.headerSub')}</Text>
           </View>
-          <LinearGradient
-            colors={['#10B981', '#059669']}
-            style={styles.badgeOfficialGradient}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          >
-            <Shield size={11} color={C.white} strokeWidth={2.5} />
-            <Text style={styles.badgeOfficialText}>{t('travelGuide.verifiedBadge')}</Text>
-          </LinearGradient>
+          {/* Used to render unconditionally for every guide regardless of
+              verifiedStatus — a fake trust signal identical to the one
+              §2.6 already removed server-side. Only a real VERIFIED
+              profile gets the green badge now; PENDING gets an honest
+              amber one instead of nothing standing out as false. */}
+          {guideStatus === 'ready' && guideProfile && (
+            <View style={[styles.badgeOfficialGradient, guideProfile.verifiedStatus !== 'VERIFIED' && styles.badgePendingGradient]}>
+              <Shield size={12} color={guideProfile.verifiedStatus === 'VERIFIED' ? '#047857' : '#B45309'} strokeWidth={2.5} />
+              <Text style={[styles.badgeOfficialText, guideProfile.verifiedStatus !== 'VERIFIED' && styles.badgePendingText]}>
+                {guideProfile.verifiedStatus === 'VERIFIED'
+                  ? t('travelGuide.verifiedBadge')
+                  : t('travelGuide.pendingVerificationBadge')}
+              </Text>
+            </View>
+          )}
         </View>
 
-        {/* Floating Capsule Navigation Bar */}
+        {/* Floating Capsule Navigation Bar — only once there's a real
+            dashboard behind it to navigate. */}
+        {guideStatus === 'ready' && (
         <View style={styles.tabBarContainer}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabBarScroll}>
             {[
@@ -937,17 +937,89 @@ export default function TravelGuideScreen() {
             })}
           </ScrollView>
         </View>
-      </LinearGradient>
+        )}
+      </View>
 
+      {guideStatus === 'loading' && <ScreenLoading label={t('travelGuide.loadingGuideDashboard')} />}
+
+      {guideStatus === 'error' && (
+        <ScreenError
+          title={t('travelGuide.loadFailedTitle')}
+          message={t('travelGuide.loadFailedMessage')}
+          onRetry={() => void loadGuideProfile()}
+        />
+      )}
+
+      {guideStatus === 'notApplied' && (
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          <View style={styles.applyCard}>
+            <View style={styles.applyIconWrap}>
+              <Compass size={28} color={C.blue} />
+            </View>
+            <Text style={styles.applyTitle}>{t('travelGuide.applyTitle')}</Text>
+            <Text style={styles.applyBody}>{t('travelGuide.applyBody')}</Text>
+
+            <Input
+              label={t('travelGuide.applyLicenseNumber')}
+              value={applyLicenseNumber}
+              onChangeText={setApplyLicenseNumber}
+              placeholder={t('travelGuide.applyLicenseNumberPlaceholder')}
+            />
+            <Input
+              label={t('travelGuide.applyExperienceYears')}
+              value={applyExperienceYears}
+              onChangeText={setApplyExperienceYears}
+              placeholder="3"
+              keyboardType="numeric"
+            />
+            <Input
+              label={t('travelGuide.applyExpertisePlaces')}
+              value={applyExpertisePlaces}
+              onChangeText={setApplyExpertisePlaces}
+              placeholder={t('travelGuide.applyExpertisePlacesPlaceholder')}
+            />
+            <Input
+              label={t('travelGuide.applyLanguagesSpoken')}
+              value={applyLanguagesSpoken}
+              onChangeText={setApplyLanguagesSpoken}
+              placeholder={t('travelGuide.applyLanguagesSpokenPlaceholder')}
+            />
+            <Input
+              label={t('travelGuide.applyHourlyRate')}
+              value={applyHourlyRate}
+              onChangeText={setApplyHourlyRate}
+              placeholder="350"
+              keyboardType="numeric"
+            />
+            <Input
+              label={t('travelGuide.applyDailyRate')}
+              value={applyDailyRate}
+              onChangeText={setApplyDailyRate}
+              placeholder="2500"
+              keyboardType="numeric"
+            />
+
+            <Button
+              label={t('travelGuide.applySubmit')}
+              onPress={() => void handleApplyToBeGuide()}
+              loading={applying}
+              fullWidth
+              style={{ marginTop: 8 }}
+            />
+          </View>
+        </ScrollView>
+      )}
+
+      {guideStatus === 'ready' && (
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {/* ========================================================
             TAB 1: LEADS & EARNINGS DASHBOARD
             ======================================================== */}
         {activeTab === 'leads' && (
           <View>
-            {/* Premium Metallic Wallet Card */}
+            {/* Premium Executive Sapphire Wallet Card */}
             <LinearGradient
-              colors={['#181e3a', '#0b0d1b']}
+              colors={['#0F2952', '#0A1E3D']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.walletCard}
@@ -980,14 +1052,20 @@ export default function TravelGuideScreen() {
                 <View style={styles.statBox}>
                   <Text style={styles.statLabel}>{t('travelGuide.rating')}</Text>
                   <Text style={[styles.statValue, { color: C.amberGlow }]}>
-                    {guideProfile ? `${guideProfile.rating} ★` : '4.9 ★'}
+                    {/* guideProfile always exists here — this tab only
+                        renders once guideStatus === 'ready'. A brand-new
+                        profile's real rating is 5.0 (prisma/schema.prisma's
+                        own default, the same "no reviews yet" convention
+                        Uber/Airbnb use), not a fabricated "4.9" standing in
+                        for it. */}
+                    {guideProfile?.rating.toFixed(1) ?? '—'} ★
                   </Text>
                 </View>
                 <View style={styles.statBoxVerticalDivider} />
                 <View style={styles.statBox}>
                   <Text style={styles.statLabel}>{t('travelGuide.completedTrips')}</Text>
                   <Text style={[styles.statValue, { color: C.greenGlow }]}>
-                    {earnings ? earnings.completedTripsCount : 28}
+                    {earnings ? earnings.completedTripsCount : 0}
                   </Text>
                 </View>
               </View>
@@ -996,17 +1074,12 @@ export default function TravelGuideScreen() {
               <Text style={styles.sectionLabelInline}>{t('travelGuide.weeklyEarningsProgress')}</Text>
               <View style={styles.chartContainer}>
                 {(
-                  earnings?.chartData
-                    ? earnings.chartData
-                    : [
-                        { day: t('createTrip.weekdayMon'), amtText: '₹1.5k', height: 40 },
-                        { day: t('createTrip.weekdayTue'), amtText: '₹2.2k', height: 65 },
-                        { day: t('createTrip.weekdayWed'), amtText: '₹0', height: 5 },
-                        { day: t('createTrip.weekdayThu'), amtText: '₹3.5k', height: 95 },
-                        { day: t('createTrip.weekdayFri'), amtText: '₹1.8k', height: 50 },
-                        { day: t('createTrip.weekdaySat'), amtText: '₹4.2k', height: 110 },
-                        { day: t('createTrip.weekdaySun'), amtText: '₹2.8k', height: 80 },
-                      ]
+                  // No fabricated non-zero week (₹1.5k/₹2.2k/...) here while
+                  // earnings hasn't loaded yet — the real all-zero week
+                  // (matching exactly what the backend itself returns for a
+                  // guide with no bookings, backend/src/api/routes/
+                  // guides.ts's /:id/earnings) is the honest placeholder.
+                  earnings?.chartData ?? EMPTY_WEEK_CHART
                 ).map((item, idx) => {
                   const isWeekend = idx === 5 || idx === 6;
                   return (
@@ -1332,12 +1405,12 @@ export default function TravelGuideScreen() {
               {(reels.length > 0
                 ? reels.map((r) => ({
                     id: r.id,
-                    type: 'REEL',
+                    type: 'REEL' as const,
                     title: r.caption || t('travelGuide.travelReelVlogFallback'),
                     image: r.thumbnailUrl || 'https://images.unsplash.com/photo-1548013146-72479768bada?w=300',
-                    location: t('travelGuide.guidedTourRouteFallback'),
+                    location: undefined,
                     likes: r.likesCount,
-                    date: t('travelGuide.justNow'),
+                    date: formatDateShort(r.createdAt),
                     price: undefined,
                   }))
                 : activeMedia
@@ -1360,12 +1433,14 @@ export default function TravelGuideScreen() {
                     <Text style={styles.uploadCardTitle} numberOfLines={1}>
                       {media.title}
                     </Text>
-                    <View style={styles.uploadCardLocRow}>
-                      <MapPin size={9} color={C.textSec} />
-                      <Text style={styles.uploadCardLocText} numberOfLines={1}>
-                        {media.location}
-                      </Text>
-                    </View>
+                    {media.location && (
+                      <View style={styles.uploadCardLocRow}>
+                        <MapPin size={9} color={C.textSec} />
+                        <Text style={styles.uploadCardLocText} numberOfLines={1}>
+                          {media.location}
+                        </Text>
+                      </View>
+                    )}
                     <View style={styles.uploadCardLikesRow}>
                       <TrendingUp size={9} color={C.green} />
                       <Text style={styles.uploadCardLikes}>
@@ -1476,14 +1551,14 @@ export default function TravelGuideScreen() {
                             cities: pkg.citiesIncluded?.join(', ') || t('travelGuide.variousLocations'),
                           })}
                         </Text>
-                        <Text style={[styles.leadDesc, { marginTop: 8, color: 'rgba(255,255,255,0.8)' }]}>
+                        <Text style={[styles.leadDesc, { marginTop: 8, color: C.textSec }]}>
                           {pkg.description}
                         </Text>
                         <View style={{ flexDirection: 'row', gap: 10, marginTop: 12, justifyContent: 'flex-end' }}>
                           <TouchableOpacity
                             style={[
                               styles.applyLeadBtn,
-                              { backgroundColor: C.border, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+                              { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE', borderWidth: 1, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 8 },
                             ]}
                             onPress={() => {
                               setEditingPackage(pkg);
@@ -1497,14 +1572,16 @@ export default function TravelGuideScreen() {
                             accessibilityRole="button"
                             accessibilityLabel={t('travelGuide.edit')}
                           >
-                            <Text style={[styles.applyLeadBtnText, { color: C.white }]}>{t('travelGuide.edit')}</Text>
+                            <Text style={[styles.applyLeadBtnText, { color: C.blue }]}>{t('travelGuide.edit')}</Text>
                           </TouchableOpacity>
                           <TouchableOpacity
                             style={[
                               styles.applyLeadBtn,
                               {
-                                backgroundColor: 'rgba(239, 68, 68, 0.12)',
-                                paddingHorizontal: 12,
+                                backgroundColor: '#FEF2F2',
+                                borderColor: '#FECACA',
+                                borderWidth: 1,
+                                paddingHorizontal: 14,
                                 paddingVertical: 6,
                                 borderRadius: 8,
                               },
@@ -1756,66 +1833,20 @@ export default function TravelGuideScreen() {
               </View>
             )}
 
-            {/* 3D: Lodging / Accommodations */}
+            {/* 3D: Lodging / Accommodations — this used to list 8 fully
+                invented hotels/hostels/homestays/campsites ("Raddison
+                Palace", "Zostel Heritage", ...) with fake ratings and a
+                "Reserve" button that only ever showed a toast, no real
+                booking partner behind any of it. Removed rather than kept
+                faked (no accommodation-booking model exists in the schema
+                to build this for real yet). */}
             {plannerTab === 'lodging' && (
               <View style={styles.innerPlannerSection}>
                 <Text style={styles.subTitle}>{t('travelGuide.lodgingAccommodations')}</Text>
-                <Text style={styles.descSec}>{t('travelGuide.lodgingAccommodationsDesc')}</Text>
-
-                <View style={styles.accomSelectorRow}>
-                  {[
-                    { key: 'HOTELS', labelKey: 'travelGuide.accomHotels', Icon: Hotel },
-                    { key: 'HOSTELS', labelKey: 'travelGuide.accomHostels', Icon: Home },
-                    { key: 'HOMESTAYS', labelKey: 'travelGuide.accomHomestays', Icon: Home },
-                    { key: 'CAMPING', labelKey: 'travelGuide.accomCampsites', Icon: Tent },
-                  ].map((item) => {
-                    const isAccomActive = accomTab === item.key;
-                    return (
-                      <TouchableOpacity
-                        key={item.key}
-                        style={[styles.accomSelectBtn, isAccomActive && styles.accomSelectBtnActive]}
-                        onPress={() => setAccomTab(item.key as typeof accomTab)}
-                        activeOpacity={0.8}
-                        accessibilityRole="button"
-                        accessibilityLabel={t(item.labelKey)}
-                        accessibilityState={{ selected: isAccomActive }}
-                      >
-                        <Text style={[styles.accomSelectLabel, { color: isAccomActive ? C.white : C.textSec }]}>
-                          {t(item.labelKey)}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                {accommodationsData[accomTab].map((item, idx) => (
-                  <View key={idx} style={styles.stayCard}>
-                    <Image source={{ uri: item.image }} style={styles.stayImage} />
-                    <View style={styles.stayInfo}>
-                      <View style={styles.stayHeaderRow}>
-                        <Text style={styles.stayName}>{item.name}</Text>
-                        <Text style={styles.stayRating}>{item.rating} ★</Text>
-                      </View>
-                      <View style={styles.stayLocRow}>
-                        <MapPin size={11} color={C.textMuted} />
-                        <Text style={styles.stayLocText}>{item.location}</Text>
-                      </View>
-                      <View style={styles.stayPriceRow}>
-                        <Text style={styles.stayPrice}>{item.rate}</Text>
-                        <TouchableOpacity
-                          style={styles.bookingLinkBtn}
-                          onPress={() => handleBookingRedirect(item.name)}
-                          activeOpacity={0.7}
-                          accessibilityRole="button"
-                          accessibilityLabel={t('travelGuide.reserve')}
-                        >
-                          <Text style={styles.bookingLinkText}>{t('travelGuide.reserve')}</Text>
-                          <ExternalLink size={10} color={C.blueGlow} />
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  </View>
-                ))}
+                <ScreenEmpty
+                  title={t('travelGuide.lodgingUnavailableTitle')}
+                  message={t('travelGuide.lodgingUnavailableMessage')}
+                />
               </View>
             )}
           </View>
@@ -1830,34 +1861,28 @@ export default function TravelGuideScreen() {
               <Text style={[styles.subTitle, { fontSize: 16 }]}>{t('travelGuide.liveGuidingBroadcastPanel')}</Text>
               <Text style={styles.descSec}>{t('travelGuide.liveGuidingBroadcastDesc')}</Text>
 
-              <LinearGradient
-                colors={
-                  isBroadcasting
-                    ? ['rgba(16, 185, 129, 0.08)', 'rgba(12, 15, 29, 0.95)']
-                    : ['rgba(34, 41, 76, 0.2)', 'rgba(12, 15, 29, 0.95)']
-                }
+              <View
                 style={[
-                  styles.walletCard,
+                  styles.leadCard,
                   {
                     padding: 18,
                     marginTop: 10,
-                    borderWidth: 1,
+                    borderWidth: 1.5,
                     borderColor: isBroadcasting ? C.green : C.border,
-                    borderRadius: 16,
+                    borderRadius: 18,
+                    backgroundColor: isBroadcasting ? '#ECFDF5' : '#FFFFFF',
                   },
                 ]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
               >
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.walletLabel, { fontSize: 12 }]}>{t('travelGuide.broadcastStatus')}</Text>
+                    <Text style={[styles.walletLabel, { fontSize: 11.5, color: C.textSec }]}>{t('travelGuide.broadcastStatus')}</Text>
                     <Text
                       style={[
                         styles.leadName,
                         {
-                          color: isBroadcasting ? C.greenGlow : C.textSec,
-                          fontSize: 14,
+                          color: isBroadcasting ? '#047857' : C.text,
+                          fontSize: 15,
                           fontWeight: '800',
                           marginTop: 4,
                         },
@@ -1873,7 +1898,7 @@ export default function TravelGuideScreen() {
                         height: MIN_TOUCH_TARGET,
                         paddingHorizontal: 16,
                         backgroundColor: isBroadcasting ? C.rose : C.blue,
-                        borderRadius: 8,
+                        borderRadius: 10,
                         justifyContent: 'center',
                       },
                     ]}
@@ -1900,19 +1925,19 @@ export default function TravelGuideScreen() {
                     style={{
                       marginTop: 14,
                       borderTopWidth: 1,
-                      borderColor: 'rgba(255,255,255,0.06)',
+                      borderColor: C.border,
                       paddingTop: 12,
                       gap: 4,
                     }}
                   >
-                    <Text style={[styles.descSec, { fontSize: 12 }]}>{t('travelGuide.currentGpsCoordinates')}</Text>
-                    <Text style={{ color: C.white, fontSize: 13, fontWeight: '700' }}>
+                    <Text style={[styles.descSec, { fontSize: 12, marginBottom: 2 }]}>{t('travelGuide.currentGpsCoordinates')}</Text>
+                    <Text style={{ color: C.text, fontSize: 13, fontWeight: '700' }}>
                       {t('travelGuide.latLon', {
                         lat: liveStatus.location.latitude.toFixed(6),
                         lon: liveStatus.location.longitude.toFixed(6),
                       })}
                     </Text>
-                    <Text style={[styles.descSec, { fontSize: 12 }]}>
+                    <Text style={[styles.descSec, { fontSize: 11.5, marginBottom: 0 }]}>
                       {t('travelGuide.updatedAt', { time: new Date(liveStatus.location.updatedAt).toLocaleTimeString() })}
                     </Text>
                   </View>
@@ -1922,21 +1947,21 @@ export default function TravelGuideScreen() {
                   <View
                     style={{
                       marginTop: 12,
-                      backgroundColor: 'rgba(59, 130, 246, 0.08)',
+                      backgroundColor: '#EFF6FF',
                       padding: 10,
                       borderRadius: 10,
                       borderWidth: 1,
-                      borderColor: 'rgba(59, 130, 246, 0.2)',
+                      borderColor: '#BFDBFE',
                     }}
                   >
-                    <Text style={{ color: C.blueGlow, fontSize: 12, fontWeight: '700' }}>{t('travelGuide.guidingBookingOngoing')}</Text>
-                    <Text style={[styles.descSec, { fontSize: 12, marginTop: 2 }]}>
+                    <Text style={{ color: C.blue, fontSize: 12, fontWeight: '700' }}>{t('travelGuide.guidingBookingOngoing')}</Text>
+                    <Text style={[styles.descSec, { fontSize: 12, marginTop: 2, marginBottom: 2 }]}>
                       {t('travelGuide.bookingId', { id: liveStatus.activeGuiding.bookingId })}
                     </Text>
-                    <Text style={[styles.descSec, { fontSize: 12 }]}>{t('travelGuide.revenue', { amount: liveStatus.activeGuiding.amount })}</Text>
+                    <Text style={[styles.descSec, { fontSize: 12, marginBottom: 0 }]}>{t('travelGuide.revenue', { amount: liveStatus.activeGuiding.amount })}</Text>
                   </View>
                 )}
-              </LinearGradient>
+              </View>
             </View>
 
             <View style={styles.cardHeader}>
@@ -1944,116 +1969,47 @@ export default function TravelGuideScreen() {
               <Text style={styles.descSec}>{t('travelGuide.liveLocalParametersDesc')}</Text>
             </View>
 
-            {/* Weather City Selector */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.weatherCitiesScroll}>
-              {weatherLocations.map((item, idx) => (
-                <TouchableOpacity
-                  key={idx}
-                  style={[styles.weatherCityBtn, selectedWeatherIdx === idx && styles.weatherCityBtnActive]}
-                  onPress={() => setSelectedWeatherIdx(idx)}
-                  activeOpacity={0.8}
-                  accessibilityRole="button"
-                  accessibilityLabel={item.city}
-                  accessibilityState={{ selected: selectedWeatherIdx === idx }}
-                >
-                  <Text style={[styles.weatherCityText, { color: selectedWeatherIdx === idx ? C.white : C.textSec }]}>
-                    {item.city}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            {/* Primary Weather & Live Parameters Info */}
-            <LinearGradient colors={['#0e1227', '#080a15']} style={styles.weatherLiveCard}>
-              <View style={styles.weatherLiveCardGlow} />
-              <View style={styles.weatherMainRow}>
-                <View>
-                  <Text style={styles.weatherMainCity}>{currentW.city}</Text>
-                  <Text style={styles.weatherMainDesc}>{currentW.condition}</Text>
-                </View>
-                <View style={styles.weatherMainTempBox}>
-                  <Sun size={28} color={C.amber} />
-                  <Text style={styles.weatherMainTemp}>{currentW.temp}</Text>
-                </View>
-              </View>
-
-              <View style={styles.weatherDetailsGrid}>
-                <View style={styles.weatherDetailBox}>
-                  <Wind size={15} color={C.blueGlow} />
-                  <View style={{ marginLeft: 6 }}>
-                    <Text style={styles.weatherDetailLabel}>{t('travelGuide.windSpeed')}</Text>
-                    <Text style={styles.weatherDetailValue}>{currentW.wind}</Text>
+            {/* Forecast (5-day), AQI, crowd level, and sunrise/sunset all
+                used to render here — entirely invented, with no field on
+                LiveWeather or any other real source ever backing any of
+                them (see the WeatherData interface's comment above).
+                Removed rather than kept faked. What's left is exactly what
+                LiveWeather actually has: current temp/condition/wind for
+                the guide's one real location. */}
+            {currentW ? (
+              <LinearGradient colors={['#0e1227', '#080a15']} style={styles.weatherLiveCard}>
+                <View style={styles.weatherLiveCardGlow} />
+                <View style={styles.weatherMainRow}>
+                  <View>
+                    <Text style={styles.weatherMainCity}>{currentW.city}</Text>
+                    <Text style={styles.weatherMainDesc}>{currentW.condition}</Text>
+                  </View>
+                  <View style={styles.weatherMainTempBox}>
+                    <Sun size={28} color={C.amber} />
+                    <Text style={styles.weatherMainTemp}>{currentW.temp}</Text>
                   </View>
                 </View>
 
-                <View style={styles.weatherDetailBox}>
-                  <Sunrise size={15} color={C.greenGlow} />
-                  <View style={{ marginLeft: 6 }}>
-                    <Text style={styles.weatherDetailLabel}>{t('travelGuide.sunrise')}</Text>
-                    <Text style={styles.weatherDetailValue}>{currentW.sunrise}</Text>
+                <View style={styles.weatherDetailsGrid}>
+                  <View style={styles.weatherDetailBox}>
+                    <Wind size={15} color={C.blueGlow} />
+                    <View style={{ marginLeft: 6 }}>
+                      <Text style={styles.weatherDetailLabel}>{t('travelGuide.windSpeed')}</Text>
+                      <Text style={styles.weatherDetailValue}>{currentW.wind}</Text>
+                    </View>
                   </View>
                 </View>
-
-                <View style={styles.weatherDetailBox}>
-                  <Sunset size={15} color={C.amberGlow} />
-                  <View style={{ marginLeft: 6 }}>
-                    <Text style={styles.weatherDetailLabel}>{t('travelGuide.sunset')}</Text>
-                    <Text style={styles.weatherDetailValue}>{currentW.sunset}</Text>
-                  </View>
-                </View>
-
-                <View style={styles.weatherDetailBox}>
-                  <Activity size={15} color={currentW.crowdColor} />
-                  <View style={{ marginLeft: 6 }}>
-                    <Text style={styles.weatherDetailLabel}>{t('travelGuide.crowdLevel')}</Text>
-                    <Text style={[styles.weatherDetailValue, { color: currentW.crowdColor }]}>
-                      {t(CROWD_LABEL_KEYS[currentW.crowdLevel])}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-
-              <View style={styles.aqiCard}>
-                <View style={styles.aqiHeader}>
-                  <Text style={styles.aqiTitle}>{t('travelGuide.airQualityIndex')}</Text>
-                  <View style={[styles.aqiBadge, { backgroundColor: currentW.aqiColor }]}>
-                    <Text style={styles.aqiBadgeText}>{t(AQI_LABEL_KEYS[currentW.aqiStatus])}</Text>
-                  </View>
-                </View>
-                <View style={styles.aqiMeterRow}>
-                  <Text style={styles.aqiValue}>{currentW.aqi}</Text>
-                  <Text style={styles.aqiDescText}>
-                    {currentW.aqiStatus === 'EXCELLENT' && t('travelGuide.aqiDescExcellent')}
-                    {currentW.aqiStatus === 'GOOD' && t('travelGuide.aqiDescGood')}
-                    {currentW.aqiStatus === 'POOR' && t('travelGuide.aqiDescPoor')}
-                    {currentW.aqiStatus === 'HAZARDOUS' && t('travelGuide.aqiDescHazardous')}
-                  </Text>
-                </View>
-              </View>
-            </LinearGradient>
-
-            {/* 5-Day Forecast Grid */}
-            <Text style={styles.subTitle}>{t('travelGuide.fiveDayWeatherOutlook')}</Text>
-            <View style={styles.forecastGrid}>
-              {(
-                [
-                  { dayKey: 'travelGuide.dayFriday', temp: '32°C', icon: Sun, conditionKey: 'travelGuide.conditionSunny', isRain: false },
-                  { dayKey: 'travelGuide.daySaturday', temp: '29°C', icon: CloudRain, conditionKey: 'travelGuide.conditionPartlyRain', isRain: true },
-                  { dayKey: 'travelGuide.daySunday', temp: '28°C', icon: CloudRain, conditionKey: 'travelGuide.conditionThunderstorm', isRain: true },
-                  { dayKey: 'travelGuide.dayMonday', temp: '31°C', icon: Sun, conditionKey: 'travelGuide.conditionClear', isRain: false },
-                  { dayKey: 'travelGuide.dayTuesday', temp: '33°C', icon: Sun, conditionKey: 'travelGuide.conditionSunny', isRain: false },
-                ] as const
-              ).map((f, idx) => (
-                <View key={idx} style={styles.forecastRow}>
-                  <Text style={styles.forecastDay}>{t(f.dayKey)}</Text>
-                  <View style={styles.forecastMid}>
-                    <f.icon size={15} color={f.isRain ? C.blue : C.amber} />
-                    <Text style={styles.forecastCondText}>{t(f.conditionKey)}</Text>
-                  </View>
-                  <Text style={styles.forecastTemp}>{f.temp}</Text>
-                </View>
-              ))}
-            </View>
+              </LinearGradient>
+            ) : (
+              <ScreenEmpty
+                title={t('travelGuide.weatherUnavailableTitle')}
+                message={
+                  weatherLocationUnavailable
+                    ? t('travelGuide.weatherLocationUnavailableMessage')
+                    : t('travelGuide.fetchingWeatherData')
+                }
+              />
+            )}
           </View>
         )}
 
@@ -2149,6 +2105,7 @@ export default function TravelGuideScreen() {
         {/* Bottom Spacer */}
         <View style={{ height: 100 }} />
       </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
@@ -2166,11 +2123,49 @@ const styles = StyleSheet.create({
     paddingTop: 14,
   },
 
-  // ── Header Gradient Box ─────────────────────────────
+  // ── Apply-to-become-a-guide (no profile yet) ─────────
+  applyCard: {
+    backgroundColor: C.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 20,
+    marginTop: 8,
+    gap: 12,
+  },
+  applyIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: C.blueGlow,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+  },
+  applyTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: C.text,
+    textAlign: 'center',
+  },
+  applyBody: {
+    fontSize: 13,
+    color: C.textSec,
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+
+  // ── Header Executive Box ─────────────────────────────
   headerGradient: {
+    backgroundColor: '#FFFFFF',
     paddingBottom: 14,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.06)',
+    borderBottomColor: C.border,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 2,
   },
   header: {
     flexDirection: 'row',
@@ -2182,13 +2177,13 @@ const styles = StyleSheet.create({
   backBtn: {
     width: MIN_TOUCH_TARGET,
     height: MIN_TOUCH_TARGET,
-    borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
-    borderWidth: 1.2,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: C.border,
   },
   headerTitleWrap: {
     flex: 1,
@@ -2202,55 +2197,63 @@ const styles = StyleSheet.create({
   headerSub: {
     fontSize: 12,
     color: C.textSec,
+    marginTop: 1,
   },
   badgeOfficialGradient: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 8,
+    borderRadius: 10,
     gap: 4,
-    shadowColor: C.green,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
   },
   badgeOfficialText: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: C.white,
-    letterSpacing: 0.4,
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#047857',
+    letterSpacing: 0.2,
+  },
+  badgePendingGradient: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#FDE68A',
+  },
+  badgePendingText: {
+    color: '#B45309',
   },
 
   // ── Tab Bar ─────────────────────────────────────────
   tabBarContainer: {
-    paddingHorizontal: 10,
-    marginTop: 4,
+    paddingHorizontal: 12,
+    marginTop: 2,
   },
   tabBarScroll: {
     flexDirection: 'row',
-    gap: 6,
+    gap: 8,
   },
   tabItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     minHeight: MIN_TOUCH_TARGET,
     borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
+    borderColor: C.border,
     gap: 6,
   },
   tabItemActive: {
     backgroundColor: C.blue,
-    borderColor: C.blueGlow,
+    borderColor: '#1D4ED8',
     shadowColor: C.blue,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
   },
   tabLabel: {
     fontSize: 12,
@@ -2261,7 +2264,7 @@ const styles = StyleSheet.create({
   subTitle: {
     fontSize: 16,
     fontWeight: '900',
-    color: C.white,
+    color: C.text,
     marginTop: 20,
     marginBottom: 4,
     letterSpacing: -0.2,
@@ -2274,36 +2277,35 @@ const styles = StyleSheet.create({
   sectionLabelInline: {
     fontSize: 12,
     fontWeight: '800',
-    color: C.white,
+    color: C.text,
     marginTop: 18,
     marginBottom: 10,
     letterSpacing: 0.2,
   },
 
-  // ── Premium Wallet Card ─────────────────────────────
+  // ── Premium Wallet Card (Executive Sapphire Card) ──
   walletCard: {
     borderRadius: 24,
     padding: 18,
     marginTop: 4,
     borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(255,255,255,0.12)',
     position: 'relative',
     overflow: 'hidden',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.4,
-    shadowRadius: 15,
-    elevation: 8,
+    shadowColor: '#0F2952',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 6,
   },
   walletCardAccent: {
     position: 'absolute',
     top: -40,
     right: -40,
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: 'rgba(0,102,255,0.15)',
-    filter: 'blur(30px)',
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: 'rgba(59,130,246,0.2)',
   },
   walletHeader: {
     flexDirection: 'row',
@@ -2311,10 +2313,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   walletLabel: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: C.textMuted,
-    letterSpacing: 0.8,
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#93C5FD',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
   amountRow: {
     flexDirection: 'row',
@@ -2324,33 +2327,34 @@ const styles = StyleSheet.create({
   rupeeSign: {
     fontSize: 20,
     fontWeight: '700',
-    color: C.blueGlow,
+    color: '#60A5FA',
     marginRight: 2,
   },
   walletBalance: {
     fontSize: 28,
     fontWeight: '900',
-    color: C.white,
+    color: '#FFFFFF',
+    letterSpacing: -0.5,
   },
   cashoutBtn: {
-    borderRadius: 14,
+    borderRadius: 12,
     overflow: 'hidden',
   },
   cashoutBtnGradient: {
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: 14,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
   cashoutBtnText: {
     fontSize: 12.5,
     fontWeight: '800',
-    color: C.white,
+    color: '#FFFFFF',
   },
   walletDivider: {
     height: 1,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'rgba(255,255,255,0.12)',
     marginVertical: 16,
   },
   statsRow: {
@@ -2363,13 +2367,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   statBoxVerticalDivider: {
-    width: 1.2,
+    width: 1,
     height: 24,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'rgba(255,255,255,0.12)',
   },
   statLabel: {
-    fontSize: 12,
-    color: C.textSec,
+    fontSize: 11.5,
+    color: '#94A3B8',
     marginBottom: 4,
     fontWeight: '600',
   },
@@ -2385,20 +2389,25 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     height: 140,
     marginTop: 6,
-    backgroundColor: 'rgba(255,255,255,0.02)',
+    backgroundColor: '#FFFFFF',
     borderRadius: 18,
     paddingHorizontal: 12,
     paddingBottom: 10,
     paddingTop: 18,
-    borderWidth: 1.2,
-    borderColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: C.border,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 1,
   },
   chartCol: {
     flex: 1,
     alignItems: 'center',
   },
   chartBarValue: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: C.textSec,
     fontWeight: '700',
     marginBottom: 4,
@@ -2408,7 +2417,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   chartDayText: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: C.textMuted,
     marginTop: 6,
     fontWeight: '700',
@@ -2425,55 +2434,60 @@ const styles = StyleSheet.create({
   badgeLive: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(239,68,68,0.12)',
+    backgroundColor: '#FEF2F2',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(239,68,68,0.22)',
+    borderColor: '#FECACA',
     gap: 4,
   },
   liveDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
     backgroundColor: C.rose,
   },
   liveLabel: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '900',
     color: C.rose,
   },
 
   // ── Glowing Leads Cards ──────────────────────────────
   leadCard: {
-    backgroundColor: C.card,
-    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
     padding: 16,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: C.border,
     marginBottom: 14,
     position: 'relative',
     overflow: 'hidden',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
   leadCardSelected: {
-    borderColor: 'rgba(0,102,255,0.4)',
-    backgroundColor: C.cardAlt,
+    borderColor: '#3B82F6',
+    backgroundColor: '#F8FAFC',
   },
   activeBorderGlow: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    height: 2,
-    backgroundColor: C.blueGlow,
+    height: 3,
+    backgroundColor: C.blue,
   },
   avatarBorder: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     borderWidth: 1.5,
-    borderColor: C.borderGlow,
+    borderColor: '#BFDBFE',
     padding: 1.5,
     marginRight: 10,
   },
@@ -2485,7 +2499,7 @@ const styles = StyleSheet.create({
   leadAvatarPlaceholder: {
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: C.cardAlt,
+    backgroundColor: '#EFF6FF',
   },
   leadHeaderRow: {
     flexDirection: 'row',
@@ -2497,13 +2511,13 @@ const styles = StyleSheet.create({
   leadName: {
     fontSize: 14,
     fontWeight: '800',
-    color: C.white,
+    color: C.text,
   },
   leadDestinationRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 2,
-    gap: 2,
+    gap: 3,
   },
   leadDestination: {
     fontSize: 12,
@@ -2515,18 +2529,18 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   leadBudget: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '900',
-    color: C.greenGlow,
+    color: '#059669',
   },
   leadDays: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: C.textMuted,
     marginTop: 2,
     fontWeight: '700',
   },
   leadDesc: {
-    fontSize: 12,
+    fontSize: 12.5,
     color: C.textSec,
     marginTop: 12,
     lineHeight: 18,
@@ -2538,19 +2552,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 14,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.05)',
+    borderTopColor: '#F1F5F9',
     paddingTop: 12,
   },
   dateLabel: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: C.textMuted,
     fontWeight: '700',
   },
   applyLeadBtn: {
-    backgroundColor: 'rgba(0,102,255,0.12)',
-    borderWidth: 1.2,
-    borderColor: C.blue,
-    paddingHorizontal: 12,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    paddingHorizontal: 14,
     paddingVertical: 7,
     minHeight: MIN_TOUCH_TARGET,
     justifyContent: 'center',
@@ -2560,62 +2574,62 @@ const styles = StyleSheet.create({
   applyLeadBtnText: {
     fontSize: 12,
     fontWeight: '800',
-    color: C.blueGlow,
+    color: C.blue,
   },
   quoteSentTag: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(16,185,129,0.1)',
+    backgroundColor: '#ECFDF5',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(16,185,129,0.25)',
+    borderColor: '#A7F3D0',
   },
   quoteSentTagText: {
     fontSize: 12,
     fontWeight: '800',
-    color: C.greenGlow,
+    color: '#047857',
   },
 
   // ── Leads Bid Section ──
   quoteInputsBox: {
     marginTop: 14,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.06)',
+    borderTopColor: C.border,
     paddingTop: 14,
   },
   quoteInputsHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 6,
+    marginBottom: 8,
   },
   quoteInputLabel: {
     fontSize: 12,
     fontWeight: '800',
-    color: C.white,
+    color: C.text,
   },
   quoteDurationBadge: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: C.blueGlow,
-    backgroundColor: 'rgba(0,102,255,0.12)',
-    paddingHorizontal: 6,
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: C.blue,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 6,
   },
   quoteSchedulePreview: {
     fontSize: 12,
-    color: C.textSec,
-    backgroundColor: 'rgba(255,255,255,0.02)',
+    color: '#334155',
+    backgroundColor: '#F8FAFC',
     padding: 10,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.04)',
+    borderColor: C.border,
     marginBottom: 12,
-    lineHeight: 16,
+    lineHeight: 17,
   },
   bidRow: {
     flexDirection: 'row',
@@ -2623,48 +2637,49 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   currencyPrefix: {
-    width: 34,
-    height: 38,
-    backgroundColor: C.card,
+    width: 36,
+    height: 40,
+    backgroundColor: '#F8FAFC',
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: C.border,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
   },
   currencyPrefixText: {
-    color: C.greenGlow,
+    color: '#059669',
     fontWeight: '800',
-    fontSize: 13,
+    fontSize: 14,
   },
   bidInput: {
     flex: 1,
-    height: 38,
-    backgroundColor: C.card,
-    borderWidth: 1.5,
-    borderColor: C.border,
+    height: 40,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
     borderRadius: 10,
-    paddingHorizontal: 10,
-    color: C.white,
-    fontSize: 12.5,
+    paddingHorizontal: 12,
+    color: C.text,
+    fontSize: 13,
     fontWeight: '600',
   },
   sendQuoteBtn: {
     backgroundColor: C.green,
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     height: MIN_TOUCH_TARGET,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: C.green,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 2,
   },
   sendQuoteBtnText: {
     fontSize: 12,
     fontWeight: '800',
-    color: C.white,
+    color: '#FFFFFF',
   },
 
   // ========================================================
@@ -2674,12 +2689,17 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   uploadOptionsBox: {
-    backgroundColor: C.card,
-    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
     padding: 18,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: C.border,
     marginBottom: 24,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 1,
   },
   selectorRow: {
     flexDirection: 'row',
@@ -2693,14 +2713,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     height: MIN_TOUCH_TARGET,
     borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.02)',
-    borderWidth: 1.2,
-    borderColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: C.border,
     gap: 6,
   },
   selectorBtnActive: {
     backgroundColor: C.blue,
-    borderColor: C.blueGlow,
+    borderColor: '#1D4ED8',
     shadowColor: C.blue,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.2,
@@ -2712,15 +2732,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     height: MIN_TOUCH_TARGET,
-    borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.02)',
-    borderWidth: 1.2,
-    borderColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: C.border,
     gap: 6,
   },
   selectorBtnAltActive: {
     backgroundColor: C.purple,
-    borderColor: C.purpleGlow,
+    borderColor: '#7E22CE',
     shadowColor: C.purple,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.2,
@@ -2733,7 +2753,7 @@ const styles = StyleSheet.create({
   formInputLabel: {
     fontSize: 12,
     fontWeight: '800',
-    color: C.textSec,
+    color: C.text,
     marginTop: 14,
     marginBottom: 6,
   },
@@ -2741,32 +2761,32 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   formInput: {
-    backgroundColor: 'rgba(255,255,255,0.02)',
-    borderWidth: 1.5,
-    borderColor: C.border,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
     borderRadius: 12,
-    height: 40,
+    height: 42,
     paddingHorizontal: 12,
-    color: C.white,
-    fontSize: 12.5,
-    fontWeight: '600',
+    color: C.text,
+    fontSize: 13,
+    fontWeight: '500',
   },
   galleryPreviewScroll: {
     flexDirection: 'row',
     marginBottom: 16,
   },
   galleryItemBtn: {
-    width: 56,
-    height: 56,
+    width: 58,
+    height: 58,
     borderRadius: 12,
     marginRight: 8,
     position: 'relative',
     overflow: 'hidden',
-    borderWidth: 1.8,
+    borderWidth: 2,
     borderColor: 'transparent',
   },
   galleryItemBtnSelected: {
-    borderColor: C.blueGlow,
+    borderColor: C.blue,
   },
   galleryItemImage: {
     width: '100%',
@@ -2774,12 +2794,12 @@ const styles = StyleSheet.create({
   },
   gallerySelectedCheck: {
     position: 'absolute',
-    top: 2,
-    right: 2,
-    backgroundColor: C.blueGlow,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
+    top: 3,
+    right: 3,
+    backgroundColor: C.blue,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2791,15 +2811,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    marginTop: 12,
+    marginTop: 14,
     shadowColor: C.blue,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
   },
   publishBtnText: {
-    color: C.white,
+    color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '800',
   },
@@ -2811,12 +2831,17 @@ const styles = StyleSheet.create({
   },
   uploadCardItem: {
     width: (SCREEN_WIDTH - 42) / 2,
-    backgroundColor: C.card,
-    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
     overflow: 'hidden',
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: C.border,
     position: 'relative',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 1,
   },
   uploadCardImg: {
     width: '100%',
@@ -2830,34 +2855,32 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   badgeCategory: {
-    backgroundColor: 'rgba(4,6,15,0.75)',
+    backgroundColor: 'rgba(15,23,42,0.75)',
     paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
   },
   badgeCategoryText: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: C.white,
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
   uploadCardInfoBox: {
     padding: 10,
   },
   uploadCardTitle: {
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: '800',
-    color: C.white,
+    color: C.text,
   },
   uploadCardLocRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
+    gap: 3,
     marginTop: 4,
   },
   uploadCardLocText: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: C.textSec,
     fontWeight: '600',
   },
@@ -2869,7 +2892,7 @@ const styles = StyleSheet.create({
   },
   uploadCardLikes: {
     fontSize: 12,
-    color: C.greenGlow,
+    color: '#059669',
     fontWeight: '700',
   },
 
@@ -2878,11 +2901,11 @@ const styles = StyleSheet.create({
   // ========================================================
   plannerSubTabs: {
     flexDirection: 'row',
-    backgroundColor: C.card,
+    backgroundColor: '#F1F5F9',
     borderRadius: 14,
     padding: 4,
     marginTop: 8,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: C.border,
   },
   plannerSubTabItem: {
@@ -2895,7 +2918,12 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   plannerSubTabItemActive: {
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 3,
+    elevation: 1,
   },
   plannerSubTabLabel: {
     fontSize: 12,
@@ -2906,7 +2934,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     width: 14,
     height: 2,
-    backgroundColor: C.blueGlow,
+    backgroundColor: C.blue,
     borderRadius: 1,
   },
   innerPlannerSection: {
@@ -2931,7 +2959,7 @@ const styles = StyleSheet.create({
     top: 24,
     bottom: -24,
     width: 2,
-    backgroundColor: C.border,
+    backgroundColor: '#CBD5E1',
   },
   timelineNode: {
     position: 'absolute',
@@ -2942,57 +2970,66 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: C.blueGlow,
+    shadowColor: C.blue,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
     elevation: 2,
   },
   timelineNodeText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '900',
-    color: C.white,
+    color: '#FFFFFF',
   },
   dayCard: {
-    backgroundColor: C.card,
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: C.border,
-    padding: 12,
+    padding: 14,
     flex: 1,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
   },
   dayTitle: {
     fontSize: 13,
     fontWeight: '800',
-    color: C.white,
+    color: C.text,
     marginBottom: 4,
   },
   dayActivitiesText: {
     fontSize: 12,
     color: C.textSec,
-    lineHeight: 17,
+    lineHeight: 18,
     fontWeight: '500',
   },
   addDayBox: {
-    backgroundColor: C.card,
-    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
     padding: 16,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: C.border,
     marginTop: 14,
     marginBottom: 24,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
   },
   addDayBoxTitle: {
     fontSize: 13,
     fontWeight: '900',
-    color: C.white,
+    color: C.text,
     marginBottom: 4,
   },
   addDayBtn: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(0,102,255,0.12)',
-    borderWidth: 1.2,
-    borderColor: C.blue,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
     height: 38,
     borderRadius: 10,
     alignItems: 'center',
@@ -3001,18 +3038,22 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   addDayBtnText: {
-    color: C.blueGlow,
+    color: C.blue,
     fontSize: 12,
     fontWeight: '800',
   },
 
   // Time Estimator
   estimatorForm: {
-    backgroundColor: C.card,
-    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
     padding: 16,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: C.border,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
   },
   formInputRow: {
     flexDirection: 'row',
@@ -3032,18 +3073,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     height: MIN_TOUCH_TARGET,
     borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.02)',
-    borderWidth: 1.2,
-    borderColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: C.border,
     gap: 4,
   },
   modeTileActive: {
     backgroundColor: C.blue,
-    borderColor: C.blueGlow,
+    borderColor: '#1D4ED8',
     shadowColor: C.blue,
-    shadowOffset: { width: 0, height: 3 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
-    shadowRadius: 5,
+    shadowRadius: 4,
   },
   modeTileLabel: {
     fontSize: 12,
@@ -3058,40 +3099,44 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     shadowColor: C.blue,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
   },
   estimateBtnText: {
-    color: C.white,
+    color: '#FFFFFF',
     fontSize: 12.5,
     fontWeight: '800',
   },
   estimationResultCard: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(0,102,255,0.08)',
+    backgroundColor: '#EFF6FF',
     borderRadius: 12,
     padding: 12,
-    borderWidth: 1.2,
-    borderColor: 'rgba(0,102,255,0.18)',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
     marginTop: 14,
     gap: 8,
   },
   estimationResultText: {
     flex: 1,
-    color: C.white,
+    color: '#1E40AF',
     fontSize: 12,
-    lineHeight: 17,
+    lineHeight: 18,
     fontWeight: '500',
   },
 
   // Budget Calculator
   budgetForm: {
-    backgroundColor: C.card,
-    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
     padding: 16,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: C.border,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
   },
   calculateBudgetBtn: {
     flexDirection: 'row',
@@ -3104,34 +3149,34 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   calculateBudgetBtnText: {
-    color: C.white,
+    color: '#FFFFFF',
     fontSize: 12.5,
     fontWeight: '800',
   },
   budgetResultCard: {
-    backgroundColor: 'rgba(255,255,255,0.02)',
+    backgroundColor: '#F8FAFC',
     borderRadius: 16,
     padding: 14,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: C.border,
     marginTop: 14,
   },
   budgetResultTitle: {
-    fontSize: 12,
-    fontWeight: '900',
+    fontSize: 11.5,
+    fontWeight: '800',
     color: C.textMuted,
     letterSpacing: 0.6,
   },
   budgetResultAmount: {
     fontSize: 22,
     fontWeight: '900',
-    color: C.greenGlow,
+    color: '#059669',
     marginTop: 2,
   },
   budgetResultSubtitle: {
     fontSize: 12,
     fontWeight: '800',
-    color: C.white,
+    color: C.text,
     marginTop: 14,
     marginBottom: 8,
   },
@@ -3150,12 +3195,12 @@ const styles = StyleSheet.create({
   },
   breakdownPct: {
     fontSize: 12,
-    color: C.white,
+    color: C.text,
     fontWeight: '800',
   },
   breakdownTrack: {
     height: 4,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: '#E2E8F0',
     borderRadius: 2,
     overflow: 'hidden',
   },
@@ -3176,12 +3221,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     height: MIN_TOUCH_TARGET,
     borderRadius: 8,
-    backgroundColor: 'rgba(255,255,255,0.02)',
-    borderWidth: 1.2,
-    borderColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: C.border,
   },
   accomSelectBtnActive: {
-    backgroundColor: 'rgba(0,102,255,0.12)',
+    backgroundColor: '#EFF6FF',
     borderColor: C.blue,
   },
   accomSelectLabel: {
@@ -3190,16 +3235,21 @@ const styles = StyleSheet.create({
   },
   stayCard: {
     flexDirection: 'row',
-    backgroundColor: C.card,
-    borderRadius: 18,
-    borderWidth: 1.5,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
     borderColor: C.border,
-    padding: 10,
+    padding: 12,
     marginBottom: 10,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
   },
   stayImage: {
-    width: 66,
-    height: 66,
+    width: 68,
+    height: 68,
     borderRadius: 12,
     marginRight: 12,
   },
@@ -3213,23 +3263,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   stayName: {
-    fontSize: 12.5,
+    fontSize: 13,
     fontWeight: '800',
-    color: C.white,
+    color: C.text,
   },
   stayRating: {
     fontSize: 12,
-    color: C.amberGlow,
+    color: '#D97706',
     fontWeight: '800',
   },
   stayLocRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
+    gap: 3,
     marginTop: 2,
   },
   stayLocText: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: C.textSec,
     fontWeight: '500',
   },
@@ -3237,20 +3287,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 4,
+    marginTop: 6,
   },
   stayPrice: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '900',
-    color: C.greenGlow,
+    color: '#059669',
   },
   bookingLinkBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
-    backgroundColor: 'rgba(0,102,255,0.1)',
-    paddingHorizontal: 8,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 10,
     paddingVertical: 5,
     minHeight: MIN_TOUCH_TARGET,
     borderRadius: 8,
@@ -3258,7 +3308,7 @@ const styles = StyleSheet.create({
   bookingLinkText: {
     fontSize: 12,
     fontWeight: '800',
-    color: C.blueGlow,
+    color: C.blue,
   },
 
   // ========================================================
@@ -3269,18 +3319,18 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   weatherCityBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     minHeight: MIN_TOUCH_TARGET,
     justifyContent: 'center',
-    borderRadius: 8,
-    backgroundColor: 'rgba(255,255,255,0.02)',
-    borderWidth: 1.2,
-    borderColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: C.border,
     marginRight: 8,
   },
   weatherCityBtnActive: {
-    backgroundColor: 'rgba(0,102,255,0.12)',
+    backgroundColor: C.blue,
     borderColor: C.blue,
   },
   weatherCityText: {
@@ -3289,22 +3339,26 @@ const styles = StyleSheet.create({
   },
   weatherLiveCard: {
     borderRadius: 22,
-    padding: 16,
-    borderWidth: 1.5,
-    borderColor: C.border,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
     marginBottom: 20,
     position: 'relative',
     overflow: 'hidden',
+    shadowColor: '#0F2952',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 5,
   },
   weatherLiveCardGlow: {
     position: 'absolute',
     top: -30,
     left: -30,
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: 'rgba(0,102,255,0.1)',
-    filter: 'blur(20px)',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(59,130,246,0.2)',
   },
   weatherMainRow: {
     flexDirection: 'row',
@@ -3313,13 +3367,13 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   weatherMainCity: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '900',
-    color: C.white,
+    color: '#FFFFFF',
   },
   weatherMainDesc: {
-    fontSize: 12,
-    color: C.textSec,
+    fontSize: 12.5,
+    color: '#93C5FD',
     marginTop: 2,
     fontWeight: '600',
   },
@@ -3331,7 +3385,7 @@ const styles = StyleSheet.create({
   weatherMainTemp: {
     fontSize: 32,
     fontWeight: '900',
-    color: C.white,
+    color: '#FFFFFF',
   },
   weatherDetailsGrid: {
     flexDirection: 'row',
@@ -3340,32 +3394,32 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   weatherDetailBox: {
-    width: (SCREEN_WIDTH - 64) / 2,
+    width: (SCREEN_WIDTH - 68) / 2,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.015)',
-    borderWidth: 1.2,
-    borderColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
     borderRadius: 12,
     padding: 10,
   },
   weatherDetailLabel: {
-    fontSize: 12,
-    color: C.textMuted,
+    fontSize: 11,
+    color: '#93C5FD',
     fontWeight: '700',
   },
   weatherDetailValue: {
     fontSize: 12,
     fontWeight: '800',
-    color: C.white,
+    color: '#FFFFFF',
     marginTop: 1,
   },
   aqiCard: {
-    backgroundColor: 'rgba(255,255,255,0.02)',
+    backgroundColor: 'rgba(255,255,255,0.1)',
     borderRadius: 14,
     padding: 12,
-    borderWidth: 1.2,
-    borderColor: C.border,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
   },
   aqiHeader: {
     flexDirection: 'row',
@@ -3374,9 +3428,9 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   aqiTitle: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: C.textMuted,
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#93C5FD',
     letterSpacing: 0.5,
   },
   aqiBadge: {
@@ -3385,7 +3439,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   aqiBadgeText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '900',
     color: '#04060f',
   },
@@ -3397,21 +3451,26 @@ const styles = StyleSheet.create({
   aqiValue: {
     fontSize: 26,
     fontWeight: '900',
-    color: C.white,
+    color: '#FFFFFF',
   },
   aqiDescText: {
     flex: 1,
     fontSize: 12,
-    color: C.textSec,
+    color: '#E2E8F0',
     lineHeight: 16,
     fontWeight: '500',
   },
   forecastGrid: {
-    backgroundColor: C.card,
-    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
     padding: 14,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: C.border,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 1,
   },
   forecastRow: {
     flexDirection: 'row',
@@ -3419,13 +3478,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.03)',
+    borderBottomColor: '#F1F5F9',
   },
   forecastDay: {
     width: 80,
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: '700',
-    color: C.white,
+    color: C.text,
   },
   forecastMid: {
     flexDirection: 'row',
@@ -3440,9 +3499,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   forecastTemp: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: C.white,
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: C.text,
     width: 45,
     textAlign: 'right',
   },
@@ -3451,12 +3510,16 @@ const styles = StyleSheet.create({
   // TAB 5: SAFETY
   // ========================================================
   safetyAlertItem: {
-    backgroundColor: 'rgba(255,255,255,0.015)',
+    backgroundColor: '#FFFFFF',
     borderRadius: 14,
     padding: 12,
-    borderWidth: 1.2,
+    borderWidth: 1,
     borderColor: C.border,
     marginBottom: 10,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
   },
   safetyAlertHeader: {
     flexDirection: 'row',
@@ -3473,46 +3536,50 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   safetyAlertBadgeText: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '900',
   },
   safetyAlertLocation: {
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: '800',
-    color: C.white,
+    color: C.text,
   },
   safetyAlertMessage: {
     fontSize: 12,
     color: C.textSec,
-    lineHeight: 16,
+    lineHeight: 17,
     fontWeight: '500',
   },
   contactItemCard: {
-    backgroundColor: C.card,
-    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
     padding: 14,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: C.border,
     marginBottom: 10,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
   },
   contactItemHeader: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   contactIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
   },
   contactTitle: {
-    fontSize: 12.5,
+    fontSize: 13,
     fontWeight: '800',
-    color: C.white,
+    color: C.text,
   },
   contactDesc: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: C.textSec,
     marginTop: 1,
     fontWeight: '500',
@@ -3522,14 +3589,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    borderWidth: 1.2,
-    borderRadius: 8,
+    borderWidth: 1,
+    borderRadius: 10,
     height: MIN_TOUCH_TARGET,
     marginTop: 12,
   },
   callActionBtnText: {
     fontSize: 12,
-    fontWeight: '900',
+    fontWeight: '800',
   },
   facilitiesRow: {
     flexDirection: 'row',
@@ -3537,12 +3604,16 @@ const styles = StyleSheet.create({
   },
   facilityBox: {
     flex: 1,
-    backgroundColor: C.card,
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 12,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: C.border,
     justifyContent: 'space-between',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
   },
   facilityHeader: {
     flexDirection: 'row',
@@ -3551,66 +3622,67 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   facilityTitle: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '800',
     color: C.textSec,
   },
   facilityName: {
-    fontSize: 12.5,
+    fontSize: 13,
     fontWeight: '800',
-    color: C.white,
+    color: C.text,
   },
   facilityDist: {
     fontSize: 12,
-    color: C.greenGlow,
+    color: '#059669',
     fontWeight: '700',
     marginTop: 2,
   },
   facilityLoc: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: C.textMuted,
     marginTop: 2,
     fontWeight: '600',
   },
   facilityNavBtn: {
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    borderWidth: 1.2,
-    borderColor: C.border,
-    height: 28,
-    borderRadius: 6,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    height: 30,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 10,
   },
   facilityNavBtnText: {
-    color: C.blueGlow,
-    fontSize: 12,
+    color: C.blue,
+    fontSize: 11.5,
     fontWeight: '800',
   },
 
   // Cashout Modal Styles
   modalBg: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    backgroundColor: 'rgba(15,23,42,0.6)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   modalContent: {
     width: SCREEN_WIDTH - 40,
-    backgroundColor: C.cardAlt,
-    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
     padding: 20,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: C.border,
-    shadowColor: '#000000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.5,
-    shadowRadius: 15,
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 8,
   },
   modalTitle: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '900',
-    color: C.white,
+    color: C.text,
   },
   modalDesc: {
     fontSize: 12,
@@ -3622,12 +3694,12 @@ const styles = StyleSheet.create({
   modalBalanceRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(255,255,255,0.02)',
+    backgroundColor: '#F8FAFC',
     padding: 12,
-    borderRadius: 10,
+    borderRadius: 12,
     marginTop: 14,
-    borderWidth: 1.2,
-    borderColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: C.border,
   },
   modalBalanceLabel: {
     fontSize: 12,
@@ -3635,25 +3707,25 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   modalBalanceVal: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '900',
-    color: C.greenGlow,
+    color: '#059669',
   },
   modalInputLabel: {
     fontSize: 12,
     fontWeight: '800',
-    color: C.white,
+    color: C.text,
     marginTop: 14,
     marginBottom: 6,
   },
   modalInput: {
-    backgroundColor: C.card,
-    borderWidth: 1.5,
-    borderColor: C.border,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
     borderRadius: 10,
     height: 42,
     paddingHorizontal: 12,
-    color: C.white,
+    color: C.text,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -3670,8 +3742,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   modalBtnCancel: {
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderWidth: 1.2,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
     borderColor: C.border,
   },
   modalBtnCancelText: {
@@ -3683,7 +3755,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.green,
   },
   modalBtnConfirmText: {
-    color: C.white,
+    color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '800',
   },
