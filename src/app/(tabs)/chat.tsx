@@ -1704,7 +1704,7 @@ function ChatScreen() {
               accessibilityRole="button"
               accessibilityLabel={t('chat.contacts')}
             >
-              <UsersIcon size={20} color="#FFF" />
+              <UsersIcon size={18} color="#334155" />
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.headerIconTouch}
@@ -1712,7 +1712,7 @@ function ChatScreen() {
               accessibilityRole="button"
               accessibilityLabel={t('chat.moreOptions')}
             >
-              <MoreVertical size={20} color="#FFF" />
+              <MoreVertical size={18} color="#334155" />
             </TouchableOpacity>
           </View>
         </View>
@@ -1806,65 +1806,90 @@ function ChatScreen() {
             lastScrollYRef.current = y;
           }}
         >
-          {filteredRooms.map((room) => {
-            const hasUnread = room.unreadCount > 0;
+          {filteredRooms.length > 0 ? (
+            filteredRooms.map((room) => {
+              const hasUnread = room.unreadCount > 0;
 
-            return (
-              <TouchableOpacity
-                key={room.id}
-                style={styles.roomItemTouch}
-                onPress={() => {
-                  setSelectedRoomId(room.id);
-                  setSelectedTripId(room.tripId);
-                }}
-                onLongPress={() => setSelectedRoomForOptions(room)}
-                delayLongPress={400}
-                activeOpacity={0.85}
-                accessibilityRole="button"
-                accessibilityLabel={room.name}
-                accessibilityHint={room.latestMessage}
-              >
-                {/* Avatar left */}
-                <View style={styles.roomAvatarWrap}>
-                  <Image source={{ uri: room.avatar }} style={styles.roomAvatarImg} />
-                </View>
+              return (
+                <TouchableOpacity
+                  key={room.id}
+                  style={styles.roomItemTouch}
+                  onPress={() => {
+                    setSelectedRoomId(room.id);
+                    setSelectedTripId(room.tripId);
+                  }}
+                  onLongPress={() => setSelectedRoomForOptions(room)}
+                  delayLongPress={400}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel={room.name}
+                  accessibilityHint={room.latestMessage}
+                >
+                  {/* Avatar left */}
+                  <View style={styles.roomAvatarWrap}>
+                    <Image source={{ uri: room.avatar }} style={styles.roomAvatarImg} />
+                  </View>
 
-                {/* Info Center */}
-                <View style={styles.roomMetaWrap}>
-                  <View style={styles.roomNameRow}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 6 }}>
-                      <Text style={[styles.roomNameText, { flex: 1, marginRight: 4 }]} numberOfLines={1}>
-                        {room.name}
+                  {/* Info Center */}
+                  <View style={styles.roomMetaWrap}>
+                    <View style={styles.roomNameRow}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 6 }}>
+                        <Text style={[styles.roomNameText, { flex: 1, marginRight: 4 }]} numberOfLines={1}>
+                          {room.name}
+                        </Text>
+                        {pinnedRoomIds.has(room.id) && <Pin size={12} color={C.blue} />}
+                      </View>
+                      <Text style={[styles.roomTimeText, hasUnread && { color: C.blue, fontWeight: '700' }]}>
+                        {room.latestTime}
                       </Text>
-                      {pinnedRoomIds.has(room.id) && <Pin size={12} color={C.blueGlow} />}
                     </View>
-                    <Text style={[styles.roomTimeText, hasUnread && { color: C.blueGlow }]}>{room.latestTime}</Text>
-                  </View>
 
-                  <View style={styles.roomSnippetRow}>
-                    <Text
-                      style={[styles.roomSnippetText, hasUnread && { color: '#FFF', fontWeight: '500' }]}
-                      numberOfLines={1}
-                    >
-                      {room.latestMessage}
-                    </Text>
-                    <View style={styles.roomBadgeWrap}>
-                      {room.badge && (
-                        <View style={[styles.inboxTag, room.type === 'GUIDE' ? styles.tagPurple : styles.tagBlue]}>
-                          <Text style={styles.inboxTagText}>{room.badge}</Text>
-                        </View>
-                      )}
-                      {hasUnread && (
-                        <View style={styles.unreadBadge}>
-                          <Text style={styles.unreadBadgeText}>{room.unreadCount}</Text>
-                        </View>
-                      )}
+                    <View style={styles.roomSnippetRow}>
+                      <Text
+                        style={[styles.roomSnippetText, hasUnread && { color: C.text, fontWeight: '600' }]}
+                        numberOfLines={1}
+                      >
+                        {room.latestMessage}
+                      </Text>
+                      <View style={styles.roomBadgeWrap}>
+                        {room.badge && (
+                          <View style={[styles.inboxTag, room.type === 'GUIDE' ? styles.tagPurple : styles.tagBlue]}>
+                            <Text
+                              style={[
+                                styles.inboxTagText,
+                                room.type === 'GUIDE' ? styles.tagPurpleText : styles.tagBlueText,
+                              ]}
+                            >
+                              {room.badge}
+                            </Text>
+                          </View>
+                        )}
+                        {hasUnread && (
+                          <View style={styles.unreadBadge}>
+                            <Text style={styles.unreadBadgeText}>{room.unreadCount}</Text>
+                          </View>
+                        )}
+                      </View>
                     </View>
                   </View>
-                </View>
-              </TouchableOpacity>
-            );
-          })}
+                </TouchableOpacity>
+              );
+            })
+          ) : (
+            <View style={styles.emptyInboxContainer}>
+              <View style={styles.emptyInboxIconWrap}>
+                <MessageSquare size={28} color={C.blue} />
+              </View>
+              <Text style={styles.emptyInboxTitle}>
+                {searchQuery.trim() ? t('chat.noMessagesInChat') : t('chat.noChatsTitle')}
+              </Text>
+              <Text style={styles.emptyInboxSubtitle}>
+                {searchQuery.trim()
+                  ? t('search.noResultsMessage', { defaultValue: 'Try searching for a different name or keyword.' })
+                  : t('chat.noChatsDesc', { defaultValue: 'Group trip chats and guide discussions will appear here.' })}
+              </Text>
+            </View>
+          )}
         </ScrollView>
 
         {/* ─── CHAT ROOM LONG PRESS OPTIONS OVERLAY ─────────────── */}
@@ -1909,7 +1934,7 @@ function ChatScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={pinnedRoomIds.has(selectedRoomForOptions.id) ? t('chat.unpinChat') : t('chat.pinChatToTop')}
               >
-                <Pin size={16} color="#94A3B8" style={styles.optionsRowIcon} />
+                <Pin size={16} color="#64748B" style={styles.optionsRowIcon} />
                 <Text style={styles.optionsRowText}>
                   {pinnedRoomIds.has(selectedRoomForOptions.id) ? t('chat.unpinChat') : t('chat.pinChatToTop')}
                 </Text>
@@ -1933,7 +1958,7 @@ function ChatScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={selectedRoomForOptions.unreadCount > 0 ? t('chat.markAsRead') : t('chat.markAsUnread')}
               >
-                <CheckCircle size={16} color="#94A3B8" style={styles.optionsRowIcon} />
+                <CheckCircle size={16} color="#64748B" style={styles.optionsRowIcon} />
                 <Text style={styles.optionsRowText}>
                   {selectedRoomForOptions.unreadCount > 0 ? t('chat.markAsRead') : t('chat.markAsUnread')}
                 </Text>
@@ -2038,7 +2063,7 @@ function ChatScreen() {
             accessibilityRole="button"
             accessibilityLabel={t('chat.goBack')}
           >
-            <ArrowLeft size={20} color="#FFF" />
+            <ArrowLeft size={20} color={C.text} />
           </TouchableOpacity>
 
           <Image source={{ uri: activeRoom?.avatar }} style={styles.roomHeaderAvatar} />
@@ -2072,7 +2097,7 @@ function ChatScreen() {
             accessibilityRole="button"
             accessibilityLabel={t('chat.openMap')}
           >
-            <MapPin size={17} color="#FFF" />
+            <MapPin size={17} color={C.text} />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.actionRoundBtn}
@@ -2082,7 +2107,7 @@ function ChatScreen() {
             accessibilityRole="button"
             accessibilityLabel={t('chat.openRoomSettings')}
           >
-            <Settings size={17} color="#FFF" />
+            <Settings size={17} color={C.text} />
           </TouchableOpacity>
         </View>
       </View>
@@ -2098,7 +2123,7 @@ function ChatScreen() {
             accessibilityLabel={t('chat.tabChat')}
             accessibilityState={{ selected: activeTab === 'chat' }}
           >
-            <MessageSquare size={17} color={activeTab === 'chat' ? '#C084FC' : '#7E8494'} />
+            <MessageSquare size={17} color={activeTab === 'chat' ? C.blue : C.textSec} />
             <Text style={[styles.tabItemLabel, activeTab === 'chat' && styles.tabItemLabelActive]}>{t('chat.tabChat')}</Text>
           </TouchableOpacity>
 
@@ -2110,7 +2135,7 @@ function ChatScreen() {
             accessibilityLabel={t('chat.tabItinerary')}
             accessibilityState={{ selected: activeTab === 'itinerary' }}
           >
-            <Calendar size={17} color={activeTab === 'itinerary' ? '#C084FC' : '#7E8494'} />
+            <Calendar size={17} color={activeTab === 'itinerary' ? C.blue : C.textSec} />
             <Text style={[styles.tabItemLabel, activeTab === 'itinerary' && styles.tabItemLabelActive]}>{t('chat.tabItinerary')}</Text>
           </TouchableOpacity>
 
@@ -2122,7 +2147,7 @@ function ChatScreen() {
             accessibilityLabel={t('chat.tabMembers')}
             accessibilityState={{ selected: activeTab === 'members' }}
           >
-            <UsersIcon size={17} color={activeTab === 'members' ? '#C084FC' : '#7E8494'} />
+            <UsersIcon size={17} color={activeTab === 'members' ? C.blue : C.textSec} />
             <Text style={[styles.tabItemLabel, activeTab === 'members' && styles.tabItemLabelActive]}>{t('chat.tabMembers')}</Text>
           </TouchableOpacity>
         </View>
@@ -3089,65 +3114,84 @@ const styles = StyleSheet.create({
   // WhatsApp-style Inbox List View
   inboxContainer: {
     flex: 1,
-    backgroundColor: C.bg,
+    backgroundColor: '#F8FAFC',
   },
   inboxHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    backgroundColor: '#070913',
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    paddingBottom: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
   },
   inboxHeaderTitle: {
-    color: '#FFF',
-    fontSize: 20,
-    fontWeight: '900',
-    letterSpacing: 0.5,
+    color: '#0F172A',
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.3,
   },
   inboxHeaderIcons: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    gap: 10,
   },
   headerIconTouch: {
-    padding: 4,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   searchBarWrapper: {
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: '#070913',
+    paddingVertical: 10,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
   },
   inboxFiltersRow: {
     flexDirection: 'row',
     paddingHorizontal: 16,
     paddingVertical: 10,
     gap: 8,
-    backgroundColor: C.bg,
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: C.border,
+    borderBottomColor: '#E2E8F0',
   },
   filterPill: {
     minHeight: MIN_TOUCH_TARGET,
     justifyContent: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 14,
-    backgroundColor: C.card,
-    borderWidth: 0.5,
-    borderColor: C.border,
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   filterPillSelected: {
-    backgroundColor: 'rgba(0, 102, 255, 0.12)',
-    borderColor: C.blue,
+    backgroundColor: '#2563EB',
+    borderColor: '#1D4ED8',
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 4,
+    elevation: 2,
   },
   filterPillText: {
-    color: C.textSec,
-    fontSize: 12,
-    fontWeight: '700',
+    color: '#64748B',
+    fontSize: 13,
+    fontWeight: '600',
   },
   filterPillTextSelected: {
-    color: C.blueGlow,
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
   safetyTickerBanner: {
     flexDirection: 'row',
@@ -3170,10 +3214,11 @@ const styles = StyleSheet.create({
   roomItemTouch: {
     flexDirection: 'row',
     paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 0.5,
-    borderBottomColor: 'rgba(37, 39, 64, 0.5)',
+    paddingVertical: 13,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
     alignItems: 'center',
+    backgroundColor: '#FFFFFF',
   },
   roomAvatarWrap: {
     position: 'relative',
@@ -3183,19 +3228,20 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    borderWidth: 1,
-    borderColor: C.border,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F1F5F9',
   },
   onlineBadgeGuide: {
     position: 'absolute',
     bottom: 0,
     right: 0,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: C.green,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#10B981',
     borderWidth: 2,
-    borderColor: C.bg,
+    borderColor: '#FFFFFF',
   },
   roomMetaWrap: {
     flex: 1,
@@ -3208,16 +3254,16 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   roomNameText: {
-    color: '#FFF',
-    fontSize: 14.5,
-    fontWeight: '800',
+    color: '#0F172A',
+    fontSize: 15,
+    fontWeight: '700',
     flex: 1,
     marginRight: 10,
   },
   roomTimeText: {
-    color: C.textMuted,
+    color: '#64748B',
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '500',
   },
   roomSnippetRow: {
     flexDirection: 'row',
@@ -3225,8 +3271,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   roomSnippetText: {
-    color: C.textSec,
-    fontSize: 12.5,
+    color: '#64748B',
+    fontSize: 13,
     flex: 1,
     marginRight: 8,
   },
@@ -3236,33 +3282,74 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   inboxTag: {
-    paddingHorizontal: 6,
+    paddingHorizontal: 7,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: 6,
   },
   tagBlue: {
-    backgroundColor: 'rgba(0, 102, 255, 0.12)',
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
   },
   tagPurple: {
-    backgroundColor: 'rgba(139, 92, 246, 0.12)',
+    backgroundColor: '#F5F3FF',
+    borderWidth: 1,
+    borderColor: '#EDE9FE',
+  },
+  tagBlueText: {
+    color: '#1D4ED8',
+  },
+  tagPurpleText: {
+    color: '#6D28D9',
   },
   inboxTagText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#FFF',
+    fontSize: 11,
+    fontWeight: '700',
   },
   unreadBadge: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: C.blue,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#2563EB',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 6,
   },
   unreadBadgeText: {
-    color: '#FFF',
-    fontSize: 12,
-    fontWeight: '900',
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  emptyInboxContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 24,
+  },
+  emptyInboxIconWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+  },
+  emptyInboxTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  emptyInboxSubtitle: {
+    fontSize: 12.5,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 18,
+    maxWidth: 280,
   },
 
   // Room Header Bar (Detail view)
@@ -3272,7 +3359,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 10,
-    backgroundColor: '#070913',
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: C.border,
   },
@@ -3297,7 +3384,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   roomHeaderNameText: {
-    color: '#FFF',
+    color: '#0F172A',
     fontSize: 14.5,
     fontWeight: '800',
   },
@@ -4530,15 +4617,15 @@ const styles = StyleSheet.create({
     zIndex: 999,
   },
   optionsModalContent: {
-    backgroundColor: C.card,
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: '#1E293B',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     padding: 20,
     width: '85%',
-    shadowColor: '#000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.5,
+    shadowOpacity: 0.15,
     shadowRadius: 16,
     elevation: 10,
   },
@@ -4546,19 +4633,18 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   optionsHeaderTitle: {
-    color: '#FFF',
-    fontSize: 14,
+    color: '#0F172A',
+    fontSize: 15,
     fontWeight: '800',
     marginBottom: 4,
   },
   optionsHeaderSubText: {
-    color: C.textSec,
+    color: '#64748B',
     fontSize: 12,
-    fontStyle: 'italic',
   },
   optionsDivider: {
     height: 1,
-    backgroundColor: '#1E293B',
+    backgroundColor: '#F1F5F9',
     marginBottom: 10,
   },
   optionsRowBtn: {
@@ -4573,13 +4659,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   optionsRowText: {
-    color: '#E2E8F0',
+    color: '#1E293B',
     fontSize: 13.5,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   optionsCancelDivider: {
     height: 1,
-    backgroundColor: '#1E293B',
+    backgroundColor: '#F1F5F9',
     marginVertical: 12,
   },
   optionsCancelBtn: {
@@ -4587,11 +4673,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minHeight: MIN_TOUCH_TARGET,
     paddingVertical: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    backgroundColor: '#F1F5F9',
     borderRadius: 10,
   },
   optionsCancelText: {
-    color: C.textSec,
+    color: '#475569',
     fontSize: 14,
     fontWeight: '700',
   },
@@ -4770,19 +4856,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 8,
-    paddingHorizontal: 8,
-    backgroundColor: C.card,
-    borderRadius: 20,
-    borderWidth: 1.2,
-    borderColor: C.border,
+    paddingVertical: 6,
+    paddingHorizontal: 6,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     marginHorizontal: 12,
     marginVertical: 10,
-    elevation: 4,
-    shadowColor: C.blue,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
   },
   tabItemTouch: {
     flex: 1,
@@ -4791,19 +4877,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minHeight: MIN_TOUCH_TARGET,
     paddingVertical: 8,
-    borderRadius: 14,
+    borderRadius: 12,
     gap: 6,
   },
   tabItemTouchActive: {
-    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+    backgroundColor: '#EFF6FF',
   },
   tabItemLabel: {
-    color: C.textMuted,
+    color: '#64748B',
     fontSize: 12.5,
     fontWeight: '600',
   },
   tabItemLabelActive: {
-    color: '#C084FC',
+    color: '#2563EB',
     fontWeight: '700',
   },
 

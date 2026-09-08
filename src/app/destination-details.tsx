@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import ArrowLeft from 'lucide-react-native/icons/arrow-left';
@@ -20,7 +20,9 @@ import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { queryKeys } from '@/lib/query-keys';
-import { apiService } from '@/services/api';
+import { apiService, type SavedDestination } from '@/services/api';
+import { useApp } from '@/store/AppContext';
+import { errorToastMessage, toast } from '@/lib/feedback';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { Button, Card, ScreenEmpty, ScreenError, ScreenLoading } from '@/components/ui';
 
@@ -40,8 +42,70 @@ export default function DestinationDetailsScreen() {
   const params = useLocalSearchParams<{ id?: string }>();
   const destId = typeof params.id === 'string' ? params.id : '';
 
-  const [isLiked, setIsLiked] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState<number | null>(null);
+  const { isLoggedIn } = useApp();
+  const queryClient = useQueryClient();
+
+  // Whether this destination is bookmarked. This used to be a local
+  // `useState(false)` that the heart button toggled: it persisted nowhere,
+  // reset the moment the screen unmounted, and the profile screen's "Saved
+  // Destinations" list had no way to ever receive it. It is now the real
+  // server-side bookmark (PUT/DELETE /destinations/:id/saved).
+  const { data: savedDestinations } = useQuery({
+    queryKey: queryKeys.savedDestinations(),
+    queryFn: async () => (await apiService.getSavedDestinations()) ?? [],
+    enabled: isLoggedIn,
+  });
+  const isSaved = !!savedDestinations?.some((d) => d.id === destId);
+
+  const toggleSaved = useMutation({
+    mutationFn: async (nextSaved: boolean) =>
+      nextSaved ? apiService.saveDestination(destId) : apiService.unsaveDestination(destId),
+    // Optimistic: the heart fills the instant it is tapped, and rolls back
+    // to the server's truth if the write fails.
+    onMutate: async (nextSaved: boolean) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.savedDestinations() });
+      const previous = queryClient.getQueryData<SavedDestination[]>(queryKeys.savedDestinations());
+      if (destination) {
+        queryClient.setQueryData<SavedDestination[]>(queryKeys.savedDestinations(), (current = []) =>
+          nextSaved
+            ? [
+                {
+                  id: destination.id,
+                  name: destination.name,
+                  tags: destination.tags,
+                  rating: destination.rating,
+                  image: destination.image,
+                  savedAt: new Date().toISOString(),
+                },
+                ...current.filter((d) => d.id !== destination.id),
+              ]
+            : current.filter((d) => d.id !== destination.id),
+        );
+      }
+      return { previous };
+    },
+    onError: (err, _next, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(queryKeys.savedDestinations(), context.previous);
+      }
+      toast(errorToastMessage(err, t('destinationDetails.couldNotSave')), 'error');
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.savedDestinations() });
+    },
+  });
+
+  const handleToggleSaved = () => {
+    // Bookmarking is per-account, so it needs one. Sending a guest to the
+    // auth screen is the boundary everywhere else in this app uses, rather
+    // than firing a request that would 401.
+    if (!isLoggedIn) {
+      router.push('/auth');
+      return;
+    }
+    toggleSaved.mutate(!isSaved);
+  };
 
   const {
     data: destination,
@@ -89,13 +153,15 @@ export default function DestinationDetailsScreen() {
       <TouchableOpacity
         style={styles.circleHeaderBtn}
         activeOpacity={0.8}
-        onPress={() => setIsLiked((v) => !v)}
-        disabled={!destination}
+        onPress={handleToggleSaved}
+        disabled={!destination || toggleSaved.isPending}
         accessibilityRole="button"
-        accessibilityLabel={isLiked ? t('destinationDetails.removeFromFavourites') : t('destinationDetails.addToFavourites')}
-        accessibilityState={{ selected: isLiked }}
+        accessibilityLabel={
+          isSaved ? t('destinationDetails.removeFromFavourites') : t('destinationDetails.addToFavourites')
+        }
+        accessibilityState={{ selected: isSaved, disabled: !destination || toggleSaved.isPending }}
       >
-        <Heart size={18} color={isLiked ? C.red : C.white} fill={isLiked ? C.red : 'transparent'} />
+        <Heart size={18} color={isSaved ? C.red : C.white} fill={isSaved ? C.red : 'transparent'} />
       </TouchableOpacity>
     </View>
   );

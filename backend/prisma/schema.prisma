@@ -140,6 +140,15 @@ enum TripStatus {
   COMPLETED
 }
 
+// How travellers move between two consecutive stops on a trip's timeline.
+// Mirrors the four options the create-trip Timeline tab offers.
+enum TransitMode {
+  CAB
+  TRAIN
+  FLIGHT
+  BUS
+}
+
 // The permission categories this app actually requests (docs/REMEDIATION.md
 // §12.3). No KYC entry — identity verification was removed outright in
 // §12.1, so there is nothing to consent to there.
@@ -199,6 +208,9 @@ model User {
 
   // Privacy & consent
   consentRecords ConsentRecord[]
+
+  // Destinations this user has bookmarked (profile > Saved Destinations)
+  savedDestinations SavedDestination[]
 
   // Social Relations
   followers Follow[]  @relation("Following")
@@ -391,6 +403,8 @@ model Trip {
   likes     TripLike[]
   expenses  TripExpense[]
   itinerary TripItineraryDay[]
+  timeline  TripTimelineStop[]
+  checklist TripChecklistItem[]
 
   @@index([creatorId])
   @@index([createdAt])
@@ -587,6 +601,63 @@ model TripItineraryDay {
   updatedAt DateTime @updatedAt
 
   @@unique([tripId, day])
+  @@index([tripId])
+}
+
+// One stop on a trip's route, as built on the create-trip Timeline tab.
+//
+// Deliberately separate from TripItineraryDay: that model is day-indexed
+// (Day 1, Day 2, … with a free-text plan) and is what the organizer
+// dashboard edits after a trip exists. This one is *stop*-indexed — a city
+// the group stays in for `stayDays` days, and how they travel to the next
+// one. The two have different granularity (one stop can span several days),
+// so folding them together would misrepresent both.
+//
+// `transitTimeMinutes` and `transitMode` describe the leg travelled to
+// REACH this stop, so they are null on the first stop — there is no inbound
+// leg to the starting point. Latitude/longitude are nullable because a city
+// the geocoder cannot place must be stored without coordinates rather than
+// with invented ones (docs/REMEDIATION.md §0.2 rule 4); the map reports how
+// many stops it could not plot instead of drawing them somewhere wrong.
+model TripTimelineStop {
+  id                 String       @id @default(uuid())
+  tripId             String
+  trip               Trip         @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  // 0-based position along the route.
+  order              Int
+  city               String
+  // Nights the group spends at this stop.
+  stayDays           Int          @default(1)
+  // Travel time to reach this stop, in minutes. Null on the first stop.
+  transitTimeMinutes Int?
+  // How the group travels to reach this stop. Null on the first stop.
+  transitMode        TransitMode?
+  // What the group does here. Empty when the organizer left it blank.
+  activities         String       @default("")
+  latitude           Float?
+  longitude          Float?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  @@unique([tripId, order])
+  @@index([tripId])
+}
+
+// A packing/prep item the organizer put on the trip's checklist, so someone
+// deciding whether to join can see what they are expected to bring. Before
+// this the create screen's Checklist tab was eight hardcoded strings in
+// local component state that were discarded when the screen unmounted and
+// never reached any traveller.
+model TripChecklistItem {
+  id        String   @id @default(uuid())
+  tripId    String
+  trip      Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  order     Int
+  label     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tripId, order])
   @@index([tripId])
 }
 
@@ -948,6 +1019,28 @@ model NotificationRead {
   @@index([userId])
 }
 
+// A destination a user has bookmarked from the destination-detail screen.
+//
+// Before this the profile screen's "Saved Destinations" list read
+// `profile.savedPlaces`, a field that existed only in the client's
+// UserProfile type: the server's updateProfile schema has no such key, so
+// Zod stripped it and answered `ok: true` while saving nothing. There was
+// also no control anywhere in the app that could add to it, so the list was
+// permanently empty and its delete button wrote to a value the server
+// discarded. This is the real thing: a row per (user, destination).
+model SavedDestination {
+  id            String      @id @default(uuid())
+  userId        String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  destinationId String
+  destination   Destination @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+  createdAt     DateTime    @default(now())
+
+  // One bookmark per destination per user — saving twice is idempotent.
+  @@unique([userId, destinationId])
+  @@index([userId])
+}
+
 model Destination {
   id        String   @id @default(uuid())
   name      String
@@ -968,6 +1061,8 @@ model Destination {
   specialties Json     @default("[]")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  savedBy SavedDestination[]
 
   @@index([rank])
 }

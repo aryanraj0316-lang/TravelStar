@@ -6,7 +6,7 @@ import { enqueueMutation, registerMutationHandler } from '@/lib/offline-mutation
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/query-keys';
-import { apiService, clearTokens, ApiError } from '../services/api';
+import { apiService, clearTokens, ApiError, type CreateTripInput } from '../services/api';
 import { socketService } from '../services/socket';
 import { eventBus } from '../services/event-bus';
 import type { JoinRequestSummary, IncomingJoinRequest, AppNotification, ChatRoomSummary } from '@/types/api';
@@ -191,7 +191,7 @@ interface AppContextType {
   login: () => void;
   logout: () => void;
   trips: Trip[];
-  addTrip: (trip: Trip) => void;
+  addTrip: (trip: CreateTripInput) => Promise<Trip | null>;
   joinTrip: (tripId: string, opts?: { midway?: boolean; fromCity?: string; toCity?: string }) => void;
   cancelJoinRequest: (tripId: string) => void;
   guides: Guide[];
@@ -714,28 +714,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   }, []);
 
+  /**
+   * Publishes a trip and returns the server's version of it.
+   *
+   * There is no optimistic local insert. The previous version built one
+   * from a client-invented `trip-${Date.now()}` id, which (a) the server
+   * rejects outright as a non-UUID, so creation always failed, and (b)
+   * would have put a row in the list whose id matched no real trip —
+   * tapping it opened nothing. The real trip arrives from the response and
+   * `refreshTrips()` reconciles the list from the server, which is the only
+   * place `isMyTrip` and the generated ids are authoritative.
+   */
   const addTrip = useCallback(
-    (trip: Trip) => {
-      const tripWithMeta = {
-        ...trip,
-        creatorId: profile.id,
-        isMyTrip: true,
-      };
-      setTrips((prev) => [tripWithMeta, ...prev]);
-      apiService
-        .createTrip(tripWithMeta)
-        .then(() => {
-          toast('Trip created', 'success');
-          // Re-fetch all trips from backend so isMyTrip is correctly calculated server-side
-          refreshTrips();
-        })
-        .catch((e) => {
-          logger.warn('[Trips] Create trip failed, rolling back:', e);
-          setTrips((prev) => prev.filter((t) => t !== tripWithMeta));
-          toast(errorToastMessage(e, 'Could not create the trip.'), 'error');
-        });
+    async (trip: CreateTripInput): Promise<Trip | null> => {
+      try {
+        const created = await apiService.createTrip(trip);
+        toast('Trip created', 'success');
+        refreshTrips();
+        return created;
+      } catch (e) {
+        logger.warn('[Trips] Create trip failed:', e);
+        toast(errorToastMessage(e, 'Could not create the trip.'), 'error');
+        return null;
+      }
     },
-    [profile.id, refreshTrips],
+    [refreshTrips],
   );
 
   const joinTrip = useCallback((tripId: string, opts?: { midway?: boolean; fromCity?: string; toCity?: string }) => {

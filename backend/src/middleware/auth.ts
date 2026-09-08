@@ -56,7 +56,20 @@ const PUBLIC_GET_PATTERNS = [
   /^\/trips\/(?!mine$)[^/]+$/,
   /^\/guides\/[^/]+\/packages$/, // /guides/:id/packages
   /^\/guides\/[^/]+\/reels$/, // /guides/:id/reels
-  /^\/destinations\/[^/]+$/, // /destinations/:id
+  // /destinations/:id — but NOT /destinations/saved, which returns the
+  // caller's own private bookmark list and must stay behind a required
+  // token. Without the exclusion this pattern reads "saved" as a
+  // destination id and serves one user's saved destinations to any
+  // anonymous caller — the same trap /trips/mine is guarded against above.
+  /^\/destinations\/(?!saved$)[^/]+$/,
+  // /map/trips/:id/route — the plotted stops for one trip. This exposes
+  // nothing that GET /trips/:id (already public, just above) does not
+  // already return: the same city list, the same timeline, the same
+  // meeting point. Someone deciding whether to join needs to see where the
+  // trip actually goes on a map before committing, so gating the map view
+  // behind a token while the identical data is public through the detail
+  // route was an inconsistency, not a protection.
+  /^\/map\/trips\/[^/]+\/route$/,
 ];
 
 function isPublicRoute(req: Request): boolean {

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
+  ActivityIndicator,
   Modal,
   View,
   Text,
@@ -26,6 +27,11 @@ import { eventBus } from '@/services/event-bus';
 import { useRouter } from 'expo-router';
 import { toast } from '@/lib/feedback';
 import { formatDate } from '@/lib/datetime';
+import { formatTransitTime } from '@/lib/transit-time';
+import { queryKeys } from '@/lib/query-keys';
+import { sectionState } from '@/lib/query-state';
+import { apiService } from '@/services/api';
+import { useQuery } from '@tanstack/react-query';
 import { formatINR } from '@/lib/money';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import type { BudgetTrip } from '@/app/budget-trips';
@@ -56,6 +62,19 @@ export default function TripDetailModal({
   const [startCity, setStartCity] = useState('');
   const [endCity, setEndCity] = useState('');
   const [joinedMsg, setJoinedMsg] = useState(false);
+
+  // The list payload this modal is opened with is deliberately lean — it
+  // has no description, route timeline or packing checklist. Those live on
+  // the public detail endpoint, and they are exactly what someone deciding
+  // whether to join needs to read before committing, so they are fetched
+  // as soon as the sheet opens.
+  const detailQuery = useQuery({
+    queryKey: queryKeys.trip(trip?.id ?? ''),
+    queryFn: async () => apiService.getTripDetail(trip!.id),
+    enabled: visible && !!trip?.id,
+  });
+  const detail = detailQuery.data ?? null;
+  const detailState = sectionState(detailQuery, detail != null);
 
   if (!trip) return null;
 
@@ -227,16 +246,106 @@ export default function TripDetailModal({
                   </View>
                 </View>
 
-                {/* Itinerary */}
+                {/* The organizer's own summary of the trip. */}
+                {detail?.description ? (
+                  <>
+                    <Text style={[styles.formSectionTitle, { marginTop: 14 }]}>{t('tripDetailModal.aboutThisTrip')}</Text>
+                    <Text style={styles.tripDescriptionText}>{detail.description}</Text>
+                  </>
+                ) : null}
+
+                {/* Itinerary — the organizer's real timeline when they built
+                    one, with how long the group stays at each stop, how it
+                    travels to reach it and what it does there. Falls back to
+                    the plain city list for trips created before the Timeline
+                    tab was wired to the backend, rather than inventing the
+                    detail those trips never had. */}
                 <Text style={[styles.formSectionTitle, { marginTop: 14 }]}>{t('tripDetailModal.itineraryPath')}</Text>
-                <View style={styles.modalItineraryRow}>
-                  {trip.cities && trip.cities.map((city: string, i: number) => (
-                    <View key={city} style={styles.itineraryCityCard}>
-                      <Text style={styles.itineraryCityText}>{city}</Text>
-                      <Text style={{ fontSize: 12, color: C.textSecondary }}>{t('tripDetailModal.cityNumber', { number: i + 1 })}</Text>
+
+                {detailState.kind === 'loading' ? (
+                  <View style={styles.timelineStateWrap}>
+                    <ActivityIndicator size="small" color={C.accent} />
+                  </View>
+                ) : detailState.kind === 'error' ? (
+                  <View style={styles.timelineStateWrap}>
+                    <Text style={styles.timelineStateText}>{t('tripDetailModal.couldNotLoadItinerary')}</Text>
+                    <TouchableOpacity
+                      onPress={() => void detailQuery.refetch()}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('common.retry')}
+                      style={styles.timelineRetryBtn}
+                    >
+                      <Text style={styles.timelineRetryText}>{t('common.retry')}</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : detail && detail.timeline.length > 0 ? (
+                  <View style={styles.timelineList}>
+                    {detail.timeline.map((stop, i) => {
+                      const transit = formatTransitTime(stop.transitTimeMinutes);
+                      const modeLabel = stop.transitMode
+                        ? t(`tripDetailModal.mode${stop.transitMode}`)
+                        : null;
+                      return (
+                        <View key={`${stop.city}-${stop.order}`}>
+                          {/* The leg travelled to reach this stop. Absent on
+                              the first — nothing precedes it. */}
+                          {i > 0 && (transit || modeLabel) ? (
+                            <View style={styles.timelineTransitRow}>
+                              <View style={styles.timelineTransitLine} />
+                              <Navigation size={11} color={C.textSecondary} />
+                              <Text style={styles.timelineTransitText}>
+                                {[modeLabel, transit].filter(Boolean).join(' · ')}
+                              </Text>
+                            </View>
+                          ) : null}
+
+                          <View style={styles.timelineStopCard}>
+                            <View style={styles.timelineStopHeader}>
+                              <View style={styles.timelineStopIndex}>
+                                <Text style={styles.timelineStopIndexText}>{stop.order + 1}</Text>
+                              </View>
+                              <Text style={styles.timelineStopCity}>{stop.city}</Text>
+                              {stop.stayDays !== null && stop.stayDays > 0 ? (
+                                <View style={styles.timelineStayPill}>
+                                  <Text style={styles.timelineStayText}>
+                                    {t('tripDetailModal.nightsCount', { count: stop.stayDays })}
+                                  </Text>
+                                </View>
+                              ) : null}
+                            </View>
+                            {stop.activities ? (
+                              <Text style={styles.timelineStopActivities}>{stop.activities}</Text>
+                            ) : null}
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                ) : (
+                  <View style={styles.modalItineraryRow}>
+                    {trip.cities && trip.cities.map((city: string, i: number) => (
+                      <View key={city} style={styles.itineraryCityCard}>
+                        <Text style={styles.itineraryCityText}>{city}</Text>
+                        <Text style={{ fontSize: 12, color: C.textSecondary }}>{t('tripDetailModal.cityNumber', { number: i + 1 })}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {/* What the organizer expects travellers to bring. */}
+                {detail && detail.checklist.length > 0 ? (
+                  <>
+                    <Text style={[styles.formSectionTitle, { marginTop: 14 }]}>{t('tripDetailModal.whatToPack')}</Text>
+                    <View style={styles.packListWrap}>
+                      {detail.checklist.map((item) => (
+                        <View key={item.id} style={styles.packItemRow}>
+                          <CheckCircle size={13} color={C.greenText} />
+                          <Text style={styles.packItemText}>{item.label}</Text>
+                        </View>
+                      ))}
                     </View>
-                  ))}
-                </View>
+                  </>
+                ) : null}
 
                 {/* Assembly / Meeting Point Details */}
                 <Text style={[styles.formSectionTitle, { marginTop: 14 }]}>{t('tripDetailModal.meetingAssemblyPoint')}</Text>
@@ -601,6 +710,121 @@ const styles = StyleSheet.create({
     gap: 8,
     flexWrap: 'wrap',
     marginBottom: 20,
+  },
+  tripDescriptionText: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: C.textSec,
+    marginTop: 6,
+  },
+  timelineStateWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+    gap: 8,
+    marginBottom: 20,
+  },
+  timelineStateText: {
+    fontSize: 13,
+    color: C.textSec,
+    textAlign: 'center',
+  },
+  timelineRetryBtn: {
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
+  timelineRetryText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: C.blueText,
+  },
+  timelineList: {
+    marginTop: 8,
+    marginBottom: 20,
+  },
+  // The leg travelled to reach the stop below it.
+  timelineTransitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingLeft: 11,
+    paddingVertical: 4,
+  },
+  timelineTransitLine: {
+    width: 2,
+    height: 18,
+    borderRadius: 1,
+    backgroundColor: C.border,
+    marginRight: 4,
+  },
+  timelineTransitText: {
+    fontSize: 12,
+    color: C.textSec,
+    fontWeight: '600',
+  },
+  timelineStopCard: {
+    backgroundColor: C.cardAlt,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 10,
+  },
+  timelineStopHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  timelineStopIndex: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: C.blue,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  timelineStopIndexText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: C.white,
+  },
+  timelineStopCity: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '700',
+    color: C.text,
+  },
+  timelineStayPill: {
+    backgroundColor: C.blueGlow,
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  timelineStayText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: C.blueText,
+  },
+  timelineStopActivities: {
+    fontSize: 12.5,
+    lineHeight: 18,
+    color: C.textSec,
+    marginTop: 6,
+  },
+  packListWrap: {
+    marginTop: 8,
+    marginBottom: 20,
+    gap: 7,
+  },
+  packItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  packItemText: {
+    flex: 1,
+    fontSize: 13,
+    color: C.textSec,
   },
   itineraryCityCard: {
     padding: 8,

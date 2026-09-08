@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import prisma from '../../services/db';
+import { requireUserId } from '../../lib/auth-context';
 import { cacheDelete, cached } from '../../lib/cache';
 import { logger } from '../../lib/logger';
 
@@ -27,6 +28,88 @@ router.get('/', async (req, res) => {
   } catch (err) {
     logger.error('[Destinations] DB error:', err);
     res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve destinations' } });
+  }
+});
+
+// ── Saved destinations ──────────────────────────────────────────────────
+//
+// The profile screen's "Saved Destinations" list. It used to read
+// `profile.savedPlaces`, a key that existed only in the client's own
+// UserProfile type — the server's updateProfile schema never had it, so Zod
+// stripped it and returned `ok: true` while persisting nothing. Nothing in
+// the app could add to the list either, so it was permanently empty and its
+// delete button wrote to a value the server discarded.
+//
+// These three routes are all authenticated: a bookmark list is private to
+// the user who made it, unlike the destination catalogue itself.
+
+// Declared before `/:id` on purpose — Express matches in order, and
+// `/destinations/saved` would otherwise be read as a destination whose id
+// is the literal string "saved".
+router.get('/saved', async (req, res) => {
+  const userId = requireUserId(req);
+  try {
+    const saved = await prisma.savedDestination.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      include: { destination: true },
+    });
+    return res.status(200).json({
+      ok: true,
+      data: saved.map((row) => ({
+        id: row.destination.id,
+        name: row.destination.name,
+        tags: row.destination.tags,
+        rating: row.destination.rating,
+        image: row.destination.image,
+        savedAt: row.createdAt.toISOString(),
+      })),
+    });
+  } catch (err) {
+    logger.error('[Destinations] List saved error:', err);
+    return res
+      .status(500)
+      .json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to load your saved destinations' } });
+  }
+});
+
+router.put('/:id/saved', async (req, res) => {
+  const userId = requireUserId(req);
+  const { id } = req.params;
+  try {
+    const destination = await prisma.destination.findUnique({ where: { id }, select: { id: true } });
+    if (!destination) {
+      return res
+        .status(404)
+        .json({ ok: false, error: { code: 'DESTINATION_NOT_FOUND', message: 'Destination not found' } });
+    }
+    // Idempotent: saving something already saved is a success, not a 409.
+    // The unique index makes the upsert the whole concurrency story.
+    await prisma.savedDestination.upsert({
+      where: { userId_destinationId: { userId, destinationId: id } },
+      create: { userId, destinationId: id },
+      update: {},
+    });
+    return res.status(200).json({ ok: true, data: { destinationId: id, saved: true } });
+  } catch (err) {
+    logger.error('[Destinations] Save error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to save the destination' } });
+  }
+});
+
+router.delete('/:id/saved', async (req, res) => {
+  const userId = requireUserId(req);
+  const { id } = req.params;
+  try {
+    // deleteMany, not delete: removing a bookmark that is already gone is
+    // the outcome the caller asked for, not a 404 to handle.
+    await prisma.savedDestination.deleteMany({ where: { userId, destinationId: id } });
+    return res.status(200).json({ ok: true, data: { destinationId: id, saved: false } });
+  } catch (err) {
+    logger.error('[Destinations] Unsave error:', err);
+    return res
+      .status(500)
+      .json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to remove the saved destination' } });
   }
 });
 

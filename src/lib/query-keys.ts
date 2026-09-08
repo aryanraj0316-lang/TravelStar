@@ -45,6 +45,7 @@ export const queryKeys = {
 
   destinations: () => ['destinations'] as const,
   destination: (id: string) => ['destinations', id] as const,
+  savedDestinations: () => ['destinations', 'saved'] as const,
   weatherLocations: () => ['weather-locations'] as const,
   liveWeather: (lat: number, lon: number) => ['weather-locations', 'live', lat, lon] as const,
   alerts: () => ['alerts'] as const,

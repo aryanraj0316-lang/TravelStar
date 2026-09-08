@@ -7,7 +7,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import { useIsFocused, useLocalSearchParams, useNavigation, useRouter, type ErrorBoundaryProps } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { apiService } from '@/services/api';
+import { apiService, type TransitMode } from '@/services/api';
+import { formatTransitTime } from '@/lib/transit-time';
 import { RouteErrorFallback } from '@/components/route-error-fallback';
 import { eventBus } from '@/services/event-bus';
 import AlertCircle from 'lucide-react-native/icons/circle-alert';
@@ -31,7 +32,6 @@ import Check from 'lucide-react-native/icons/check';
 import User from 'lucide-react-native/icons/user';
 import Users from 'lucide-react-native/icons/users';
 import X from 'lucide-react-native/icons/x';
-import Zap from 'lucide-react-native/icons/zap';
 import React, { useEffect, useMemo, useRef, useState, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -62,7 +62,25 @@ import { WebView } from 'react-native-webview';
 // to live here — the same four places on every user's map, forever, with
 // nothing behind them. Both now come from the API (GET /map/pins,
 // GET /map/trips/:id/route) and are injected into Leaflet at runtime.
-type RoutePoint = { latitude: number; longitude: number; name: string };
+// A plotted stop on a trip's route. Beyond the coordinates it carries the
+// organizer's timeline for that stop — how long the group stays, which day
+// of the trip it arrives and leaves, how it travelled to get there and what
+// it does while there — so the map shows the whole plan rather than just
+// pins joined by a line. All of it is null for trips created before the
+// Timeline tab was wired to the backend; the UI omits the chips in that
+// case instead of inventing values.
+type RoutePoint = {
+  latitude: number;
+  longitude: number;
+  name: string;
+  order?: number;
+  stayDays?: number | null;
+  arrivalDay?: number | null;
+  departureDay?: number | null;
+  transitTimeMinutes?: number | null;
+  transitMode?: TransitMode | null;
+  activities?: string;
+};
 type MapFilter = 'ALL' | 'GUIDES' | 'GROUPS' | 'TOURISTS' | 'ATTRACTIONS' | 'NONE';
 
 const TILE_LAYERS: Record<string, { url: string; subdomains: string }> = {
@@ -85,9 +103,16 @@ const TILE_LAYERS: Record<string, { url: string; subdomains: string }> = {
 };
 
 // Build Leaflet HTML with premium markers
+/** A RoutePoint plus the timeline labels the Leaflet document renders. */
+type MapRoutePoint = RoutePoint & {
+  dayLabel?: string;
+  stayLabel?: string;
+  transitLabel?: string;
+};
+
 type LeafletStrings = { navigate: string; youAreHere: string; liveGpsLocation: string };
 
-function buildMapHTML(tileKey: string, routeCoords: RoutePoint[], strings: LeafletStrings) {
+function buildMapHTML(tileKey: string, routeCoords: MapRoutePoint[], strings: LeafletStrings) {
   const tile = TILE_LAYERS[tileKey] || TILE_LAYERS.roadmap;
 
   return `
@@ -397,6 +422,17 @@ function buildMapHTML(tileKey: string, routeCoords: RoutePoint[], strings: Leafl
         }
       }
 
+      // Stop names and activity text are organizer-authored free text, so
+      // they are escaped before going anywhere near innerHTML.
+      function escapeHtml(value) {
+        return String(value == null ? '' : value)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
+
       // Checkpoint markers HTML Badges
       var routeCities = ${JSON.stringify(routeCoords)};
       routeCities.forEach(function(city, idx) {
@@ -441,7 +477,13 @@ function buildMapHTML(tileKey: string, routeCoords: RoutePoint[], strings: Leafl
             'align-items: center; ' +
             'justify-content: center; ' +
           '">' + (idx + 1) + '</span>' +
-          '<span>' + city.name + '</span>' +
+          '<span>' + escapeHtml(city.name) + '</span>' +
+          // The organizer's stay for this stop, e.g. "Day 3-5". Rendered
+          // only when the trip actually has a timeline — a trip without one
+          // shows the plain name rather than an invented day range.
+          (city.dayLabel
+            ? '<span style="opacity:0.75; font-weight:500;">' + city.dayLabel + '</span>'
+            : '') +
           '</div>';
 
         var checkpointIcon = L.divIcon({
@@ -452,6 +494,30 @@ function buildMapHTML(tileKey: string, routeCoords: RoutePoint[], strings: Leafl
         });
 
         var marker = L.marker([city.latitude, city.longitude], { icon: checkpointIcon, zIndexOffset: 1000 }).addTo(map);
+
+        // Everything the organizer planned for this stop, on tap-and-hold /
+        // hover: the leg travelled to reach it, how long the group stays,
+        // and what it does there. Each line is omitted when the trip has no
+        // such detail rather than filled with a placeholder.
+        var tipLines = [];
+        if (city.transitLabel) {
+          tipLines.push('<div style="opacity:0.8;">→ ' + escapeHtml(city.transitLabel) + '</div>');
+        }
+        if (city.stayLabel) {
+          tipLines.push('<div style="opacity:0.8;">' + escapeHtml(city.stayLabel) + '</div>');
+        }
+        if (city.activities) {
+          tipLines.push('<div style="margin-top:3px;">' + escapeHtml(city.activities) + '</div>');
+        }
+        if (tipLines.length > 0) {
+          marker.bindTooltip(
+            '<div style="max-width:210px; font-size:11px; line-height:1.45;">' +
+              '<div style="font-weight:700; margin-bottom:2px;">' + escapeHtml(city.name) + '</div>' +
+              tipLines.join('') +
+            '</div>',
+            { direction: 'top', offset: [0, -14], opacity: 1 }
+          );
+        }
 
         marker.on('click', function() {
           // For start city → leg 0, for end city → last leg, otherwise → leg idx
@@ -691,11 +757,15 @@ const getLegDetails = (startIndex: number, coords: RoutePoint[]) => {
   // and the UI labels it as straight-line rather than implying road km.
   const distance = calculateDistance(start.latitude, start.longitude, end.latitude, end.longitude);
 
+  // Transit is stored against the stop it leads INTO, so the leg from
+  // `start` to `end` is described by `end`'s transit fields.
   return {
     legNumber: startIndex + 1,
     startName: start.name,
     endName: end.name,
     distance: `${Math.round(distance)} km`,
+    transitMode: end.transitMode ?? null,
+    transitTime: formatTransitTime(end.transitTimeMinutes),
     start,
     end,
   };
@@ -857,6 +927,36 @@ function MapScreen() {
     [tripRoute]
   );
 
+  // The same stops, with the organizer's timeline pre-rendered into display
+  // strings. Formatting happens here, in React, because the Leaflet document
+  // is a plain string of HTML with no access to i18n or the duration
+  // formatter — passing it ready-made keeps one set of rules for the map,
+  // the trip sheet and the create screen. Every label is undefined (not a
+  // placeholder) when the trip carries no timeline, and the marker omits it.
+  const mapRoutePoints = useMemo(
+    () =>
+      activeRouteCoords.map((point) => {
+        const transitTime = formatTransitTime(point.transitTimeMinutes);
+        const modeLabel = point.transitMode ? t(`map.mode${point.transitMode}`) : null;
+        const transitLabel = [modeLabel, transitTime].filter(Boolean).join(' · ');
+        return {
+          ...point,
+          dayLabel:
+            point.arrivalDay != null && point.departureDay != null
+              ? point.arrivalDay === point.departureDay
+                ? t('map.dayNumber', { day: point.arrivalDay })
+                : t('map.dayRange', { from: point.arrivalDay, to: point.departureDay })
+              : undefined,
+          stayLabel:
+            point.stayDays != null && point.stayDays > 0
+              ? t('map.nightsCount', { count: point.stayDays })
+              : undefined,
+          transitLabel: transitLabel || undefined,
+        };
+      }),
+    [activeRouteCoords, t],
+  );
+
   // SOS pulse animation
   useEffect(() => {
     Animated.loop(
@@ -944,8 +1044,29 @@ function MapScreen() {
   const toCity = activeTrip ? activeTrip.cities[activeTrip.cities.length - 1] : 'Vrindavan';
   const stopCount = activeRouteCoords.length;
   const activeSegmentText = activeTrip ? t('map.routeWithCities', { count: stopCount }) : t('map.activeSegmentFallback');
-  const distanceVal = activeTrip ? activeTrip.cities.length * 115 : 145;
-  const nextStopName = activeTrip ? (activeTrip.cities[1] || activeTrip.cities[0]) : 'Mathura';
+  // Straight-line distance actually summed over the plotted stops, and the
+  // organizer's own total travel time. Both used to be invented: the
+  // distance was `cities.length * 115` (a per-city constant, not a
+  // measurement) and the panel also showed a fixed "65 km/h" for every trip
+  // as if it were that trip's speed. Nothing here is shown unless it is
+  // derived from real coordinates or the real timeline.
+  const routeDistanceKm = useMemo(() => {
+    if (activeRouteCoords.length < 2) return null;
+    let total = 0;
+    for (let i = 0; i < activeRouteCoords.length - 1; i += 1) {
+      const a = activeRouteCoords[i];
+      const b = activeRouteCoords[i + 1];
+      total += calculateDistance(a.latitude, a.longitude, b.latitude, b.longitude);
+    }
+    return Math.round(total);
+  }, [activeRouteCoords]);
+
+  const totalTransitLabel = useMemo(() => {
+    const minutes = activeRouteCoords.reduce((sum, p) => sum + (p.transitTimeMinutes ?? 0), 0);
+    return formatTransitTime(minutes);
+  }, [activeRouteCoords]);
+
+  const nextStopName = activeTrip ? (activeTrip.cities[1] || activeTrip.cities[0]) : null;
   const isMyTrip = isLoggedIn && !!(activeTrip && profile && profile.id && activeTrip.creatorId && activeTrip.creatorId === profile.id);
 
   const webViewSource = useMemo(() => {
@@ -954,8 +1075,8 @@ function MapScreen() {
       youAreHere: t('map.leafletYouAreHere'),
       liveGpsLocation: t('map.leafletLiveGpsLocation'),
     };
-    return { html: buildMapHTML(tileLayer, activeRouteCoords, leafletStrings) };
-  }, [tileLayer, activeRouteCoords, t]);
+    return { html: buildMapHTML(tileLayer, mapRoutePoints, leafletStrings) };
+  }, [tileLayer, mapRoutePoints, t]);
 
   return (
     <View style={styles.screenRoot}>
@@ -1304,23 +1425,35 @@ function MapScreen() {
                     />
                   </View>
 
+                  {/* Only stats the data actually supports. A trip whose
+                      cities could not be plotted has no distance, and one
+                      without a timeline has no travel time — those cells are
+                      dropped rather than filled with a plausible number. */}
                   <View style={styles.bottomStatsRow}>
-                    <View style={styles.bottomStatItem}>
-                      <Clock size={11} color="#8B949E" />
-                      <Text style={styles.bottomStatLabel}>{t('map.distance')}</Text>
-                      <Text style={styles.bottomStatVal}>{distanceVal} km</Text>
-                    </View>
-                    <View style={styles.bottomStatDivider} />
-                    <View style={styles.bottomStatItem}>
-                      <Zap size={11} color="#8B949E" />
-                      <Text style={styles.bottomStatLabel}>{t('map.speed')}</Text>
-                      <Text style={styles.bottomStatVal}>65 km/h</Text>
-                    </View>
-                    <View style={styles.bottomStatDivider} />
+                    {routeDistanceKm !== null ? (
+                      <>
+                        <View style={styles.bottomStatItem}>
+                          <Navigation size={11} color="#8B949E" />
+                          <Text style={styles.bottomStatLabel}>{t('map.straightLineDistance')}</Text>
+                          <Text style={styles.bottomStatVal}>{routeDistanceKm} km</Text>
+                        </View>
+                        <View style={styles.bottomStatDivider} />
+                      </>
+                    ) : null}
+                    {totalTransitLabel ? (
+                      <>
+                        <View style={styles.bottomStatItem}>
+                          <Clock size={11} color="#8B949E" />
+                          <Text style={styles.bottomStatLabel}>{t('map.totalTravelTime')}</Text>
+                          <Text style={styles.bottomStatVal}>{totalTransitLabel}</Text>
+                        </View>
+                        <View style={styles.bottomStatDivider} />
+                      </>
+                    ) : null}
                     <View style={styles.bottomStatItem}>
                       <Navigation size={11} color="#8B949E" />
                       <Text style={styles.bottomStatLabel}>{t('map.nextStop')}</Text>
-                      <Text style={styles.bottomStatVal}>{nextStopName}</Text>
+                      <Text style={styles.bottomStatVal}>{nextStopName ?? t('map.notAvailableShort')}</Text>
                     </View>
                   </View>
 

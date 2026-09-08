@@ -9,7 +9,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useNavigation, type ErrorBoundaryProps } from 'expo-router';
 import { RouteErrorFallback } from '@/components/route-error-fallback';
 import { BlurView } from 'expo-blur';
-import BadgePercent from 'lucide-react-native/icons/badge-percent';
 import Bell from 'lucide-react-native/icons/bell';
 import Bike from 'lucide-react-native/icons/bike';
 import Bus from 'lucide-react-native/icons/bus';
@@ -18,7 +17,6 @@ import Check from 'lucide-react-native/icons/check';
 import ChevronRight from 'lucide-react-native/icons/chevron-right';
 import Clock from 'lucide-react-native/icons/clock';
 import Grid2x2 from 'lucide-react-native/icons/grid-2x2';
-import Headphones from 'lucide-react-native/icons/headphones';
 import Heart from 'lucide-react-native/icons/heart';
 import HomeIcon from 'lucide-react-native/icons/house';
 import MapPin from 'lucide-react-native/icons/map-pin';
@@ -971,39 +969,7 @@ function SearchScreen() {
                 />
               </View>
 
-              {/* ─── TRUST BADGES ──────────────────────────────────── */}
-              <View style={styles.trustRow}>
-                <View style={styles.trustItem}>
-                  <View style={[styles.trustIcon, { backgroundColor: C.accentLight }]}>
-                    <Shield size={16} color={C.accent} />
-                  </View>
-                  <Text style={[styles.trustLabel, { color: C.text }]}>{t('search.trustVerifiedRoutes')}</Text>
-                  <Text style={[styles.trustSub, { color: C.textSecondary }]}>{t('search.trustVerifiedRoutesSub')}</Text>
-                </View>
-                <View style={styles.trustItem}>
-                  <View style={[styles.trustIcon, { backgroundColor: 'rgba(46, 204, 113, 0.08)' }]}>
-                    <UserCheck size={16} color="#2ECC71" />
-                  </View>
-                  <Text style={[styles.trustLabel, { color: C.text }]}>{t('search.trustExpertLeaders')}</Text>
-                  <Text style={[styles.trustSub, { color: C.textSecondary }]}>{t('search.trustExpertLeadersSub')}</Text>
-                </View>
-                <View style={styles.trustItem}>
-                  <View style={[styles.trustIcon, { backgroundColor: 'rgba(255, 204, 0, 0.08)' }]}>
-                    <BadgePercent size={16} color="#FFCC00" />
-                  </View>
-                  <Text style={[styles.trustLabel, { color: C.text }]}>{t('search.trustBestPrice')}</Text>
-                  <Text style={[styles.trustSub, { color: C.textSecondary }]}>{t('search.trustBestPriceSub')}</Text>
-                </View>
-                <View style={styles.trustItem}>
-                  <View style={[styles.trustIcon, { backgroundColor: 'rgba(108, 92, 231, 0.08)' }]}>
-                    <Headphones size={16} color="#6C5CE7" />
-                  </View>
-                  <Text style={[styles.trustLabel, { color: C.text }]}>{t('search.trustSupport')}</Text>
-                  <Text style={[styles.trustSub, { color: C.textSecondary }]}>{t('search.trustSupportSub')}</Text>
-                </View>
-              </View>
-
-              {/* Padding at the bottom for safety */}
+              {/* Padding at the bottom for tab bar safety */}
               <View style={{ height: 100 }} />
             </>
           }
@@ -1680,34 +1646,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
 
-  // Bottom Trust badges
-  trustRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  trustItem: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 4,
-  },
-  trustIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 2,
-  },
-  trustLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  trustSub: {
-    fontSize: 12,
-    textAlign: 'center',
-  },
 
   // Modal styling
   modalOverlay: {

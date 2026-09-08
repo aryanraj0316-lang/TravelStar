@@ -14,6 +14,9 @@
 // `useConfirm` stays a hook because its call sites are all in components.
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import UserCheck from 'lucide-react-native/icons/user-check';
+import CircleAlert from 'lucide-react-native/icons/circle-alert';
+import Check from 'lucide-react-native/icons/check';
 import { ApiError } from '@/services/api';
 import { logger } from '@/lib/logger';
 import { C, MIN_TOUCH_TARGET, fontSize, radii, space } from '@/theme/tokens';
@@ -234,6 +237,36 @@ export const FeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         <Pressable style={styles.overlay} onPress={dismiss} accessibilityLabel="Dismiss">
           {/* Stops a tap inside the card from reaching the backdrop. */}
           <Pressable style={styles.dialog} onPress={() => {}} accessibilityViewIsModal>
+            {(() => {
+              const isDestructive = dialog?.kind === 'confirm' && dialog.options.destructive;
+              const titleLower = options?.title?.toLowerCase() || '';
+              const isAccountOrWelcome =
+                titleLower.includes('welcome') ||
+                titleLower.includes('signed in') ||
+                titleLower.includes('account');
+
+              return (
+                <View
+                  style={[
+                    styles.dialogIconWrap,
+                    isDestructive
+                      ? styles.dialogIconWrapDestructive
+                      : isAccountOrWelcome
+                      ? styles.dialogIconWrapSuccess
+                      : styles.dialogIconWrapDefault,
+                  ]}
+                >
+                  {isDestructive ? (
+                    <CircleAlert size={28} color="#DC2626" strokeWidth={2.2} />
+                  ) : isAccountOrWelcome ? (
+                    <UserCheck size={28} color="#0B63E5" strokeWidth={2.2} />
+                  ) : (
+                    <Check size={28} color="#0B63E5" strokeWidth={2.5} />
+                  )}
+                </View>
+              );
+            })()}
+
             <Text style={styles.dialogTitle} accessibilityRole="header">
               {options?.title}
             </Text>
@@ -255,18 +288,20 @@ export const FeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
             <View style={styles.dialogActions}>
               {cancelLabel !== null && (
-                <Pressable style={styles.dialogButton} onPress={dismiss} accessibilityRole="button">
-                  <Text style={styles.dialogButtonText}>{cancelLabel}</Text>
+                <Pressable style={styles.dialogButtonCancel} onPress={dismiss} accessibilityRole="button">
+                  <Text style={styles.dialogButtonCancelText}>{cancelLabel}</Text>
                 </Pressable>
               )}
-              <Pressable style={styles.dialogButton} onPress={accept} accessibilityRole="button">
-                <Text
-                  style={[
-                    styles.dialogButtonText,
-                    styles.dialogButtonPrimary,
-                    dialog?.kind === 'confirm' && dialog.options.destructive ? styles.dialogButtonDestructive : null,
-                  ]}
-                >
+              <Pressable
+                style={[
+                  styles.dialogButtonConfirm,
+                  dialog?.kind === 'confirm' && dialog.options.destructive ? styles.dialogButtonDestructive : null,
+                  cancelLabel === null ? styles.dialogButtonSingle : null,
+                ]}
+                onPress={accept}
+                accessibilityRole="button"
+              >
+                <Text style={styles.dialogButtonConfirmText}>
                   {confirmLabel}
                 </Text>
               </Pressable>
@@ -305,31 +340,65 @@ const styles = StyleSheet.create({
   },
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: 'rgba(15, 23, 42, 0.62)',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: space[6],
+    padding: space[5],
   },
   dialog: {
-    backgroundColor: C.card,
-    borderRadius: radii.lg,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: C.border,
-    padding: space[5],
+    borderColor: '#E2E8F0',
+    paddingVertical: 24,
+    paddingHorizontal: 22,
     width: '100%',
-    maxWidth: 400,
+    maxWidth: 380,
+    alignItems: 'center',
+    shadowColor: '#0B1E3F',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.2,
+    shadowRadius: 28,
+    elevation: 10,
+  },
+  dialogIconWrap: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  dialogIconWrapSuccess: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1.5,
+    borderColor: '#BFDBFE',
+  },
+  dialogIconWrapDestructive: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1.5,
+    borderColor: '#FECACA',
+  },
+  dialogIconWrapDefault: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1.5,
+    borderColor: '#BFDBFE',
   },
   dialogTitle: {
-    color: C.text,
-    fontSize: fontSize.md,
-    fontWeight: '700',
-    marginBottom: space[2],
+    color: '#0F172A',
+    fontSize: 18,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 6,
+    letterSpacing: -0.2,
   },
   dialogMessage: {
-    color: C.textSec,
-    fontSize: fontSize.sm,
-    lineHeight: 20,
-    marginBottom: space[5],
+    color: '#475569',
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: 'center',
+    marginBottom: 20,
+    paddingHorizontal: 4,
   },
   promptInput: {
     backgroundColor: C.bg,
@@ -341,30 +410,53 @@ const styles = StyleSheet.create({
     paddingHorizontal: space[3],
     minHeight: MIN_TOUCH_TARGET,
     marginBottom: space[5],
+    width: '100%',
   },
   dialogActions: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
     alignItems: 'center',
-    gap: space[4],
+    justifyContent: 'center',
+    gap: 10,
+    width: '100%',
   },
-  dialogButton: {
-    // §9.3: dialog actions were 8pt-tall text targets.
-    minHeight: MIN_TOUCH_TARGET,
-    minWidth: MIN_TOUCH_TARGET,
-    paddingHorizontal: space[3],
+  dialogButtonCancel: {
+    flex: 1,
+    height: 44,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  dialogButtonText: {
-    color: C.textSec,
-    fontSize: fontSize.base,
+  dialogButtonCancelText: {
+    color: '#475569',
+    fontSize: 14,
     fontWeight: '600',
   },
-  dialogButtonPrimary: {
-    color: C.blueText,
+  dialogButtonConfirm: {
+    flex: 1,
+    height: 44,
+    backgroundColor: '#0B63E5',
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#0B63E5',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  dialogButtonSingle: {
+    flex: 0,
+    width: '100%',
   },
   dialogButtonDestructive: {
-    color: C.redText,
+    backgroundColor: '#DC2626',
+    shadowColor: '#DC2626',
+  },
+  dialogButtonConfirmText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
 });

@@ -267,45 +267,47 @@ export default function GroupOrganizerScreen() {
       return;
     }
 
-    const globalTripId = `trip-${Date.now()}`;
+    // The trip is created on the server first and its real, database-issued
+    // id is what the local tour row carries. This used to mint
+    // `trip-${Date.now()}` client-side and use it for both — the server
+    // rejected it as a non-UUID (so the trip was never actually created)
+    // and the local row pointed at an id no trip ever had.
+    void (async () => {
+      const created = await addTrip({
+        name: newGroupName.trim(),
+        cities: [newDest.trim()],
+        startDate: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        endDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        budget: parseFloat(newPrice),
+        totalSeats: parseInt(newMaxSize),
+        meetingPoint: t('groupOrganizer.organizerMeetingPoint'),
+        guideIncluded: true,
+        foodIncluded: true,
+        hotelIncluded: false,
+        cabIncluded: false,
+        privacy: 'PUBLIC',
+      });
+      if (!created) return; // addTrip already surfaced the error
 
-    const newTour: ActiveTour = {
-      id: globalTripId,
-      groupName: newGroupName.trim(),
-      destination: newDest.trim(),
-      durationDays: parseInt(newDuration),
-      maxSize: parseInt(newMaxSize),
-      currentSize: 1, // Organizer starts inside
-      price: parseFloat(newPrice),
-      status: 'OPEN',
-    };
-
-    const newGlobalTrip = {
-      id: globalTripId,
-      name: newGroupName.trim(),
-      creator: `${profile.name} (Organizer)`,
-      cities: [newDest.trim()],
-      startDate: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      endDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      budget: parseFloat(newPrice),
-      availableSeats: parseInt(newMaxSize) - 1,
-      totalSeats: parseInt(newMaxSize),
-      meetingPoint: 'Organizer Meeting Point',
-      guideIncluded: true,
-      foodIncluded: true,
-      privacy: 'PUBLIC' as const,
-      membersCount: 1,
-    };
-
-    addTrip(newGlobalTrip);
-    setTours([...tours, newTour]);
-    setNewGroupName('');
-    setNewDest('');
-    setNewDuration('');
-    setNewMaxSize('');
-    setNewPrice('');
-    setShowCreateModal(false);
-    toast(t('groupOrganizer.tourCreated', { name: newTour.groupName }), 'success');
+      const newTour: ActiveTour = {
+        id: created.id,
+        groupName: created.name,
+        destination: newDest.trim(),
+        durationDays: parseInt(newDuration),
+        maxSize: created.totalSeats,
+        currentSize: 1, // Organizer starts inside
+        price: parseFloat(newPrice),
+        status: 'OPEN',
+      };
+      setTours((prev) => [...prev, newTour]);
+      setNewGroupName('');
+      setNewDest('');
+      setNewDuration('');
+      setNewMaxSize('');
+      setNewPrice('');
+      setShowCreateModal(false);
+      toast(t('groupOrganizer.tourCreated', { name: newTour.groupName }), 'success');
+    })();
   };
 
   const handleApproveRequest = async (reqId: string, userName: string, avatar: string) => {

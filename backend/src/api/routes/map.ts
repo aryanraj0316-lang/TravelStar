@@ -206,16 +206,71 @@ router.get('/trips/:tripId/route', async (req, res) => {
   try {
     const trip = await prisma.trip.findUnique({
       where: { id: parsed.data.tripId },
-      select: { id: true, name: true, cities: true, meetingPoint: true },
+      select: {
+        id: true,
+        name: true,
+        cities: true,
+        meetingPoint: true,
+        startDate: true,
+        timeline: { orderBy: { order: 'asc' } },
+      },
     });
     if (!trip) {
       return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found' } });
     }
 
-    const points = trip.cities
-      .map((city) => ({ city, coords: coordsForCity(city) }))
-      .filter((p): p is { city: string; coords: { lat: number; lng: number } } => p.coords !== null)
-      .map((p) => ({ name: p.city, latitude: p.coords.lat, longitude: p.coords.lng }));
+    // Prefer the organizer's own timeline when the trip has one: it carries
+    // the stay length, transit leg and planned activities for each stop,
+    // and its own stored coordinates. Fall back to the plain `cities` array
+    // for trips created before the Timeline tab was wired to the backend.
+    const orderedStops =
+      trip.timeline.length > 0
+        ? trip.timeline.map((s) => ({
+            city: s.city,
+            stayDays: s.stayDays,
+            transitTimeMinutes: s.transitTimeMinutes,
+            transitMode: s.transitMode,
+            activities: s.activities,
+            // A stop stored without coordinates still gets one last chance
+            // from the city lookup — but never an invented one.
+            coords:
+              s.latitude !== null && s.longitude !== null
+                ? { lat: s.latitude, lng: s.longitude }
+                : coordsForCity(s.city),
+          }))
+        : trip.cities.map((city) => ({
+            city,
+            stayDays: null,
+            transitTimeMinutes: null,
+            transitMode: null,
+            activities: '',
+            coords: coordsForCity(city),
+          }));
+
+    // Day 1 of the trip is the arrival day at the first stop; each stop's
+    // stay pushes the next one out. Computed here so every client shows the
+    // same dates rather than each re-deriving them.
+    let dayCursor = 1;
+    const points = orderedStops
+      .map((stop) => {
+        const arrivalDay = dayCursor;
+        const stay = stop.stayDays ?? 0;
+        dayCursor += stay;
+        return { ...stop, arrivalDay, departureDay: arrivalDay + Math.max(0, stay - 1) };
+      })
+      .filter((p) => p.coords !== null)
+      .map((p, index) => ({
+        name: p.city,
+        latitude: p.coords!.lat,
+        longitude: p.coords!.lng,
+        order: index,
+        stayDays: p.stayDays,
+        arrivalDay: p.stayDays === null ? null : p.arrivalDay,
+        departureDay: p.stayDays === null ? null : p.departureDay,
+        transitTimeMinutes: p.transitTimeMinutes,
+        transitMode: p.transitMode,
+        activities: p.activities,
+      }));
 
     return res.status(200).json({
       ok: true,
@@ -223,13 +278,17 @@ router.get('/trips/:tripId/route', async (req, res) => {
         tripId: trip.id,
         name: trip.name,
         meetingPoint: trip.meetingPoint,
+        startDate: trip.startDate.toISOString().split('T')[0],
         // True whenever we plotted anything: these are straight lines
         // between city centres, never a real road route.
         approximate: points.length > 0,
+        // Whether the stops carry the organizer's real timeline detail, so
+        // the client shows stay/transit chips only when they mean something.
+        hasTimeline: trip.timeline.length > 0,
         // How many of the trip's cities we could not place, so the client
         // can say "3 of 5 stops shown" instead of quietly drawing a
         // shorter route than the trip really has.
-        unplacedCities: trip.cities.length - points.length,
+        unplacedCities: orderedStops.length - points.length,
         points,
       },
     });

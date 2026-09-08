@@ -1,6 +1,7 @@
 import { useApp, type Trip } from '@/store/AppContext';
 import { logger } from '@/lib/logger';
-import { apiService } from '@/services/api';
+import { apiService, type CreateTripInput } from '@/services/api';
+import { parseTransitMinutes } from '@/lib/transit-time';
 import type { IncomingJoinRequest, TripMemberRow } from '@/types/api';
 import { errorToastMessage, toast } from '@/lib/feedback';
 import { uploadFileToUrl } from '@/lib/upload';
@@ -16,6 +17,7 @@ import Check from 'lucide-react-native/icons/check';
 import CheckSquare from 'lucide-react-native/icons/square-check-big';
 import ChevronRight from 'lucide-react-native/icons/chevron-right';
 import Clock from 'lucide-react-native/icons/clock';
+import AlertTriangle from 'lucide-react-native/icons/triangle-alert';
 import Compass from 'lucide-react-native/icons/compass';
 import Globe from 'lucide-react-native/icons/globe';
 import Hotel from 'lucide-react-native/icons/hotel';
@@ -41,6 +43,13 @@ import Palmtree from 'lucide-react-native/icons/tree-palm';
 import Waves from 'lucide-react-native/icons/waves-horizontal';
 import Trees from 'lucide-react-native/icons/trees';
 import HomeIcon from 'lucide-react-native/icons/house';
+import Heart from 'lucide-react-native/icons/heart';
+import ShieldCheck from 'lucide-react-native/icons/shield-check';
+import Train from 'lucide-react-native/icons/tram-front';
+import Plane from 'lucide-react-native/icons/plane';
+import Bus from 'lucide-react-native/icons/bus';
+import Plus from 'lucide-react-native/icons/plus';
+import Minus from 'lucide-react-native/icons/minus';
 import React, { useRef, useState, useEffect, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -55,6 +64,7 @@ import {
   StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -256,11 +266,11 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 
 const PRESET_COVERS = [
-  { labelKey: 'createTrip.presetTajMahal', label: 'Taj Mahal', url: 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1000&q=80', icon: '🏛️', color: '#6366F1' },
   { labelKey: 'createTrip.presetMountain', label: 'Mountain', url: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=800&q=80', icon: '🏔️', color: '#10B981' },
   { labelKey: 'createTrip.presetBeach', label: 'Beach', url: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80', icon: '🏖️', color: '#0284C7' },
   { labelKey: 'createTrip.presetValleyLake', label: 'Valley/Lake', url: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&q=80', icon: '🏞️', color: '#0D9488' },
   { labelKey: 'createTrip.presetDesert', label: 'Forest', url: 'https://images.unsplash.com/photo-1547234935-80c7145ec969?w=800&q=80', icon: '🌲', color: '#16A34A' },
+  { labelKey: 'createTrip.presetTajMahal', label: 'Heritage', url: 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1000&q=80', icon: '🏛️', color: '#6366F1' },
 ];
 
 const TRIP_CATEGORIES = ['Adventure', 'Religious', 'Family', 'Road Trip', 'Beach', 'Wildlife', 'Heritage', 'Honeymoon'];
@@ -275,6 +285,27 @@ const CATEGORY_LABEL_KEYS: Record<string, string> = {
   Heritage: 'createTrip.categoryHeritage',
   Honeymoon: 'createTrip.categoryHoneymoon',
 };
+
+const CATEGORY_ICONS: Record<string, React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>> = {
+  Adventure: Compass,
+  Religious: Sparkles,
+  Family: Users,
+  'Road Trip': Car,
+  Beach: Palmtree,
+  Wildlife: Trees,
+  Heritage: Landmark,
+  Honeymoon: Heart,
+};
+
+export interface TimelineCheckpoint {
+  city: string;
+  stayDays: number;
+  /** Free text as typed ("3h 30m"); parsed to minutes on submit. */
+  transitTime: string;
+  /** How the group reaches this stop. Null on the first — nothing precedes it. */
+  transitMode: 'CAB' | 'TRAIN' | 'FLIGHT' | 'BUS' | null;
+  activities: string;
+}
 
 function CreateTripScreen() {
   useEffect(() => {
@@ -363,8 +394,8 @@ function CreateTripScreen() {
   const [showCreationsModal, setShowCreationsModal] = useState(false);
   const [selectedCreation, setSelectedCreation] = useState<Trip | null>(null);
 
-  // Cover Image State (preset or gallery)
-  const [coverImage, setCoverImage] = useState(PRESET_COVERS[0].url);
+  // Cover Image State (preset or gallery) - empty by default so no image is forced
+  const [coverImage, setCoverImage] = useState<string>('');
   const [customCoverUri, setCustomCoverUri] = useState<string | null>(null);
   // docs/REMEDIATION.md §8.4 — true while a picked cover photo is uploading
   // to object storage (see pickImageFromGallery below).
@@ -507,24 +538,161 @@ function CreateTripScreen() {
     .map((c) => c.trim())
     .filter((c) => c !== '');
 
-  const previewRouteCoords = parsedCities.map((city) => {
+  const [timelineCheckpoints, setTimelineCheckpoints] = useState<TimelineCheckpoint[]>([]);
+
+  // Kept in step with the cities field by adjusting state during render
+  // rather than from an effect (react-hooks/set-state-in-effect): the
+  // checkpoints are not a pure derivation — the organizer edits stay length,
+  // transit and activities on each one, and those edits must survive a
+  // later change to the city list — so they stay real state, just synced
+  // without a cascading re-render. Same pattern as AppContext's role sync.
+  const [prevCitiesKey, setPrevCitiesKey] = useState(citiesInput);
+  if (citiesInput !== prevCitiesKey) {
+    setPrevCitiesKey(citiesInput);
+    setTimelineCheckpoints((prev) =>
+      parsedCities.map((city, idx) => {
+        // An existing stop keeps everything the organizer typed into it.
+        const existing = prev.find((p) => p.city.toLowerCase() === city.toLowerCase());
+        if (existing) return { ...existing, city };
+        // A new stop starts blank. These used to be seeded with a fixed
+        // "3h 30m" and one of two invented English itineraries ("Arrival,
+        // hotel check-in & evening local leisure"), which organizers then
+        // published unedited — travellers read fabricated plans as if the
+        // organizer had written them. An empty field the organizer fills in
+        // is honest; a plausible-looking default is not.
+        return {
+          city,
+          stayDays: 1,
+          transitTime: '',
+          // A checkpoint's transit describes the leg OUT of it toward the
+          // next stop, so the last city in the route has none.
+          transitMode: idx === parsedCities.length - 1 ? null : ('CAB' as const),
+          activities: '',
+        };
+      }),
+    );
+  }
+
+  const updateCheckpointStayDays = (index: number, delta: number) => {
+    setTimelineCheckpoints((prev) =>
+      prev.map((item, idx) => {
+        if (idx !== index) return item;
+        return { ...item, stayDays: Math.max(1, item.stayDays + delta) };
+      }),
+    );
+  };
+
+  const updateCheckpointTransitMode = (index: number, mode: 'CAB' | 'TRAIN' | 'FLIGHT' | 'BUS') => {
+    setTimelineCheckpoints((prev) =>
+      prev.map((item, idx) => {
+        if (idx !== index) return item;
+        return { ...item, transitMode: mode };
+      }),
+    );
+  };
+
+  const updateCheckpointTransitTime = (index: number, time: string) => {
+    setTimelineCheckpoints((prev) =>
+      prev.map((item, idx) => {
+        if (idx !== index) return item;
+        return { ...item, transitTime: time };
+      }),
+    );
+  };
+
+  const updateCheckpointActivities = (index: number, activities: string) => {
+    setTimelineCheckpoints((prev) =>
+      prev.map((item, idx) => {
+        if (idx !== index) return item;
+        return { ...item, activities };
+      }),
+    );
+  };
+
+  /** Look one city up in the verified geocoder results, then the bundled
+   *  table. Returns null when it cannot be placed — never a guess. */
+  const coordsForCity = (city: string): { latitude: number; longitude: number } | null => {
     const clean = city.trim();
     const found =
       verifiedCoords[clean] ||
       CITY_COORDS[clean] ||
       Object.entries(CITY_COORDS).find(([k]) => clean.toLowerCase().includes(k.toLowerCase()))?.[1];
-    if (found) {
-      return { latitude: found.latitude, longitude: found.longitude, name: clean };
-    } else {
-      // Deterministic fallback based on name hash
-      let hash = 0;
-      for (let i = 0; i < clean.length; i++) {
-        hash = clean.charCodeAt(i) + ((hash << 5) - hash);
-      }
-      const lat = 18.0 + (Math.abs(hash % 100) / 100) * 8.0;
-      const lon = 74.0 + (Math.abs((hash >> 8) % 100) / 100) * 10.0;
-      return { latitude: lat, longitude: lon, name: clean };
-    }
+    return found ? { latitude: found.latitude, longitude: found.longitude } : null;
+  };
+
+  // Only the cities we could actually place. A city the geocoder cannot
+  // resolve is left out rather than plotted somewhere invented: this used
+  // to derive a lat/lng from a hash of the city name, which put real trip
+  // stops at made-up points in central India and drew a route through
+  // places the trip never goes (docs/REMEDIATION.md §0.2 rule 4).
+  // `unplacedCityCount` drives an honest note in the UI instead.
+  const previewRouteCoords = parsedCities
+    .map((city) => {
+      const coords = coordsForCity(city);
+      return coords ? { latitude: coords.latitude, longitude: coords.longitude, name: city.trim() } : null;
+    })
+    .filter((p): p is { latitude: number; longitude: number; name: string } => p !== null);
+
+  const unplacedCityCount = parsedCities.length - previewRouteCoords.length;
+
+  /**
+   * Assembles the create-trip request from all four tabs.
+   *
+   * Everything the organizer filled in goes to the server: the Plan tab's
+   * details and description, the Timeline tab's stops (stay length, transit
+   * leg, activities, coordinates), the Travelers tab's capacity and privacy,
+   * and the Checklist tab's items. Before this only the Plan and Travelers
+   * fields were sent — the Timeline and Checklist tabs were pure local state
+   * that was thrown away the moment the trip was published.
+   */
+  const buildTripInput = (): CreateTripInput => ({
+    name: tripName,
+    // The organizer's own words, rather than the fixed sentence the server
+    // used to stamp on every trip.
+    description: shortDesc.trim() || undefined,
+    cities: parsedCities,
+    startDate,
+    endDate: endDate || startDate,
+    budget: parseFloat(budget),
+    totalSeats: parseInt(totalSeats),
+    meetingPoint: t('createTrip.meetingPointSuffix', {
+      point: meetingPoint || t('createTrip.centralPoint'),
+      date: meetingDate,
+      time: meetingTime,
+    }),
+    guideIncluded,
+    foodIncluded,
+    hotelIncluded,
+    cabIncluded,
+    privacy,
+    // No forced stock cover. This used to fall back to PRESET_COVERS[0] —
+    // a fixed Unsplash photo of somewhere the trip does not go — so every
+    // trip published without a photo claimed one.
+    coverImage: customCoverUri || coverImage || undefined,
+    category: selectedCategory,
+    // The Timeline tab edits each stop's OUTBOUND leg ("transit to <next
+    // city>"), which is the natural way to build a route. The stored model
+    // is the mirror image — each stop carries the leg used to REACH it —
+    // because that is what every reader needs ("you arrive in Kaza after
+    // 9h 30m by cab") and it makes the first stop, which nothing precedes,
+    // the single obvious null. So stop N takes its transit from checkpoint
+    // N-1. Getting this shift wrong would attribute every leg to the wrong
+    // city, which is why it lives in one place rather than at each reader.
+    timeline: timelineCheckpoints.map((cp, idx) => {
+      const coords = coordsForCity(cp.city);
+      const inboundLeg = idx === 0 ? null : timelineCheckpoints[idx - 1];
+      return {
+        city: cp.city,
+        stayDays: cp.stayDays,
+        transitTimeMinutes: inboundLeg ? parseTransitMinutes(inboundLeg.transitTime) : null,
+        transitMode: inboundLeg ? inboundLeg.transitMode : null,
+        activities: cp.activities.trim(),
+        latitude: coords?.latitude ?? null,
+        longitude: coords?.longitude ?? null,
+      };
+    }),
+    // Only the items the organizer actually ticked as relevant to this trip.
+    checklist: checklist.filter((c) => c.checked).map((c) => t(c.itemKey)),
   });
 
   const handleCreate = () => {
@@ -538,58 +706,32 @@ function CreateTripScreen() {
       return;
     }
 
-    const newTrip = {
-      // handleCreate only ever runs from the "Create Trip" button's onPress
-      // (see the single onPress={handleCreate} reference below) - it's
-      // never called during render, so Date.now() here is genuinely safe.
-      // react-hooks/purity flags it anyway because it can't verify a
-      // plain (non-useCallback) locally-defined function is render-only vs
-      // event-handler-only.
-      // eslint-disable-next-line react-hooks/purity
-      id: `trip-${Date.now()}`,
-      name: tripName,
-      creator: t('createTrip.organizerSuffix', { name: profile?.name || 'Guest Traveler' }),
-      creatorId: profile?.id,
-      cities: parsedCities,
-      startDate,
-      endDate: endDate || startDate,
-      budget: parseFloat(budget),
-      availableSeats: parseInt(totalSeats),
-      totalSeats: parseInt(totalSeats),
-      meetingPoint: t('createTrip.meetingPointSuffix', {
-        point: meetingPoint || t('createTrip.centralPoint'),
-        date: meetingDate,
-        time: meetingTime,
-      }),
-      guideIncluded,
-      foodIncluded,
-      hotelIncluded,
-      cabIncluded,
-      privacy,
-      membersCount: 1,
-      coverImage: customCoverUri || coverImage,
-      category: selectedCategory,
-      coordinates: previewRouteCoords,
-    };
+    // No `id`: trip ids are database-generated (CONVENTIONS.md §5). This
+    // used to send `trip-${Date.now()}`, which the server rejected as a
+    // non-UUID — every Create Trip tap failed with a 400.
+    //
+    // The Timeline and Checklist tabs are part of the payload now. Both
+    // were previously collected into local state and discarded on submit,
+    // so no traveller ever saw a single stop or packing item.
+    const newTrip = buildTripInput();
 
-    addTrip(newTrip);
-    // A single-action alert was only ever an "OK" gate in front of the
-    // navigation it performed; a success toast says the same thing without
-    // blocking, per §0.2.6.
-    toast(t('createTrip.tripPublished'), 'success');
+    void (async () => {
+      const created = await addTrip(newTrip);
+      if (!created) return; // addTrip already surfaced the error
 
-    setTripName('');
-    setCitiesInput('');
-    setStartDate('2026-08-01');
-    setEndDate('2026-08-07');
-    setBudget('');
-    setTotalSeats('');
-    setMeetingPoint('');
-    setMeetingDate('2026-08-01');
-    setMeetingTime('10:00 AM');
-    setShortDesc('');
-    setTransportMode('AC Vehicle');
-    router.replace('/');
+      setTripName('');
+      setCitiesInput('');
+      setStartDate('2026-08-01');
+      setEndDate('2026-08-07');
+      setBudget('');
+      setTotalSeats('');
+      setMeetingPoint('');
+      setMeetingDate('2026-08-01');
+      setMeetingTime('10:00 AM');
+      setShortDesc('');
+      setTransportMode('AC Vehicle');
+      router.replace('/');
+    })();
   };
 
   const handleSaveDraft = () => {
@@ -597,33 +739,26 @@ function CreateTripScreen() {
       toast(t('createTrip.enterTripNameForDraft'), 'error');
       return;
     }
-    const newTrip = {
-      // Same false positive as handleCreate above - only ever called from
-      // the "Save as Draft" button's onPress, never during render.
-      // eslint-disable-next-line react-hooks/purity
-      id: `draft-${Date.now()}`,
+    // A draft is a real, PRIVATE trip on the server — same validation as a
+    // published one, so it needs at least two cities, a budget and seats.
+    if (parsedCities.length < 2) {
+      toast(t('createTrip.routeErrorTitle'), 'error');
+      return;
+    }
+    if (!budget || !totalSeats) {
+      toast(t('createTrip.fillRequiredFields'), 'error');
+      return;
+    }
+
+    const draft: CreateTripInput = {
+      ...buildTripInput(),
       name: t('createTrip.draftPrefix', { name: tripName }),
-      creator: t('createTrip.organizerSuffix', { name: profile?.name || 'Guest Traveler' }),
-      creatorId: profile?.id,
-      cities: parsedCities.length > 0 ? parsedCities : ['Delhi', t('createTrip.destinationFallback')],
-      startDate,
-      endDate: endDate || startDate,
-      budget: budget ? parseFloat(budget) : 0,
-      availableSeats: totalSeats ? parseInt(totalSeats) : 0,
-      totalSeats: totalSeats ? parseInt(totalSeats) : 0,
-      meetingPoint: meetingPoint || t('createTrip.toBeDecided'),
-      guideIncluded,
-      foodIncluded,
-      hotelIncluded,
-      cabIncluded,
-      privacy: 'PRIVATE' as const,
-      membersCount: 1,
-      coverImage: customCoverUri || coverImage,
-      category: selectedCategory,
-      coordinates: previewRouteCoords,
+      privacy: 'PRIVATE',
     };
-    addTrip(newTrip);
-    showToast(t('createTrip.draftSaved'));
+    void (async () => {
+      const created = await addTrip(draft);
+      if (created) showToast(t('createTrip.draftSaved'));
+    })();
   };
 
   const showToast = (msg: string) => {
@@ -795,125 +930,7 @@ function CreateTripScreen() {
             <Text style={styles.sectionDividerSub}>{t('createTrip.newTripBuilderDesc')}</Text>
           </View>
 
-          {/* ════════════════════════════════════════════════
-            SCENIC TOURIST HERO BANNER WITH IMAGE OVERLAY
-            ════════════════════════════════════════════════ */}
-          <View style={styles.heroWrap}>
-            <Image
-              source={{ uri: customCoverUri || coverImage }}
-              style={StyleSheet.absoluteFill}
-              resizeMode="cover"
-            />
-            <LinearGradient
-              colors={['rgba(15,23,42,0.15)', 'rgba(15,23,42,0.55)', 'rgba(15,23,42,0.85)']}
-              style={StyleSheet.absoluteFill}
-            />
 
-            <View style={styles.heroBadgeRow}>
-              <View style={styles.heroBadge}>
-                <Sparkles size={12} color="#EA580C" />
-                <Text style={styles.heroBadgeText}>{t('createTrip.organizerSuite')}</Text>
-              </View>
-
-              <TouchableOpacity
-                style={styles.heroUploadBtn}
-                onPress={pickImageFromGallery}
-                activeOpacity={0.85}
-                disabled={coverUploading}
-                accessibilityRole="button"
-                accessibilityLabel={t('createTrip.uploadCoverPhoto')}
-              >
-                {coverUploading ? (
-                  <ActivityIndicator size="small" color="#0F172A" />
-                ) : (
-                  <ImageIcon size={13} color="#0F172A" />
-                )}
-                <Text style={styles.heroUploadBtnText}>
-                  {coverUploading ? t('createTrip.uploading') : t('createTrip.uploadPhoto')}
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.heroTextWrap}>
-              <Text style={styles.heroTitle}>{t('createTrip.heroTitle')}</Text>
-              <Text style={styles.heroSub}>{t('createTrip.heroSub')}</Text>
-            </View>
-          </View>
-
-          {/* ────────────────────────────────────────────
-            COVER PHOTO SECTION
-            ─────────────────────────────────────────── */}
-          <View style={styles.coverSectionWrap}>
-            {/* Gallery Picker Card */}
-            <TouchableOpacity
-              style={styles.galleryCard}
-              onPress={pickImageFromGallery}
-              activeOpacity={0.85}
-              disabled={coverUploading}
-              accessibilityRole="button"
-              accessibilityLabel={customCoverUri ? t('createTrip.customCoverApplied') : t('createTrip.uploadCoverPhoto')}
-            >
-              <View style={styles.galleryIconCircle}>
-                <ImageIcon size={20} color="#6366F1" />
-              </View>
-              <View style={styles.galleryCardContent}>
-                <Text style={styles.galleryCardTitle}>
-                  {coverUploading ? t('createTrip.uploading') : customCoverUri ? t('createTrip.customCoverApplied') : t('createTrip.uploadCoverPhoto')}
-                </Text>
-                <Text style={styles.galleryCardSub}>
-                  {coverUploading
-                    ? t('createTrip.uploadingCoverHint')
-                    : customCoverUri
-                      ? t('createTrip.replaceCoverHint')
-                      : t('createTrip.selectCoverHint')}
-                </Text>
-              </View>
-              <View style={styles.galleryBrowsePill}>
-                <Text style={styles.galleryBrowsePillText}>
-                  {customCoverUri ? t('createTrip.change') : t('createTrip.browse')}
-                </Text>
-              </View>
-            </TouchableOpacity>
-
-            {/* Divider */}
-            <View style={styles.coverDivider}>
-              <View style={styles.coverDividerLine} />
-              <Text style={styles.coverDividerText}>{t('createTrip.orUsePreset')}</Text>
-              <View style={styles.coverDividerLine} />
-            </View>
-
-            {/* Preset chips strip */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.presetsList}>
-              {PRESET_COVERS.map((cov, idx) => {
-                const isSelected = !customCoverUri && coverImage === cov.url;
-                return (
-                  <TouchableOpacity
-                    key={cov.labelKey}
-                    style={[styles.presetCard, isSelected && styles.presetCardActive]}
-                    onPress={() => {
-                      setCustomCoverUri(null);
-                      setCoverImage(cov.url);
-                    }}
-                    activeOpacity={0.8}
-                    accessibilityRole="button"
-                    accessibilityLabel={t(cov.labelKey)}
-                    accessibilityState={{ selected: isSelected }}
-                  >
-                    <View style={styles.presetIconWrap}>
-                      {idx === 0 && <Landmark size={24} color="#D97706" />}
-                      {idx === 1 && <MountainIcon size={24} color="#10B981" />}
-                      {idx === 2 && <Palmtree size={24} color="#0284C7" />}
-                      {idx === 3 && <Waves size={24} color="#0D9488" />}
-                      {idx === 4 && <Trees size={24} color="#16A34A" />}
-                    </View>
-                    <Text style={[styles.presetCardText, isSelected && styles.presetCardTextActive]} numberOfLines={1}>
-                      {cov.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          </View>
 
           {/* ════════════════════════════════════════════════
             CUSTOM TRIP STUDIO TAB SWITCHER
@@ -998,6 +1015,107 @@ function CreateTripScreen() {
                 containerStyle={styles.inputGroup}
               />
 
+              {/* Cover Photo */}
+              <View style={styles.coverInputSection}>
+                <Text style={styles.inputLabel}>{t('createTrip.uploadCoverPhoto')}</Text>
+
+                {customCoverUri || coverImage ? (
+                  <View style={styles.compactCoverPreview}>
+                    <Image
+                      source={{ uri: customCoverUri || coverImage }}
+                      style={styles.compactCoverImg}
+                      resizeMode="cover"
+                    />
+                    <LinearGradient
+                      colors={['transparent', 'rgba(15,23,42,0.72)']}
+                      style={StyleSheet.absoluteFill}
+                    />
+                    <View style={styles.compactCoverOverlay}>
+                      <View style={styles.coverStatusPill}>
+                        <Check size={11} color="#10B981" strokeWidth={3} />
+                        <Text style={styles.coverStatusText}>
+                          {customCoverUri ? t('createTrip.customCoverApplied') : t('createTrip.orUsePreset')}
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.coverChangePill}
+                        onPress={pickImageFromGallery}
+                        activeOpacity={0.8}
+                        disabled={coverUploading}
+                      >
+                        <ImageIcon size={12} color="#0F172A" />
+                        <Text style={styles.coverChangePillText}>
+                          {coverUploading ? t('createTrip.uploading') : t('createTrip.change')}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.compactUploadBox}
+                    onPress={pickImageFromGallery}
+                    activeOpacity={0.8}
+                    disabled={coverUploading}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('createTrip.uploadCoverPhoto')}
+                  >
+                    <View style={styles.compactUploadIconCircle}>
+                      {coverUploading ? (
+                        <ActivityIndicator size="small" color="#6366F1" />
+                      ) : (
+                        <ImageIcon size={18} color="#6366F1" />
+                      )}
+                    </View>
+                    <View style={styles.compactUploadTextCol}>
+                      <Text style={styles.compactUploadTitle}>
+                        {coverUploading ? t('createTrip.uploading') : t('createTrip.uploadCoverPhoto')}
+                      </Text>
+                      <Text style={styles.compactUploadSub}>
+                        {t('createTrip.selectCoverHint')}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                )}
+
+                {/* Horizontal preset chips */}
+                <View style={styles.presetChipsWrapper}>
+                  <Text style={styles.presetChipsLabel}>{t('createTrip.orUsePreset')}</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.presetChipsScroll}
+                  >
+                    {PRESET_COVERS.map((cov, idx) => {
+                      const isSelected = !customCoverUri && coverImage === cov.url;
+                      return (
+                        <TouchableOpacity
+                          key={cov.labelKey}
+                          style={[styles.presetPill, isSelected && styles.presetPillActive]}
+                          onPress={() => {
+                            setCustomCoverUri(null);
+                            setCoverImage(cov.url);
+                          }}
+                          activeOpacity={0.8}
+                          accessibilityRole="button"
+                          accessibilityLabel={t(cov.labelKey)}
+                        >
+                          <View style={styles.presetPillIconWrap}>
+                            {idx === 0 && <MountainIcon size={13} color={isSelected ? '#6366F1' : '#10B981'} />}
+                            {idx === 1 && <Palmtree size={13} color={isSelected ? '#6366F1' : '#0284C7'} />}
+                            {idx === 2 && <Waves size={13} color={isSelected ? '#6366F1' : '#0D9488'} />}
+                            {idx === 3 && <Trees size={13} color={isSelected ? '#6366F1' : '#16A34A'} />}
+                            {idx === 4 && <Landmark size={13} color={isSelected ? '#6366F1' : '#D97706'} />}
+                          </View>
+                          <Text style={[styles.presetPillText, isSelected && styles.presetPillTextActive]}>
+                            {cov.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              </View>
+
               {/* 2. ROUTE SEQUENCE & QUICK ADD CHIPS */}
               <View style={styles.sectionHeaderRow}>
                 <LinearGradient colors={['#10B981', '#065F46']} style={styles.stepBadge}>
@@ -1072,28 +1190,38 @@ function CreateTripScreen() {
 
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>{t('createTrip.selectCategoryLabel')}</Text>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.categoryRow}
-                >
+                <View style={styles.categoryGrid}>
                   {TRIP_CATEGORIES.map((cat) => {
+                    const IconComp = CATEGORY_ICONS[cat] ?? Compass;
                     const isActive = selectedCategory === cat;
                     return (
                       <TouchableOpacity
                         key={cat}
-                        style={[styles.categoryChip, isActive && styles.categoryChipActive]}
+                        style={[styles.categoryCard, isActive && styles.categoryCardActive]}
                         onPress={() => setSelectedCategory(cat)}
-                        activeOpacity={0.8}
+                        activeOpacity={0.7}
                         accessibilityRole="button"
                         accessibilityLabel={t(CATEGORY_LABEL_KEYS[cat])}
                         accessibilityState={{ selected: isActive }}
                       >
-                        <Text style={[styles.categoryChipText, isActive && styles.categoryChipTextActive]}>{t(CATEGORY_LABEL_KEYS[cat])}</Text>
+                        <View style={[styles.categoryIconCircle, isActive && styles.categoryIconCircleActive]}>
+                          <IconComp size={15} color={isActive ? '#2563EB' : '#64748B'} strokeWidth={2} />
+                        </View>
+                        <Text
+                          style={[styles.categoryCardText, isActive && styles.categoryCardTextActive]}
+                          numberOfLines={1}
+                        >
+                          {t(CATEGORY_LABEL_KEYS[cat])}
+                        </Text>
+                        {isActive && (
+                          <View style={styles.categoryActiveCheck}>
+                            <Check size={11} color="#2563EB" strokeWidth={3} />
+                          </View>
+                        )}
                       </TouchableOpacity>
                     );
                   })}
-                </ScrollView>
+                </View>
               </View>
 
               {/* 4. DATES & TIMINGS (TOUCH TO OPEN CALENDAR MODAL) */}
@@ -1106,38 +1234,42 @@ function CreateTripScreen() {
 
               <View style={styles.gridRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>{t('createTrip.startDateLabel')}</Text>
+                  <Text style={[styles.inputLabel, styles.compactGridLabel]} numberOfLines={1}>
+                    {t('createTrip.startDateLabel')}
+                  </Text>
                   <TouchableOpacity
                     activeOpacity={0.85}
                     style={styles.inputWrapper}
-                    onPress={() => setActiveDatePicker('start')}
+                    onPress={() => openDatePicker('start')}
                     accessibilityRole="button"
                     accessibilityLabel={t('createTrip.startDateLabel')}
                   >
                     <CalendarIcon size={16} color={C.purple} style={styles.inputIcon} />
-                    <Text style={[styles.textInput, !startDate && { color: C.textMuted }]}>
+                    <Text style={[styles.textInput, !startDate && { color: '#64748B', fontWeight: '400' }]}>
                       {startDate || t('createTrip.selectDate')}
                     </Text>
                   </TouchableOpacity>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>{t('createTrip.endDateLabel')}</Text>
+                  <Text style={[styles.inputLabel, styles.compactGridLabel]} numberOfLines={1}>
+                    {t('createTrip.endDateLabel')}
+                  </Text>
                   <TouchableOpacity
                     activeOpacity={0.85}
                     style={styles.inputWrapper}
-                    onPress={() => setActiveDatePicker('end')}
+                    onPress={() => openDatePicker('end')}
                     accessibilityRole="button"
                     accessibilityLabel={t('createTrip.endDateLabel')}
                   >
                     <CalendarIcon size={16} color={C.purple} style={styles.inputIcon} />
-                    <Text style={[styles.textInput, !endDate && { color: C.textMuted }]}>
+                    <Text style={[styles.textInput, !endDate && { color: '#64748B', fontWeight: '400' }]}>
                       {endDate || t('createTrip.selectDate')}
                     </Text>
                   </TouchableOpacity>
                 </View>
               </View>
 
-              {/* 5. BUDGET & CAPACITY */}
+              {/* 5. BUDGET, CAPACITY & LOGISTICS */}
               <View style={styles.sectionHeaderRow}>
                 <LinearGradient colors={['#F59E0B', '#B45309']} style={styles.stepBadge}>
                   <Text style={styles.stepBadgeText}>05</Text>
@@ -1145,72 +1277,97 @@ function CreateTripScreen() {
                 <Text style={styles.sectionTitle}>{t('createTrip.step5Title')}</Text>
               </View>
 
-              <View style={styles.gridRow}>
-                <Input
-                  label={t('createTrip.budgetPerPersonLabel')}
-                  placeholder={t('createTrip.budgetPlaceholder')}
-                  keyboardType="numeric"
-                  value={budget}
-                  onChangeText={setBudget}
-                  icon={<IndianRupee size={16} color={C.amber} />}
-                  containerStyle={{ flex: 1 }}
-                />
-                <Input
-                  label={t('createTrip.totalSlotsLabel')}
-                  placeholder={t('createTrip.totalSlotsPlaceholder')}
-                  keyboardType="numeric"
-                  value={totalSeats}
-                  onChangeText={setTotalSeats}
-                  icon={<Users size={16} color={C.amber} />}
-                  containerStyle={{ flex: 1 }}
-                />
+              {/* Sub-Card 1: Pricing & Group Size */}
+              <View style={styles.structuredSubCard}>
+                <View style={styles.subCardHeader}>
+                  <View style={[styles.subCardIconBadge, { backgroundColor: '#FEF3C7' }]}>
+                    <IndianRupee size={14} color="#D97706" />
+                  </View>
+                  <Text style={styles.subCardTitle}>{t('createTrip.pricingGroupTitle')}</Text>
+                </View>
+
+                <View style={styles.gridRow}>
+                  <Input
+                    label={t('createTrip.budgetPerPersonLabel')}
+                    labelStyle={styles.compactGridLabel}
+                    labelNumberOfLines={1}
+                    placeholder={t('createTrip.budgetPlaceholder')}
+                    keyboardType="numeric"
+                    value={budget}
+                    onChangeText={setBudget}
+                    icon={<IndianRupee size={15} color={C.amber} />}
+                    containerStyle={{ flex: 1 }}
+                  />
+                  <Input
+                    label={t('createTrip.totalSlotsLabel')}
+                    labelStyle={styles.compactGridLabel}
+                    labelNumberOfLines={1}
+                    placeholder={t('createTrip.totalSlotsPlaceholder')}
+                    keyboardType="numeric"
+                    value={totalSeats}
+                    onChangeText={setTotalSeats}
+                    icon={<Users size={15} color={C.amber} />}
+                    containerStyle={{ flex: 1 }}
+                  />
+                </View>
               </View>
 
-              {/* Transport Mode (Merged feature) */}
-              <Input
-                label={t('createTrip.transportModeLabel')}
-                placeholder={t('createTrip.transportModePlaceholder')}
-                value={transportMode}
-                onChangeText={setTransportMode}
-                icon={<Car size={16} color={C.blue} />}
-                containerStyle={styles.inputGroup}
-              />
-
-              {/* PICKUP / MEETING POINT */}
-              <Input
-                label={t('createTrip.meetingPointLabel')}
-                placeholder={t('createTrip.meetingPointPlaceholder')}
-                value={meetingPoint}
-                onChangeText={setMeetingPoint}
-                icon={<Navigation size={16} color={C.blue} />}
-                containerStyle={styles.inputGroup}
-              />
-
-              {/* MEETING DATE & TIME */}
-              <View style={styles.gridRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>{t('createTrip.meetingDateLabel')}</Text>
-                  <TouchableOpacity
-                    activeOpacity={0.85}
-                    style={styles.inputWrapper}
-                    onPress={() => openDatePicker('meeting')}
-                    accessibilityRole="button"
-                    accessibilityLabel={t('createTrip.meetingDateLabel')}
-                  >
-                    <CalendarIcon size={16} color={C.purple} style={styles.inputIcon} />
-                    <Text style={[styles.textInput, !meetingDate && { color: C.textMuted }]}>
-                      {meetingDate || t('createTrip.selectDate')}
-                    </Text>
-                  </TouchableOpacity>
+              {/* Sub-Card 2: Transit & Pickup Logistics */}
+              <View style={styles.structuredSubCard}>
+                <View style={styles.subCardHeader}>
+                  <View style={[styles.subCardIconBadge, { backgroundColor: '#DBEAFE' }]}>
+                    <Navigation size={14} color="#2563EB" />
+                  </View>
+                  <Text style={styles.subCardTitle}>{t('createTrip.logisticsTitle')}</Text>
                 </View>
+
                 <Input
-                  label={t('createTrip.meetingTimeLabel')}
-                  placeholder={t('createTrip.meetingTimePlaceholder')}
-                  value={meetingTime}
-                  onChangeText={setMeetingTime}
-                  icon={<Clock size={16} color={C.amber} />}
-                  containerStyle={{ flex: 1 }}
+                  label={t('createTrip.transportModeLabel')}
+                  placeholder={t('createTrip.transportModePlaceholder')}
+                  value={transportMode}
+                  onChangeText={setTransportMode}
+                  icon={<Car size={16} color={C.blue} />}
+                  containerStyle={styles.inputGroup}
                 />
+
+                <Input
+                  label={t('createTrip.meetingPointLabel')}
+                  placeholder={t('createTrip.meetingPointPlaceholder')}
+                  value={meetingPoint}
+                  onChangeText={setMeetingPoint}
+                  icon={<Navigation size={16} color={C.blue} />}
+                  containerStyle={styles.inputGroup}
+                />
+
+                <View style={styles.gridRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.inputLabel, styles.compactGridLabel]} numberOfLines={1}>
+                      {t('createTrip.meetingDateLabel')}
+                    </Text>
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      style={styles.inputWrapper}
+                      onPress={() => openDatePicker('meeting')}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('createTrip.meetingDateLabel')}
+                    >
+                      <CalendarIcon size={16} color={C.purple} style={styles.inputIcon} />
+                      <Text style={[styles.textInput, !meetingDate && { color: '#64748B', fontWeight: '400' }]}>
+                        {meetingDate || t('createTrip.selectDate')}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  <Input
+                    label={t('createTrip.meetingTimeLabel')}
+                    labelStyle={styles.compactGridLabel}
+                    labelNumberOfLines={1}
+                    placeholder={t('createTrip.meetingTimePlaceholder')}
+                    value={meetingTime}
+                    onChangeText={setMeetingTime}
+                    icon={<Clock size={16} color={C.amber} />}
+                    containerStyle={{ flex: 1 }}
+                  />
+                </View>
               </View>
 
               {/* 6. INCLUDED SERVICES */}
@@ -1230,17 +1387,17 @@ function CreateTripScreen() {
                   accessibilityLabel={t('createTrip.verifiedGuide')}
                   accessibilityState={{ checked: guideIncluded }}
                 >
-                  <View style={[styles.amenityIconCircle, guideIncluded && { backgroundColor: C.blue }]}>
-                    <Compass size={16} color={guideIncluded ? C.white : C.textMuted} />
+                  <View style={[styles.amenityIconCircle, guideIncluded && { backgroundColor: '#DBEAFE' }]}>
+                    <Compass size={17} color={guideIncluded ? '#2563EB' : '#64748B'} strokeWidth={2} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.amenityTitle, guideIncluded && styles.amenityTitleActive]}>
                       {t('createTrip.verifiedGuide')}
                     </Text>
-                    <Text style={styles.amenitySub}>{t('createTrip.localTourLeader')}</Text>
+                    <Text style={styles.amenitySub} numberOfLines={1}>{t('createTrip.localTourLeader')}</Text>
                   </View>
                   <View style={[styles.checkDot, guideIncluded && styles.checkDotActive]}>
-                    {guideIncluded && <Check size={10} color={C.white} />}
+                    {guideIncluded && <Check size={11} color="#FFFFFF" strokeWidth={3} />}
                   </View>
                 </TouchableOpacity>
 
@@ -1252,15 +1409,17 @@ function CreateTripScreen() {
                   accessibilityLabel={t('createTrip.mealsFood')}
                   accessibilityState={{ checked: foodIncluded }}
                 >
-                  <View style={[styles.amenityIconCircle, foodIncluded && { backgroundColor: C.purple }]}>
-                    <Utensils size={16} color={foodIncluded ? C.white : C.textMuted} />
+                  <View style={[styles.amenityIconCircle, foodIncluded && { backgroundColor: '#F3E8FF' }]}>
+                    <Utensils size={17} color={foodIncluded ? '#7C3AED' : '#64748B'} strokeWidth={2} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.amenityTitle, foodIncluded && styles.amenityTitleActive]}>{t('createTrip.mealsFood')}</Text>
-                    <Text style={styles.amenitySub}>{t('createTrip.breakfastDinner')}</Text>
+                    <Text style={[styles.amenityTitle, foodIncluded && styles.amenityTitleActive]}>
+                      {t('createTrip.mealsFood')}
+                    </Text>
+                    <Text style={styles.amenitySub} numberOfLines={1}>{t('createTrip.breakfastDinner')}</Text>
                   </View>
                   <View style={[styles.checkDot, foodIncluded && styles.checkDotActive]}>
-                    {foodIncluded && <Check size={10} color={C.white} />}
+                    {foodIncluded && <Check size={11} color="#FFFFFF" strokeWidth={3} />}
                   </View>
                 </TouchableOpacity>
 
@@ -1272,15 +1431,17 @@ function CreateTripScreen() {
                   accessibilityLabel={t('createTrip.hotelStays')}
                   accessibilityState={{ checked: hotelIncluded }}
                 >
-                  <View style={[styles.amenityIconCircle, hotelIncluded && { backgroundColor: C.green }]}>
-                    <Hotel size={16} color={hotelIncluded ? C.white : C.textMuted} />
+                  <View style={[styles.amenityIconCircle, hotelIncluded && { backgroundColor: '#D1FAE5' }]}>
+                    <Hotel size={17} color={hotelIncluded ? '#059669' : '#64748B'} strokeWidth={2} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.amenityTitle, hotelIncluded && styles.amenityTitleActive]}>{t('createTrip.hotelStays')}</Text>
-                    <Text style={styles.amenitySub}>{t('createTrip.ratedAccommodations')}</Text>
+                    <Text style={[styles.amenityTitle, hotelIncluded && styles.amenityTitleActive]}>
+                      {t('createTrip.hotelStays')}
+                    </Text>
+                    <Text style={styles.amenitySub} numberOfLines={1}>{t('createTrip.ratedAccommodations')}</Text>
                   </View>
                   <View style={[styles.checkDot, hotelIncluded && styles.checkDotActive]}>
-                    {hotelIncluded && <Check size={10} color={C.white} />}
+                    {hotelIncluded && <Check size={11} color="#FFFFFF" strokeWidth={3} />}
                   </View>
                 </TouchableOpacity>
 
@@ -1292,17 +1453,29 @@ function CreateTripScreen() {
                   accessibilityLabel={t('createTrip.acVehicle')}
                   accessibilityState={{ checked: cabIncluded }}
                 >
-                  <View style={[styles.amenityIconCircle, cabIncluded && { backgroundColor: C.amber }]}>
-                    <Car size={16} color={cabIncluded ? C.white : C.textMuted} />
+                  <View style={[styles.amenityIconCircle, cabIncluded && { backgroundColor: '#FEF3C7' }]}>
+                    <Car size={17} color={cabIncluded ? '#D97706' : '#64748B'} strokeWidth={2} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.amenityTitle, cabIncluded && styles.amenityTitleActive]}>{t('createTrip.acVehicle')}</Text>
-                    <Text style={styles.amenitySub}>{t('createTrip.dedicatedSightseeing')}</Text>
+                    <Text style={[styles.amenityTitle, cabIncluded && styles.amenityTitleActive]}>
+                      {t('createTrip.acVehicle')}
+                    </Text>
+                    <Text style={styles.amenitySub} numberOfLines={1}>{t('createTrip.dedicatedSightseeing')}</Text>
                   </View>
                   <View style={[styles.checkDot, cabIncluded && styles.checkDotActive]}>
-                    {cabIncluded && <Check size={10} color={C.white} />}
+                    {cabIncluded && <Check size={11} color="#FFFFFF" strokeWidth={3} />}
                   </View>
                 </TouchableOpacity>
+              </View>
+
+              {/* Summary Status Strip */}
+              <View style={styles.servicesSummaryBar}>
+                <ShieldCheck size={15} color="#2563EB" strokeWidth={2.2} />
+                <Text style={styles.servicesSummaryText}>
+                  {t('createTrip.servicesSummary', {
+                    count: [guideIncluded, foodIncluded, hotelIncluded, cabIncluded].filter(Boolean).length,
+                  })}
+                </Text>
               </View>
 
               {/* 7. PRIVACY & VISIBILITY */}
@@ -1322,9 +1495,15 @@ function CreateTripScreen() {
                   accessibilityLabel={t('createTrip.privacyPublic')}
                   accessibilityState={{ selected: privacy === 'PUBLIC' }}
                 >
-                  <Globe size={20} color={privacy === 'PUBLIC' ? C.blue : C.textMuted} />
-                  <Text style={[styles.privacyTitle, privacy === 'PUBLIC' && styles.privacyTitleActive]}>{t('createTrip.privacyPublic')}</Text>
-                  <Text style={styles.privacySub}>{t('createTrip.privacyPublicSub')}</Text>
+                  <View style={[styles.privacyIconCircle, privacy === 'PUBLIC' && styles.privacyIconCircleActive]}>
+                    <Globe size={18} color={privacy === 'PUBLIC' ? '#2563EB' : '#64748B'} />
+                  </View>
+                  <Text style={[styles.privacyTitle, privacy === 'PUBLIC' && styles.privacyTitleActive]}>
+                    {t('createTrip.privacyPublic')}
+                  </Text>
+                  <Text style={[styles.privacySub, privacy === 'PUBLIC' && styles.privacySubActive]}>
+                    {t('createTrip.privacyPublicSub')}
+                  </Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -1335,9 +1514,15 @@ function CreateTripScreen() {
                   accessibilityLabel={t('createTrip.privacyPrivate')}
                   accessibilityState={{ selected: privacy === 'PRIVATE' }}
                 >
-                  <Lock size={20} color={privacy === 'PRIVATE' ? C.amber : C.textMuted} />
-                  <Text style={[styles.privacyTitle, privacy === 'PRIVATE' && styles.privacyTitleActive]}>{t('createTrip.privacyPrivate')}</Text>
-                  <Text style={styles.privacySub}>{t('createTrip.privacyPrivateSub')}</Text>
+                  <View style={[styles.privacyIconCircle, privacy === 'PRIVATE' && styles.privacyIconCircleActive]}>
+                    <Lock size={18} color={privacy === 'PRIVATE' ? '#2563EB' : '#64748B'} />
+                  </View>
+                  <Text style={[styles.privacyTitle, privacy === 'PRIVATE' && styles.privacyTitleActive]}>
+                    {t('createTrip.privacyPrivate')}
+                  </Text>
+                  <Text style={[styles.privacySub, privacy === 'PRIVATE' && styles.privacySubActive]}>
+                    {t('createTrip.privacyPrivateSub')}
+                  </Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -1348,11 +1533,15 @@ function CreateTripScreen() {
                   accessibilityLabel={t('createTrip.privacyInviteOnly')}
                   accessibilityState={{ selected: privacy === 'INVITE_ONLY' }}
                 >
-                  <Mail size={20} color={privacy === 'INVITE_ONLY' ? C.purple : C.textMuted} />
+                  <View style={[styles.privacyIconCircle, privacy === 'INVITE_ONLY' && styles.privacyIconCircleActive]}>
+                    <Mail size={18} color={privacy === 'INVITE_ONLY' ? '#2563EB' : '#64748B'} />
+                  </View>
                   <Text style={[styles.privacyTitle, privacy === 'INVITE_ONLY' && styles.privacyTitleActive]}>
                     {t('createTrip.privacyInviteOnly')}
                   </Text>
-                  <Text style={styles.privacySub}>{t('createTrip.privacyInviteOnlySub')}</Text>
+                  <Text style={[styles.privacySub, privacy === 'INVITE_ONLY' && styles.privacySubActive]}>
+                    {t('createTrip.privacyInviteOnlySub')}
+                  </Text>
                 </TouchableOpacity>
               </View>
 
@@ -1390,50 +1579,221 @@ function CreateTripScreen() {
           )}
 
           {/* ─── TAB 2: DYNAMIC DAY-BY-DAY VISUAL TIMELINE ────── */}
-          {activeTab === 'TIMELINE' && (
-            <View style={styles.timelineContainer}>
-              <Text style={styles.timelineHeaderTitle}>{t('createTrip.dynamicTimelineTitle')}</Text>
+          {activeTab === 'TIMELINE' && (() => {
+            let dayOffset = 0;
+            const totalTripDays = timelineCheckpoints.reduce((acc, curr) => acc + (curr.stayDays || 1), 0);
 
-              {parsedCities.length > 0 ? (
-                parsedCities.map((loc, idx) => (
-                  <View key={idx} style={styles.timelineItem}>
-                    <View style={styles.timelineDotLine}>
-                      <View
-                        style={[
-                          styles.timelineDot,
-                          { backgroundColor: idx === 0 ? C.blue : idx === 1 ? C.green : C.amber },
-                        ]}
-                      />
-                      {idx < parsedCities.length - 1 && <View style={styles.timelineVerticalLine} />}
-                    </View>
-
-                    <View style={styles.timelineContentCard}>
-                      <Text style={styles.dayBadge}>
-                        {t('createTrip.dayBadge', { number: idx + 1, location: loc.toUpperCase() })}
-                      </Text>
-                      <Text style={styles.timelineTitle}>
-                        {idx === 0
-                          ? t('createTrip.departureArrival', { location: loc })
-                          : t('createTrip.sightseeingExploration', { location: loc })}
-                      </Text>
-                      <Text style={styles.timelineTime}>{t('createTrip.morningAfternoonSchedule')}</Text>
-                      <Text style={styles.timelineDesc}>
-                        {idx === 0
-                          ? t('createTrip.checkInDesc')
-                          : t('createTrip.guidedTourDesc', { location: loc })}
-                      </Text>
-                    </View>
-                  </View>
-                ))
-              ) : (
-                <View style={styles.emptyTimelineCard}>
-                  <Compass size={32} color={C.blue} style={{ marginBottom: 10 }} />
-                  <Text style={styles.emptyTimelineTitle}>{t('createTrip.prepareItineraryTitle')}</Text>
-                  <Text style={styles.emptyTimelineSub}>{t('createTrip.prepareItineraryDesc')}</Text>
+            return (
+              <View style={styles.timelineContainer}>
+                <View style={styles.timelineHeaderRow}>
+                  <Text style={styles.timelineHeaderTitle}>{t('createTrip.dynamicTimelineTitle')}</Text>
+                  {timelineCheckpoints.length > 0 && (
+                    <Text style={styles.timelineHeaderSubtitle}>
+                      {t('createTrip.timelineTotalDays', { days: totalTripDays, stops: timelineCheckpoints.length })}
+                    </Text>
+                  )}
                 </View>
-              )}
-            </View>
-          )}
+
+                {/* Cities we could not place on the map. Saying so is the
+                    honest alternative to the old behaviour, which hashed an
+                    unknown city name into a latitude/longitude and drew the
+                    route through an invented point in central India. */}
+                {unplacedCityCount > 0 && (
+                  <View style={styles.unplacedNotice}>
+                    <AlertTriangle size={13} color="#B45309" />
+                    <Text style={styles.unplacedNoticeText}>
+                      {t('createTrip.unplacedCitiesNotice', { count: unplacedCityCount })}
+                    </Text>
+                  </View>
+                )}
+
+                {timelineCheckpoints.length > 0 ? (
+                  timelineCheckpoints.map((checkpoint, idx) => {
+                    const startDay = dayOffset + 1;
+                    const endDay = dayOffset + checkpoint.stayDays;
+                    dayOffset += checkpoint.stayDays;
+                    const isSingleDay = checkpoint.stayDays === 1;
+                    const isLastStop = idx === timelineCheckpoints.length - 1;
+
+                    return (
+                      <View key={`${checkpoint.city}-${idx}`} style={styles.checkpointWrapper}>
+                        {/* Checkpoint Card */}
+                        <View style={styles.checkpointCard}>
+                          {/* Header row: Checkpoint Day Badge */}
+                          <View style={styles.checkpointHeaderRow}>
+                            <View style={styles.checkpointBadge}>
+                              <MapPin size={12} color="#2563EB" />
+                              <Text style={styles.checkpointBadgeText} numberOfLines={1}>
+                                {isSingleDay
+                                  ? t('createTrip.timelineDayRangeSingle', {
+                                      day: startDay,
+                                      location: checkpoint.city.toUpperCase(),
+                                    })
+                                  : t('createTrip.timelineDayRangeMulti', {
+                                      start: startDay,
+                                      end: endDay,
+                                      location: checkpoint.city.toUpperCase(),
+                                    })}
+                              </Text>
+                            </View>
+                          </View>
+
+                          {/* Stay Duration Bar */}
+                          <View style={styles.checkpointStayRow}>
+                            <View style={styles.stayLabelWrap}>
+                              <Clock size={13} color="#64748B" />
+                              <Text style={styles.stayDurationLabel}>{t('createTrip.timelineStayDuration')}</Text>
+                            </View>
+
+                            <View style={styles.stepperContainer}>
+                              <TouchableOpacity
+                                style={[styles.stepperBtn, checkpoint.stayDays <= 1 && styles.stepperBtnDisabled]}
+                                onPress={() => updateCheckpointStayDays(idx, -1)}
+                                disabled={checkpoint.stayDays <= 1}
+                                activeOpacity={0.7}
+                                accessibilityRole="button"
+                                accessibilityLabel={t('common.decrease') || 'Decrease'}
+                              >
+                                <Minus size={11} color={checkpoint.stayDays <= 1 ? '#94A3B8' : '#1E293B'} />
+                              </TouchableOpacity>
+                              <View style={styles.stepperCountBadge}>
+                                <Text style={styles.stepperCountText}>
+                                  {t('createTrip.timelineDaysCount', { count: checkpoint.stayDays })}
+                                </Text>
+                              </View>
+                              <TouchableOpacity
+                                style={styles.stepperBtn}
+                                onPress={() => updateCheckpointStayDays(idx, 1)}
+                                activeOpacity={0.7}
+                                accessibilityRole="button"
+                                accessibilityLabel={t('common.increase') || 'Increase'}
+                              >
+                                <Plus size={11} color="#1E293B" />
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+
+                          {/* Highlights / Activities editable note */}
+                          <View style={styles.checkpointActivitiesBox}>
+                            <Text style={styles.checkpointActivitiesLabel}>{t('createTrip.timelineActivitiesLabel')}</Text>
+                            <TextInput
+                              style={styles.checkpointActivitiesInput}
+                              value={checkpoint.activities}
+                              onChangeText={(text) => updateCheckpointActivities(idx, text)}
+                              placeholder={t('createTrip.timelineActivitiesPlaceholder')}
+                              placeholderTextColor="#94A3B8"
+                              multiline
+                            />
+                          </View>
+                        </View>
+
+                        {/* Transit Bridge to Next Checkpoint */}
+                        {!isLastStop && (
+                          <View style={styles.transitBridgeContainer}>
+                            <View style={styles.transitVerticalLine} />
+
+                            <View style={styles.transitCard}>
+                              {/* Transit Header */}
+                              <View style={styles.transitCardHeader}>
+                                <Navigation size={13} color="#4F46E5" />
+                                <Text style={styles.transitCardTitle}>
+                                  {t('createTrip.timelineTransitToNext', {
+                                    city: timelineCheckpoints[idx + 1]?.city || '',
+                                  })}
+                                </Text>
+                              </View>
+
+                              {/* Mode Selector Chips */}
+                              <View style={styles.transitSection}>
+                                <Text style={styles.transitSectionLabel}>{t('createTrip.timelineTransitMode')}</Text>
+                                <View style={styles.transitModesRow}>
+                                  {[
+                                    { id: 'CAB' as const, label: t('createTrip.timelineModeCab'), Icon: Car },
+                                    { id: 'TRAIN' as const, label: t('createTrip.timelineModeTrain'), Icon: Train },
+                                    { id: 'FLIGHT' as const, label: t('createTrip.timelineModeFlight'), Icon: Plane },
+                                    { id: 'BUS' as const, label: t('createTrip.timelineModeBus'), Icon: Bus },
+                                  ].map((mode) => {
+                                    const isSelected = checkpoint.transitMode === mode.id;
+                                    const ModeIcon = mode.Icon;
+                                    return (
+                                      <TouchableOpacity
+                                        key={mode.id}
+                                        style={[styles.transitModeChip, isSelected && styles.transitModeChipActive]}
+                                        onPress={() => updateCheckpointTransitMode(idx, mode.id)}
+                                        activeOpacity={0.7}
+                                      >
+                                        <ModeIcon size={12} color={isSelected ? '#FFFFFF' : '#64748B'} />
+                                        <Text
+                                          style={[
+                                            styles.transitModeChipText,
+                                            isSelected && styles.transitModeChipTextActive,
+                                          ]}
+                                        >
+                                          {mode.label}
+                                        </Text>
+                                      </TouchableOpacity>
+                                    );
+                                  })}
+                                </View>
+                              </View>
+
+                              {/* Travel Time between checkpoints */}
+                              <View style={styles.transitSection}>
+                                <View style={styles.transitTimeHeaderRow}>
+                                  <Clock size={12} color="#D97706" />
+                                  <Text style={styles.transitSectionLabel}>{t('createTrip.timelineTravelTime')}</Text>
+                                </View>
+                                <View style={styles.transitTimeRow}>
+                                  {['1h', '2h 30m', '4h', '6h', '8h', '12h'].map((preset) => {
+                                    const isPresetActive = checkpoint.transitTime === preset;
+                                    return (
+                                      <TouchableOpacity
+                                        key={preset}
+                                        style={[
+                                          styles.transitPresetPill,
+                                          isPresetActive && styles.transitPresetPillActive,
+                                        ]}
+                                        onPress={() => updateCheckpointTransitTime(idx, preset)}
+                                        activeOpacity={0.7}
+                                      >
+                                        <Text
+                                          style={[
+                                            styles.transitPresetText,
+                                            isPresetActive && styles.transitPresetTextActive,
+                                          ]}
+                                        >
+                                          {preset}
+                                        </Text>
+                                      </TouchableOpacity>
+                                    );
+                                  })}
+                                </View>
+                                <TextInput
+                                  style={styles.transitCustomTimeInput}
+                                  value={checkpoint.transitTime}
+                                  onChangeText={(text) => updateCheckpointTransitTime(idx, text)}
+                                  placeholder="e.g. 3h 30m"
+                                  placeholderTextColor="#94A3B8"
+                                />
+                              </View>
+                            </View>
+
+                            <View style={styles.transitVerticalLine} />
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })
+                ) : (
+                  <View style={styles.emptyTimelineCard}>
+                    <Compass size={36} color="#2563EB" style={{ marginBottom: 12 }} />
+                    <Text style={styles.emptyTimelineTitle}>{t('createTrip.prepareItineraryTitle')}</Text>
+                    <Text style={styles.emptyTimelineSub}>{t('createTrip.prepareItineraryDesc')}</Text>
+                  </View>
+                )}
+              </View>
+            );
+          })()}
 
           {/* ─── TAB 3: TRAVELERS & JOIN REQUESTS ────────────── */}
           {activeTab === 'TRAVELERS' && (
@@ -1449,6 +1809,8 @@ function CreateTripScreen() {
                       setTotalSeats(String(Math.max(1, curr - 1)));
                     }}
                     activeOpacity={0.8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Decrease seats"
                   >
                     <Text style={styles.counterBtnText}>-</Text>
                   </TouchableOpacity>
@@ -1465,6 +1827,8 @@ function CreateTripScreen() {
                       setTotalSeats(String(curr + 1));
                     }}
                     activeOpacity={0.8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Increase seats"
                   >
                     <Text style={styles.counterBtnText}>+</Text>
                   </TouchableOpacity>
@@ -2078,64 +2442,7 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 140,
   },
-  heroWrap: {
-    borderRadius: 22,
-    padding: 18,
-    marginBottom: 16,
-    overflow: 'hidden',
-    height: 190,
-    justifyContent: 'space-between',
-  },
-  heroBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  heroBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#FFEDD5',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#FED7AA',
-  },
-  heroBadgeText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#EA580C',
-    letterSpacing: 0.5,
-  },
-  heroUploadBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(255,255,255,0.92)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  heroUploadBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  heroTextWrap: {
-    marginTop: 'auto',
-  },
-  heroTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    marginBottom: 4,
-  },
-  heroSub: {
-    fontSize: 12.5,
-    color: 'rgba(255,255,255,0.9)',
-    lineHeight: 17,
-  },
+
 
   formContainer: {
     backgroundColor: '#FFFFFF',
@@ -2187,13 +2494,20 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     letterSpacing: 0.5,
   },
+  compactGridLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+    letterSpacing: 0.2,
+    marginBottom: 4,
+  },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: C.cardAlt,
-    borderRadius: 14,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: '#E2E8F0',
     paddingHorizontal: 12,
     height: 48,
   },
@@ -2202,8 +2516,9 @@ const styles = StyleSheet.create({
   },
   textInput: {
     flex: 1,
-    fontSize: 13,
-    color: C.white,
+    fontSize: 13.5,
+    fontWeight: '600',
+    color: '#0F172A',
     padding: 0,
   },
   helperText: {
@@ -2242,7 +2557,7 @@ const styles = StyleSheet.create({
   quickDestText: {
     fontSize: 12,
     fontWeight: '600',
-    color: C.white,
+    color: '#2563EB',
   },
 
   routeFlowCard: {
@@ -2278,7 +2593,7 @@ const styles = StyleSheet.create({
   cityPillText: {
     fontSize: 12,
     fontWeight: '600',
-    color: C.white,
+    color: '#1D4ED8',
   },
 
   gridRow: {
@@ -2291,57 +2606,104 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
-    marginBottom: 18,
+    marginBottom: 10,
   },
   amenityCard: {
-    width: (SCREEN_WIDTH - 76) / 2,
+    flexBasis: '48%',
+    flexGrow: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: C.cardAlt,
+    backgroundColor: '#F8FAFC',
     padding: 12,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    minHeight: 64,
   },
   amenityCardActive: {
-    backgroundColor: 'rgba(59, 130, 246, 0.12)',
-    borderColor: C.blue,
+    backgroundColor: '#EFF6FF',
+    borderColor: '#3B82F6',
   },
   amenityIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
   amenityTitle: {
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: '600',
-    color: C.textSec,
+    color: '#334155',
   },
   amenityTitleActive: {
-    color: C.white,
+    color: '#1D4ED8',
     fontWeight: '700',
   },
   amenitySub: {
-    fontSize: 12,
-    color: C.textMuted,
-    marginTop: 1,
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 1.5,
   },
   checkDot: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  checkDotActive: {
+    backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
+  },
+  servicesSummaryBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#F1F5F9',
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    marginBottom: 18,
+  },
+  servicesSummaryText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+  },
+
+  structuredSubCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: '#E2E8F0',
+    padding: 14,
+    marginBottom: 14,
+  },
+  subCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  subCardIconBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: 7,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  checkDotActive: {
-    backgroundColor: C.blue,
-    borderColor: C.blue,
+  subCardTitle: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#475569',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
   },
 
   privacyGrid: {
@@ -2351,31 +2713,50 @@ const styles = StyleSheet.create({
   },
   privacyCard: {
     flex: 1,
-    backgroundColor: C.cardAlt,
-    padding: 14,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: '#F8FAFC',
+    paddingVertical: 14,
+    paddingHorizontal: 6,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   privacyCardActive: {
-    backgroundColor: 'rgba(59, 130, 246, 0.15)',
-    borderColor: C.blue,
+    backgroundColor: '#EFF6FF',
+    borderColor: '#3B82F6',
+  },
+  privacyIconCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  privacyIconCircleActive: {
+    backgroundColor: '#DBEAFE',
   },
   privacyTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: C.textSec,
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#334155',
     marginTop: 6,
+    textAlign: 'center',
   },
   privacyTitleActive: {
-    color: C.white,
+    color: '#1D4ED8',
+    fontWeight: '700',
   },
   privacySub: {
-    fontSize: 12,
-    color: C.textMuted,
+    fontSize: 11,
+    color: '#64748B',
     marginTop: 2,
     textAlign: 'center',
+  },
+  privacySubActive: {
+    color: '#2563EB',
+    fontWeight: '500',
   },
 
   submitBtnWrap: {
@@ -2389,16 +2770,18 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   submitGradient: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
     height: 52,
+    paddingHorizontal: 16,
   },
   submitText: {
     fontSize: 14,
     fontWeight: '800',
-    color: C.white,
+    color: '#FFFFFF',
     letterSpacing: 0.3,
   },
 
@@ -2506,63 +2889,96 @@ const styles = StyleSheet.create({
   },
 
 
-  // ── Category Chips selector styles ──
-  categoryRow: {
+  // ── Category Grid selector styles ──
+  categoryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
     marginTop: 4,
   },
-  categoryChip: {
+  categoryCard: {
+    flexBasis: '48%',
+    flexGrow: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: C.cardAlt,
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: '#252D4A',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
     minHeight: MIN_TOUCH_TARGET,
   },
-  categoryChipActive: {
-    backgroundColor: 'rgba(59,130,246,0.15)',
-    borderColor: C.blue,
+  categoryCardActive: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#3B82F6',
+    borderWidth: 1.5,
   },
-  categoryChipIcon: {
-    fontSize: 13,
+  categoryIconCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
   },
-  categoryChipText: {
-    fontSize: 12,
-    color: C.textSec,
+  categoryIconCircleActive: {
+    backgroundColor: '#DBEAFE',
+  },
+  categoryCardText: {
+    flex: 1,
+    fontSize: 12.5,
     fontWeight: '600',
+    color: '#334155',
   },
-  categoryChipTextActive: {
-    color: C.white,
+  categoryCardTextActive: {
+    color: '#1D4ED8',
     fontWeight: '700',
+  },
+  categoryActiveCheck: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#DBEAFE',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 4,
   },
 
   // ── Two Actions Button block ──
   publishBtnRow: {
     flexDirection: 'row',
-    gap: 10,
-    marginTop: 12,
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 20,
+    marginBottom: 8,
   },
   primaryPublishBtn: {
     flex: 2,
+    height: 52,
     borderRadius: 16,
     overflow: 'hidden',
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
   },
   secondaryDraftBtn: {
     flex: 1,
-    backgroundColor: C.cardAlt,
+    height: 52,
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#252D4A',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 12,
   },
   secondaryDraftBtnText: {
     fontSize: 13.5,
-    color: C.white,
+    color: '#0F172A',
     fontWeight: '700',
   },
 
@@ -2606,70 +3022,282 @@ const styles = StyleSheet.create({
 
   // ── Timeline Tab Styles ──
   timelineContainer: {
-    backgroundColor: '#111422',
-    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#1E243B',
+    borderColor: '#E2E8F0',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  timelineHeaderRow: {
+    marginBottom: 16,
+  },
+  unplacedNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 10,
+    paddingVertical: 9,
+    paddingHorizontal: 11,
+    marginBottom: 14,
+  },
+  unplacedNoticeText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 17,
+    color: '#92400E',
   },
   timelineHeaderTitle: {
-    fontSize: 13.5,
+    fontSize: 15,
     fontWeight: '800',
-    color: C.white,
-    marginBottom: 16,
+    color: '#0F172A',
     letterSpacing: 0.2,
   },
-  timelineItem: {
+  timelineHeaderSubtitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+    marginTop: 4,
+  },
+  checkpointWrapper: {
+    marginBottom: 4,
+  },
+  checkpointCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    overflow: 'hidden',
+  },
+  checkpointHeaderRow: {
     flexDirection: 'row',
-    gap: 12,
-  },
-  timelineDotLine: {
     alignItems: 'center',
-    width: 16,
+    marginBottom: 10,
   },
-  timelineDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginTop: 6,
+  checkpointBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+    gap: 5,
+    flexShrink: 1,
   },
-  timelineVerticalLine: {
-    width: 2,
-    flex: 1,
-    backgroundColor: '#252D4A',
+  checkpointBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#1D4ED8',
+    letterSpacing: 0.4,
+  },
+  checkpointStayRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 10,
+  },
+  stayLabelWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  stayDurationLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  stepperContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    overflow: 'hidden',
+  },
+  stepperBtn: {
+    width: 26,
+    height: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F1F5F9',
+  },
+  stepperBtnDisabled: {
+    backgroundColor: '#F8FAFC',
+    opacity: 0.4,
+  },
+  stepperCountBadge: {
+    paddingHorizontal: 6,
+    minWidth: 46,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepperCountText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  checkpointCityTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 10,
+  },
+  checkpointActivitiesBox: {
+    marginTop: 2,
+  },
+  checkpointActivitiesLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  checkpointActivitiesInput: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 12.5,
+    color: '#0F172A',
+    lineHeight: 18,
+    minHeight: 48,
+  },
+  transitBridgeContainer: {
+    alignItems: 'center',
     marginVertical: 4,
   },
-  timelineContentCard: {
-    flex: 1,
-    backgroundColor: C.cardAlt,
-    borderRadius: 16,
+  transitVerticalLine: {
+    width: 2,
+    height: 14,
+    backgroundColor: '#CBD5E1',
+  },
+  transitCard: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
     padding: 12,
     borderWidth: 1,
-    borderColor: '#252D4A',
-    marginBottom: 12,
+    borderColor: '#E0E7FF',
+    borderLeftWidth: 3,
+    borderLeftColor: '#6366F1',
+    shadowColor: '#6366F1',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 1,
   },
-  dayBadge: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: C.blueText,
-    letterSpacing: 0.5,
-    marginBottom: 4,
+  transitCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 10,
   },
-  timelineTitle: {
+  transitCardTitle: {
     fontSize: 12.5,
-    fontWeight: '700',
-    color: C.white,
-    marginBottom: 4,
+    fontWeight: '800',
+    color: '#3730A3',
   },
-  timelineTime: {
-    fontSize: 12,
-    color: C.amber,
+  transitSection: {
+    marginBottom: 8,
+  },
+  transitSectionLabel: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#64748B',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  transitModesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  transitModeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  transitModeChipActive: {
+    backgroundColor: '#6366F1',
+    borderColor: '#4F46E5',
+  },
+  transitModeChipText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  transitModeChipTextActive: {
+    color: '#FFFFFF',
+  },
+  transitTimeHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
     marginBottom: 6,
   },
-  timelineDesc: {
+  transitTimeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 6,
+  },
+  transitPresetPill: {
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  transitPresetPillActive: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#F59E0B',
+  },
+  transitPresetText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  transitPresetTextActive: {
+    color: '#92400E',
+    fontWeight: '700',
+  },
+  transitCustomTimeInput: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     fontSize: 12,
-    color: C.textSec,
-    lineHeight: 15,
+    color: '#0F172A',
   },
   emptyTimelineCard: {
     alignItems: 'center',
@@ -2678,245 +3306,239 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   emptyTimelineTitle: {
-    fontSize: 14,
+    fontSize: 14.5,
     fontWeight: '700',
-    color: C.white,
+    color: '#0F172A',
     marginBottom: 6,
   },
   emptyTimelineSub: {
-    fontSize: 12,
-    color: C.textMuted,
+    fontSize: 12.5,
+    color: '#64748B',
     textAlign: 'center',
-    lineHeight: 16,
+    lineHeight: 18,
   },
 
   // ── Travelers Tab Styles ──
   travelersContainer: {
-    backgroundColor: '#111422',
-    borderRadius: 24,
-    padding: 18,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
     borderWidth: 1,
-    borderColor: '#1E243B',
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
   },
   capacityBox: {
-    backgroundColor: C.cardAlt,
+    backgroundColor: '#F8FAFC',
     borderRadius: 16,
-    padding: 14,
+    padding: 20,
     borderWidth: 1,
-    borderColor: '#252D4A',
-    marginBottom: 16,
+    borderColor: '#E2E8F0',
+    marginBottom: 20,
+    alignItems: 'center',
   },
   boxTitle: {
     fontSize: 12,
     fontWeight: '800',
-    color: C.textSec,
-    letterSpacing: 0.5,
-    marginBottom: 10,
+    color: '#64748B',
+    letterSpacing: 0.6,
+    marginBottom: 16,
     textAlign: 'center',
   },
   capacityCounterRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 24,
+    gap: 28,
   },
   counterBtn: {
-    width: MIN_TOUCH_TARGET,
-    height: MIN_TOUCH_TARGET,
-    borderRadius: MIN_TOUCH_TARGET / 2,
-    backgroundColor: '#111422',
-    borderWidth: 1,
-    borderColor: '#252D4A',
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
     alignItems: 'center',
     justifyContent: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
   },
   counterBtnText: {
-    fontSize: 20,
-    color: '#F8FAFC',
-    fontWeight: '600',
+    fontSize: 22,
+    color: '#0F172A',
+    fontWeight: '700',
+    lineHeight: 26,
   },
   counterDisplay: {
     alignItems: 'center',
+    minWidth: 80,
   },
   counterValueText: {
-    fontSize: 24,
+    fontSize: 32,
     fontWeight: '800',
-    color: '#F8FAFC',
+    color: '#0F172A',
   },
   counterSubText: {
-    fontSize: 12,
-    color: C.textMuted,
+    fontSize: 11,
+    color: '#64748B',
     fontWeight: '700',
-    marginTop: 2,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    marginTop: 4,
   },
   pillsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 4,
+    gap: 10,
   },
   categoryPill: {
-    backgroundColor: C.cardAlt,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    minHeight: MIN_TOUCH_TARGET,
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    minHeight: 44,
     justifyContent: 'center',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#252D4A',
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
   },
   categoryPillActive: {
-    backgroundColor: 'rgba(59,130,246,0.15)',
-    borderColor: C.blueText,
+    backgroundColor: '#EFF6FF',
+    borderColor: '#2563EB',
   },
   categoryPillText: {
-    fontSize: 12,
-    color: C.textSec,
+    fontSize: 13,
+    color: '#334155',
     fontWeight: '600',
   },
   categoryPillTextActive: {
-    color: '#F8FAFC',
+    color: '#1D4ED8',
     fontWeight: '700',
-  },
-  participantsList: {
-    gap: 8,
-  },
-  participantItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: C.cardAlt,
-    padding: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#252D4A',
-  },
-  avatarCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: C.blueText,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  participantName: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#F8FAFC',
-    flex: 1,
   },
   creatorBadge: {
     backgroundColor: 'rgba(245,158,11,0.15)',
     borderColor: 'rgba(245,158,11,0.4)',
     borderWidth: 1,
-    paddingHorizontal: 6,
+    paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
   },
   creatorBadgeText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '800',
-    color: C.amber,
+    color: '#D97706',
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginTop: 18,
-    marginBottom: 10,
+    marginTop: 20,
+    marginBottom: 12,
   },
   requestItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    backgroundColor: C.cardAlt,
+    gap: 12,
+    backgroundColor: '#F8FAFC',
     padding: 12,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#252D4A',
-    marginBottom: 8,
+    borderColor: '#E2E8F0',
+    marginBottom: 10,
   },
   reqAvatarWrap: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: C.amber,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F59E0B',
     alignItems: 'center',
     justifyContent: 'center',
   },
   reqName: {
-    fontSize: 12,
+    fontSize: 13.5,
     fontWeight: '700',
-    color: '#F8FAFC',
+    color: '#0F172A',
   },
   reqSub: {
     fontSize: 12,
-    color: C.textMuted,
+    color: '#64748B',
     marginTop: 1,
   },
   acceptBtn: {
-    width: MIN_TOUCH_TARGET,
-    height: MIN_TOUCH_TARGET,
-    borderRadius: 14,
-    backgroundColor: C.green,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#10B981',
     alignItems: 'center',
     justifyContent: 'center',
   },
   rejectBtn: {
-    width: MIN_TOUCH_TARGET,
-    height: MIN_TOUCH_TARGET,
-    borderRadius: 14,
-    backgroundColor: 'transparent',
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#FEE2E2',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(239,68,68,0.3)',
   },
 
   // ── Checklist Tab Styles ──
   checklistContainer: {
-    backgroundColor: '#111422',
-    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
     padding: 20,
     borderWidth: 1,
-    borderColor: '#1E243B',
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
   },
   checklistTitle: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
-    color: '#F8FAFC',
+    color: '#0F172A',
+    letterSpacing: 0.2,
     marginBottom: 4,
   },
   checklistSub: {
-    fontSize: 12,
-    color: C.textMuted,
-    lineHeight: 15,
-    marginBottom: 20,
+    fontSize: 12.5,
+    color: '#64748B',
+    lineHeight: 18,
+    marginBottom: 18,
   },
   checklistCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    backgroundColor: C.cardAlt,
-    padding: 12,
-    minHeight: MIN_TOUCH_TARGET,
-    borderRadius: 12,
+    gap: 12,
+    backgroundColor: '#F8FAFC',
+    paddingVertical: 13,
+    paddingHorizontal: 14,
+    minHeight: 52,
+    borderRadius: 14,
     marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#252D4A',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
   },
   checklistCardChecked: {
-    borderColor: 'rgba(16,185,129,0.3)',
-    backgroundColor: 'rgba(16,185,129,0.04)',
+    borderColor: '#10B981',
+    backgroundColor: '#ECFDF5',
   },
   checkItemText: {
-    fontSize: 12,
-    color: C.textSec,
+    fontSize: 13,
+    color: '#334155',
     fontWeight: '500',
     flex: 1,
+    lineHeight: 18,
   },
   checkItemTextChecked: {
-    color: C.green,
+    color: '#065F46',
     fontWeight: '600',
   },
 
@@ -3037,114 +3659,132 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
-  // ── Cover Photo Section styles ──
-  coverSectionWrap: {
+  // ── Cover Photo Compact Section styles ──
+  coverInputSection: {
     marginBottom: 16,
   },
-  galleryCard: {
+  compactUploadBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: 14,
-    gap: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  galleryIconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    borderWidth: 1,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    borderWidth: 1.5,
     borderColor: '#CBD5E1',
     borderStyle: 'dashed',
-    backgroundColor: '#F8FAFC',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    gap: 12,
+  },
+  compactUploadIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: '#EEF2FF',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  galleryCardContent: {
+  compactUploadTextCol: {
     flex: 1,
   },
-  galleryCardTitle: {
-    fontSize: 14,
+  compactUploadTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 2,
+  },
+  compactUploadSub: {
+    fontSize: 11.5,
+    color: '#64748B',
+  },
+  compactCoverPreview: {
+    height: 105,
+    borderRadius: 14,
+    overflow: 'hidden',
+    position: 'relative',
+    justifyContent: 'flex-end',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  compactCoverImg: {
+    ...StyleSheet.absoluteFill,
+  },
+  compactCoverOverlay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingBottom: 8,
+  },
+  coverStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(15,23,42,0.7)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  coverStatusText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  coverChangePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  coverChangePillText: {
+    fontSize: 11,
     fontWeight: '700',
     color: '#0F172A',
   },
-  galleryCardSub: {
-    fontSize: 11.5,
-    color: '#64748B',
-    marginTop: 2,
+  presetChipsWrapper: {
+    marginTop: 10,
   },
-  galleryBrowsePill: {
-    borderWidth: 1.5,
-    borderColor: '#C4B5FD',
-    backgroundColor: '#F5F3FF',
-    paddingHorizontal: 16,
-    paddingVertical: 7,
-    borderRadius: 14,
-  },
-  galleryBrowsePillText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#5B46E8',
-  },
-
-  // ── Preset Selector ──
-  coverDivider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 14,
-    gap: 10,
-  },
-  coverDividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#E2E8F0',
-  },
-  coverDividerText: {
+  presetChipsLabel: {
     fontSize: 10.5,
     fontWeight: '800',
+    letterSpacing: 0.6,
     color: '#94A3B8',
-    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginBottom: 8,
   },
-  presetsList: {
+  presetChipsScroll: {
+    gap: 8,
+    paddingVertical: 2,
+  },
+  presetPill: {
     flexDirection: 'row',
-    gap: 10,
-    paddingVertical: 4,
-  },
-  presetCard: {
-    width: 76,
-    height: 80,
-    borderRadius: 16,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1.5,
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
+    borderWidth: 1,
     borderColor: '#E2E8F0',
+  },
+  presetPillActive: {
+    backgroundColor: '#EEF2FF',
+    borderColor: '#6366F1',
+  },
+  presetPillIconWrap: {
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 8,
   },
-  presetCardActive: {
-    borderColor: '#5B46E8',
-    backgroundColor: '#F5F3FF',
-  },
-  presetIconWrap: {
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 6,
-  },
-  presetCardText: {
-    fontSize: 11,
-    fontWeight: '700',
+  presetPillText: {
+    fontSize: 12,
+    fontWeight: '600',
     color: '#475569',
   },
-  presetCardTextActive: {
-    color: '#5B46E8',
+  presetPillTextActive: {
+    color: '#4F46E5',
+    fontWeight: '700',
   },
 
   // ── Creations list modal styles ──

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   View,
@@ -6,13 +6,15 @@ import {
   StyleSheet,
   TouchableOpacity,
   KeyboardAvoidingView,
+  ScrollView,
   Platform,
   StatusBar,
   TextInput,
   Image,
+  Keyboard,
   type ViewStyle,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -138,6 +140,7 @@ const ROLES: RoleOption[] = [
 export default function AuthScreen() {
   const { t } = useTranslation();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
   const { currentRole, setCurrentRole, updateProfile, login, refreshTrips } = useApp();
   const queryClient = useQueryClient();
@@ -162,6 +165,44 @@ export default function AuthScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<FieldErrors>({});
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const keyboardOpen = isKeyboardVisible;
+
+  const scrollViewRef = useRef<ScrollView>(null);
+  const nameInputRef = useRef<TextInput>(null);
+  const emailInputRef = useRef<TextInput>(null);
+  const passwordInputRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, () => {
+      setIsKeyboardVisible(true);
+      if (passwordInputRef.current?.isFocused?.()) {
+        setTimeout(() => {
+          scrollViewRef.current?.scrollToEnd({ animated: true });
+        }, 80);
+      } else if (emailInputRef.current?.isFocused?.()) {
+        setTimeout(() => {
+          scrollViewRef.current?.scrollTo({ y: mode === 'SIGNUP' ? 220 : 160, animated: true });
+        }, 80);
+      } else if (nameInputRef.current?.isFocused?.()) {
+        setTimeout(() => {
+          scrollViewRef.current?.scrollTo({ y: 120, animated: true });
+        }, 80);
+      }
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setIsKeyboardVisible(false);
+      scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [mode]);
 
   const validateFields = (): FieldErrors => {
     const errs: FieldErrors = {};
@@ -221,12 +262,20 @@ export default function AuthScreen() {
         updateProfile(userObj);
         login();
         setTimeout(refreshAfterAuth, 300);
-        toast(t('auth.welcomeBackToast') || 'Welcome back!', 'success');
         if (router.canGoBack()) {
           router.back();
         } else {
           router.replace('/');
         }
+
+        const userName = userObj.name || userObj.email?.split('@')[0] || 'Traveler';
+        setTimeout(() => {
+          void showAlert(
+            'Signed In Successfully 🎉',
+            `You are signed into the application as ${userName}. Welcome back!`,
+            'Continue'
+          );
+        }, 150);
       } catch (err: unknown) {
         if (err instanceof ApiError) {
           if (err.code === 'INVALID_CREDENTIALS') {
@@ -280,22 +329,30 @@ export default function AuthScreen() {
         login();
         setTimeout(refreshAfterAuth, 300);
 
-        const roleChanged = userObj.role && userObj.role !== selectedRole;
-        if (roleChanged) {
-          await showAlert(
-            t('auth.accountCreatedTitle') || 'Account Created',
-            t('auth.roleAssignedNotice', { grantedRole: userObj.role }) || `Account created with role ${userObj.role}`,
-            t('common.ok') || 'OK'
-          );
-        } else {
-          toast(t('auth.accountCreatedToast') || 'Account created successfully!', 'success');
-        }
+        // As soon as the user signs up, take him directly to the profile section with setup guide
+        router.replace({
+          pathname: '/(tabs)/profile',
+          params: { setup: 'true' },
+        });
 
-        if (router.canGoBack()) {
-          router.back();
-        } else {
-          router.replace('/');
-        }
+        const userName = userObj.name || fullName.trim() || userObj.email?.split('@')[0] || 'Traveler';
+        const roleChanged = userObj.role && userObj.role !== selectedRole;
+
+        setTimeout(() => {
+          if (roleChanged) {
+            void showAlert(
+              'Account Created 🎉',
+              `Welcome, ${userName}! Let's set up your profile — add a profile photo from your device and a bio to connect with travelers.`,
+              'Set Up Profile'
+            );
+          } else {
+            void showAlert(
+              'Welcome to TravelStar! 🎉',
+              `Welcome, ${userName}! Let's set up your profile — add a profile photo from your device and a bio to connect with travelers.`,
+              'Set Up Profile'
+            );
+          }
+        }, 150);
       } catch (err: unknown) {
         if (err instanceof ApiError) {
           if (err.code === 'EMAIL_ALREADY_REGISTERED') {
@@ -334,31 +391,62 @@ export default function AuthScreen() {
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <StatusBar barStyle="dark-content" backgroundColor="#EFF4FB" translucent={false} />
 
-      {/* ── Top-Left Back Button ── */}
-      <TouchableOpacity
-        onPress={() => {
-          if (router.canGoBack()) {
-            router.back();
-          } else {
-            router.replace('/');
-          }
-        }}
-        style={styles.backButton}
-        activeOpacity={0.8}
-        accessibilityRole="button"
-        accessibilityLabel="Go back"
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      {/* ── Top Bar with Back Button (pinned above scroll content, never overlaps form) ── */}
+      <View style={styles.topBar}>
+        <TouchableOpacity
+          onPress={() => {
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.replace('/');
+            }
+          }}
+          style={styles.backButton}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <ArrowLeft size={20} color="#0B1E3F" strokeWidth={2.4} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Deliberately not a ScrollView: this form sits still on one
+          screen. Android runs adjustResize (see AndroidManifest), so the
+          window itself shrinks when the keyboard opens and the card no
+          longer fits in what is left. Centred, it would overflow equally
+          at the top and the bottom and clip the password field and submit
+          button off the bottom - exactly the controls being reached for.
+          Anchoring to the bottom while the keyboard is up moves the whole
+          overflow to the TOP instead: the banner slides out of frame the
+          way it would if you had scrolled, rather than vanishing in place,
+          and everything from the inputs down stays on screen. */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 44 : 0}
+        style={styles.flexFill}
       >
-        <ArrowLeft size={20} color="#0B1E3F" strokeWidth={2.4} />
-      </TouchableOpacity>
-
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flexFill}>
-
-        {/* ── Centered Content Area (Header + Form Card) ── */}
-        <View style={styles.centerContainer}>
+        <ScrollView
+          ref={scrollViewRef}
+          scrollEnabled={keyboardOpen}
+          bounces={false}
+          overScrollMode="never"
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={[
+            styles.scrollContent,
+            keyboardOpen && styles.scrollContentKeyboardOpen,
+          ]}
+        >
           <View style={styles.cardColumn}>
 
             {/* ── HEADER AIRPLANE IMAGE WITH LOWER-LEFT FADE & TEXT ── */}
+            {/* Always full height. An earlier attempt collapsed this to
+                zero while typing to free room for the keyboard; it made
+                the image pop out of existence, and in Sign-Up mode it
+                still was not enough height. The keyboard is handled by
+                anchoring the card to the bottom instead - see
+                `pageContent` in the stylesheet. */}
             <View style={styles.headerBanner}>
               <Image
                 source={require('@/assets/images/auth-header.jpg')}
@@ -391,6 +479,7 @@ export default function AuthScreen() {
 
               {/* Text on lower-left side just above the form */}
               <View style={styles.headerBottomLeftWrap} pointerEvents="none">
+                <Text style={styles.headerBrandHeading}>TravelStar</Text>
                 <Text style={styles.headerBottomLeftTitle}>
                   {mode === 'LOGIN' ? 'Welcome back' : 'Create account'}
                 </Text>
@@ -468,10 +557,25 @@ export default function AuthScreen() {
               {/* Input Fields */}
               {mode === 'SIGNUP' && (
                 <View style={styles.inputGroup}>
-                  <Text style={styles.inputFieldLabel}>FULL NAME (USERNAME)</Text>
-                  <View style={[styles.inputBox, Boolean(errors.name) && styles.inputBoxError]}>
-                    <User size={15} color={errors.name ? '#EF4444' : '#94A3B8'} strokeWidth={2} />
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => nameInputRef.current?.focus()}
+                  >
+                    <Text style={styles.inputFieldLabel}>FULL NAME (USERNAME)</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={1}
+                    onPress={() => {
+                      nameInputRef.current?.focus();
+                      setTimeout(() => {
+                        scrollViewRef.current?.scrollTo({ y: 120, animated: true });
+                      }, 100);
+                    }}
+                    style={[styles.inputBox, Boolean(errors.name) && styles.inputBoxError]}
+                  >
+                    <User size={16} color={errors.name ? '#EF4444' : '#94A3B8'} strokeWidth={2} />
                     <TextInput
+                      ref={nameInputRef}
                       placeholder="e.g. Alex Sharma"
                       placeholderTextColor="#94A3B8"
                       value={fullName}
@@ -479,11 +583,16 @@ export default function AuthScreen() {
                         setFullName(text);
                         if (errors.name) setErrors((prev) => ({ ...prev, name: undefined }));
                       }}
+                      onFocus={() => {
+                        setTimeout(() => {
+                          scrollViewRef.current?.scrollTo({ y: 120, animated: true });
+                        }, 100);
+                      }}
                       style={styles.textInput}
                       autoCapitalize="words"
                       autoCorrect={false}
                     />
-                  </View>
+                  </TouchableOpacity>
                   {errors.name ? (
                     <View style={styles.fieldErrorRow}>
                       <CircleAlert size={12} color="#DC2626" strokeWidth={2.2} />
@@ -494,10 +603,25 @@ export default function AuthScreen() {
               )}
 
               <View style={styles.inputGroup}>
-                <Text style={styles.inputFieldLabel}>EMAIL ADDRESS</Text>
-                <View style={[styles.inputBox, Boolean(errors.email) && styles.inputBoxError]}>
-                  <Mail size={15} color={errors.email ? '#EF4444' : '#94A3B8'} strokeWidth={2} />
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => emailInputRef.current?.focus()}
+                >
+                  <Text style={styles.inputFieldLabel}>EMAIL ADDRESS</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  activeOpacity={1}
+                  onPress={() => {
+                    emailInputRef.current?.focus();
+                    setTimeout(() => {
+                      scrollViewRef.current?.scrollTo({ y: mode === 'SIGNUP' ? 220 : 160, animated: true });
+                    }, 100);
+                  }}
+                  style={[styles.inputBox, Boolean(errors.email) && styles.inputBoxError]}
+                >
+                  <Mail size={16} color={errors.email ? '#EF4444' : '#94A3B8'} strokeWidth={2} />
                   <TextInput
+                    ref={emailInputRef}
                     placeholder="name@example.com"
                     placeholderTextColor="#94A3B8"
                     keyboardType="email-address"
@@ -508,9 +632,14 @@ export default function AuthScreen() {
                       setEmail(text);
                       if (errors.email) setErrors((prev) => ({ ...prev, email: undefined }));
                     }}
+                    onFocus={() => {
+                      setTimeout(() => {
+                        scrollViewRef.current?.scrollTo({ y: mode === 'SIGNUP' ? 220 : 160, animated: true });
+                      }, 100);
+                    }}
                     style={styles.textInput}
                   />
-                </View>
+                </TouchableOpacity>
                 {errors.email ? (
                   <View style={styles.fieldErrorRow}>
                     <CircleAlert size={12} color="#DC2626" strokeWidth={2.2} />
@@ -521,7 +650,17 @@ export default function AuthScreen() {
 
               <View style={styles.inputGroup}>
                 <View style={styles.passwordLabelRow}>
-                  <Text style={styles.inputFieldLabel}>PASSWORD</Text>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => {
+                      passwordInputRef.current?.focus();
+                      setTimeout(() => {
+                        scrollViewRef.current?.scrollToEnd({ animated: true });
+                      }, 100);
+                    }}
+                  >
+                    <Text style={styles.inputFieldLabel}>PASSWORD</Text>
+                  </TouchableOpacity>
                   {mode === 'LOGIN' && (
                     <TouchableOpacity
                       onPress={() => router.push('/forgot-password')}
@@ -531,9 +670,19 @@ export default function AuthScreen() {
                     </TouchableOpacity>
                   )}
                 </View>
-                <View style={[styles.inputBox, Boolean(errors.password) && styles.inputBoxError]}>
-                  <Lock size={15} color={errors.password ? '#EF4444' : '#94A3B8'} strokeWidth={2} />
+                <TouchableOpacity
+                  activeOpacity={1}
+                  onPress={() => {
+                    passwordInputRef.current?.focus();
+                    setTimeout(() => {
+                      scrollViewRef.current?.scrollToEnd({ animated: true });
+                    }, 100);
+                  }}
+                  style={[styles.inputBox, Boolean(errors.password) && styles.inputBoxError]}
+                >
+                  <Lock size={16} color={errors.password ? '#EF4444' : '#94A3B8'} strokeWidth={2} />
                   <TextInput
+                    ref={passwordInputRef}
                     placeholder="••••••••"
                     placeholderTextColor="#94A3B8"
                     secureTextEntry={!showPassword}
@@ -544,20 +693,26 @@ export default function AuthScreen() {
                       setPassword(text);
                       if (errors.password) setErrors((prev) => ({ ...prev, password: undefined }));
                     }}
+                    onFocus={() => {
+                      setTimeout(() => {
+                        scrollViewRef.current?.scrollToEnd({ animated: true });
+                      }, 100);
+                    }}
                     style={styles.textInput}
                   />
                   <TouchableOpacity
                     onPress={() => setShowPassword(!showPassword)}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                     accessibilityRole="button"
+                    accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
                   >
                     {showPassword ? (
-                      <EyeOff size={15} color="#64748B" strokeWidth={2} />
+                      <EyeOff size={16} color="#64748B" strokeWidth={2} />
                     ) : (
-                      <Eye size={15} color={errors.password ? '#EF4444' : '#94A3B8'} strokeWidth={2} />
+                      <Eye size={16} color={errors.password ? '#EF4444' : '#94A3B8'} strokeWidth={2} />
                     )}
                   </TouchableOpacity>
-                </View>
+                </TouchableOpacity>
                 {errors.password ? (
                   <View style={styles.fieldErrorRow}>
                     <CircleAlert size={12} color="#DC2626" strokeWidth={2.2} />
@@ -615,15 +770,27 @@ export default function AuthScreen() {
             </View>
 
           </View>
-        </View>
 
-        {/* ── Deep Bluish Bookmark Hanging off the Right Side Below the Form ── */}
-        <TouchableOpacity
+          {/* Reserved vertical clearance only needed when keyboard is active to keep fields clear */}
+          <View style={{ height: keyboardOpen ? 120 : 0 }} />
+        </ScrollView>
+      </KeyboardAvoidingView>
+
+      {/* ── Deep Bluish Bookmark, pinned to the bottom-right ──
+          Always mounted and always at the same offset. It used to be
+          unmounted whenever the keyboard opened (`!isKeyboardVisible &&`),
+          so it vanished mid-typing and popped back afterwards. It is
+          absolutely positioned against the screen, so it holds its place
+          instead of being shoved around by the form reflowing above it. */}
+      <TouchableOpacity
           onPress={() => {
             setMode(mode === 'LOGIN' ? 'SIGNUP' : 'LOGIN');
             setErrors({});
           }}
-          style={styles.screenBookmarkTab}
+          style={[
+            styles.screenBookmarkTab,
+            { bottom: Math.max(insets.bottom, 14) + 14 },
+          ]}
           activeOpacity={0.88}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           accessibilityRole="button"
@@ -638,9 +805,7 @@ export default function AuthScreen() {
               {mode === 'LOGIN' ? 'Sign Up' : 'Log In'} →
             </Text>
           </View>
-        </TouchableOpacity>
-
-      </KeyboardAvoidingView>
+      </TouchableOpacity>
     </SafeAreaView>
   );
 }
@@ -654,14 +819,27 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  // ── Centered Main Container ──
-  centerContainer: {
-    flex: 1,
+  // ── Top Navigation Bar ──
+  topBar: {
     width: '100%',
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 8 : 12,
+    paddingBottom: 4,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    zIndex: 50,
+  },
+
+  // ── Scroll Content Area ──
+  scrollContent: {
+    flexGrow: 1,
+    alignItems: 'center',
     paddingHorizontal: 16,
-    zIndex: 10,
+    paddingTop: 4,
+    paddingBottom: 24,
+  },
+  scrollContentKeyboardOpen: {
+    paddingBottom: 170,
   },
   cardColumn: {
     width: '100%',
@@ -674,18 +852,14 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
 
-  // ── Top-Left Floating Back Button ──
+  // ── Top-Left Back Button (inside topBar) ──
   backButton: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 28 : 34,
-    left: 20,
     width: 42,
     height: 42,
     borderRadius: 21,
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 100,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     shadowColor: '#0B1E3F',
@@ -705,7 +879,7 @@ const styles = StyleSheet.create({
   screenBookmarkTab: {
     position: 'absolute',
     right: 0,
-    bottom: 24,
+    bottom: 56,
     width: 248,
     height: 42,
     zIndex: 99,
@@ -754,7 +928,7 @@ const styles = StyleSheet.create({
   // ── Header Airplane Image Banner ──
   headerBanner: {
     width: '100%',
-    height: 185,
+    height: 195,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     borderBottomLeftRadius: 0,
@@ -780,23 +954,33 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 20,
     bottom: 14,
-    maxWidth: '78%',
+    maxWidth: '82%',
     zIndex: 10,
   },
-  headerBottomLeftTitle: {
-    fontSize: 22,
-    fontWeight: '800',
+  headerBrandHeading: {
+    fontSize: 24,
+    fontWeight: '900',
     color: '#0B1E3F',
-    letterSpacing: -0.4,
-    marginBottom: 3,
+    letterSpacing: -0.5,
+    marginBottom: 2,
+    textShadowColor: 'rgba(255, 255, 255, 0.95)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  headerBottomLeftTitle: {
+    fontSize: 15.5,
+    fontWeight: '700',
+    color: '#2563EB',
+    letterSpacing: -0.2,
+    marginBottom: 2,
     textShadowColor: 'rgba(255, 255, 255, 0.9)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
   headerBottomLeftSubtitle: {
-    fontSize: 11.5,
-    color: '#1E293B',
-    lineHeight: 16,
+    fontSize: 11,
+    color: '#475569',
+    lineHeight: 15,
     fontWeight: '600',
     textShadowColor: 'rgba(255, 255, 255, 0.95)',
     textShadowOffset: { width: 0, height: 1 },
@@ -928,15 +1112,15 @@ const styles = StyleSheet.create({
     color: '#0B63E5',
   },
   inputBox: {
-    height: 37,
+    height: 44,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FAFCFF',
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    paddingHorizontal: 10,
-    gap: 7,
+    paddingHorizontal: 11,
+    gap: 8,
   },
   inputBoxError: {
     borderColor: '#EF4444',

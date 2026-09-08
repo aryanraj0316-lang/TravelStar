@@ -341,21 +341,66 @@ router.get('/:id', async (req, res) => {
   // Public browse route — anonymous callers get isMyTrip: false.
   const tokenUserId = req.user?.id ?? null;
   try {
-    const t = await prisma.trip.findUnique({ where: { id }, include: TRIP_INCLUDE });
+    // The route timeline and packing checklist ride along on the detail
+    // response, not the list one: someone deciding whether to join needs
+    // the full picture (how long at each stop, how they travel between
+    // them, what to pack), and this endpoint is public precisely so they
+    // can see it before committing. Loading them on the *list* endpoint
+    // instead would multiply its payload for data no card renders.
+    const t = await prisma.trip.findUnique({
+      where: { id },
+      include: {
+        ...TRIP_INCLUDE,
+        timeline: { orderBy: { order: 'asc' } },
+        checklist: { orderBy: { order: 'asc' } },
+      },
+    });
     if (!t) {
       return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found' } });
     }
-    return res.status(200).json({ ok: true, data: mapTrip(t, tokenUserId) });
+    return res.status(200).json({
+      ok: true,
+      data: {
+        ...mapTrip(t, tokenUserId),
+        description: t.description,
+        timeline: t.timeline.map((s) => ({
+          order: s.order,
+          city: s.city,
+          stayDays: s.stayDays,
+          transitTimeMinutes: s.transitTimeMinutes,
+          transitMode: s.transitMode,
+          activities: s.activities,
+          latitude: s.latitude,
+          longitude: s.longitude,
+        })),
+        checklist: t.checklist.map((c) => ({ id: c.id, order: c.order, label: c.label })),
+      },
+    });
   } catch (err) {
     logger.error('[Trips] Get by id error:', err);
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve trip' } });
   }
 });
 
+// One stop on the trip's route, as built on the create screen's Timeline
+// tab. `transitTimeMinutes`/`transitMode` describe the leg used to REACH
+// this stop and are absent on the first one. Coordinates are optional
+// because a city the client could not geocode must arrive without them
+// rather than with invented ones (docs/REMEDIATION.md §0.2 rule 4).
+const timelineStopSchema = z.object({
+  city: z.string().trim().min(1).max(200),
+  stayDays: z.number().int().min(0).max(365).default(1),
+  transitTimeMinutes: z.number().int().min(0).max(60 * 24 * 30).nullish(),
+  transitMode: z.enum(['CAB', 'TRAIN', 'FLIGHT', 'BUS']).nullish(),
+  activities: z.string().trim().max(2000).default(''),
+  latitude: z.number().min(-90).max(90).nullish(),
+  longitude: z.number().min(-180).max(180).nullish(),
+});
+
 const createTripSchema = z
   .object({
-    id: z.string().uuid().optional(),
     name: z.string().trim().min(1).max(200),
+    description: z.string().trim().max(2000).optional(),
     cities: z.array(z.string().trim().min(1)).min(1).max(20),
     startDate: z.coerce.date(),
     endDate: z.coerce.date(),
@@ -369,6 +414,11 @@ const createTripSchema = z
     privacy: z.enum(['PUBLIC', 'PRIVATE', 'INVITE_ONLY']).default('PUBLIC'),
     coverImage: z.string().url().max(2000).optional(),
     category: z.string().trim().max(100).optional(),
+    // The Timeline tab's stops and the Checklist tab's items. Both were
+    // previously collected in the create screen's local state and thrown
+    // away on submit — no traveller ever saw either.
+    timeline: z.array(timelineStopSchema).max(20).optional(),
+    checklist: z.array(z.string().trim().min(1).max(200)).max(50).optional(),
   })
   .refine((data) => data.endDate.getTime() > data.startDate.getTime(), {
     message: 'endDate must be after startDate',
@@ -411,10 +461,17 @@ router.post('/', async (req, res) => {
     const { newTrip, chatRoom } = await prisma.$transaction(async (tx) => {
       const trip = await tx.trip.create({
         data: {
-          ...(data.id !== undefined ? { id: data.id } : {}),
+          // No client-supplied id: ids are database-generated (CONVENTIONS
+          // §5). The create screen used to send `trip-${Date.now()}`, which
+          // this schema rejected as a non-UUID — every "Create Trip" tap
+          // failed with a 400 until that was removed.
           creatorId: user.id,
           name: data.name,
-          description: 'Custom travel route created via TravelStar app.',
+          // The organizer's own words. This used to be a fixed sentence
+          // ("Custom travel route created via TravelStar app.") written
+          // onto every trip while the description the organizer actually
+          // typed on the Plan tab was dropped on the floor.
+          description: data.description ?? '',
           cities: data.cities,
           startDate: data.startDate,
           endDate: data.endDate,
@@ -433,6 +490,33 @@ router.post('/', async (req, res) => {
           category: data.category ?? null,
         },
       });
+
+      // The route timeline and packing checklist are written inside the
+      // same transaction as the trip: a trip that exists with half its
+      // itinerary missing would be worse than one that failed outright.
+      if (data.timeline && data.timeline.length > 0) {
+        await tx.tripTimelineStop.createMany({
+          data: data.timeline.map((stop, index) => ({
+            tripId: trip.id,
+            order: index,
+            city: stop.city,
+            stayDays: stop.stayDays,
+            // The first stop has no inbound leg, so it carries no transit
+            // details no matter what the client sent.
+            transitTimeMinutes: index === 0 ? null : (stop.transitTimeMinutes ?? null),
+            transitMode: index === 0 ? null : (stop.transitMode ?? null),
+            activities: stop.activities,
+            latitude: stop.latitude ?? null,
+            longitude: stop.longitude ?? null,
+          })),
+        });
+      }
+
+      if (data.checklist && data.checklist.length > 0) {
+        await tx.tripChecklistItem.createMany({
+          data: data.checklist.map((label, index) => ({ tripId: trip.id, order: index, label })),
+        });
+      }
 
       const room = await tx.chatRoom.create({
         data: { isGroup: true, name: data.name, tripId: trip.id },

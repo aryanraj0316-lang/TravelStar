@@ -1,11 +1,13 @@
 // docs/REMEDIATION.md §9.1 / §9.3 — a labelled text field with a real
 // accessibility label, a 44pt minimum height, and OS font scaling left on.
 import React from 'react';
-import { StyleSheet, Text, TextInput, View, type StyleProp, type TextInputProps, type ViewStyle } from 'react-native';
+import { StyleSheet, Text, TextInput, View, type StyleProp, type TextInputProps, type TextStyle, type ViewStyle } from 'react-native';
 import { C, MIN_TOUCH_TARGET, fontSize, fontWeight, radii, space } from '@/theme/tokens';
 
 export interface InputProps extends Omit<TextInputProps, 'style'> {
   label?: string;
+  labelStyle?: StyleProp<TextStyle>;
+  labelNumberOfLines?: number;
   /** Shown under the field in red and announced as an alert. */
   error?: string;
   hint?: string;
@@ -18,13 +20,48 @@ export interface InputProps extends Omit<TextInputProps, 'style'> {
   rightAccessory?: React.ReactNode;
 }
 
-export function Input({ label, error, hint, containerStyle, icon, rightAccessory, accessibilityLabel, ...rest }: InputProps) {
+export const Input = React.forwardRef<TextInput, InputProps>(function Input(
+  {
+    label,
+    labelStyle,
+    labelNumberOfLines,
+    error,
+    hint,
+    containerStyle,
+    icon,
+    rightAccessory,
+    accessibilityLabel,
+    ...rest
+  },
+  forwardedRef
+) {
+  const localRef = React.useRef<TextInput>(null);
+
+  React.useImperativeHandle(forwardedRef, () => localRef.current as TextInput);
+
+  const handleFocus = () => {
+    localRef.current?.focus();
+  };
+
   return (
     <View style={[styles.wrap, containerStyle]}>
-      {label ? <Text style={styles.label}>{label}</Text> : null}
-      <View style={[styles.box, !!error && styles.inputError]}>
+      {label ? (
+        <Text
+          onPress={handleFocus}
+          style={[styles.label, labelStyle]}
+          numberOfLines={labelNumberOfLines}
+        >
+          {label}
+        </Text>
+      ) : null}
+      <View
+        onStartShouldSetResponder={() => true}
+        onResponderRelease={handleFocus}
+        style={[styles.box, !!error && styles.inputError]}
+      >
         {icon}
         <TextInput
+          ref={localRef}
           {...rest}
           accessibilityLabel={accessibilityLabel ?? label ?? rest.placeholder}
           placeholderTextColor={C.textMuted}
@@ -41,7 +78,7 @@ export function Input({ label, error, hint, containerStyle, icon, rightAccessory
       ) : null}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   wrap: { gap: space[1] },

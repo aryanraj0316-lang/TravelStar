@@ -66,14 +66,13 @@ interface ScreenEmptyProps {
   message?: string;
   actionLabel?: string;
   onAction?: () => void;
+  icon?: React.ReactNode;
 }
 
-export function ScreenEmpty({ title, message, actionLabel, onAction }: ScreenEmptyProps) {
+export function ScreenEmpty({ title, message, actionLabel, onAction, icon }: ScreenEmptyProps) {
   return (
     <View style={styles.wrap}>
-      <View style={styles.glyph}>
-        <Text style={styles.glyphText}>·</Text>
-      </View>
+      {icon ? <View style={styles.glyph}>{icon}</View> : null}
       <Text style={styles.title}>{title}</Text>
       {message ? <Text style={styles.body}>{message}</Text> : null}
       {actionLabel && onAction ? (

@@ -191,15 +191,117 @@ export interface MapHazard {
   longitude: number | null;
 }
 
+/** How a group travels between two consecutive stops. */
+export type TransitMode = 'CAB' | 'TRAIN' | 'FLIGHT' | 'BUS';
+
+/**
+ * One stop on a trip's route, as the organizer built it on the create
+ * screen's Timeline tab.
+ *
+ * `transitTimeMinutes`/`transitMode` describe the leg travelled to REACH
+ * this stop, so both are null on the first one. Everything is null when the
+ * trip predates the Timeline tab being wired to the backend — the UI shows
+ * the stop without stay/transit detail rather than inventing any.
+ */
+export interface TripTimelineStop {
+  order: number;
+  city: string;
+  stayDays: number | null;
+  transitTimeMinutes: number | null;
+  transitMode: TransitMode | null;
+  activities: string;
+  latitude: number | null;
+  longitude: number | null;
+}
+
+export interface TripChecklistItem {
+  id: string;
+  order: number;
+  label: string;
+}
+
+/** A destination the signed-in user has bookmarked. */
+export interface SavedDestination {
+  id: string;
+  name: string;
+  tags: string;
+  rating: number;
+  image: string;
+  savedAt: string;
+}
+
+/**
+ * A trip plus the detail only `GET /trips/:id` returns. Everything here is
+ * public: it is what someone weighing up whether to join gets to read.
+ */
+export interface TripDetail extends Trip {
+  description: string;
+  timeline: TripTimelineStop[];
+  checklist: TripChecklistItem[];
+}
+
+/**
+ * The create-trip request body.
+ *
+ * Deliberately not `Partial<Trip>`: the client must not send an `id` (the
+ * database generates it — CONVENTIONS.md §5), and `Partial<Trip>` let the
+ * create screen ship `trip-${Date.now()}`, which the server rejected as a
+ * non-UUID. Every "Create Trip" tap failed with a 400 until this became an
+ * explicit input type that has no `id` field to fill in.
+ */
+export interface CreateTripInput {
+  name: string;
+  description?: string;
+  cities: string[];
+  startDate: string;
+  endDate: string;
+  budget: number;
+  totalSeats: number;
+  meetingPoint: string;
+  guideIncluded: boolean;
+  foodIncluded: boolean;
+  hotelIncluded: boolean;
+  cabIncluded: boolean;
+  privacy: 'PUBLIC' | 'PRIVATE' | 'INVITE_ONLY';
+  coverImage?: string;
+  category?: string;
+  timeline?: {
+    city: string;
+    stayDays: number;
+    transitTimeMinutes?: number | null;
+    transitMode?: TransitMode | null;
+    activities: string;
+    latitude?: number | null;
+    longitude?: number | null;
+  }[];
+  checklist?: string[];
+}
+
 export interface TripRoute {
   tripId: string;
   name: string;
   meetingPoint: string;
+  /** Trip start date (ISO `YYYY-MM-DD`), the anchor for each stop's day numbers. */
+  startDate: string;
   /** Straight lines between city centres — never a real road route. */
   approximate: boolean;
+  /** True when the stops carry the organizer's real timeline detail. */
+  hasTimeline: boolean;
   /** Cities the server could not place, so the UI can say so. */
   unplacedCities: number;
-  points: { name: string; latitude: number; longitude: number }[];
+  points: {
+    name: string;
+    latitude: number;
+    longitude: number;
+    order: number;
+    stayDays: number | null;
+    /** 1-based day of the trip the group reaches this stop. */
+    arrivalDay: number | null;
+    departureDay: number | null;
+    transitTimeMinutes: number | null;
+    transitMode: TransitMode | null;
+    activities: string;
+  }[];
 }
 
 // Per-category push opt-outs plus the master switch
@@ -563,7 +665,20 @@ export const apiService = {
     return request<MyTripBooking[]>('/trips/mine');
   },
 
-  async createTrip(tripData: Partial<Trip>): Promise<Trip | null> {
+  /**
+   * One trip with everything a prospective joiner needs to decide: the
+   * organizer's description, the full route timeline (stay length, transit
+   * leg and planned activities per stop) and the packing checklist.
+   *
+   * Public — deliberately reachable without a token, because the whole
+   * point is to be seen *before* joining. The list endpoint stays lean and
+   * does not carry any of this.
+   */
+  async getTripDetail(tripId: string): Promise<TripDetail | null> {
+    return request<TripDetail>(`/trips/${tripId}`);
+  },
+
+  async createTrip(tripData: CreateTripInput): Promise<Trip | null> {
     return request<Trip>('/trips', {
       method: 'POST',
       body: JSON.stringify(tripData),
@@ -796,6 +911,27 @@ export const apiService = {
 
   async getDestination(id: string): Promise<DestinationDetail | null> {
     return request<DestinationDetail>(`/destinations/${id}`);
+  },
+
+  // ── Saved destinations (profile > Saved Destinations) ──
+  //
+  // These replace the old `profile.savedPlaces` field, which only ever
+  // existed in this client's UserProfile type: the server's updateProfile
+  // schema had no such key, so it was stripped on the way in and the
+  // profile screen's list could never hold anything. All three are
+  // authenticated — a bookmark list is private to the user who made it.
+
+  async getSavedDestinations(): Promise<SavedDestination[] | null> {
+    return request<SavedDestination[]>('/destinations/saved');
+  },
+
+  /** Idempotent — saving an already-saved destination succeeds. */
+  async saveDestination(destinationId: string): Promise<{ destinationId: string; saved: boolean } | null> {
+    return request(`/destinations/${destinationId}/saved`, { method: 'PUT' });
+  },
+
+  async unsaveDestination(destinationId: string): Promise<{ destinationId: string; saved: boolean } | null> {
+    return request(`/destinations/${destinationId}/saved`, { method: 'DELETE' });
   },
 
   async createDestination(data: Omit<Destination, 'id'>): Promise<Destination | null> {

@@ -19,7 +19,6 @@ import { createAvatarUploadUrl, ObjectStorageNotConfiguredError } from '../../li
 
 const router = Router();
 
-const DEFAULT_AVATAR = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80';
 
 interface UserWithRelations {
   id: string;
@@ -53,7 +52,7 @@ function toClientProfile(user: UserWithRelations) {
       : (user.email?.split('@')[0] ?? 'Traveler'),
     email: user.email ?? '',
     phoneNumber: user.phoneNumber ?? '',
-    avatar: user.profile?.avatarUrl ?? DEFAULT_AVATAR,
+    avatar: user.profile?.avatarUrl ?? '',
     role: user.role,
     isVerified: user.profile?.verifiedBadge ?? false,
     // v1 does no identity/KYC verification (docs/REMEDIATION.md §12.1) — the
@@ -147,7 +146,7 @@ router.post('/register', async (req, res) => {
           create: {
             firstName: nameParts[0] ?? 'New',
             lastName: nameParts.slice(1).join(' ') || '',
-            avatarUrl: DEFAULT_AVATAR,
+            avatarUrl: null,
             verifiedBadge: false,
           },
         },
