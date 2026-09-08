@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { remoteMediaUrl } from '../../lib/validators';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 import { requireUserId, isAdmin } from '../../lib/auth-context';
@@ -158,7 +159,7 @@ const createGuideProfileSchema = z.object({
   // Optional: v1 does not store identity/credential documents
   // (docs/REMEDIATION.md §12.1). An admin verifies the licence number
   // out-of-band before moving the profile to VERIFIED.
-  licensePhotoUrl: z.string().url().max(2000).optional(),
+  licensePhotoUrl: remoteMediaUrl.optional(),
   experienceYears: z.number().int().min(0).max(80),
   expertisePlaces: z.array(z.string().trim().min(1)).min(1).max(50),
   languagesSpoken: z.array(z.string().trim().min(1)).min(1).max(20),
@@ -569,8 +570,8 @@ router.get('/:id/reels', async (req, res) => {
 // found in passing while wiring the real upload flow that produces these
 // URLs (§8.17).
 const createReelSchema = z.object({
-  videoUrl: z.string().url().max(2000),
-  thumbnailUrl: z.string().url().max(2000).optional(),
+  videoUrl: remoteMediaUrl,
+  thumbnailUrl: remoteMediaUrl.optional(),
   caption: z.string().trim().max(500).optional(),
 });
 

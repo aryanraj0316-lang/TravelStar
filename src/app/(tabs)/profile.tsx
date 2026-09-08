@@ -332,13 +332,19 @@ function ProfileScreen() {
       await uploadFileToUrl(asset.uri, uploadUrl, contentType);
       setEditAvatar(publicUrl);
     } catch (err) {
-      logger.warn('[Profile] Avatar upload failed, falling back to device asset URI:', err);
-      if (asset.uri) {
-        setEditAvatar(asset.uri);
-        toast('Photo selected from device', 'info');
-      } else {
-        toast(errorToastMessage(err, t('profile.couldNotUploadPhoto')), 'error');
-      }
+      // No local-URI fallback. `asset.uri` is a file://(blob:/data: on web)
+      // path that exists only on this device: it is not reachable by anyone
+      // else, not by this same user on another device, and does not survive
+      // a cache clear. Worse, it passes the server's `z.string().url()`
+      // check, so setting it here and saving persisted a permanently broken
+      // avatar for every other viewer while telling this user "Photo
+      // selected from device" as though it had worked.
+      //
+      // When storage is unconfigured (STORAGE_UNAVAILABLE) the honest
+      // outcome is that the photo could not be uploaded, which is what the
+      // comment above this function always said should happen.
+      logger.warn('[Profile] Avatar upload failed; discarding the picked photo:', err);
+      toast(errorToastMessage(err, t('profile.couldNotUploadPhoto')), 'error');
     } finally {
       setAvatarUploading(false);
     }
@@ -1299,21 +1305,43 @@ function ProfileScreen() {
         <Input label={t('profile.fullName')} value={editName} onChangeText={setEditName} placeholder={t('profile.enterFullName')} />
 
         {/* Gender Selection Section */}
-        <Text style={styles.inputLabel}>{t('profile.gender')}</Text>
-        <View style={styles.genderWrap}>
+        <Text style={styles.inputLabel}>{t('profile.gender', 'Gender')}</Text>
+        <View style={styles.genderRow}>
           {[
             { label: 'Male', labelKey: 'profile.genderMale' },
             { label: 'Female', labelKey: 'profile.genderFemale' },
             { label: 'Non-Binary', labelKey: 'profile.genderNonBinary' },
             { label: 'Private', labelKey: 'profile.genderPrivate' },
-          ].map((g) => (
-            <Chip
-              key={g.label}
-              label={t(g.labelKey)}
-              selected={editGender === g.label}
-              onPress={() => setEditGender(g.label)}
-            />
-          ))}
+          ].map((g) => {
+            const isSelected = editGender === g.label;
+            const displayLabel = t(g.labelKey, g.label);
+            return (
+              <TouchableOpacity
+                key={g.label}
+                activeOpacity={0.75}
+                onPress={() => setEditGender(g.label)}
+                style={[
+                  styles.genderOptionBtn,
+                  isSelected && styles.genderOptionBtnSelected,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={displayLabel}
+                accessibilityState={{ selected: isSelected }}
+              >
+                <Text
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.75}
+                  style={[
+                    styles.genderOptionText,
+                    isSelected && styles.genderOptionTextSelected,
+                  ]}
+                >
+                  {displayLabel}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         <Input
@@ -2005,11 +2033,42 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     width: '100%',
   },
-  genderWrap: {
+  genderRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+    alignItems: 'center',
+    gap: 6,
     marginVertical: 8,
+    width: '100%',
+  },
+  genderOptionBtn: {
+    flex: 1,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.2,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 2,
+  },
+  genderOptionBtnSelected: {
+    backgroundColor: '#0B63E5',
+    borderColor: '#0B63E5',
+    shadowColor: '#0B63E5',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  genderOptionText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+    textAlign: 'center',
+  },
+  genderOptionTextSelected: {
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
   avatarPreviewWrap: {
     position: 'relative',

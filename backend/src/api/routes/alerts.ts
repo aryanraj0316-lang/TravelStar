@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { remoteMediaUrl } from '../../lib/validators';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 import { sendPushToUsers } from '../../lib/push';
@@ -43,7 +44,7 @@ const createAlertSchema = z.object({
   desc: z.string().trim().min(1).max(2000),
   affectedRoute: z.string().trim().max(200).default(''),
   precautions: z.array(z.string().trim().min(1)).max(20).default([]),
-  image: z.string().url().max(2000),
+  image: remoteMediaUrl,
 });
 
 // Create a new alert (admin only — this is a safety-critical broadcast to

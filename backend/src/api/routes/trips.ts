@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { remoteMediaUrl } from '../../lib/validators';
 import { RecommendationService } from '../../services/recommendation';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
@@ -412,7 +413,7 @@ const createTripSchema = z
     hotelIncluded: z.boolean().default(false),
     cabIncluded: z.boolean().default(false),
     privacy: z.enum(['PUBLIC', 'PRIVATE', 'INVITE_ONLY']).default('PUBLIC'),
-    coverImage: z.string().url().max(2000).optional(),
+    coverImage: remoteMediaUrl.optional(),
     category: z.string().trim().max(100).optional(),
     // The Timeline tab's stops and the Checklist tab's items. Both were
     // previously collected in the create screen's local state and thrown

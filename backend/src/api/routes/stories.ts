@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { remoteMediaUrl } from '../../lib/validators';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 import { requireUserId } from '../../lib/auth-context';
@@ -36,7 +37,7 @@ router.get('/', async (req, res) => {
 const createStorySchema = z.object({
   title: z.string().trim().min(1).max(200).default('My Travel Story'),
   content: z.string().trim().max(5000).default(''),
-  coverImg: z.string().url().max(2000).optional(),
+  coverImg: remoteMediaUrl.optional(),
   location: z.string().trim().min(1).max(200).default('India'),
   hasReel: z.boolean().default(false),
 });

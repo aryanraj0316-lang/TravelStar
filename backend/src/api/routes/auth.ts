@@ -1,5 +1,6 @@
 import { Router, type Request } from 'express';
 import { z } from 'zod';
+import { remoteMediaUrl } from '../../lib/validators';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 import { requireUserId } from '../../lib/auth-context';
@@ -425,7 +426,7 @@ router.get('/profile', async (req, res) => {
 
 const updateProfileSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
-  avatar: z.string().url().max(2000).optional(),
+  avatar: remoteMediaUrl.optional(),
   gender: z.string().trim().max(40).optional(),
   bio: z.string().trim().max(500).optional(),
   phoneNumber: z.string().trim().max(30).optional(),

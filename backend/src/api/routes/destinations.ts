@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { remoteMediaUrl } from '../../lib/validators';
 import prisma from '../../services/db';
 import { requireUserId } from '../../lib/auth-context';
 import { cacheDelete, cached } from '../../lib/cache';
@@ -135,7 +136,7 @@ const createDestinationSchema = z.object({
   name: z.string().trim().min(1).max(200),
   tags: z.string().trim().min(1).max(300).default('Travel • Explore'),
   rating: z.number().min(0).max(5).default(4.5),
-  image: z.string().url().max(2000),
+  image: remoteMediaUrl,
   rank: z.number().int().min(0).default(0),
 });
 
