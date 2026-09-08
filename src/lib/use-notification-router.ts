@@ -9,6 +9,7 @@ import { logger } from '@/lib/logger';
 // See src/lib/push.ts for why this can't be a static import: it throws at
 // import time for remote push on Android inside Expo Go.
 const isExpoGoAndroid = Platform.OS === 'android' && Constants.executionEnvironment === 'storeClient';
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- must stay lazy: a static import of expo-notifications throws at import time in Expo Go on Android (see above)
 const Notifications = isExpoGoAndroid ? null : (require('expo-notifications') as typeof NotificationsType);
 
 /**

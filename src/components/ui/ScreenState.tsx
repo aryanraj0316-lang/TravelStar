@@ -105,7 +105,11 @@ const styles = StyleSheet.create({
     marginBottom: space[2],
   },
   glyphError: { borderColor: C.redText },
-  glyphText: { color: C.textMuted, fontSize: fontSize.lg, fontWeight: fontWeight.bold },
+  // textSec, not textMuted: these glyphs sit on `cardAlt`, where textMuted
+  // measures 4.34:1 and misses AA (see the note on the token itself). The
+  // glyph is decorative, but it is a real text node and the browser audit
+  // in e2e/ui-audit.js reads it as one.
+  glyphText: { color: C.textSec, fontSize: fontSize.lg, fontWeight: fontWeight.bold },
   title: {
     color: C.text,
     fontSize: fontSize.md,

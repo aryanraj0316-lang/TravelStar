@@ -1,0 +1,14 @@
+# Generated / vendored output — never hand-formatted, and reformatting it
+# only produces churn.
+dist/
+android/
+node_modules/
+backend/node_modules/
+backend/dist/
+.expo/
+package-lock.json
+backend/package-lock.json
+src/data/licenses.json
+.ssr-response.html
+e2e/report.json
+e2e/shots/

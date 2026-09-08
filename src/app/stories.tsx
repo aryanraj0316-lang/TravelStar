@@ -1,9 +1,15 @@
-import { useApp } from '@/store/AppContext';
+import { ScreenError, ScreenLoading } from '@/components/ui';
 import { apiService } from '@/services/api';
 import { logger } from '@/lib/logger';
+import { queryKeys } from '@/lib/query-keys';
+import { sectionState } from '@/lib/query-state';
+import type { FeedItem } from '@/types/api';
+import { useQuery } from '@tanstack/react-query';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import Camera from 'lucide-react-native/icons/camera';
 import Heart from 'lucide-react-native/icons/heart';
+import User from 'lucide-react-native/icons/user';
 import X from 'lucide-react-native/icons/x';
 import React, { useRef, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -31,38 +37,45 @@ import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 
 const STORY_DURATION = 5000; // 5 seconds per story slide
 
-interface FeedStory {
-  id: string;
-  coverImg?: string;
-  image?: string;
-  content?: string;
-  caption?: string;
-  authorName?: string;
-  creator?: string;
-  authorAvatar?: string;
-  creatorAvatar?: string;
-  location?: string;
-  title?: string;
-}
-
 export default function StoriesScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const params = useLocalSearchParams();
-  const locationParam = (params.location as string) ?? '';
-  const { storiesList } = useApp();
+  const idParam = (params.id as string) ?? '';
   const insets = useSafeAreaInsets();
 
-  const activeStoriesList: FeedStory[] = React.useMemo(() => {
-    if (!locationParam) return storiesList as FeedStory[];
-    return (storiesList as FeedStory[]).filter(
-      (s) =>
-        s.location?.toLowerCase().includes(locationParam.toLowerCase()) ||
-        s.title?.toLowerCase().includes(locationParam.toLowerCase())
-    );
-  }, [locationParam, storiesList]);
+  // The same merged feed the home rail shows (stories + guide reels), on the
+  // same query key so opening a rail item is a cache hit rather than a
+  // refetch. This used to read AppContext.storiesList — stories only — and
+  // filter it by a `location` string, so tapping a guide reel on the home
+  // screen always landed on an empty "no stories from here" screen.
+  const feedQuery = useQuery({
+    queryKey: queryKeys.feed(),
+    queryFn: async () => {
+      const page = await apiService.getFeed(20);
+      return page.items;
+    },
+  });
+  const { data: feed, refetch } = feedQuery;
+  const feedState = sectionState(feedQuery, feed != null);
+
+  const activeStoriesList: FeedItem[] = React.useMemo(() => feed ?? [], [feed]);
+  const initialIdx = React.useMemo(() => {
+    if (!idParam) return 0;
+    const found = activeStoriesList.findIndex((s) => s.id === idParam);
+    return found === -1 ? 0 : found;
+  }, [idParam, activeStoriesList]);
 
   const [currentIdx, setCurrentIdx] = useState(0);
+
+  // Jump to the tapped item once the feed resolves. Adjusted during render
+  // rather than in an effect (react-hooks/set-state-in-effect); it runs at
+  // most once per new starting index.
+  const [prevInitialIdx, setPrevInitialIdx] = useState(initialIdx);
+  if (initialIdx !== prevInitialIdx) {
+    setPrevInitialIdx(initialIdx);
+    setCurrentIdx(initialIdx);
+  }
   const [isLiked, setIsLiked] = useState<Record<string, boolean>>({});
 
   // Progress bar. progressValueRef mirrors the animated value via a
@@ -115,16 +128,38 @@ export default function StoriesScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentIdx, activeStoriesList]);
 
+  if (feedState.kind === 'loading') {
+    return (
+      <SafeAreaView style={styles.emptyContainer}>
+        <StatusBar barStyle="light-content" backgroundColor="#000" />
+        <ScreenLoading label={t('stories.loadingStories')} />
+      </SafeAreaView>
+    );
+  }
+
+  if (feedState.kind === 'error' || !feed) {
+    return (
+      <SafeAreaView style={styles.emptyContainer}>
+        <StatusBar barStyle="light-content" backgroundColor="#000" />
+        <ScreenError
+          title={t('stories.couldNotLoadStories')}
+          message={
+            feedState.kind === 'error' && feedState.offline
+              ? t('common.offlineMessage')
+              : t('stories.couldNotLoadStoriesMessage')
+          }
+          onRetry={() => void refetch()}
+        />
+      </SafeAreaView>
+    );
+  }
+
   if (activeStoriesList.length === 0) {
     return (
       <SafeAreaView style={styles.emptyContainer}>
         <StatusBar barStyle="light-content" backgroundColor="#000" />
         <Text style={styles.emptyTitle}>{t('stories.noStoriesYetTitle')}</Text>
-        <Text style={styles.emptyText}>
-          {locationParam
-            ? t('stories.noStoriesFromLocation', { location: locationParam })
-            : t('stories.beFirstToShare')}
-        </Text>
+        <Text style={styles.emptyText}>{t('stories.beFirstToShare')}</Text>
         <TouchableOpacity
           style={styles.emptyBtn}
           onPress={goBackOrHome}
@@ -138,17 +173,17 @@ export default function StoriesScreen() {
   }
 
   const activeStory = activeStoriesList[Math.min(currentIdx, activeStoriesList.length - 1)];
-  const storyImage =
-    activeStory.coverImg ||
-    activeStory.image ||
-    'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1000&q=80';
-  const storyCaption = activeStory.content || activeStory.caption || '';
-  const storyCreator = activeStory.authorName || activeStory.creator || t('stories.defaultCreatorName');
-  const storyCreatorAvatar =
-    activeStory.authorAvatar ||
-    activeStory.creatorAvatar ||
-    'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80';
-  const storyLocation = activeStory.location || t('stories.defaultLocation');
+  // Missing media stays missing and renders a neutral placeholder below.
+  // These used to fall back to two fixed Unsplash URLs — a stock landscape
+  // for the post and a stock face for its author — so a real person's story
+  // was shown under a stranger's photo (docs/REMEDIATION.md §0.2 rule 4).
+  // `stories.defaultLocation` was likewise the literal string "India", which
+  // labelled an unlocated post as being from somewhere it may not be.
+  const storyImage = activeStory.coverImg || null;
+  const storyCaption = activeStory.content || '';
+  const storyCreator = activeStory.authorName || t('stories.defaultCreatorName');
+  const storyCreatorAvatar = activeStory.authorAvatar || null;
+  const storyLocation = activeStory.location?.trim() || null;
 
   const handleToggleLike = async () => {
     const wasLiked = !!isLiked[activeStory.id];
@@ -166,7 +201,13 @@ export default function StoriesScreen() {
       <StatusBar barStyle="light-content" backgroundColor="#000" />
 
       <View style={styles.storyImageContainer}>
-        <Image source={{ uri: storyImage }} style={styles.storyImg} resizeMode="cover" />
+        {storyImage ? (
+          <Image source={{ uri: storyImage }} style={styles.storyImg} resizeMode="cover" />
+        ) : (
+          <View style={[styles.storyImg, styles.storyImgFallback]}>
+            <Camera size={40} color="rgba(255,255,255,0.35)" strokeWidth={1.5} />
+          </View>
+        )}
         <LinearGradient
           colors={['rgba(0,0,0,0.6)', 'transparent', 'rgba(0,0,0,0.75)']}
           style={StyleSheet.absoluteFill}
@@ -204,10 +245,16 @@ export default function StoriesScreen() {
       {/* Header */}
       <View style={styles.storyHeader}>
         <View style={styles.creatorMeta}>
-          <Image source={{ uri: storyCreatorAvatar }} style={styles.creatorAvatar} />
+          {storyCreatorAvatar ? (
+            <Image source={{ uri: storyCreatorAvatar }} style={styles.creatorAvatar} />
+          ) : (
+            <View style={[styles.creatorAvatar, styles.creatorAvatarFallback]}>
+              <User size={16} color="rgba(255,255,255,0.7)" strokeWidth={2} />
+            </View>
+          )}
           <View>
             <Text style={styles.creatorName}>{storyCreator}</Text>
-            <Text style={styles.locationText}>{storyLocation}</Text>
+            {storyLocation ? <Text style={styles.locationText}>{storyLocation}</Text> : null}
           </View>
         </View>
         <TouchableOpacity style={styles.closeBtn} onPress={goBackOrHome} accessibilityRole="button" accessibilityLabel={t('stories.closeStories')}>
@@ -291,6 +338,11 @@ const styles = StyleSheet.create({
   storyImg: {
     ...StyleSheet.absoluteFill,
   },
+  storyImgFallback: {
+    backgroundColor: '#111827',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   progressBarWrapper: {
     flexDirection: 'row',
     paddingHorizontal: 8,
@@ -333,6 +385,11 @@ const styles = StyleSheet.create({
     borderRadius: 19,
     borderWidth: 1.5,
     borderColor: C.blueGlow,
+  },
+  creatorAvatarFallback: {
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   creatorName: {
     color: '#FFF',

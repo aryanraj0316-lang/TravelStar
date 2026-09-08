@@ -1,15 +1,24 @@
-import { ScreenEmpty, ScreenError, SkeletonCard } from '@/components/ui';
+import TripDetailModal from '@/components/TripDetailModal';
+import { ScreenEmpty, ScreenError, Skeleton, SkeletonCard } from '@/components/ui';
+import {
+  getCurrentDeviceLocation,
+  getDeviceLocationIfPermitted,
+  type PassiveDeviceLocationResult,
+} from '@/lib/device-location';
 import { logger } from '@/lib/logger';
 import { formatINR } from '@/lib/money';
 import { queryKeys } from '@/lib/query-keys';
+import { sectionState } from '@/lib/query-state';
 import { formatTripDuration, tripCoverImage, tripTransportLabel } from '@/lib/trip-display';
+import { coarseCoordinate, weatherGlyph } from '@/lib/weather-display';
 import { apiService } from '@/services/api';
 import { eventBus } from '@/services/event-bus';
 import { useApp, UserRole, type Trip } from '@/store/AppContext';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
-import type { WeatherLocation } from '@/types/api';
+import type { FeedItem, HazardAlert } from '@/types/api';
 import { useQuery } from '@tanstack/react-query';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as ExpoLinking from 'expo-linking';
 import { useNavigation, useRouter, type Href } from 'expo-router';
 import Bell from 'lucide-react-native/icons/bell';
 import CalendarCheck from 'lucide-react-native/icons/calendar-check';
@@ -18,15 +27,16 @@ import Car from 'lucide-react-native/icons/car';
 import Check from 'lucide-react-native/icons/check';
 import ChevronRight from 'lucide-react-native/icons/chevron-right';
 import Clock from 'lucide-react-native/icons/clock';
+import Cloud from 'lucide-react-native/icons/cloud';
+import CloudFog from 'lucide-react-native/icons/cloud-fog';
+import CloudLightning from 'lucide-react-native/icons/cloud-lightning';
 import CloudRain from 'lucide-react-native/icons/cloud-rain';
-import Compass from 'lucide-react-native/icons/compass';
-import Film from 'lucide-react-native/icons/film';
-import Flame from 'lucide-react-native/icons/flame';
+import CloudSnow from 'lucide-react-native/icons/cloud-snow';
+import CloudSun from 'lucide-react-native/icons/cloud-sun';
+import Droplet from 'lucide-react-native/icons/droplet';
 import Globe from 'lucide-react-native/icons/globe';
-import Heart from 'lucide-react-native/icons/heart';
 import Map from 'lucide-react-native/icons/map';
 import MapPin from 'lucide-react-native/icons/map-pin';
-import MessageSquare from 'lucide-react-native/icons/message-square';
 import Mountain from 'lucide-react-native/icons/mountain';
 import Plane from 'lucide-react-native/icons/plane';
 import Plus from 'lucide-react-native/icons/plus';
@@ -38,16 +48,19 @@ import User from 'lucide-react-native/icons/user';
 import Users from 'lucide-react-native/icons/users';
 import Wallet from 'lucide-react-native/icons/wallet';
 import Waves from 'lucide-react-native/icons/waves-horizontal';
+import Wind from 'lucide-react-native/icons/wind';
 import X from 'lucide-react-native/icons/x';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
+  ActivityIndicator,
   Animated,
   Dimensions,
   Easing,
   Image,
   ImageBackground,
   Modal,
+  Platform,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -62,83 +75,34 @@ const HERO_BANNER_WIDTH = SCREEN_WIDTH;
 const HERO_BANNER_HEIGHT = Math.round(SCREEN_WIDTH * (355 / 1024));
 const TRENDING_CARD_WIDTH = SCREEN_WIDTH * 0.52;
 
-// ─── Color Palette synchronized with search page theme ───────────────
-
 // ─── Data ───────────────────────────────────────────────────────────
-const roles: { value: UserRole; labelKey: string; subKey: string; Icon: typeof Globe; borderColors: [string, string] }[] = [
-  { value: 'TOURIST', labelKey: 'home.roleTourist', subKey: 'home.roleTouristSub', Icon: Globe, borderColors: ['#0066FF', '#00F2FE'] },
-  { value: 'GUIDE', labelKey: 'home.roleGuide', subKey: 'home.roleGuideSub', Icon: Map, borderColors: ['#0066FF', '#6366F1'] },
-  { value: 'ORGANIZER', labelKey: 'home.roleOrganizer', subKey: 'home.roleOrganizerSub', Icon: Users, borderColors: ['#0066FF', '#7C3AED'] },
+const roles: { value: UserRole; labelKey: string; subKey: string; Icon: typeof Globe }[] = [
+  { value: 'TOURIST', labelKey: 'home.roleTourist', subKey: 'home.roleTouristSub', Icon: Globe },
+  { value: 'GUIDE', labelKey: 'home.roleGuide', subKey: 'home.roleGuideSub', Icon: Map },
+  { value: 'ORGANIZER', labelKey: 'home.roleOrganizer', subKey: 'home.roleOrganizerSub', Icon: Users },
 ];
 
-const quickAccessItems: { labelKey: string; Icon: typeof MapPin; gradient: [string, string]; iconColor: string; isNew: boolean; route?: Href }[] = [
-  { labelKey: 'home.quickNearby', Icon: MapPin, gradient: ['#111322', '#1B1E30'], iconColor: '#38BDF8', isNew: false, route: '/nearby-trips' },
-  { labelKey: 'home.quickBookings', Icon: CalendarCheck, gradient: ['#111322', '#1B1E30'], iconColor: '#34D399', isNew: false, route: '/bookings' },
-  { labelKey: 'home.quickBudgetTracker', Icon: Wallet, gradient: ['#111322', '#1B1E30'], iconColor: '#F59E0B', isNew: true, route: '/budget-tracker' },
+const quickAccessItems: { labelKey: string; Icon: typeof MapPin; isNew: boolean; route: Href }[] = [
+  { labelKey: 'home.quickNearby', Icon: MapPin, isNew: false, route: '/nearby-trips' },
+  { labelKey: 'home.quickBookings', Icon: CalendarCheck, isNew: false, route: '/bookings' },
+  { labelKey: 'home.quickBudgetTracker', Icon: Wallet, isNew: true, route: '/budget-tracker' },
 ];
 
-// ─── Instagram Stories Prompt Data (Empty State Highlights) ───────────
-interface InstagramStoryPrompt {
-  id: string;
-  title: string;
-  badge?: string;
-  Icon: typeof Camera;
-  gradient: [string, string, ...string[]];
-  action: 'CREATE_STORY' | 'VIEW_STORIES' | 'EXPLORE_NEARBY' | 'BUDGET_TRIPS' | 'GROUP_ORGANIZER';
-}
+/**
+ * Why the auth modal was opened. Every guest-gated action on this screen
+ * routes through one modal (`AuthPromptModal` below) rather than failing a
+ * request with a 401 or silently no-op-ing — the app is deliberately
+ * browse-before-login, so the boundary has to be a prompt, not an error.
+ */
+type AuthReason = 'STORY' | 'CREATE_TRIP' | 'JOIN_TRIP' | 'GUIDE_ROLE' | 'ORGANIZER_ROLE';
 
-const INSTAGRAM_PROMPTS: InstagramStoryPrompt[] = [
-  {
-    id: 'prompt-add-yours',
-    title: 'Add Yours',
-    badge: 'NEW',
-    Icon: Camera,
-    gradient: ['#F58529', '#DD2A7B', '#8134AF'],
-    action: 'CREATE_STORY',
-  },
-  {
-    id: 'prompt-reels',
-    title: 'Top Reels',
-    badge: 'HOT',
-    Icon: Film,
-    gradient: ['#8B5CF6', '#3B82F6', '#06B6D4'],
-    action: 'VIEW_STORIES',
-  },
-  {
-    id: 'prompt-gems',
-    title: 'Hidden Gems',
-    badge: 'EXPLORE',
-    Icon: Compass,
-    gradient: ['#06B6D4', '#10B981', '#34D399'],
-    action: 'EXPLORE_NEARBY',
-  },
-  {
-    id: 'prompt-trending',
-    title: 'Trending',
-    badge: '🔥',
-    Icon: Flame,
-    gradient: ['#F59E0B', '#EF4444', '#EC4899'],
-    action: 'BUDGET_TRIPS',
-  },
-  {
-    id: 'prompt-solo',
-    title: 'Solo Vibes',
-    badge: 'TRIPS',
-    Icon: Globe,
-    gradient: ['#2563EB', '#6366F1', '#8B5CF6'],
-    action: 'GROUP_ORGANIZER',
-  },
-];
-
-// The merged feed (getFeed) returns real FeedItems (sourceType STORY|REEL);
-// getStories() falls back to plain Storys. This captures only the fields
-// the story rail below actually reads.
-interface HomeFeedItem {
-  id: string;
-  coverImg?: string | null;
-  location?: string | null;
-  title?: string;
-}
+const AUTH_REASON_COPY: Record<AuthReason, { titleKey: string; descKey: string; Icon: typeof Camera }> = {
+  STORY: { titleKey: 'home.shareStoryModalTitle', descKey: 'home.shareStoryModalDesc', Icon: Camera },
+  CREATE_TRIP: { titleKey: 'home.createTripAuthTitle', descKey: 'home.createTripAuthDesc', Icon: Plus },
+  JOIN_TRIP: { titleKey: 'home.joinTripAuthTitle', descKey: 'home.joinTripAuthDesc', Icon: Users },
+  GUIDE_ROLE: { titleKey: 'home.guideAuthTitle', descKey: 'home.guideAuthDesc', Icon: Map },
+  ORGANIZER_ROLE: { titleKey: 'home.organizerAuthTitle', descKey: 'home.organizerAuthDesc', Icon: Users },
+};
 
 // ─── Apple-Style Live Character Formation Greeting Component ────────
 const GREETING_WORD_SEQUENCES = [
@@ -217,198 +181,356 @@ function AppleMultilingualGreetingBase({ isFocused }: { isFocused: boolean }) {
   );
 }
 
-// Far enough that a card is fully off the (max ~220pt wide) weather card
-// before the incoming one lands, so neither is ever half-visible mid-slide.
-const SLIDE_DISTANCE = 260;
+// ─── Weather ────────────────────────────────────────────────────────
 
-/** Stable empty default for the alerts query — see its use site. */
-const EMPTY_ALERTS: HomeAlertCard[] = [];
+type DeviceLocationState =
+  | { status: 'locating' }
+  | { status: 'ready'; latitude: number; longitude: number }
+  /** Permission was never asked for — a prompt would still work. */
+  | { status: 'notAsked' }
+  /** Refused, and the OS will not show the prompt again. Only Settings can undo it. */
+  | { status: 'denied' }
+  | { status: 'unavailable' };
 
-function FloatingTouristWeatherCardBase({ locations, isFocused }: { locations: WeatherLocation[]; isFocused: boolean }) {
-  const { t } = useTranslation();
-  // Base image: at (0,0) at rest, slides out while the next one slides in.
-  const [baseIndex, setBaseIndex] = useState(0);
-  // Sliding image: only exists while animating, starts off-screen and slides to (0,0)
-  const [slidingIndex, setSlidingIndex] = useState<number | null>(null);
-  // Two values, not one. The base layer's transform prop must never be
-  // removed: with useNativeDriver the native side owns that view's
-  // transform, and dropping the prop (the old `slidingItem ? … : null`)
-  // does not push a reset back down — the layer stayed parked at the
-  // exit position (-SLIDE_DISTANCE, i.e. off-screen behind `overflow:
-  // hidden`) after every slide, which is the card "going white" once the
-  // incoming layer unmounted. Giving the outgoing layer its own value
-  // means it can be snapped back to rest the moment it is promoted.
-  const enterAnim = useState(() => new Animated.Value(0))[0];
-  const exitAnim = useState(() => new Animated.Value(0))[0];
-  const baseIndexRef = useRef(0);
-  const isAnimatingRef = useRef(false);
+/**
+ * Resolves the device's own coordinates for the weather card, and exposes
+ * `request` for the CTA on the states where there is nothing to show.
+ *
+ * The mount path is deliberately passive (`getDeviceLocationIfPermitted`):
+ * it uses a permission the user has already granted, and never raises the
+ * system dialog on its own. Throwing a location prompt at someone the
+ * instant the app opens — before they have asked for anything — is the
+ * wrong trade for an ambient card, so the prompt only ever comes from the
+ * "Enable location" button below.
+ *
+ * There is deliberately no fallback city. The previous weather card read
+ * GET /weather (the `WeatherLocation` table), which is empty in a clean
+ * database and has no live source that ever fills it — so the card was
+ * permanently "not available" rather than wrong, but equally useless.
+ * Substituting a hardcoded city here instead would have been worse: a real
+ * temperature for somewhere the user is not.
+ */
+function useDeviceLocation() {
+  const [state, setState] = useState<DeviceLocationState>({ status: 'locating' });
+
+  const apply = useCallback((result: PassiveDeviceLocationResult) => {
+    if (result.ok) {
+      setState({ status: 'ready', latitude: result.latitude, longitude: result.longitude });
+      return;
+    }
+    if (result.reason === 'PERMISSION_NOT_REQUESTED') {
+      setState({ status: 'notAsked' });
+    } else if (result.reason === 'PERMISSION_DENIED') {
+      setState({ status: 'denied' });
+    } else {
+      setState({ status: 'unavailable' });
+    }
+  }, []);
 
   useEffect(() => {
-    if (!isFocused || locations.length <= 1) return;
-    const interval = setInterval(() => {
-      if (isAnimatingRef.current) return; // guard against overlap
-      isAnimatingRef.current = true;
-
-      const nextIdx = (baseIndexRef.current + 1) % locations.length;
-
-      // 1. Add the sliding layer (starts off-screen because enterAnim is 0)
-      enterAnim.setValue(0);
-      exitAnim.setValue(0);
-      setSlidingIndex(nextIdx);
-
-      // 2. Slide the new one in while the old one slides out.
-      Animated.parallel([
-        Animated.timing(enterAnim, {
-          toValue: 1,
-          duration: 600,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(exitAnim, {
-          toValue: 1,
-          duration: 600,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-      ]).start(({ finished }) => {
-        if (finished) {
-          // 3. Promote: base takes over the image the sliding layer is
-          //    already showing at (0,0), and snaps back to rest in the same
-          //    tick. The sliding layer is still mounted on top for this
-          //    frame, so the base moving underneath it is never seen.
-          baseIndexRef.current = nextIdx;
-          setBaseIndex(nextIdx);
-          setSlidingIndex(null);
-          exitAnim.setValue(0);
-        }
-        isAnimatingRef.current = false;
-      });
-    }, 3200);
-
-    return () => clearInterval(interval);
-  }, [locations, isFocused, enterAnim, exitAnim]);
-
-  // Slide direction alternates based on the sliding image index. The
-  // outgoing card exits along the same axis the incoming one enters on, so
-  // the two never occupy the card at once — the previous card is gone by
-  // the time the new one lands.
-  const dir = slidingIndex !== null ? slidingIndex % 4 : 0;
-  const axis = dir === 0 || dir === 2 ? 'x' : 'y';
-  const from = dir === 0 || dir === 1 ? -SLIDE_DISTANCE : SLIDE_DISTANCE;
-
-  // Home screen re-renders often (feed/destinations/weather/alerts/guides/
-  // stories/notifications are all separate useQuery hooks living in the
-  // same component, so any one of them settling re-renders everyone).
-  // Recomputing .interpolate() on every one of those incidental re-renders
-  // handed the native-driven Animated.View a brand-new node mid-slide, and
-  // re-attaching a native transform to a fresh node while it's animating is
-  // exactly the kind of thing that flashes to a default/extreme position
-  // for a frame — which, inside this card's `overflow: hidden`, reads as a
-  // blank flash. Memoizing keeps the same node across re-renders that don't
-  // actually change the slide direction/distance.
-  const { enterTransform, exitTransform } = useMemo(() => {
-    const enterTranslate = enterAnim.interpolate({ inputRange: [0, 1], outputRange: [from, 0] });
-    const exitTranslate = exitAnim.interpolate({ inputRange: [0, 1], outputRange: [0, -from] });
-    return {
-      enterTransform: axis === 'x' ? [{ translateX: enterTranslate }] : [{ translateY: enterTranslate }],
-      exitTransform: axis === 'x' ? [{ translateX: exitTranslate }] : [{ translateY: exitTranslate }],
+    // setState only ever runs from the resolved promise, never synchronously
+    // in this effect body (react-hooks/set-state-in-effect).
+    let cancelled = false;
+    void getDeviceLocationIfPermitted().then((result) => {
+      if (!cancelled) apply(result);
+    });
+    return () => {
+      cancelled = true;
     };
-  }, [axis, from, enterAnim, exitAnim]);
+  }, [apply]);
 
-  const renderWeatherContent = (loc: WeatherLocation) => (
-    <View style={styles.weatherCardInner}>
-      <View style={styles.locationRow}>
-        <MapPin size={12} color="#10B981" />
-        <Text style={styles.locationText} numberOfLines={1}>{loc.name} • {loc.place}</Text>
+  /** The prompting path. Only ever called from a user tap. */
+  const request = useCallback(() => {
+    setState({ status: 'locating' });
+    void getCurrentDeviceLocation().then(apply);
+  }, [apply]);
+
+  return { state, request };
+}
+
+const WEATHER_GLYPH_ICON = {
+  sun: Sun,
+  'cloud-sun': CloudSun,
+  cloud: Cloud,
+  rain: CloudRain,
+  snow: CloudSnow,
+  fog: CloudFog,
+  storm: CloudLightning,
+} as const;
+
+function LiveWeatherCardBase() {
+  const { t } = useTranslation();
+  const { state: locationState, request: requestLocation } = useDeviceLocation();
+
+  const coords = locationState.status === 'ready' ? locationState : null;
+  // Rounded to the same ~1km granularity the server caches at, so ordinary
+  // GPS jitter reuses the cached reading instead of refetching every mount.
+  const lat = coords ? coarseCoordinate(coords.latitude) : 0;
+  const lon = coords ? coarseCoordinate(coords.longitude) : 0;
+
+  const weatherQuery = useQuery({
+    queryKey: queryKeys.liveWeather(lat, lon),
+    queryFn: () => apiService.getLiveWeather(lat, lon),
+    enabled: coords !== null,
+    // Matches WEATHER_CACHE_TTL_SECONDS on the server: a reading older than
+    // this is worth refetching, anything newer is the same upstream answer.
+    staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+  });
+  const { data: weather, refetch } = weatherQuery;
+  const weatherState = sectionState(weatherQuery, weather != null);
+
+  if (locationState.status === 'locating' || (coords !== null && weatherState.kind === 'loading')) {
+    return (
+      <View style={styles.weatherCard}>
+        <View style={styles.cardHeaderRow}>
+          <View style={styles.cardHeaderBadge}>
+            <View style={[styles.cardLiveDot, styles.cardDotInactive]} />
+            <Text style={styles.cardHeaderText} numberOfLines={1}>
+              {t('home.weatherLocationOffTitle')}
+            </Text>
+          </View>
+          <View style={[styles.cardHeaderIconCircle, { backgroundColor: '#EFF6FF' }]}>
+            <CloudSun size={13} color="#2563EB" />
+          </View>
+        </View>
+
+        <View style={styles.cardStateCenter}>
+          <ActivityIndicator size="small" color="#2563EB" />
+          <Text style={styles.cardStateMessage}>{t('home.weatherLoading')}</Text>
+        </View>
+
+        <View style={styles.cardFooterSpacer} />
       </View>
-      <View style={styles.tempRow}>
-        <Text style={styles.tempText}>{loc.temp}</Text>
-        <Sun size={26} color="#F59E0B" />
+    );
+  }
+
+  if (
+    locationState.status === 'notAsked' ||
+    locationState.status === 'denied' ||
+    locationState.status === 'unavailable'
+  ) {
+    // A hard refusal can only be undone in the system settings — re-calling
+    // the permission API just resolves "denied" again on both platforms, so
+    // offering "Enable location" there would be a button that does nothing.
+    // `openSettings` has no web implementation, where re-asking through the
+    // browser prompt is the real affordance.
+    const canOpenSettings = locationState.status === 'denied' && Platform.OS !== 'web';
+    return (
+      <View style={styles.weatherCard}>
+        <View style={styles.cardHeaderRow}>
+          <View style={styles.cardHeaderBadge}>
+            <View style={[styles.cardLiveDot, styles.cardDotInactive]} />
+            <Text style={styles.cardHeaderText} numberOfLines={1}>
+              {t('home.weatherLocationOffTitle')}
+            </Text>
+          </View>
+          <View style={[styles.cardHeaderIconCircle, { backgroundColor: '#F1F5F9' }]}>
+            <MapPin size={13} color={C.textMuted} />
+          </View>
+        </View>
+
+        <View style={styles.cardStateCenter}>
+          <View style={[styles.cardCenterIconCircle, { backgroundColor: '#EFF6FF', borderColor: '#DBEAFE' }]}>
+            <MapPin size={18} color="#2563EB" strokeWidth={2.2} />
+          </View>
+          <Text style={styles.cardPromptTitle}>{t('home.weatherLocationOffTitle')}</Text>
+          <Text style={styles.cardPromptMessage} numberOfLines={2}>
+            {t('home.weatherLocationOffMessage')}
+          </Text>
+        </View>
+
+        <TouchableOpacity
+          style={styles.cardPrimaryCta}
+          activeOpacity={0.8}
+          onPress={() => {
+            if (canOpenSettings) {
+              void ExpoLinking.openSettings().catch((e) =>
+                logger.warn('[Home] Could not open system settings for location permission:', e),
+              );
+              return;
+            }
+            requestLocation();
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={canOpenSettings ? t('home.openSettings') : t('home.enableLocation')}
+        >
+          <Text style={styles.cardPrimaryCtaText}>
+            {canOpenSettings ? t('home.openSettings') : t('home.enableLocation')}
+          </Text>
+        </TouchableOpacity>
       </View>
-      <Text style={styles.weatherCondition}>{loc.condition}</Text>
-      <View style={styles.aqiRow}>
-        <Text style={styles.aqiLabel}>Air Quality </Text>
-        <Text style={styles.aqiValue}>{loc.aqi.replace(' AQI', '')}</Text>
+    );
+  }
+
+  // A 502 from /weather/live (Open-Meteo unreachable) surfaces as an error,
+  // never as a stale or invented reading.
+  if (weatherState.kind !== 'ready' || !weather) {
+    return (
+      <View style={styles.weatherCard}>
+        <View style={styles.cardHeaderRow}>
+          <View style={styles.cardHeaderBadge}>
+            <View style={[styles.cardLiveDot, styles.cardDotInactive]} />
+            <Text style={styles.cardHeaderText} numberOfLines={1}>
+              {t('home.weatherLocationOffTitle')}
+            </Text>
+          </View>
+          <View style={[styles.cardHeaderIconCircle, { backgroundColor: '#FEF2F2' }]}>
+            <AlertTriangle size={13} color={C.redText} />
+          </View>
+        </View>
+
+        <View style={styles.cardStateCenter}>
+          <View style={[styles.cardCenterIconCircle, { backgroundColor: '#FEF2F2', borderColor: '#FEE2E2' }]}>
+            <AlertTriangle size={18} color={C.amberText} strokeWidth={2.2} />
+          </View>
+          <Text style={styles.cardPromptTitle}>{t('home.weatherErrorTitle')}</Text>
+          <Text style={styles.cardPromptMessage} numberOfLines={2}>
+            {weatherState.kind === 'error' && weatherState.offline
+              ? t('common.offlineMessage')
+              : t('home.weatherErrorMessage')}
+          </Text>
+        </View>
+
+        <TouchableOpacity
+          style={styles.cardSecondaryCta}
+          activeOpacity={0.8}
+          onPress={() => void refetch()}
+          accessibilityRole="button"
+          accessibilityLabel={t('common.retry')}
+        >
+          <Text style={styles.cardSecondaryCtaText}>{t('common.retry')}</Text>
+        </TouchableOpacity>
       </View>
-      <Text style={styles.weatherDetail}>{t('home.humidity', { value: loc.humidity })}</Text>
-      <View style={styles.weatherThumbWrap}>
-        <Image source={{ uri: loc.image }} style={styles.weatherThumb} resizeMode="cover" />
-        <View style={styles.badgeLive}>
-          <Text style={styles.liveText}>• LIVE</Text>
+    );
+  }
+
+  const GlyphIcon = WEATHER_GLYPH_ICON[weatherGlyph(weather.condition)];
+
+  return (
+    <View style={styles.weatherCard}>
+      <View style={styles.cardHeaderRow}>
+        <View style={styles.cardHeaderBadge}>
+          <View style={[styles.cardLiveDot, styles.cardDotBlue]} />
+          <Text style={styles.cardHeaderText} numberOfLines={1}>
+            {t('home.weatherLocationOffTitle')}
+          </Text>
+        </View>
+        <View style={[styles.cardHeaderIconCircle, { backgroundColor: '#EFF6FF' }]}>
+          <GlyphIcon size={14} color="#2563EB" />
+        </View>
+      </View>
+
+      <View style={styles.weatherCenter}>
+        <Text style={styles.weatherTempText}>{weather.temp}</Text>
+        <Text style={styles.weatherConditionText} numberOfLines={1}>
+          {weather.condition}
+        </Text>
+        <View style={styles.weatherLocationRow}>
+          <MapPin size={11} color={C.greenText} />
+          <Text style={styles.weatherLocationText} numberOfLines={1}>
+            {t('home.yourLocation')}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.weatherFooterRow}>
+        <View style={styles.weatherStatPill}>
+          <Droplet size={11} color="#0284C7" />
+          <Text style={styles.weatherStatValue} numberOfLines={1}>
+            {weather.humidity}
+          </Text>
+        </View>
+        <View style={styles.weatherStatPill}>
+          <Wind size={11} color="#64748B" />
+          <Text style={styles.weatherStatValue} numberOfLines={1}>
+            {weather.windSpeed}
+          </Text>
         </View>
       </View>
     </View>
   );
+}
 
-  if (locations.length === 0) {
-    // Real "no weather data yet" state — never a fabricated temperature/AQI
-    // reading for a city nobody configured (see the query above).
-    return (
-      <View style={[styles.weatherCard, styles.weatherEmptyWrap]}>
-        <CloudRain size={22} color="#94A3B8" strokeWidth={1.8} />
-        <Text style={styles.weatherEmptyText}>{t('home.weatherEmpty')}</Text>
-      </View>
-    );
-  }
-  const baseItem = locations[baseIndex % locations.length];
-  const slidingItem = slidingIndex !== null ? locations[slidingIndex % locations.length] : null;
+// ─── Route safety ───────────────────────────────────────────────────
 
+function AllClearCard({ onViewDetails }: { onViewDetails: () => void }) {
+  const { t } = useTranslation();
   return (
-    <View style={styles.weatherCard}>
-      {/* elevation (for the drop shadow) and overflow: hidden (to clip the
-          sliding layers) must not live on the same view — Android disposes
-          of that combination by intermittently failing to composite
-          animated children, which is exactly the "goes blank" flash. The
-          shadow stays on weatherCard; clipping moves to this inner view. */}
-      <View style={styles.weatherClip}>
-        <Animated.View style={[StyleSheet.absoluteFill, styles.weatherLayer, { transform: exitTransform }]}>
-          {renderWeatherContent(baseItem)}
-        </Animated.View>
-        {slidingItem && (
-          <Animated.View
-            style={[StyleSheet.absoluteFill, styles.weatherLayer, { transform: enterTransform, zIndex: 10 }]}
-          >
-            {renderWeatherContent(slidingItem)}
-          </Animated.View>
-        )}
+    <View style={styles.allClearCard}>
+      <View style={styles.cardHeaderRow}>
+        <View style={styles.cardHeaderBadge}>
+          <View style={[styles.cardLiveDot, styles.cardDotGreen]} />
+          <Text style={styles.cardHeaderText} numberOfLines={1}>
+            {t('home.routeSafety')}
+          </Text>
+        </View>
+        <View style={[styles.cardHeaderIconCircle, { backgroundColor: '#ECFDF5' }]}>
+          <ShieldCheck size={14} color="#059669" strokeWidth={2.2} />
+        </View>
       </View>
+
+      <View style={styles.allClearCenter}>
+        <View style={styles.allClearIconCircle}>
+          <Check size={20} color="#059669" strokeWidth={2.6} />
+        </View>
+        <Text style={styles.allClearTitle}>{t('home.allClear')}</Text>
+        <Text style={styles.allClearSubtitle} numberOfLines={2}>
+          {t('home.allClearMinimalDesc')}
+        </Text>
+      </View>
+
+      <TouchableOpacity
+        style={styles.allClearFooterBtn}
+        activeOpacity={0.75}
+        onPress={onViewDetails}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        accessibilityRole="button"
+        accessibilityLabel={t('home.viewDetails')}
+      >
+        <Text style={styles.allClearFooterBtnText}>{t('home.viewDetails')}</Text>
+        <ChevronRight size={12} color={C.greenText} strokeWidth={2.4} />
+      </TouchableOpacity>
     </View>
   );
 }
 
-interface HomeAlertCard {
-  id: string;
-  severity: string;
-  title: string;
-  category: string;
-  desc: string;
-  image: string;
-}
+const ALERT_CATEGORY_ICON = {
+  LANDSLIDE: Mountain,
+  FLOOD_RAIN: Waves,
+  CLOUDBURST: CloudRain,
+  TRAFFIC_RUSH: Car,
+} as const;
 
-function RotatingMonsoonAlertCardBase({ alerts, isFocused }: { alerts: HomeAlertCard[]; isFocused: boolean }) {
+function RouteSafetyCardBase({ isFocused }: { isFocused: boolean }) {
   const { t } = useTranslation();
   const router = useRouter();
   const [alertIndex, setAlertIndex] = useState(0);
   const fadeAnim = useState(() => new Animated.Value(1))[0];
   const isAnimatingRef = useRef(false);
 
+  const alertsQuery = useQuery({
+    queryKey: queryKeys.alerts(),
+    queryFn: async () => (await apiService.getAlerts()) ?? [],
+  });
+  const { data: alerts, refetch } = alertsQuery;
+  const alertsState = sectionState(alertsQuery, alerts != null);
+
+  const alertCount = alerts?.length ?? 0;
+
   useEffect(() => {
-    if (!isFocused || alerts.length <= 1) return;
+    if (!isFocused || alertCount <= 1) return;
     const timer = setInterval(() => {
       if (isAnimatingRef.current) return;
       isAnimatingRef.current = true;
 
-      // 1. Fade out smoothly
       Animated.timing(fadeAnim, {
         toValue: 0,
         duration: 400,
         useNativeDriver: true,
       }).start(({ finished }) => {
         if (finished) {
-          // 2. Change content
-          setAlertIndex((prev) => (prev + 1) % alerts.length);
-
-          // 3. Fade back in
+          setAlertIndex((prev) => (prev + 1) % alertCount);
           Animated.timing(fadeAnim, {
             toValue: 1,
             duration: 450,
@@ -418,114 +540,144 @@ function RotatingMonsoonAlertCardBase({ alerts, isFocused }: { alerts: HomeAlert
           });
         }
       });
-    }, 5000); // 5 seconds interval
+    }, 5000);
 
     return () => clearInterval(timer);
-  }, [alerts, isFocused, fadeAnim]);
+  }, [alertCount, isFocused, fadeAnim]);
 
-  // No fake "Monsoon Warning" placeholder here — an empty active-alerts
-  // response is real, good news, not something to paper over with sample
-  // hazard data (that would be actively misleading on a safety card).
-  if (alerts.length === 0) {
+  const openAdvisory = useCallback(() => router.push('/monsoon-advisory'), [router]);
+
+  if (alertsState.kind === 'loading') {
     return (
       <View style={styles.allClearCard}>
-        {/* Top Header Row */}
-        <View style={styles.allClearHeaderRow}>
-          <View style={styles.allClearHeaderBadge}>
-            <View style={styles.allClearLiveDot} />
-            <Text style={styles.allClearHeaderText}>{t('home.routeSafety') || 'Route Safety'}</Text>
+        <View style={styles.cardHeaderRow}>
+          <View style={styles.cardHeaderBadge}>
+            <View style={[styles.cardLiveDot, styles.cardDotInactive]} />
+            <Text style={styles.cardHeaderText} numberOfLines={1}>
+              {t('home.routeSafety')}
+            </Text>
           </View>
-          <ShieldCheck size={16} color="#059669" strokeWidth={2.2} />
+          <View style={[styles.cardHeaderIconCircle, { backgroundColor: '#ECFDF5' }]}>
+            <ShieldCheck size={14} color="#059669" strokeWidth={2.2} />
+          </View>
         </View>
 
-        {/* Minimal Center Content */}
-        <View style={styles.allClearCenter}>
-          <View style={styles.allClearIconCircle}>
-            <Check size={20} color="#059669" strokeWidth={2.6} />
+        <View style={styles.cardStateCenter}>
+          <ActivityIndicator size="small" color="#10B981" />
+          <Text style={styles.cardStateMessage}>{t('home.checkingRoutes')}</Text>
+        </View>
+
+        <View style={styles.cardFooterSpacer} />
+      </View>
+    );
+  }
+
+  // Distinct from the all-clear state below on purpose. A failed hazard
+  // fetch rendering "all monitored routes are safe" is not a cosmetic bug —
+  // it is the safety card asserting something it does not know. That applies
+  // just as much when the reason is "we are offline" as when the server
+  // returned a 500.
+  if (alertsState.kind === 'error' || !alerts) {
+    return (
+      <View style={styles.allClearCard}>
+        <View style={styles.cardHeaderRow}>
+          <View style={styles.cardHeaderBadge}>
+            <View style={[styles.cardLiveDot, styles.cardDotInactive]} />
+            <Text style={styles.cardHeaderText} numberOfLines={1}>
+              {t('home.routeSafety')}
+            </Text>
           </View>
-          <Text style={styles.allClearTitle}>{t('home.allClear') || 'All Clear'}</Text>
-          <Text style={styles.allClearSubtitle}>
-            {t('home.allClearMinimalDesc') || 'All monitored routes are safe and running normally.'}
+          <View style={[styles.cardHeaderIconCircle, { backgroundColor: '#FEF2F2' }]}>
+            <AlertTriangle size={13} color={C.redText} />
+          </View>
+        </View>
+
+        <View style={styles.cardStateCenter}>
+          <View style={[styles.cardCenterIconCircle, { backgroundColor: '#FEF2F2', borderColor: '#FEE2E2' }]}>
+            <AlertTriangle size={18} color={C.amberText} strokeWidth={2.2} />
+          </View>
+          <Text style={styles.cardPromptTitle}>{t('home.couldNotLoadAlerts')}</Text>
+          <Text style={styles.cardPromptMessage} numberOfLines={2}>
+            {alertsState.kind === 'error' && alertsState.offline
+              ? t('common.offlineMessage')
+              : t('home.couldNotLoadAlertsMessage')}
           </Text>
         </View>
 
-        {/* Minimal Action Link */}
         <TouchableOpacity
-          style={styles.allClearLink}
-          activeOpacity={0.7}
-          onPress={() => router.push('/monsoon-advisory')}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={styles.cardSecondaryCta}
+          activeOpacity={0.8}
+          onPress={() => void refetch()}
           accessibilityRole="button"
-          accessibilityLabel={t('home.viewDetails')}
+          accessibilityLabel={t('common.retry')}
         >
-          <Text style={styles.allClearLinkText}>{t('home.viewDetails')}</Text>
-          <ChevronRight size={13} color="#059669" strokeWidth={2.4} />
+          <Text style={styles.cardSecondaryCtaText}>{t('common.retry')}</Text>
         </TouchableOpacity>
       </View>
     );
   }
-  const activeAlert = alerts[alertIndex % alerts.length];
 
-  const getCategoryIcon = (category: string, severity: string) => {
-    const iconColor = severity === 'CRITICAL' ? '#EF4444' : severity === 'WARNING' ? '#F59E0B' : '#0066FF';
-    // Matches the API's actual coded category values (AlertCategory in
-    // @/types/api / the createAlertSchema enum in backend/alerts.ts), not
-    // display-formatted strings — those never came back from a real alert.
-    switch (category) {
-      case 'LANDSLIDE':
-        return <Mountain size={14} color={iconColor} />;
-      case 'FLOOD_RAIN':
-        return <Waves size={14} color={iconColor} />;
-      case 'CLOUDBURST':
-        return <CloudRain size={14} color={iconColor} />;
-      case 'TRAFFIC_RUSH':
-        return <Car size={14} color={iconColor} />;
-      default:
-        return <AlertTriangle size={14} color={iconColor} />;
-    }
-  };
+  // Zero active alerts is the real, good answer from GET /alerts (synced
+  // hourly from GDACS), not an absence of data — so it gets a deliberate
+  // "all clear" card rather than a generic empty state.
+  if (alerts.length === 0) {
+    return <AllClearCard onViewDetails={openAdvisory} />;
+  }
 
-  const getAlertColors = (severity: string) => {
-    switch (severity) {
-      case 'CRITICAL':
-        return { text: '#EF4444', iconBg: 'rgba(239, 68, 68, 0.15)' };
-      case 'WARNING':
-        return { text: '#F59E0B', iconBg: 'rgba(245, 158, 11, 0.15)' };
-      default:
-        return { text: '#0066FF', iconBg: 'rgba(0, 102, 255, 0.15)' };
-    }
-  };
-
-  const colors = getAlertColors(activeAlert.severity);
+  const activeAlert: HazardAlert = alerts[alertIndex % alerts.length];
+  const CategoryIcon = ALERT_CATEGORY_ICON[activeAlert.category] ?? AlertTriangle;
 
   return (
     <Animated.View style={[styles.advisoryCard, { opacity: fadeAnim }]}>
-      <View style={styles.advisoryIconWrap}>
-        <AlertTriangle size={18} color="#DC2626" />
+      <View style={styles.cardHeaderRow}>
+        <View style={styles.cardHeaderBadge}>
+          <View style={[styles.cardLiveDot, styles.cardDotRed]} />
+          <Text style={[styles.cardHeaderText, { color: C.redText }]} numberOfLines={1}>
+            {t('home.routeSafety')}
+          </Text>
+        </View>
+        <View style={[styles.cardHeaderIconCircle, { backgroundColor: '#FEE2E2' }]}>
+          <CategoryIcon size={13} color={C.redText} />
+        </View>
       </View>
-      <Text style={styles.advisoryTitle} numberOfLines={2}>
-        {activeAlert.title}
-      </Text>
-      <Text style={styles.advisoryDesc} numberOfLines={4}>
-        {activeAlert.desc}
-      </Text>
+
+      <View style={styles.advisoryCenter}>
+        <Text style={styles.advisoryTitle} numberOfLines={2}>
+          {activeAlert.title}
+        </Text>
+        <Text style={styles.advisoryDesc} numberOfLines={3}>
+          {activeAlert.desc}
+        </Text>
+      </View>
+
       <TouchableOpacity
-        style={styles.advisoryLink}
+        style={styles.advisoryFooterBtn}
         activeOpacity={0.8}
-        onPress={() => router.push('/monsoon-advisory')}
-        hitSlop={{ top: 8, bottom: 10, left: 8, right: 8 }}
+        onPress={openAdvisory}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         accessibilityRole="button"
         accessibilityLabel={t('home.viewDetails')}
       >
-        <Text style={styles.advisoryLinkText}>{t('home.viewDetails')} &gt;</Text>
+        <Text style={styles.advisoryFooterBtnText}>{t('home.viewDetails')}</Text>
+        <ChevronRight size={12} color={C.redText} strokeWidth={2.4} />
       </TouchableOpacity>
     </Animated.View>
   );
 }
 
-function FeaturedTripsCarouselBase({ isFocused }: { isFocused: boolean }) {
+// ─── Featured group trips ───────────────────────────────────────────
+
+function FeaturedTripsCarouselBase({
+  isFocused,
+  onOpenTrip,
+  onRequestAuth,
+}: {
+  isFocused: boolean;
+  onOpenTrip: (trip: Trip) => void;
+  onRequestAuth: (reason: AuthReason) => void;
+}) {
   const { t } = useTranslation();
-  const { trips, setActiveRoomId, dataStatus, refreshTrips } = useApp();
+  const { trips, dataStatus, refreshTrips, isLoggedIn, joinTrip, requestedTrips } = useApp();
   const router = useRouter();
   const carouselRef = useRef<ScrollView>(null);
   const isInteracting = useRef(false);
@@ -576,12 +728,15 @@ function FeaturedTripsCarouselBase({ isFocused }: { isFocused: boolean }) {
     return () => cancelAnimationFrame(raf);
   }, [organizerTrips, isFocused]);
 
-  // The trip's own cover image or nothing. This used to look the id up in a
-  // hardcoded table and otherwise match words in the title against stock
-  // Unsplash photos, so a Kerala trip could be illustrated with Rajasthan
-  // (docs/REMEDIATION.md §8.15 / §9.5).
-  const getRoomId = (trip: Trip) => {
-    return trip?.chatRoomId || `room-${trip.id}`;
+  const handleJoin = (trip: Trip) => {
+    if (!isLoggedIn) {
+      onRequestAuth('JOIN_TRIP');
+      return;
+    }
+    // The real join flow: POST /interactions/join-request through
+    // AppContext, which owns the optimistic `requestedTrips` entry, the
+    // rollback on failure and the offline queue.
+    joinTrip(trip.id);
   };
 
   if (dataStatus.trips === 'loading') {
@@ -606,13 +761,30 @@ function FeaturedTripsCarouselBase({ isFocused }: { isFocused: boolean }) {
 
   if (organizerTrips.length === 0) {
     return (
-      <View style={styles.carouselContainer}>
-        <ScreenEmpty
-          title={t('home.noTripsYet')}
-          message={t('home.noTripsYetMessage')}
-          actionLabel={t('home.createATrip')}
-          onAction={() => router.navigate('/create')}
-        />
+      <View style={styles.emptyTripCard}>
+        <View style={styles.emptyTripIconCircle}>
+          <Users size={20} color="#64748B" strokeWidth={1.8} />
+        </View>
+        <Text style={styles.emptyTripTitle}>{t('home.noTripsYet')}</Text>
+        <Text style={styles.emptyTripSubtitle}>{t('home.noTripsYetMessage')}</Text>
+        <TouchableOpacity
+          style={styles.emptyTripBtn}
+          activeOpacity={0.8}
+          onPress={() => {
+            if (isLoggedIn) {
+              router.navigate('/create');
+            } else {
+              onRequestAuth('CREATE_TRIP');
+            }
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={isLoggedIn ? t('home.createATrip') : t('home.signInToCreate')}
+        >
+          <Plus size={14} color="#FFFFFF" strokeWidth={2.4} />
+          <Text style={styles.emptyTripBtnText}>
+            {isLoggedIn ? t('home.createATrip') : t('home.signInToCreate')}
+          </Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -639,16 +811,14 @@ function FeaturedTripsCarouselBase({ isFocused }: { isFocused: boolean }) {
           const imageUri = tripCoverImage(trip);
           const durationText = formatTripDuration(trip);
           const transportText = tripTransportLabel(trip);
+          const alreadyRequested = requestedTrips.has(trip.id);
 
           return (
             <TouchableOpacity
               key={`${trip.id}-${idx}`}
               activeOpacity={0.85}
-              onPress={() => {
-                router.navigate('/search');
-              }}
+              onPress={() => onOpenTrip(trip)}
               style={[styles.tripCard, { width: SCREEN_WIDTH - 40 }]}
-              accessibilityRole="button"
               accessibilityLabel={trip.name}
               accessibilityHint={t('home.tripCardHint')}
             >
@@ -666,7 +836,7 @@ function FeaturedTripsCarouselBase({ isFocused }: { isFocused: boolean }) {
                   locations={[0, 0.45, 1]}
                   style={StyleSheet.absoluteFill}
                 />
-                <View style={[styles.tripBadge, { backgroundColor: '#6C5CE7' }]}>
+                <View style={styles.tripBadge}>
                   <Text style={styles.tripBadgeText}>{t('home.featured')}</Text>
                 </View>
               </View>
@@ -685,7 +855,7 @@ function FeaturedTripsCarouselBase({ isFocused }: { isFocused: boolean }) {
                 <View style={styles.tripDetailsMetaRow}>
                   {trip.guideIncluded ? (
                     <View style={styles.verifiedBadge}>
-                      <Check size={8} color={C.blue} strokeWidth={3} />
+                      <Check size={8} color={C.blueText} strokeWidth={3} />
                       <Text style={styles.verifiedText}>{t('home.guideIncluded')}</Text>
                     </View>
                   ) : null}
@@ -730,30 +900,24 @@ function FeaturedTripsCarouselBase({ isFocused }: { isFocused: boolean }) {
                     <Text style={styles.priceLabel}>{t('home.totalPackage')}</Text>
                     <Text style={styles.priceAmount}>{formatINR(trip.budget)}</Text>
                   </View>
-                  <View style={{ gap: 4, width: 110 }}>
-                    <TouchableOpacity
-                      style={styles.joinBtn}
-                      onPress={() => {
-                        router.navigate('/search');
-                      }}
-                      accessibilityRole="button"
-                      accessibilityLabel={t('home.joinNow')}
-                    >
-                      <Text style={styles.joinBtnText}>{t('home.joinNow')}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.joinBtn, { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#0066FF', paddingVertical: 4 }]}
-                      onPress={() => {
-                        setActiveRoomId(getRoomId(trip));
-                        router.navigate('/chat');
-                      }}
-                      accessibilityRole="button"
-                      accessibilityLabel={t('home.joinChat')}
-                    >
-                      <MessageSquare size={9} color="#0066FF" style={{ marginRight: 2 }} />
-                      <Text style={[styles.joinBtnText, { color: '#0066FF' }]}>{t('home.joinChat')}</Text>
-                    </TouchableOpacity>
-                  </View>
+                  {/* The join CTA reflects `requestedTrips`, so a trip this
+                      user has already asked to join never offers to ask
+                      again. There is no "Join Chat" shortcut here any more:
+                      the trip chat is for confirmed members, and the button
+                      opened a client-invented `room-<tripId>` (CONVENTIONS
+                      §5) that a non-member cannot post in. */}
+                  <TouchableOpacity
+                    style={[styles.joinBtn, alreadyRequested && styles.joinBtnRequested]}
+                    disabled={alreadyRequested}
+                    onPress={() => handleJoin(trip)}
+                    accessibilityRole="button"
+                    accessibilityState={{ disabled: alreadyRequested }}
+                    accessibilityLabel={alreadyRequested ? t('home.joinRequested') : t('home.joinNow')}
+                  >
+                    <Text style={[styles.joinBtnText, alreadyRequested && styles.joinBtnRequestedText]}>
+                      {alreadyRequested ? t('home.joinRequested') : t('home.joinNow')}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             </TouchableOpacity>
@@ -764,17 +928,347 @@ function FeaturedTripsCarouselBase({ isFocused }: { isFocused: boolean }) {
   );
 }
 
-// This screen runs six independent useQuery hooks (feed, stories,
-// destinations, weather, alerts, guides) plus the AppContext subscription,
-// and they settle at different times. Every one of those settling used to
-// re-render all four of these children — each of which drives its own
-// animation loop and rebuilds its Animated interpolations on render. None of
-// them read anything from the parent beyond the props below, so memoising
-// them means a query resolving no longer interrupts an animation mid-flight.
+// ─── Trending destinations ──────────────────────────────────────────
+
+/**
+ * Curated reference content (`GET /destinations`, seeded once by
+ * `npm run seed:reference`), deliberately public and shown to guests — it
+ * is admin-written catalog copy about real places, not a claim about live
+ * conditions or anyone's trip, so it is neither dummy data nor a leak of
+ * private content. Cards open the real destination by its database id.
+ */
+function TrendingDestinationsBase({ isFocused }: { isFocused: boolean }) {
+  const { t } = useTranslation();
+  const router = useRouter();
+  const trendingRef = useRef<ScrollView>(null);
+  const scrollXRef = useRef(0);
+  const isInteractingRef = useRef(false);
+  const [activeDot, setActiveDot] = useState(0);
+
+  const destinationsQuery = useQuery({
+    queryKey: queryKeys.destinations(),
+    queryFn: async () => (await apiService.getDestinations()) ?? [],
+  });
+  const { data: destinations, refetch } = destinationsQuery;
+  const destinationsState = sectionState(destinationsQuery, destinations != null);
+
+  const destinationCount = destinations?.length ?? 0;
+
+  useEffect(() => {
+    if (!isFocused || destinationCount <= 1) return;
+    const itemWidth = TRENDING_CARD_WIDTH + 12;
+
+    // `activeDot` is read through the state updater rather than the closure,
+    // so this interval is armed once for the life of the carousel. With it in
+    // the dependency array the effect tore down and re-armed a fresh timer on
+    // every tick — three timers a second of pure churn, for an animation that
+    // only moves once every three seconds.
+    const interval = setInterval(() => {
+      if (isInteractingRef.current) return;
+      setActiveDot((prev) => {
+        const nextDot = prev + 1 >= destinationCount ? 0 : prev + 1;
+        scrollXRef.current = nextDot * itemWidth;
+        trendingRef.current?.scrollTo({ x: scrollXRef.current, animated: true });
+        return nextDot;
+      });
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [destinationCount, isFocused]);
+
+  if (destinationsState.kind === 'loading') {
+    return (
+      <View style={styles.sectionStateWrap}>
+        <SkeletonCard />
+      </View>
+    );
+  }
+
+  if (destinationsState.kind === 'error' || !destinations) {
+    return (
+      <View style={styles.sectionStateWrap}>
+        <ScreenError
+          title={t('home.couldNotLoadDestinations')}
+          message={
+            destinationsState.kind === 'error' && destinationsState.offline
+              ? t('common.offlineMessage')
+              : t('home.couldNotLoadDestinationsMessage')
+          }
+          onRetry={() => void refetch()}
+        />
+      </View>
+    );
+  }
+
+  if (destinations.length === 0) {
+    return (
+      <View style={styles.sectionStateWrap}>
+        <ScreenEmpty title={t('home.destinationsEmptyTitle')} message={t('home.destinationsEmpty')} />
+      </View>
+    );
+  }
+
+  const infiniteTrendingDests = [...destinations, ...destinations];
+
+  return (
+    <>
+      <ScrollView
+        ref={trendingRef}
+        horizontal
+        snapToInterval={TRENDING_CARD_WIDTH + 12}
+        decelerationRate="fast"
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.trendingRow}
+        scrollEventThrottle={16}
+        onTouchStart={() => {
+          isInteractingRef.current = true;
+        }}
+        onTouchEnd={() => {
+          setTimeout(() => {
+            isInteractingRef.current = false;
+          }, 1200);
+        }}
+        onScrollBeginDrag={() => {
+          isInteractingRef.current = true;
+        }}
+        onScrollEndDrag={(e) => {
+          scrollXRef.current = e.nativeEvent.contentOffset.x;
+          setTimeout(() => {
+            isInteractingRef.current = false;
+          }, 1200);
+        }}
+        onMomentumScrollEnd={(e) => {
+          const x = e.nativeEvent.contentOffset.x;
+          scrollXRef.current = x;
+          const currentIdx = Math.round(x / (TRENDING_CARD_WIDTH + 12)) % destinations.length;
+          setActiveDot(currentIdx);
+          isInteractingRef.current = false;
+        }}
+      >
+        {infiniteTrendingDests.map((dest, index) => (
+          <TouchableOpacity
+            key={`${dest.id}-${index}`}
+            style={styles.trendingCard}
+            activeOpacity={0.9}
+            onPress={() => {
+              router.push({
+                pathname: '/destination-details',
+                params: { id: String(dest.id) }
+              });
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={t('home.destinationCardLabel', { name: dest.name, rating: dest.rating })}
+          >
+            <Image
+              source={{ uri: dest.image }}
+              style={StyleSheet.absoluteFill}
+              resizeMode="cover"
+            />
+            <LinearGradient
+              colors={['transparent', 'rgba(0,0,0,0.78)']}
+              style={styles.trendingOverlay}
+            />
+            {/* Hanging Vertical Ribbon Tag for Rank */}
+            <View style={styles.rankRibbonWrap}>
+              <LinearGradient
+                colors={['#FFD700', '#F59E0B', '#B45309']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0, y: 1 }}
+                style={styles.rankRibbonBody}
+              >
+                <Text style={styles.rankRibbonText}>#{(index % destinations.length) + 1}</Text>
+              </LinearGradient>
+            </View>
+            {/* No heart/favourite button: there is no save-a-destination
+                endpoint in this API (only /interactions/like, which likes a
+                Trip), so the control could never do anything. */}
+            <View style={styles.trendingInfo}>
+              <Text style={styles.trendingName}>{dest.name}</Text>
+              <Text style={styles.trendingTags}>{dest.tags}</Text>
+              <View style={styles.ratingRow}>
+                <Star size={12} color={C.star} fill={C.star} />
+                <Text style={styles.ratingText}>{dest.rating}</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+      {/* Pagination Dots */}
+      <View style={styles.dotsRow}>
+        {destinations.map((dest) => (
+          <View
+            key={dest.id}
+            style={[
+              styles.dot,
+              activeDot === destinations.indexOf(dest) ? styles.dotActive : styles.dotInactive,
+            ]}
+          />
+        ))}
+      </View>
+    </>
+  );
+}
+
+// ─── Stories / feed rail ────────────────────────────────────────────
+
+function StoriesRailBase({
+  avatarUri,
+  onAddStory,
+}: {
+  avatarUri: string | null;
+  onAddStory: () => void;
+}) {
+  const { t } = useTranslation();
+  const router = useRouter();
+
+  // The merged feed (stories + guide reels). There is deliberately no
+  // stories-only fallback: GET /feed already degrades to whichever of the
+  // two sources has rows, and swapping endpoints on failure hid real
+  // outages behind a partial list.
+  const feedQuery = useQuery({
+    queryKey: queryKeys.feed(),
+    queryFn: async () => {
+      const page = await apiService.getFeed(20);
+      return page.items;
+    },
+  });
+  const { data: feed, refetch } = feedQuery;
+  const feedState = sectionState(feedQuery, feed != null);
+
+  const addStoryTile = (
+    <TouchableOpacity
+      style={styles.storyItem}
+      activeOpacity={0.8}
+      onPress={onAddStory}
+      accessibilityRole="button"
+      accessibilityLabel={t('home.addStory')}
+    >
+      <View style={styles.addStoryRing}>
+        {avatarUri ? (
+          <Image source={{ uri: avatarUri }} style={styles.storyImage} />
+        ) : (
+          <View style={styles.addStoryAvatarFallback}>
+            <Camera size={24} color={C.blueText} strokeWidth={1.8} />
+          </View>
+        )}
+        <View style={styles.addStoryPlusBadge}>
+          <Plus size={12} color={C.white} strokeWidth={3} />
+        </View>
+      </View>
+      <Text style={styles.storyName} numberOfLines={1}>
+        {t('home.yourStory')}
+      </Text>
+    </TouchableOpacity>
+  );
+
+  if (feedState.kind === 'loading') {
+    return (
+      <View style={styles.storiesRow}>
+        {addStoryTile}
+        {[0, 1, 2, 3].map((i) => (
+          <View key={i} style={styles.storyItem}>
+            <Skeleton width={64} height={64} borderRadius={32} />
+            <Skeleton width={52} height={10} />
+          </View>
+        ))}
+      </View>
+    );
+  }
+
+  if (feedState.kind === 'error' || !feed) {
+    return (
+      <View style={styles.sectionStateWrap}>
+        <ScreenError
+          title={t('home.couldNotLoadFeed')}
+          message={
+            feedState.kind === 'error' && feedState.offline
+              ? t('common.offlineMessage')
+              : t('home.couldNotLoadFeedMessage')
+          }
+          onRetry={() => void refetch()}
+        />
+      </View>
+    );
+  }
+
+  if (feed.length === 0) {
+    return (
+      <View style={styles.storiesEmptyRow}>
+        {addStoryTile}
+        <TouchableOpacity
+          style={styles.emptyStoryCard}
+          onPress={onAddStory}
+          activeOpacity={0.75}
+          accessibilityRole="button"
+          accessibilityLabel={t('home.addStory')}
+          accessibilityHint={t('home.beTheFirstStory')}
+        >
+          <View style={styles.emptyStoryIconWrap}>
+            <Camera size={20} color={C.blueText} strokeWidth={2} />
+          </View>
+          <View style={styles.emptyStoryTextWrap}>
+            <Text style={styles.emptyStoryTitle} numberOfLines={1}>
+              {t('home.noStoriesYet')}
+            </Text>
+            <Text style={styles.emptyStorySubtitle} numberOfLines={2}>
+              {t('home.beTheFirstStory')}
+            </Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.storiesRow}
+    >
+      {addStoryTile}
+      {feed.map((item: FeedItem) => (
+        <TouchableOpacity
+          key={item.id}
+          style={styles.storyItem}
+          activeOpacity={0.8}
+          onPress={() => {
+            // By id, not by location text: the rail shows merged feed items
+            // and a REEL has no matching TravelStory row, so the old
+            // `?location=` filter opened an empty screen for half the rail.
+            router.push({ pathname: '/stories', params: { id: item.id } });
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={t('home.storyLabel', { location: item.location || item.title })}
+        >
+          <View style={styles.storyRing}>
+            {item.coverImg ? (
+              <Image source={{ uri: item.coverImg }} style={styles.storyImage} />
+            ) : (
+              <View style={[styles.storyImage, styles.storyImageFallback]}>
+                <Camera size={20} color={C.textMuted} strokeWidth={1.8} />
+              </View>
+            )}
+          </View>
+          <Text style={styles.storyName} numberOfLines={2}>
+            {item.location || item.title}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </ScrollView>
+  );
+}
+
+// Each of these owns its own query (or context slice) and drives its own
+// animation loop, and none of them read anything from the parent beyond the
+// props above. Memoising them means one section's data settling no longer
+// re-renders — and so no longer interrupts the animation of — every other
+// section on the screen.
 const AppleMultilingualGreeting = React.memo(AppleMultilingualGreetingBase);
-const FloatingTouristWeatherCard = React.memo(FloatingTouristWeatherCardBase);
-const RotatingMonsoonAlertCard = React.memo(RotatingMonsoonAlertCardBase);
+const LiveWeatherCard = React.memo(LiveWeatherCardBase);
+const RouteSafetyCard = React.memo(RouteSafetyCardBase);
 const FeaturedTripsCarousel = React.memo(FeaturedTripsCarouselBase);
+const TrendingDestinations = React.memo(TrendingDestinationsBase);
+const StoriesRail = React.memo(StoriesRailBase);
 
 // ─── Component ──────────────────────────────────────────────────────
 function HomeScreen() {
@@ -799,113 +1293,78 @@ function HomeScreen() {
     };
   }, [navigation]);
 
-  const { currentRole, setCurrentRole, profile, isLoggedIn, hasUnreadNotification, checkUnreadNotifications } = useApp();
+  const {
+    currentRole,
+    setCurrentRole,
+    profile,
+    isLoggedIn,
+    sessionRestored,
+    hasUnreadNotification,
+    checkUnreadNotifications,
+  } = useApp();
   const router = useRouter();
-  const [activeDot, setActiveDot] = useState(0);
-  const [showAuthPromptModal, setShowAuthPromptModal] = useState(false);
-  const trendingRef = useRef<ScrollView>(null);
-  const scrollXRef = useRef(0);
-  const isInteractingRef = useRef(false);
+  const [authReason, setAuthReason] = useState<AuthReason | null>(null);
+  const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
   const lastScrollYRef = useRef(0);
   const navbarHiddenRef = useRef(false);
 
-  const handleAddStoryPress = () => {
+  const requestAuth = useCallback((reason: AuthReason) => setAuthReason(reason), []);
+
+  const handleAddStoryPress = useCallback(() => {
     if (!isLoggedIn) {
-      setShowAuthPromptModal(true);
+      setAuthReason('STORY');
     } else {
       router.push('/create');
     }
-  };
+  }, [isLoggedIn, router]);
 
-  // ── Dynamic DB state (REMEDIATION.md §6.3: via TanStack Query) ─────
-  // Stories, alerts, destinations and weather all show a real empty state
-  // (storiesEmptyWrap / "All Clear" / trendingEmptyWrap / the weather
-  // card's own empty branch) instead of a fabricated fallback — a backend
-  // that has no destinations or weather rows yet is a true "nothing here",
-  // not something to paper over with invented content.
-  const { data: stories = [] } = useQuery({
-    queryKey: queryKeys.feed(),
-    queryFn: async () => {
-      // Unified feed (stories + guide reels merged) from backend, falling
-      // back to stories-only if the feed endpoint itself is unavailable.
-      try {
-        const res = await apiService.getFeed(20);
-        if (res && Array.isArray(res.items) && res.items.length > 0) return res.items;
-      } catch (e) {
-        logger.warn('[Home] Feed fetch failed, falling back to stories only:', e);
+  const handleOpenTrip = useCallback((trip: Trip) => setSelectedTrip(trip), []);
+
+  const handleRoleSelect = useCallback(
+    (role: UserRole) => {
+      // The Guide and Organizer dashboards are account-scoped (they call
+      // GET /guides/me and read the caller's own trips), so a guest landing
+      // on either used to get an error screen implying a capability they do
+      // not have. Prompt instead, and leave `currentRole` alone — a role
+      // change while logged out would also be a role write from a
+      // logged-out session once the user signs in.
+      if (!isLoggedIn && role !== 'TOURIST') {
+        setAuthReason(role === 'GUIDE' ? 'GUIDE_ROLE' : 'ORGANIZER_ROLE');
+        return;
       }
-      const data = await apiService.getStories();
-      return data ?? [];
+      // setCurrentRole is the only writer: AppContext mirrors it onto
+      // `profile.role` during render and syncs it to the server *only* when
+      // logged in. Assigning `profile.role` here directly (as this used to)
+      // mutated context state in place, so nothing re-rendered from it.
+      setCurrentRole(role);
+      if (role === 'GUIDE') router.push('/travel-guide');
+      if (role === 'ORGANIZER') router.push('/group-organizer');
     },
-  });
-
-  const { data: destinations = [] } = useQuery({
-    queryKey: queryKeys.destinations(),
-    queryFn: async () => {
-      const data = await apiService.getDestinations();
-      return data ?? [];
-    },
-  });
-
-  const { data: weatherLocations = [] } = useQuery({
-    queryKey: queryKeys.weatherLocations(),
-    queryFn: async () => {
-      const data = await apiService.getWeatherLocations();
-      return data ?? [];
-    },
-  });
-
-  // EMPTY_ALERTS, not a `[]` literal: a fresh array on each render is a new
-  // reference, which would defeat the React.memo on RotatingMonsoonAlertCard
-  // every time this screen re-rendered while the query was still pending.
-  const { data: alerts = EMPTY_ALERTS } = useQuery({
-    queryKey: queryKeys.alerts(),
-    queryFn: async () => {
-      const data = await apiService.getAlerts();
-      return data ?? [];
-    },
-  });
+    [isLoggedIn, router, setCurrentRole],
+  );
 
   useEffect(() => {
-    if (isLoggedIn) {
-      apiService.getNotifications().then((data) => {
-        if (data) checkUnreadNotifications();
-      }).catch((e) => logger.warn('[Home] Notification badge check failed:', e));
-    }
+    // One source for the badge. This used to fetch GET /notifications here
+    // and then call checkUnreadNotifications(), which fetches the same
+    // endpoint again — two identical requests on every mount.
+    checkUnreadNotifications();
 
     // Listen for real-time notifications to refresh the badge
     const unsubNotif = eventBus.on('inAppNotification', () => {
-      if (isLoggedIn) checkUnreadNotifications();
+      checkUnreadNotifications();
     });
 
     return () => {
       unsubNotif();
     };
-  }, [checkUnreadNotifications, isLoggedIn]);
+  }, [checkUnreadNotifications]);
 
-  const infiniteTrendingDests = [...destinations, ...destinations];
-
-  useEffect(() => {
-    if (!isFocused || destinations.length <= 1) return;
-    const itemWidth = TRENDING_CARD_WIDTH + 12;
-
-    // `activeDot` is read through the state updater rather than the closure,
-    // so this interval is armed once for the life of the carousel. With it in
-    // the dependency array the effect tore down and re-armed a fresh timer on
-    // every tick — three timers a second of pure churn, for an animation that
-    // only moves once every three seconds.
-    const interval = setInterval(() => {
-      if (isInteractingRef.current) return;
-      setActiveDot((prev) => {
-        const nextDot = prev + 1 >= destinations.length ? 0 : prev + 1;
-        scrollXRef.current = nextDot * itemWidth;
-        trendingRef.current?.scrollTo({ x: scrollXRef.current, animated: true });
-        return nextDot;
-      });
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, [destinations, isFocused]);
+  // Nothing about the signed-in identity is rendered until the local session
+  // read has settled, so a cold launch never flashes a guest identity at a
+  // returning user (or the reverse).
+  const identityResolved = sessionRestored;
+  const displayName = isLoggedIn ? profile.name : t('home.guestTraveler');
+  const avatarUri = isLoggedIn && profile.avatar ? profile.avatar : null;
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
@@ -950,11 +1409,15 @@ function HomeScreen() {
           <View style={styles.topHeader}>
             <View style={{ flex: 1 }}>
               <AppleMultilingualGreeting isFocused={isFocused} />
-              <Text style={styles.userName} numberOfLines={1}>
-                {profile.name || 'Guest Traveler'}
-              </Text>
+              {identityResolved ? (
+                <Text style={styles.userName} numberOfLines={1}>
+                  {displayName}
+                </Text>
+              ) : (
+                <Skeleton width={140} height={20} style={styles.userNameSkeleton} />
+              )}
               <Text style={styles.userSub} numberOfLines={1}>
-                Explore more. Experience better.
+                {t('home.userSub')}
               </Text>
             </View>
             <View style={styles.headerRight}>
@@ -968,7 +1431,7 @@ function HomeScreen() {
                   accessibilityLabel={t('home.notificationsLabel')}
                   accessibilityHint={hasUnreadNotification ? t('home.notificationsUnreadHint') : undefined}
                 >
-                  <Bell size={18} color="#334155" strokeWidth={1.8} />
+                  <Bell size={18} color={C.textSec} strokeWidth={1.8} />
                   {hasUnreadNotification && <View style={styles.bellDot} />}
                 </TouchableOpacity>
 
@@ -983,22 +1446,19 @@ function HomeScreen() {
                     }
                   }}
                   accessibilityRole="button"
-                  accessibilityLabel={t('home.profileLabel')}
+                  accessibilityLabel={isLoggedIn ? t('home.profileLabel') : t('home.loginSignUp')}
                 >
-                  {isLoggedIn && profile.avatar ? (
-                    <Image
-                      source={{ uri: profile.avatar }}
-                      style={styles.avatar}
-                    />
+                  {avatarUri ? (
+                    <Image source={{ uri: avatarUri }} style={styles.avatar} />
                   ) : (
                     <View style={styles.anonymousAvatarSmall}>
-                      <User size={18} color="#64748B" strokeWidth={2} />
+                      <User size={18} color={C.textMuted} strokeWidth={2} />
                     </View>
                   )}
                 </TouchableOpacity>
               </View>
 
-              {!isLoggedIn && (
+              {identityResolved && !isLoggedIn && (
                 <TouchableOpacity
                   style={styles.loginPillBtn}
                   activeOpacity={0.8}
@@ -1006,10 +1466,8 @@ function HomeScreen() {
                   accessibilityRole="button"
                   accessibilityLabel={t('home.loginSignUp')}
                 >
-                  <Text style={styles.loginPillText}>
-                    Login / Sign Up
-                  </Text>
-                  <ChevronRight size={12} color="#2563EB" />
+                  <Text style={styles.loginPillText}>{t('home.loginSignUp')}</Text>
+                  <ChevronRight size={12} color={C.blueText} />
                 </TouchableOpacity>
               )}
             </View>
@@ -1024,31 +1482,22 @@ function HomeScreen() {
             const isActive = currentRole === role.value;
             const iconBg =
               role.value === 'TOURIST'
-                ? isActive ? '#2563EB' : '#EFF6FF'
+                ? isActive ? C.blue : '#EFF6FF'
                 : role.value === 'GUIDE'
                   ? '#ECFDF5'
                   : '#FFF7ED';
             const iconColor =
               role.value === 'TOURIST'
-                ? isActive ? '#FFFFFF' : '#2563EB'
+                ? isActive ? C.white : C.blueText
                 : role.value === 'GUIDE'
-                  ? '#10B981'
-                  : '#F97316';
+                  ? C.greenText
+                  : C.amberText;
 
             return (
               <TouchableOpacity
                 key={role.value}
                 activeOpacity={0.85}
-                onPress={() => {
-                  setCurrentRole(role.value);
-                  profile.role = role.value;
-                  if (role.value === 'GUIDE') {
-                    router.push('/travel-guide');
-                  }
-                  if (role.value === 'ORGANIZER') {
-                    router.push('/group-organizer');
-                  }
-                }}
+                onPress={() => handleRoleSelect(role.value)}
                 style={[styles.roleCard, isActive && styles.roleCardActive]}
                 accessibilityRole="button"
                 accessibilityLabel={`${t(role.labelKey)}, ${t(role.subKey)}`}
@@ -1067,10 +1516,10 @@ function HomeScreen() {
         </View>
 
         {/* ════════════════════════════════════════════════
-            TRAVEL REELS & STORIES — Blue Ring Story Circles & Add Story
+            TRAVEL REELS & STORIES
             ════════════════════════════════════════════════ */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>{t('home.reelsAndStories') || 'Travel Reels & Stories'}</Text>
+          <Text style={styles.sectionTitle}>{t('home.reelsAndStories')}</Text>
           <TouchableOpacity
             style={styles.viewAllBtn}
             hitSlop={{ top: 14, bottom: 14, left: 10, right: 10 }}
@@ -1079,63 +1528,11 @@ function HomeScreen() {
             accessibilityLabel={t('home.viewAll')}
           >
             <Text style={styles.viewAllText}>{t('home.viewAll')}</Text>
-            <ChevronRight size={14} color="#2563EB" />
+            <ChevronRight size={14} color={C.blueText} />
           </TouchableOpacity>
         </View>
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.storiesRow}
-        >
-          {/* Your Story circle with Plus badge */}
-          <TouchableOpacity
-            style={styles.storyItem}
-            activeOpacity={0.8}
-            onPress={handleAddStoryPress}
-            accessibilityRole="button"
-            accessibilityLabel={t('home.addStory')}
-          >
-            <View style={styles.addStoryRing}>
-              {profile?.avatar ? (
-                <Image source={{ uri: profile.avatar }} style={styles.storyImage} />
-              ) : (
-                <View style={styles.addStoryAvatarFallback}>
-                  <Camera size={24} color="#2563EB" strokeWidth={1.8} />
-                </View>
-              )}
-              <View style={styles.addStoryPlusBadge}>
-                <Plus size={12} color="#FFFFFF" strokeWidth={3} />
-              </View>
-            </View>
-            <Text style={styles.storyName} numberOfLines={1}>
-              {t('home.yourStory')}
-            </Text>
-          </TouchableOpacity>
-
-          {stories.map((story: HomeFeedItem) => (
-            <TouchableOpacity
-              key={story.id}
-              style={styles.storyItem}
-              activeOpacity={0.8}
-              onPress={() => {
-                router.push({
-                  pathname: '/stories',
-                  params: { location: story.location || story.title }
-                });
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={t('home.storyLabel', { location: story.location || story.title })}
-            >
-              <View style={styles.storyRing}>
-                <Image source={{ uri: story.coverImg ?? undefined }} style={styles.storyImage} />
-              </View>
-              <Text style={styles.storyName} numberOfLines={2}>
-                {story.location || story.title}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+        <StoriesRail avatarUri={avatarUri} onAddStory={handleAddStoryPress} />
 
         {/* ════════════════════════════════════════════════
             QUICK ACCESS ROW — 3 White Cards
@@ -1143,20 +1540,17 @@ function HomeScreen() {
         <View style={styles.quickAccessRow}>
           {quickAccessItems.map((item, index) => {
             const iconBg = index === 0 ? '#EFF6FF' : index === 1 ? '#ECFDF5' : '#FFF7ED';
-            const iconCol = index === 0 ? '#2563EB' : index === 1 ? '#10B981' : '#F59E0B';
+            const iconCol = index === 0 ? C.blueText : index === 1 ? C.greenText : C.amberText;
 
             return (
               <TouchableOpacity
-                key={index}
+                key={item.labelKey}
                 style={styles.quickCardItem}
                 activeOpacity={0.8}
-                onPress={() => {
-                  if (item.route) {
-                    router.push(item.route!);
-                  }
-                }}
+                onPress={() => router.push(item.route)}
                 accessibilityRole="button"
                 accessibilityLabel={t(item.labelKey)}
+                accessibilityHint={t('home.quickAccessHint', { label: t(item.labelKey) })}
               >
                 <View style={{ position: 'relative' }}>
                   <View style={[styles.quickIconCircle, { backgroundColor: iconBg }]}>
@@ -1164,7 +1558,7 @@ function HomeScreen() {
                   </View>
                   {item.isNew && (
                     <View style={styles.newBadgePill}>
-                      <Text style={styles.newBadgeText}>NEW</Text>
+                      <Text style={styles.newBadgeText}>{t('home.new')}</Text>
                     </View>
                   )}
                 </View>
@@ -1175,16 +1569,12 @@ function HomeScreen() {
         </View>
 
         {/* ════════════════════════════════════════════════
-            WEATHER & ALERTS — Two column
+            WEATHER & ROUTE SAFETY — Two column
             ════════════════════════════════════════════════ */}
         <View style={styles.weatherAlertRow}>
-          {/* Animated Floating Weather Card */}
-          <FloatingTouristWeatherCard locations={weatherLocations} isFocused={isFocused} />
-
-          {/* Alerts Stack — Stretched Monsoon Card */}
+          <LiveWeatherCard />
           <View style={styles.alertsColumn}>
-            {/* Monsoon Warning (Full Height in Column) */}
-            <RotatingMonsoonAlertCard alerts={alerts} isFocused={isFocused} />
+            <RouteSafetyCard isFocused={isFocused} />
           </View>
         </View>
 
@@ -1194,174 +1584,64 @@ function HomeScreen() {
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>{t('home.featuredGroupTrips')}</Text>
         </View>
-        <FeaturedTripsCarousel isFocused={isFocused} />
+        <FeaturedTripsCarousel
+          isFocused={isFocused}
+          onOpenTrip={handleOpenTrip}
+          onRequestAuth={requestAuth}
+        />
 
         {/* ════════════════════════════════════════════════
             TRENDING DESTINATIONS — Carousel + dots
             ════════════════════════════════════════════════ */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>{t('home.trendingDestinations')}</Text>
-          <TouchableOpacity
-            style={styles.viewAllBtn}
-            hitSlop={{ top: 14, bottom: 14, left: 10, right: 10 }}
-            accessibilityRole="button"
-            accessibilityLabel={t('home.viewAll')}
-          >
-            <Text style={styles.viewAllText}>{t('home.viewAll')}</Text>
-            <ChevronRight size={14} color={C.blue} />
-          </TouchableOpacity>
         </View>
-        {destinations.length === 0 ? (
-          // No fabricated Ladakh/Goa/Kerala cards here — an empty backend
-          // destinations list is shown as empty, not stood in for.
-          <View style={styles.storiesEmptyWrap}>
-            <Text style={styles.storiesEmptyText}>{t('home.destinationsEmpty')}</Text>
-          </View>
-        ) : (
-          <>
-            <ScrollView
-              ref={trendingRef}
-              horizontal
-              snapToInterval={TRENDING_CARD_WIDTH + 12}
-              decelerationRate="fast"
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.trendingRow}
-              scrollEventThrottle={16}
-              onTouchStart={() => {
-                isInteractingRef.current = true;
-              }}
-              onTouchEnd={() => {
-                setTimeout(() => {
-                  isInteractingRef.current = false;
-                }, 1200);
-              }}
-              onScrollBeginDrag={() => {
-                isInteractingRef.current = true;
-              }}
-              onScrollEndDrag={(e) => {
-                scrollXRef.current = e.nativeEvent.contentOffset.x;
-                setTimeout(() => {
-                  isInteractingRef.current = false;
-                }, 1200);
-              }}
-              onMomentumScrollEnd={(e) => {
-                const x = e.nativeEvent.contentOffset.x;
-                scrollXRef.current = x;
-                const currentIdx = Math.round(x / (TRENDING_CARD_WIDTH + 12)) % destinations.length;
-                setActiveDot(currentIdx);
-                isInteractingRef.current = false;
-              }}
-            >
-              {infiniteTrendingDests.map((dest, index) => (
-                // No accessibilityRole="button" here (unlike other cards) — this
-                // one has its own nested button (the heart, below), and
-                // react-native-web renders that role as a literal <button>. Two
-                // nested <button> elements is invalid HTML; the browser's own
-                // DOM validation rejects it, which is a web-only crash with no
-                // native-side symptom (there's no such DOM rule on iOS/Android).
-                // onPress/activeOpacity below are unaffected — only the ARIA
-                // role/HTML tag choice changes.
-                <TouchableOpacity
-                  key={`${dest.id}-${index}`}
-                  style={styles.trendingCard}
-                  activeOpacity={0.9}
-                  onPress={() => {
-                    router.push({
-                      pathname: '/destination-details',
-                      params: { id: String(dest.id) }
-                    });
-                  }}
-                  accessibilityLabel={t('home.destinationCardLabel', { name: dest.name, rating: dest.rating })}
-                >
-                  <Image
-                    source={{ uri: dest.image }}
-                    style={StyleSheet.absoluteFill}
-                    resizeMode="cover"
-                  />
-                  <LinearGradient
-                    colors={['transparent', 'rgba(0,0,0,0.78)']}
-                    style={styles.trendingOverlay}
-                  />
-                  {/* Hanging Vertical Ribbon Tag for Rank */}
-                  <View style={styles.rankRibbonWrap}>
-                    <LinearGradient
-                      colors={['#FFD700', '#F59E0B', '#B45309']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 0, y: 1 }}
-                      style={styles.rankRibbonBody}
-                    >
-                      <Text style={styles.rankRibbonText}>
-                        #{destinations.length > 0 ? (index % destinations.length) + 1 : index + 1}
-                      </Text>
-                    </LinearGradient>
-                  </View>
-                  {/* Heart Button */}
-                  <TouchableOpacity
-                    style={styles.heartBtn}
-                    activeOpacity={0.7}
-                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                    accessibilityRole="button"
-                    accessibilityLabel={t('home.favoriteHint')}
-                  >
-                    <Heart size={16} color={C.white} strokeWidth={2} />
-                  </TouchableOpacity>
-                  {/* Bottom Info */}
-                  <View style={styles.trendingInfo}>
-                    <Text style={styles.trendingName}>{dest.name}</Text>
-                    <Text style={styles.trendingTags}>{dest.tags}</Text>
-                    <View style={styles.ratingRow}>
-                      <Star size={12} color={C.star} fill={C.star} />
-                      <Text style={styles.ratingText}>{dest.rating}</Text>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-            {/* Pagination Dots */}
-            <View style={styles.dotsRow}>
-              {destinations.map((_, idx: number) => (
-                <View
-                  key={idx}
-                  style={[
-                    styles.dot,
-                    activeDot === idx ? styles.dotActive : styles.dotInactive,
-                  ]}
-                />
-              ))}
-            </View>
-          </>
-        )}
+        <TrendingDestinations isFocused={isFocused} />
 
         {/* Bottom spacer for tab bar */}
         <View style={{ height: 120 }} />
       </ScrollView>
 
-      {/* ── Add Story / Sign Up Prompt Modal ── */}
-      <Modal
-        visible={showAuthPromptModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowAuthPromptModal(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <TouchableOpacity
-            style={StyleSheet.absoluteFill}
-            activeOpacity={1}
-            onPress={() => setShowAuthPromptModal(false)}
-          />
+      {/* Real trip detail + the real join flow (POST /interactions/join-request),
+          the same sheet search/nearby-trips/budget-trips open. */}
+      <TripDetailModal
+        visible={selectedTrip !== null}
+        trip={selectedTrip}
+        onClose={() => setSelectedTrip(null)}
+      />
+
+      <AuthPromptModal reason={authReason} onClose={() => setAuthReason(null)} />
+    </SafeAreaView>
+  );
+}
+
+// ─── Auth prompt ────────────────────────────────────────────────────
+
+/**
+ * The single guest boundary on this screen. Every action that needs an
+ * account opens this instead of firing a request that would 401.
+ */
+function AuthPromptModal({ reason, onClose }: { reason: AuthReason | null; onClose: () => void }) {
+  const { t } = useTranslation();
+  const router = useRouter();
+  const copy = reason ? AUTH_REASON_COPY[reason] : null;
+
+  return (
+    <Modal visible={reason !== null} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} />
+        {copy ? (
           <View style={styles.authModalCard}>
-            {/* Close button */}
             <TouchableOpacity
               style={styles.modalCloseBtn}
-              onPress={() => setShowAuthPromptModal(false)}
+              onPress={onClose}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               accessibilityRole="button"
               accessibilityLabel={t('common.close')}
             >
-              <X size={18} color="#64748B" />
+              <X size={18} color={C.textMuted} />
             </TouchableOpacity>
 
-            {/* Header Icon */}
             <View style={styles.modalIconWrap}>
               <LinearGradient
                 colors={['#2563EB', '#38BDF8']}
@@ -1369,46 +1649,33 @@ function HomeScreen() {
                 end={{ x: 1, y: 1 }}
                 style={styles.modalIconGradient}
               >
-                <Camera size={28} color="#FFFFFF" strokeWidth={2} />
+                <copy.Icon size={28} color={C.white} strokeWidth={2} />
               </LinearGradient>
             </View>
 
-            {/* Modal Title & Desc */}
-            <Text style={styles.authModalTitle}>
-              {t('home.shareStoryModalTitle')}
-            </Text>
-            <Text style={styles.authModalDesc}>
-              {t('home.shareStoryModalDesc')}
-            </Text>
+            <Text style={styles.authModalTitle}>{t(copy.titleKey)}</Text>
+            <Text style={styles.authModalDesc}>{t(copy.descKey)}</Text>
 
-            {/* Value props / perks */}
-            <View style={styles.authModalPerks}>
-              <View style={styles.authModalPerkRow}>
-                <View style={styles.perkCheckCircle}>
-                  <Check size={12} color="#10B981" strokeWidth={3} />
-                </View>
-                <Text style={styles.perkText}>{t('home.shareStoryBenefit1')}</Text>
+            {/* The perks are specific to posting a story; they are not shown
+                for the other reasons rather than restated generically. */}
+            {reason === 'STORY' ? (
+              <View style={styles.authModalPerks}>
+                {['home.shareStoryBenefit1', 'home.shareStoryBenefit2', 'home.shareStoryBenefit3'].map((key) => (
+                  <View key={key} style={styles.authModalPerkRow}>
+                    <View style={styles.perkCheckCircle}>
+                      <Check size={12} color={C.greenText} strokeWidth={3} />
+                    </View>
+                    <Text style={styles.perkText}>{t(key)}</Text>
+                  </View>
+                ))}
               </View>
-              <View style={styles.authModalPerkRow}>
-                <View style={styles.perkCheckCircle}>
-                  <Check size={12} color="#10B981" strokeWidth={3} />
-                </View>
-                <Text style={styles.perkText}>{t('home.shareStoryBenefit2')}</Text>
-              </View>
-              <View style={styles.authModalPerkRow}>
-                <View style={styles.perkCheckCircle}>
-                  <Check size={12} color="#10B981" strokeWidth={3} />
-                </View>
-                <Text style={styles.perkText}>{t('home.shareStoryBenefit3')}</Text>
-              </View>
-            </View>
+            ) : null}
 
-            {/* Actions */}
             <TouchableOpacity
               style={styles.authModalPrimaryBtn}
               activeOpacity={0.85}
               onPress={() => {
-                setShowAuthPromptModal(false);
+                onClose();
                 router.push('/auth');
               }}
               accessibilityRole="button"
@@ -1420,28 +1687,24 @@ function HomeScreen() {
                 end={{ x: 1, y: 0 }}
                 style={styles.authModalPrimaryGradient}
               >
-                <Text style={styles.authModalPrimaryText}>
-                  {t('home.continueToSignUp')}
-                </Text>
-                <ChevronRight size={16} color="#FFFFFF" strokeWidth={2.5} />
+                <Text style={styles.authModalPrimaryText}>{t('home.continueToSignUp')}</Text>
+                <ChevronRight size={16} color={C.white} strokeWidth={2.5} />
               </LinearGradient>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.authModalSecondaryBtn}
               activeOpacity={0.7}
-              onPress={() => setShowAuthPromptModal(false)}
+              onPress={onClose}
               accessibilityRole="button"
               accessibilityLabel={t('home.maybeLater')}
             >
-              <Text style={styles.authModalSecondaryText}>
-                {t('home.maybeLater')}
-              </Text>
+              <Text style={styles.authModalSecondaryText}>{t('home.maybeLater')}</Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </Modal>
-    </SafeAreaView>
+        ) : null}
+      </View>
+    </Modal>
   );
 }
 
@@ -1460,6 +1723,71 @@ const styles = StyleSheet.create({
   },
   carouselContainer: {
     marginBottom: 24,
+  },
+  emptyTripCard: {
+    marginHorizontal: 20,
+    marginBottom: 24,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingVertical: 22,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  emptyTripIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  emptyTripTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+    textAlign: 'center',
+  },
+  emptyTripSubtitle: {
+    fontSize: 12.5,
+    color: '#64748B',
+    textAlign: 'center',
+    marginTop: 4,
+    lineHeight: 17,
+    maxWidth: 290,
+  },
+  emptyTripBtn: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#2563EB',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+  },
+  emptyTripBtnText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  // Holds a <ScreenLoading>/<ScreenError>/<ScreenEmpty> where a horizontal
+  // rail would otherwise be, so the section keeps its vertical rhythm
+  // instead of collapsing to nothing while it loads or fails.
+  sectionStateWrap: {
+    marginBottom: 24,
+    minHeight: 220,
   },
   tripCard: {
     flexDirection: 'row',
@@ -1494,12 +1822,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 3,
     borderRadius: 5,
+    // C.indigo, not C.purple: white on #6366F1 measures 4.47:1 and misses
+    // AA by a hair; on #4F46E5 it is 6.29:1.
+    backgroundColor: C.indigo,
     zIndex: 2,
   },
   tripBadgeText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#FFF',
+    color: C.white,
   },
   tripContent: {
     flex: 1,
@@ -1509,7 +1840,7 @@ const styles = StyleSheet.create({
   tripName: {
     fontSize: 13.5,
     fontWeight: '700',
-    color: '#FFF',
+    color: C.text,
     lineHeight: 16,
   },
   tripDetailsMetaRow: {
@@ -1530,7 +1861,7 @@ const styles = StyleSheet.create({
   verifiedText: {
     fontSize: 12,
     fontWeight: '700',
-    color: C.blue,
+    color: C.blueText,
   },
   routeCities: {
     flexDirection: 'row',
@@ -1540,7 +1871,7 @@ const styles = StyleSheet.create({
   cityText: {
     fontSize: 12,
     fontWeight: '700',
-    color: C.blue,
+    color: C.blueText,
   },
   routeArrow: {
     fontSize: 12,
@@ -1556,7 +1887,7 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1B1E30',
+    backgroundColor: C.cardAlt,
     paddingHorizontal: 5,
     paddingVertical: 3,
     borderRadius: 5,
@@ -1565,7 +1896,9 @@ const styles = StyleSheet.create({
   capsuleText: {
     fontSize: 12,
     fontWeight: '600',
-    color: C.textMuted,
+    // textSec, not textMuted: this sits on `cardAlt`, where textMuted is
+    // 4.34:1 and misses AA (see the token's own note).
+    color: C.textSec,
     flex: 1,
   },
   priceRow: {
@@ -1585,21 +1918,34 @@ const styles = StyleSheet.create({
   priceAmount: {
     fontSize: 16,
     fontWeight: '900',
-    color: C.blue,
+    color: C.blueText,
     marginTop: -2,
   },
   joinBtn: {
     backgroundColor: C.blue,
     minHeight: MIN_TOUCH_TARGET,
+    width: 110,
     paddingVertical: 5,
+    paddingHorizontal: 8,
     borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },
   joinBtnText: {
-    color: '#FFF',
+    color: C.white,
     fontSize: 12,
     fontWeight: '700',
+    textAlign: 'center',
+  },
+  // The already-requested state of the join CTA. Filled grey rather than
+  // brand blue, so it does not read as a second chance to request.
+  joinBtnRequested: {
+    backgroundColor: C.cardAlt,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  joinBtnRequestedText: {
+    color: C.textSec,
   },
 
   // ── Top Header (Inside ImageBackground) ─────────────
@@ -1615,10 +1961,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 2,
   },
-  appleGreetingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
   appleGreetingText: {
     fontSize: 14,
     fontWeight: '600',
@@ -1631,6 +1973,11 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     letterSpacing: -0.5,
     marginBottom: 2,
+  },
+  // Occupies the line the name will land on, so the header does not reflow
+  // when the local session read settles.
+  userNameSkeleton: {
+    marginBottom: 6,
   },
   userSub: {
     fontSize: 12.5,
@@ -1778,26 +2125,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
 
-  // ── Search Bar ──────────────────────────────────────
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    marginHorizontal: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 14,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    gap: 10,
-  },
-  searchPlaceholder: {
-    flex: 1,
-    fontSize: 14,
-    color: '#64748B',
-  },
-
   // ── Quick Access Row ────────────────────────────────
   quickAccessRow: {
     flexDirection: 'row',
@@ -1858,255 +2185,299 @@ const styles = StyleSheet.create({
   },
   weatherCard: {
     flex: 1,
-    minHeight: 210,
-    borderRadius: 18,
+    minHeight: 196,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     backgroundColor: '#FFFFFF',
-    position: 'relative',
+    padding: 13,
+    justifyContent: 'space-between',
     shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 1,
-  },
-  weatherEmptyWrap: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingHorizontal: 16,
-  },
-  weatherEmptyText: {
-    fontSize: 12,
-    color: '#94A3B8',
-    textAlign: 'center',
-  },
-  // Carries the border + overflow: hidden that used to live on weatherCard
-  // itself — see the comment at its JSX usage for why elevation and
-  // overflow: hidden can't share one view on Android.
-  weatherClip: {
-    flex: 1,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    overflow: 'hidden',
-    backgroundColor: '#FFFFFF',
-  },
-  // Opaque: without a background the outgoing card reads straight through
-  // the incoming one mid-slide and both are visible at once.
-  weatherLayer: {
-    backgroundColor: '#FFFFFF',
-  },
-  storiesEmptyWrap: {
-    paddingVertical: 18,
-    paddingHorizontal: 4,
-  },
-  storiesEmptyText: {
-    fontSize: 13,
-    color: '#64748B',
-  },
-  weatherCardInner: {
-    flex: 1,
-    padding: 12,
-    justifyContent: 'space-between',
-  },
-  locationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  locationText: {
-    fontSize: 11.5,
-    color: '#334155',
-    fontWeight: '600',
-  },
-  tempRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 2,
-  },
-  tempText: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  weatherCondition: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: -2,
-  },
-  aqiRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2,
-  },
-  aqiLabel: {
-    fontSize: 11,
-    color: '#64748B',
-  },
-  aqiValue: {
-    fontSize: 11,
-    color: '#047857',
-    fontWeight: '700',
-  },
-  weatherDetail: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 1,
-  },
-  weatherThumbWrap: {
-    height: 64,
-    borderRadius: 10,
-    overflow: 'hidden',
-    marginTop: 6,
-    position: 'relative',
-  },
-  weatherThumb: {
-    width: '100%',
-    height: '100%',
-  },
-  badgeLive: {
-    position: 'absolute',
-    bottom: 4,
-    left: 4,
-    backgroundColor: '#2563EB',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  liveText: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: 0.5,
-  },
-
-  // ── Advisory / Alerts ──
-  alertsColumn: {
-    flex: 1,
+    shadowRadius: 8,
+    elevation: 1.5,
   },
   allClearCard: {
     flex: 1,
-    minHeight: 210,
+    minHeight: 196,
     backgroundColor: '#FFFFFF',
-    borderRadius: 18,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    padding: 16,
+    padding: 13,
     justifyContent: 'space-between',
     shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 1,
+    shadowRadius: 8,
+    elevation: 1.5,
   },
-  allClearHeaderRow: {
+  advisoryCard: {
+    flex: 1,
+    minHeight: 196,
+    backgroundColor: '#FEF2F2',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#FEE2E2',
+    padding: 13,
+    justifyContent: 'space-between',
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 1.5,
+  },
+  alertsColumn: {
+    flex: 1,
+  },
+
+  // ── Card Header (Shared by Weather & Route Safety) ──
+  cardHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  allClearHeaderBadge: {
+  cardHeaderBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 1,
+  },
+  cardLiveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  cardDotBlue: {
+    backgroundColor: '#2563EB',
+  },
+  cardDotGreen: {
+    backgroundColor: '#10B981',
+  },
+  cardDotRed: {
+    backgroundColor: '#EF4444',
+  },
+  cardDotInactive: {
+    backgroundColor: '#94A3B8',
+  },
+  cardHeaderText: {
+    fontSize: 10.5,
+    color: C.textSec,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  cardHeaderIconCircle: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // ── Weather Center (Loaded) ──
+  weatherCenter: {
+    paddingVertical: 2,
+    alignItems: 'flex-start',
+  },
+  weatherTempText: {
+    fontSize: 30,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.5,
+    lineHeight: 34,
+  },
+  weatherConditionText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+    marginTop: 1,
+  },
+  weatherLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    marginTop: 4,
+  },
+  weatherLocationText: {
+    fontSize: 10.5,
+    color: C.textMuted,
+    fontWeight: '500',
+  },
+
+  // ── Weather Footer (Loaded) ──
+  weatherFooterRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
-  allClearLiveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#10B981',
-  },
-  allClearHeaderText: {
-    fontSize: 12,
-    color: '#475569',
-    fontWeight: '700',
-    letterSpacing: 0.2,
-  },
-  allClearCenter: {
-    alignItems: 'center',
-    paddingVertical: 6,
-  },
-  allClearIconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#ECFDF5',
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-  allClearTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#0F172A',
-    letterSpacing: -0.3,
-  },
-  allClearSubtitle: {
-    fontSize: 11.5,
-    color: '#64748B',
-    lineHeight: 16,
-    textAlign: 'center',
-    marginTop: 4,
-    paddingHorizontal: 4,
-  },
-  allClearLink: {
+  weatherStatPill: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
-    paddingVertical: 4,
-  },
-  allClearLinkText: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#059669',
-  },
-  advisoryCard: {
-    flex: 1,
-    minHeight: 210,
-    backgroundColor: '#FEF2F2',
-    borderRadius: 18,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
     borderWidth: 1,
-    borderColor: '#FEE2E2',
-    padding: 12,
-    justifyContent: 'space-between',
-    shadowColor: '#EF4444',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 1,
+    borderColor: '#F1F5F9',
   },
-  advisoryIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#FEE2E2',
+  weatherStatValue: {
+    fontSize: 10.5,
+    fontWeight: '600',
+    color: '#334155',
+  },
+
+  // ── All Clear Center ──
+  allClearCenter: {
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 2,
+  },
+  allClearIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1.5,
+    borderColor: '#A7F3D0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  allClearTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.2,
+  },
+  allClearSubtitle: {
+    fontSize: 10.5,
+    color: C.textMuted,
+    lineHeight: 14,
+    textAlign: 'center',
+    marginTop: 2,
+    paddingHorizontal: 2,
+  },
+
+  // ── All Clear Footer ──
+  allClearFooterBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: '#F0FDF4',
+    borderRadius: 8,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: '#DCFCE7',
+  },
+  allClearFooterBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: C.greenText,
+  },
+
+  // ── Generic Card State Helpers (Loading / Prompt / Error) ──
+  cardStateCenter: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 2,
+  },
+  cardCenterIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    marginBottom: 4,
+  },
+  cardPromptTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+    textAlign: 'center',
+  },
+  cardPromptMessage: {
+    fontSize: 10.5,
+    color: C.textMuted,
+    lineHeight: 14,
+    textAlign: 'center',
+    marginTop: 2,
+    paddingHorizontal: 2,
+  },
+  cardStateMessage: {
+    fontSize: 11,
+    color: C.textMuted,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  cardPrimaryCta: {
+    backgroundColor: '#2563EB',
+    borderRadius: 8,
+    paddingVertical: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardPrimaryCtaText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  cardSecondaryCta: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+    paddingVertical: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardSecondaryCtaText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: C.textSec,
+  },
+  cardFooterSpacer: {
+    height: 28,
+  },
+
+  // ── Advisory (Hazard) Center & Footer ──
+  advisoryCenter: {
+    paddingVertical: 2,
     justifyContent: 'center',
   },
   advisoryTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#DC2626',
-    marginTop: 8,
+    color: C.redText,
     lineHeight: 17,
   },
   advisoryDesc: {
     fontSize: 11,
-    color: '#475569',
+    color: C.textSec,
     lineHeight: 15,
-    marginTop: 4,
+    marginTop: 3,
   },
-  advisoryLink: {
-    marginTop: 8,
+  advisoryFooterBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: '#FEE2E2',
+    borderRadius: 8,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: '#FECACA',
   },
-  advisoryLinkText: {
-    fontSize: 12,
+  advisoryFooterBtnText: {
+    fontSize: 11,
     fontWeight: '700',
-    color: '#DC2626',
+    color: C.redText,
   },
 
   // ── Section Headers ─────────────────────────────────
@@ -2139,6 +2510,57 @@ const styles = StyleSheet.create({
     gap: 14,
     marginBottom: 24,
     alignItems: 'center',
+  },
+  // The empty feed keeps the "Your Story" tile beside an aligned, compact
+  // card matching the 72px ring height, guiding the user to tap + and add moments.
+  storiesEmptyRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingHorizontal: 20,
+    gap: 14,
+    marginBottom: 24,
+  },
+  emptyStoryCard: {
+    flex: 1,
+    height: 72,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    gap: 12,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  emptyStoryIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+  },
+  emptyStoryTextWrap: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  emptyStoryTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 2,
+  },
+  emptyStorySubtitle: {
+    fontSize: 12,
+    color: '#64748B',
+    lineHeight: 16,
   },
   storyItem: {
     alignItems: 'center',
@@ -2197,6 +2619,13 @@ const styles = StyleSheet.create({
     width: 62,
     height: 62,
     borderRadius: 31,
+  },
+  // A feed item with no cover image gets a neutral placeholder, never a
+  // stock photo of somewhere the post is not about.
+  storyImageFallback: {
+    backgroundColor: C.cardAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   storyName: {
     marginTop: 6,
@@ -2374,17 +2803,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: C.white,
   },
-  heartBtn: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   trendingInfo: {
     position: 'absolute',
     bottom: 14,
@@ -2430,50 +2848,6 @@ const styles = StyleSheet.create({
   dotInactive: {
     width: 6,
     backgroundColor: C.textMuted,
-  },
-
-  // ── AI CTA Card ─────────────────────────────────────
-  aiCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: C.card,
-    marginHorizontal: 20,
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: C.border,
-    gap: 12,
-  },
-  aiIconWrap: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: 'rgba(124,58,237,0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  aiContent: {
-    flex: 1,
-  },
-  aiTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: C.white,
-    marginBottom: 3,
-  },
-  aiSub: {
-    fontSize: 12,
-    color: C.textSec,
-  },
-  aiBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-  },
-  aiBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: C.white,
   },
 });
 

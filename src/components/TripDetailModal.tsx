@@ -13,7 +13,6 @@ import X from 'lucide-react-native/icons/x';
 import Calendar from 'lucide-react-native/icons/calendar';
 import MapPin from 'lucide-react-native/icons/map-pin';
 import Users from 'lucide-react-native/icons/users';
-import Shield from 'lucide-react-native/icons/shield';
 import UserCheck from 'lucide-react-native/icons/user-check';
 import Hotel from 'lucide-react-native/icons/hotel';
 import Utensils from 'lucide-react-native/icons/utensils';
@@ -27,6 +26,7 @@ import { eventBus } from '@/services/event-bus';
 import { useRouter } from 'expo-router';
 import { toast } from '@/lib/feedback';
 import { formatDate } from '@/lib/datetime';
+import { formatINR } from '@/lib/money';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import type { BudgetTrip } from '@/app/budget-trips';
 import type { NearbyTrip } from '@/types/api';
@@ -63,6 +63,11 @@ export default function TripDetailModal({
   const organizerName = trip.creator;
   const price = trip.budget;
   const isMyTrip = isLoggedIn && !!(profile && profile.id && trip.creatorId && trip.creatorId === profile.id);
+  const joinCtaLabel = !isLoggedIn
+    ? t('tripDetailModal.signInToJoin')
+    : midwayJoin
+      ? t('tripDetailModal.requestSegmentJoin')
+      : t('tripDetailModal.requestToJoin');
 
   const handleMidwayJoinSelect = () => {
     if (trip.cities && trip.cities.length > 2) {
@@ -88,6 +93,15 @@ export default function TripDetailModal({
   };
 
   const handleRequestJoin = () => {
+    // Joining needs an account: POST /interactions/join-request is behind a
+    // required token, so a guest tapping this used to get a 401 error toast
+    // with no way forward. The app is browse-before-login by design, so the
+    // boundary is the auth screen, not a failed request.
+    if (!isLoggedIn) {
+      onClose();
+      router.push('/auth');
+      return;
+    }
     // adjustedPrice is deliberately not sent — the server computes and owns
     // it from the trip's route (docs/REMEDIATION.md §8.6). The preview
     // shown on the success screen below uses the identical formula
@@ -115,7 +129,7 @@ export default function TripDetailModal({
 
           {joinedMsg ? (
             <View style={styles.successContainer}>
-              <CheckCircle size={54} color="#2ECC71" />
+              <CheckCircle size={54} color={C.green} />
               <Text style={styles.successTitle}>{t('tripDetailModal.requestSubmitted')}</Text>
               <Text style={styles.successSub}>
                 {midwayJoin
@@ -181,10 +195,15 @@ export default function TripDetailModal({
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.modalOrganizerName}>{organizerName}</Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
-                      <Shield size={11} color={C.accent} style={{ marginRight: 4 }} />
-                      <Text style={{ fontSize: 12, color: C.textSecondary }}>{t('tripDetailModal.backgroundVerifiedOrganizer')}</Text>
-                    </View>
+                    {/* No "Background-Verified Organizer" badge: this product
+                        has no background-verification feature and the trip
+                        payload carries no verification field, so the shield
+                        rendered identically for every organizer on every trip
+                        — a fabricated trust signal of exactly the kind
+                        docs/REMEDIATION.md §2.6 removed for "Verified Guide".
+                        The organizer's real name is the only claim the data
+                        supports here. */}
+                    <Text style={styles.modalOrganizerRole}>{t('tripDetailModal.organizerRole')}</Text>
                   </View>
                 </View>
 
@@ -237,28 +256,28 @@ export default function TripDetailModal({
                 <Text style={[styles.formSectionTitle, { marginTop: 14 }]}>{t('tripDetailModal.serviceInclusions')}</Text>
                 <View style={styles.inclusionsGrid}>
                   <View style={styles.inclusionCell}>
-                    <UserCheck size={12} color={trip.guideIncluded ? '#2ECC71' : C.textSecondary} />
+                    <UserCheck size={12} color={trip.guideIncluded ? C.greenText : C.textSecondary} />
                     <Text style={styles.inclusionText}>
                       {t('tripDetailModal.localGuide', { value: trip.guideIncluded ? t('tripDetailModal.yes') : t('tripDetailModal.no') })}
                     </Text>
                   </View>
                   <View style={styles.inclusionCell}>
-                    <Hotel size={12} color={trip.hotelIncluded !== false ? '#2ECC71' : C.textSecondary} />
+                    <Hotel size={12} color={trip.hotelIncluded !== false ? C.greenText : C.textSecondary} />
                     <Text style={styles.inclusionText}>
                       {t('tripDetailModal.hotelStay', { value: trip.hotelIncluded !== false ? t('tripDetailModal.yes') : t('tripDetailModal.no') })}
                     </Text>
                   </View>
                   <View style={styles.inclusionCell}>
-                    <Utensils size={12} color={trip.foodIncluded ? '#2ECC71' : C.textSecondary} />
+                    <Utensils size={12} color={trip.foodIncluded ? C.greenText : C.textSecondary} />
                     <Text style={styles.inclusionText}>
                       {t('tripDetailModal.mealsFood', { value: trip.foodIncluded ? t('tripDetailModal.yes') : t('tripDetailModal.no') })}
                     </Text>
                   </View>
                   <View style={styles.inclusionCell}>
                     {tripName.toLowerCase().includes('bike') ? (
-                      <Bike size={12} color={trip.cabIncluded !== false ? '#2ECC71' : C.textSecondary} />
+                      <Bike size={12} color={trip.cabIncluded !== false ? C.greenText : C.textSecondary} />
                     ) : (
-                      <Bus size={12} color={trip.cabIncluded !== false ? '#2ECC71' : C.textSecondary} />
+                      <Bus size={12} color={trip.cabIncluded !== false ? C.greenText : C.textSecondary} />
                     )}
                     <Text style={styles.inclusionText}>
                       {tripName.toLowerCase().includes('bike')
@@ -362,7 +381,7 @@ export default function TripDetailModal({
                     </View>
                     <View style={styles.priceCalcRow}>
                       <Text style={{ fontSize: 12, color: C.textSecondary }}>{t('tripDetailModal.automaticPriceAdjustment')}</Text>
-                      <Text style={{ fontSize: 16, fontWeight: '700', color: '#2ECC71' }}>
+                      <Text style={{ fontSize: 16, fontWeight: '700', color: C.greenText }}>
                         ₹{calculateMidwayPrice()}{' '}
                         <Text style={{ fontSize: 12, color: C.textSecondary }}>{t('tripDetailModal.vsPrice', { price })}</Text>
                       </Text>
@@ -375,12 +394,12 @@ export default function TripDetailModal({
                   <View style={styles.pricingBarLeft}>
                     <Text style={styles.pricingBarLabel}>{t('tripDetailModal.perPerson')}</Text>
                     <View style={styles.pricingBarAmountRow}>
-                      <Text style={[styles.pricingBarCurrency, { color: C.accent }]}>₹</Text>
+                      {/* formatINR, not an inline `₹` + toLocaleString: money
+                          crosses the wire as a string (CONVENTIONS.md §3), and
+                          String.prototype.toLocaleString is a no-op, so this
+                          rendered a raw "28500.00" beside a lone rupee sign. */}
                       <Text style={styles.pricingBarAmount}>
-                        {(midwayJoin && startCity && endCity
-                          ? calculateMidwayPrice()
-                          : price
-                        ).toLocaleString('en-IN')}
+                        {formatINR(midwayJoin && startCity && endCity ? calculateMidwayPrice() : price)}
                       </Text>
                     </View>
                   </View>
@@ -388,8 +407,8 @@ export default function TripDetailModal({
                   <View style={styles.pricingBarRight}>
                     <Text style={styles.pricingBarLabel}>{t('tripDetailModal.availability')}</Text>
                     <View style={styles.pricingBarSeatsRow}>
-                      <Users size={12} color={trip.availableSeats > 0 ? '#10B981' : '#EF4444'} />
-                      <Text style={[styles.pricingBarSeats, { color: trip.availableSeats > 0 ? '#10B981' : '#EF4444' }]}>
+                      <Users size={12} color={trip.availableSeats > 0 ? C.greenText : C.redText} />
+                      <Text style={[styles.pricingBarSeats, { color: trip.availableSeats > 0 ? C.greenText : C.redText }]}>
                         {t('tripDetailModal.seatsOpen', { available: trip.availableSeats, total: trip.totalSeats })}
                       </Text>
                     </View>
@@ -401,7 +420,7 @@ export default function TripDetailModal({
                   <View style={styles.requestedActionArea}>
                     <View style={styles.requestedStatusRow}>
                       <View style={styles.requestedStatusIcon}>
-                        <CheckCircle size={18} color='#10B981' />
+                        <CheckCircle size={18} color={C.greenText} />
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.requestedStatusTitle}>{t('tripDetailModal.requestSubmittedTitle')}</Text>
@@ -426,11 +445,9 @@ export default function TripDetailModal({
                     onPress={handleRequestJoin}
                     activeOpacity={0.88}
                     accessibilityRole="button"
-                    accessibilityLabel={midwayJoin ? t('tripDetailModal.requestSegmentJoin') : t('tripDetailModal.requestToJoin')}
+                    accessibilityLabel={joinCtaLabel}
                   >
-                    <Text style={styles.modalSubmitBtnText}>
-                      {midwayJoin ? t('tripDetailModal.requestSegmentJoin') : t('tripDetailModal.requestToJoin')}
-                    </Text>
+                    <Text style={styles.modalSubmitBtnText}>{joinCtaLabel}</Text>
                   </TouchableOpacity>
                 )}
               </ScrollView>
@@ -452,7 +469,7 @@ const styles = StyleSheet.create({
     width: '100%',
     flex: 0.9,
     backgroundColor: C.card,
-    borderColor: '#1E2340',
+    borderColor: C.border,
     borderTopWidth: 1,
     borderLeftWidth: 1,
     borderRightWidth: 1,
@@ -465,7 +482,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 4,
     borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: C.borderGlow,
     alignSelf: 'center',
     marginBottom: 18,
   },
@@ -476,7 +493,7 @@ const styles = StyleSheet.create({
   successTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#F8FAFC',
+    color: C.text,
     marginTop: 16,
   },
   successSub: {
@@ -494,7 +511,7 @@ const styles = StyleSheet.create({
   modalTripName: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#F8FAFC',
+    color: C.text,
   },
   modalOrganizerText: {
     fontSize: 12,
@@ -512,7 +529,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   viewOnMapHeaderBtnText: {
-    color: '#FFF',
+    color: C.white,
     fontSize: 12,
     fontWeight: '700',
   },
@@ -535,14 +552,19 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(59, 130, 246, 0.12)',
+    backgroundColor: C.accentLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
   modalOrganizerName: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#F8FAFC',
+    color: C.text,
+  },
+  modalOrganizerRole: {
+    fontSize: 12,
+    color: C.textSec,
+    marginTop: 2,
   },
   formSectionTitle: {
     fontSize: 12,
@@ -553,7 +575,7 @@ const styles = StyleSheet.create({
   },
   detailRowCard: {
     flexDirection: 'row',
-    backgroundColor: '#1B1E30',
+    backgroundColor: C.cardAlt,
     padding: 12,
     borderRadius: 12,
     marginBottom: 20,
@@ -566,12 +588,12 @@ const styles = StyleSheet.create({
   detailCardVal: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#F8FAFC',
+    color: C.text,
     marginTop: 2,
   },
   detailCardDivider: {
     width: 1,
-    backgroundColor: '#1E2340',
+    backgroundColor: C.cardAlt,
     marginHorizontal: 12,
   },
   modalItineraryRow: {
@@ -583,12 +605,12 @@ const styles = StyleSheet.create({
   itineraryCityCard: {
     padding: 8,
     borderRadius: 8,
-    backgroundColor: 'rgba(59, 130, 246, 0.12)',
+    backgroundColor: C.accentLight,
   },
   itineraryCityText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#F8FAFC',
+    color: C.text,
   },
   meetingPointInfoCard: {
     flexDirection: 'row',
@@ -603,7 +625,7 @@ const styles = StyleSheet.create({
   meetingPointValText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#F8FAFC',
+    color: C.text,
   },
   inclusionsGrid: {
     flexDirection: 'row',
@@ -616,13 +638,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#1B1E30',
+    backgroundColor: C.cardAlt,
     padding: 10,
     borderRadius: 10,
   },
   inclusionText: {
     fontSize: 12,
-    color: '#F8FAFC',
+    color: C.text,
     fontWeight: '600',
   },
   toggleRow: {
@@ -632,13 +654,13 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderTopWidth: 0.5,
     borderBottomWidth: 0.5,
-    borderColor: '#1E2340',
+    borderColor: C.border,
     marginBottom: 20,
   },
   toggleLabel: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#F8FAFC',
+    color: C.text,
     marginBottom: 2,
   },
   toggleSwitch: {
@@ -649,16 +671,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   toggleSwitchOn: {
-    backgroundColor: '#2ECC71',
+    backgroundColor: C.green,
   },
   toggleSwitchOff: {
-    backgroundColor: '#555',
+    backgroundColor: C.borderGlow,
   },
   toggleCircle: {
     width: 20,
     height: 20,
     borderRadius: 10,
-    backgroundColor: '#FFF',
+    backgroundColor: C.white,
   },
   circleOn: {
     alignSelf: 'flex-end',
@@ -672,7 +694,7 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: '#1E2340',
+    borderColor: C.border,
   },
   midwaySectionTitle: {
     fontSize: 12,
@@ -709,13 +731,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     borderTopWidth: 0.5,
-    borderColor: '#1E2340',
+    borderColor: C.border,
     paddingTop: 10,
   },
   pricingBar: {
     flexDirection: 'row',
-    backgroundColor: '#161929',
-    borderColor: '#1E2340',
+    backgroundColor: C.cardAlt,
+    borderColor: C.border,
     borderWidth: 1,
     borderRadius: 16,
     padding: 14,
@@ -733,19 +755,14 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
     marginTop: 4,
   },
-  pricingBarCurrency: {
-    fontSize: 14,
-    fontWeight: '700',
-    marginRight: 2,
-  },
   pricingBarAmount: {
     fontSize: 22,
     fontWeight: '800',
-    color: '#F8FAFC',
+    color: C.text,
   },
   pricingBarDivider: {
     width: 1,
-    backgroundColor: '#1E2340',
+    backgroundColor: C.cardAlt,
     marginHorizontal: 16,
   },
   pricingBarRight: {
@@ -770,7 +787,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   modalSubmitBtnText: {
-    color: '#FFF',
+    color: C.white,
     fontSize: 15,
     fontWeight: '700',
   },
@@ -781,7 +798,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    borderColor: '#1E2A22',
+    borderColor: C.greenGlow,
     backgroundColor: 'rgba(16,185,129,0.07)',
     borderWidth: 1,
     borderRadius: 14,

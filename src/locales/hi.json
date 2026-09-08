@@ -31,7 +31,8 @@
     "inDays_one": "{{count}} दिन में",
     "inDays_other": "{{count}} दिन में",
     "inWeeks_one": "{{count}} हफ्ते में",
-    "inWeeks_other": "{{count}} हफ्तों में"
+    "inWeeks_other": "{{count}} हफ्तों में",
+    "offlineMessage": "आप ऑफ़लाइन लग रहे हैं। अपना कनेक्शन जांचें और फिर से प्रयास करें।"
   },
   "nav": {
     "home": "होम",
@@ -76,11 +77,10 @@
     "featuredGroupTrips": "फीचर्ड ग्रुप ट्रिप्स",
     "trendingDestinations": "ट्रेंडिंग डेस्टिनेशन",
     "destinationsEmpty": "अभी दिखाने के लिए कोई डेस्टिनेशन नहीं है — जल्द ही देखें।",
-    "weatherEmpty": "मौसम की जानकारी अभी उपलब्ध नहीं है।",
     "couldNotLoadTrips": "ट्रिप्स लोड नहीं हो सकीं",
     "couldNotLoadTripsMessage": "हम सर्वर तक नहीं पहुंच सके। अपना कनेक्शन जांचें और फिर से प्रयास करें।",
-    "noTripsYet": "अभी तक कोई ट्रिप नहीं",
-    "noTripsYetMessage": "किसी ने अभी तक कोई ट्रिप पब्लिश नहीं की है। एक बनाएं और यह यहां दिखाई देगी।",
+    "noTripsYet": "अभी तक कोई ग्रुप ट्रिप नहीं",
+    "noTripsYetMessage": "पहली ट्रिप आप बनाएं — एक इटिनेरी बनाकर यात्रियों को शामिल होने के लिए आमंत्रित करें।",
     "createATrip": "एक ट्रिप बनाएं",
     "featured": "फीचर्ड",
     "guideIncluded": "गाइड शामिल है",
@@ -90,22 +90,42 @@
     "seatsLeft_other": "{{count}} बचीं",
     "totalPackage": "कुल पैकेज",
     "joinNow": "अभी जुड़ें",
-    "joinChat": "चैट में जुड़ें",
     "tripCardHint": "इस ट्रिप का विवरण देखें",
     "humidity": "नमी {{value}}",
     "live": "लाइव",
     "viewDetails": "विवरण देखें",
-    "favoriteHint": "पसंदीदा में जोड़ें",
     "destinationCardLabel": "{{name}}, रेटिंग {{rating}}",
     "routeSafety": "मार्ग सुरक्षा",
     "allClear": "ऑल क्लियर",
-    "optimalConditions": "उत्तम स्थितियां",
-    "noHazardAlertsDesc": "निगरानी किए गए मार्गों पर कोई सक्रिय अलर्ट या रुकावट नहीं है।",
-    "hazardRisk": "जोखिम",
-    "riskLow": "शून्य (0%)",
-    "transitStatus": "यातायात",
-    "transitNormal": "सामान्य",
-    "allClearMinimalDesc": "सभी मार्ग सुरक्षित हैं और सामान्य रूप से चालू हैं।"
+    "allClearMinimalDesc": "सभी मार्ग सुरक्षित हैं और सामान्य रूप से चालू हैं।",
+    "guestTraveler": "अतिथि यात्री",
+    "yourLocation": "आपका स्थान",
+    "wind": "हवा {{value}}",
+    "weatherLoading": "स्थानीय मौसम पढ़ा जा रहा है…",
+    "weatherErrorTitle": "मौसम उपलब्ध नहीं",
+    "weatherErrorMessage": "हम मौसम सेवा तक नहीं पहुंच सके। कुछ देर बाद फिर से प्रयास करें।",
+    "weatherLocationOffTitle": "स्थानीय मौसम",
+    "weatherLocationOffMessage": "आप जहां हैं वहां का लाइव मौसम देखने के लिए लोकेशन चालू करें।",
+    "enableLocation": "लोकेशन चालू करें",
+    "openSettings": "सेटिंग्स खोलें",
+    "checkingRoutes": "मार्गों की जांच हो रही है…",
+    "couldNotLoadAlerts": "मार्ग सुरक्षा उपलब्ध नहीं",
+    "couldNotLoadAlertsMessage": "हम आपके मार्गों पर खतरों की जांच नहीं कर सके। फिर से प्रयास करें।",
+    "couldNotLoadDestinations": "डेस्टिनेशन लोड नहीं हो सके",
+    "couldNotLoadDestinationsMessage": "हम सर्वर तक नहीं पहुंच सके। अपना कनेक्शन जांचें और फिर से प्रयास करें।",
+    "destinationsEmptyTitle": "अभी कोई डेस्टिनेशन नहीं",
+    "couldNotLoadFeed": "फीड लोड नहीं हो सकी",
+    "couldNotLoadFeedMessage": "हम सर्वर तक नहीं पहुंच सके। अपना कनेक्शन जांचें और फिर से प्रयास करें।",
+    "joinRequested": "अनुरोध भेजा गया",
+    "signInToCreate": "बनाने के लिए साइन इन करें",
+    "createTripAuthTitle": "ग्रुप ट्रिप प्लान करें",
+    "createTripAuthDesc": "ट्रिप पब्लिश करने, यात्रियों को आमंत्रित करने और जॉयन अनुरोध संभालने के लिए खाता बनाएं।",
+    "joinTripAuthTitle": "इस ट्रिप में शामिल हों",
+    "joinTripAuthDesc": "जॉयन अनुरोध भेजने के लिए खाता बनाएं। आयोजक उसे देखकर आपकी सीट पक्की करता है।",
+    "guideAuthTitle": "ट्रैवल गाइड बनें",
+    "guideAuthDesc": "गाइड डैशबोर्ड आपके खाते से जुड़ा है — आवेदन करने, पैकेज सूचीबद्ध करने और लीड संभालने के लिए साइन इन करें।",
+    "organizerAuthTitle": "ग्रुप आयोजित करें",
+    "organizerAuthDesc": "आयोजक डैशबोर्ड आपके खाते से जुड़ा है — ट्रिप रोस्टर, लॉजिस्टिक्स और चैट चलाने के लिए साइन इन करें।"
   },
   "search": {
     "searchPlaceholder": "राज्य, शहर या गाइड खोजें...",
@@ -386,7 +406,15 @@
     "couldNotMarkRead": "सूचनाओं को पढ़ा हुआ चिह्नित नहीं किया जा सका।",
     "severityCritical": "गंभीर",
     "severityWarning": "चेतावनी",
-    "severityAdvisory": "सलाह"
+    "severityAdvisory": "सलाह",
+    "signInTitle": "सूचनाएं देखने के लिए साइन इन करें",
+    "signInMessage": "आपकी ट्रिप अपडेट, जॉयन अनुरोध और अलर्ट आपके खाते में रहते हैं।",
+    "signIn": "साइन इन करें",
+    "loadingNotifications": "सूचनाएं लोड हो रही हैं…",
+    "couldNotLoad": "सूचनाएं लोड नहीं हो सकीं",
+    "couldNotLoadMessage": "हम सर्वर तक नहीं पहुंच सके। अपना कनेक्शन जांचें और फिर से प्रयास करें।",
+    "emptyTitle": "कुछ नया नहीं",
+    "emptyMessage": "आप पूरी तरह अपडेट हैं। ट्रिप अपडेट और मार्ग अलर्ट यहां दिखेंगे।"
   },
   "budgetTracker": {
     "title": "बजट ट्रैकर",
@@ -527,14 +555,15 @@
   },
   "stories": {
     "noStoriesYetTitle": "अभी तक कोई कहानी नहीं",
-    "noStoriesFromLocation": "अभी तक किसी ने {{location}} से कोई कहानी साझा नहीं की है।",
     "beFirstToShare": "यात्रा कहानी साझा करने वाले पहले व्यक्ति बनें।",
     "goBack": "वापस जाएं",
     "closeStories": "कहानियां बंद करें",
     "likeStory": "कहानी पसंद करें",
     "unlikeStory": "पसंद हटाएं",
     "defaultCreatorName": "यात्री",
-    "defaultLocation": "भारत"
+    "loadingStories": "स्टोरीज़ लोड हो रही हैं…",
+    "couldNotLoadStories": "स्टोरीज़ लोड नहीं हो सकीं",
+    "couldNotLoadStoriesMessage": "हम सर्वर तक नहीं पहुंच सके। अपना कनेक्शन जांचें और फिर से प्रयास करें।"
   },
   "tripDetailModal": {
     "requestSubmitted": "अनुरोध सबमिट हो गया!",
@@ -544,7 +573,6 @@
     "organizedBy": "{{name}} द्वारा आयोजित",
     "viewRouteOnMap": "मानचित्र पर मार्ग देखें",
     "close": "बंद करें",
-    "backgroundVerifiedOrganizer": "पृष्ठभूमि-सत्यापित आयोजक",
     "scheduleDuration": "अनुसूची और अवधि",
     "startDate": "प्रारंभ तिथि",
     "endDate": "समाप्ति तिथि",
@@ -576,7 +604,9 @@
     "awaitingConfirmation": "आयोजक की पुष्टि की प्रतीक्षा",
     "withdrawRequest": "अनुरोध वापस लें",
     "requestSegmentJoin": "खंड जॉइन का अनुरोध करें",
-    "requestToJoin": "शामिल होने का अनुरोध करें"
+    "requestToJoin": "शामिल होने का अनुरोध करें",
+    "signInToJoin": "शामिल होने के लिए साइन इन करें",
+    "organizerRole": "ट्रिप आयोजक"
   },
   "profile": {
     "personalDetails": "व्यक्तिगत विवरण",
@@ -854,7 +884,10 @@
     "announcementPublished_other": "प्रकाशित — {{count}} ट्रिप सदस्यों को भेजा गया।",
     "announcementPublishedNoMembers": "प्रकाशित हो गया, लेकिन अभी तक इस ट्रिप में कोई अन्य सदस्य शामिल नहीं हुआ है।",
     "couldNotSendAnnouncement": "घोषणा नहीं भेजी जा सकी।",
-    "deleteDayHint": "इस दिन को हटाने के लिए लॉन्ग-प्रेस करें"
+    "deleteDayHint": "इस दिन को हटाने के लिए लॉन्ग-प्रेस करें",
+    "signInTitle": "ग्रुप आयोजित करने के लिए साइन इन करें",
+    "signInMessage": "ट्रिप रोस्टर, जॉयन अनुरोध की मंज़ूरी और ग्रुप चैट सब आपके खाते में रहते हैं।",
+    "signIn": "साइन इन करें"
   },
   "createTrip": {
     "organizerConsole": "आयोजक कंसोल",
@@ -1290,7 +1323,10 @@
     "contactNationalMedicalHelplineDesc": "एम्बुलेंस सेवा और अस्पताल अपडेट",
     "contactStateDisasterDesk": "राज्य आपदा अलर्ट डेस्क",
     "contactStateDisasterDeskDesc": "भूस्खलन, बारिश और मौसम अलर्ट",
-    "couldNotOpenDialerFor": "डायलर नहीं खोला जा सका। कृपया {{name}} के लिए {{phone}} डायल करें।"
+    "couldNotOpenDialerFor": "डायलर नहीं खोला जा सका। कृपया {{name}} के लिए {{phone}} डायल करें।",
+    "signInTitle": "गाइड डैशबोर्ड खोलने के लिए साइन इन करें",
+    "signInMessage": "गाइड बनने का आवेदन, पैकेज सूची और लीड प्रबंधन सब आपके खाते में रहते हैं।",
+    "signIn": "साइन इन करें"
   },
   "chat": {
     "you": "आप",

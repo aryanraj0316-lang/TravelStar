@@ -13,6 +13,7 @@ import { logger } from '@/lib/logger';
 // makes Expo Go on Android behave the same as "push not configured" instead
 // of a hard crash.
 const isExpoGoAndroid = Platform.OS === 'android' && Constants.executionEnvironment === 'storeClient';
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- must stay lazy: a static import of expo-notifications throws at import time in Expo Go on Android (see above)
 const Notifications = isExpoGoAndroid ? null : (require('expo-notifications') as typeof import('expo-notifications'));
 
 /**

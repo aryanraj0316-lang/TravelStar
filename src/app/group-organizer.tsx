@@ -38,7 +38,7 @@ import Check from 'lucide-react-native/icons/check';
 import Send from 'lucide-react-native/icons/send';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { showPrompt, toast, useConfirm } from '@/lib/feedback';
-import { Button, Input, Sheet } from '@/components/ui';
+import { Button, Input, ScreenEmpty, Sheet } from '@/components/ui';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -92,7 +92,7 @@ const STATUS_LABEL_KEYS: Record<ActiveTour['status'], string> = {
 export default function GroupOrganizerScreen() {
   const { t } = useTranslation();
   const router = useRouter();
-  const { profile, addTrip, trips } = useApp();
+  const { profile, addTrip, trips, isLoggedIn } = useApp();
   const confirm = useConfirm();
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'trips' | 'logistics' | 'chat'>('dashboard');
@@ -643,6 +643,19 @@ export default function GroupOrganizerScreen() {
         </View>
       </LinearGradient>
 
+      {/* Every tab below is scoped to the caller's own trips and writes
+          through authenticated endpoints (create trip, approve a join
+          request, post to the trip room), so there is nothing here for a
+          logged-out visitor to do. The home screen already prompts before
+          routing here; this covers a deep link. */}
+      {!isLoggedIn ? (
+        <ScreenEmpty
+          title={t('groupOrganizer.signInTitle')}
+          message={t('groupOrganizer.signInMessage')}
+          actionLabel={t('groupOrganizer.signIn')}
+          onAction={() => router.push('/auth')}
+        />
+      ) : (
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {/* docs/REMEDIATION.md §8.6: `tours` used to always have at least
             one entry (a hardcoded fixture) even for an organizer with zero
@@ -1316,6 +1329,7 @@ export default function GroupOrganizerScreen() {
         {/* Bottom Spacer */}
         <View style={{ height: 100 }} />
       </ScrollView>
+      )}
 
       {/* CREATE NEW TOUR SHEET */}
       <Sheet visible={showCreateModal} onClose={() => setShowCreateModal(false)} title={t('groupOrganizer.launchNewTourGroup')}>

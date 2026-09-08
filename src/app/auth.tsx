@@ -10,9 +10,11 @@ import {
   StatusBar,
   TextInput,
   Image,
+  type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, {
   Path,
@@ -49,17 +51,6 @@ interface FieldErrors {
   name?: string;
   email?: string;
   password?: string;
-}
-
-// ─── Branded Origami Plane Logo ──────────────────────────────────────────
-function OrigamiLogo({ size = 26 }: { size?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 48 48" fill="none">
-      <Path d="M6 24L42 6L26 42L20 28L6 24Z" fill="#2563EB" />
-      <Path d="M20 28L42 6L26 42L20 28Z" fill="#1D4ED8" />
-      <Path d="M20 28L26 42L32 32L20 28Z" fill="#60A5FA" />
-    </Svg>
-  );
 }
 
 // ─── Deep Bluish Swallow-Tail Bookmark Ribbon ─────────────────────────────────
@@ -149,6 +140,17 @@ export default function AuthScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const { currentRole, setCurrentRole, updateProfile, login, refreshTrips } = useApp();
+  const queryClient = useQueryClient();
+
+  // Every cached query on the screen the user came from was fetched as an
+  // anonymous caller. After a successful sign-in the same endpoints answer
+  // differently (the feed gains the caller's own posts; notifications and
+  // bookings become reachable at all), so the whole cache is invalidated —
+  // only queries a mounted screen is actually observing refetch.
+  const refreshAfterAuth = () => {
+    refreshTrips();
+    void queryClient.invalidateQueries();
+  };
 
   const initialMode = (params.mode === 'LOGIN' || params.mode === 'SIGNUP') ? (params.mode as 'LOGIN' | 'SIGNUP') : 'SIGNUP';
   const [mode, setMode] = useState<'LOGIN' | 'SIGNUP'>(initialMode);
@@ -218,7 +220,7 @@ export default function AuthScreen() {
         setCurrentRole(userObj.role || selectedRole);
         updateProfile(userObj);
         login();
-        setTimeout(() => refreshTrips(), 300);
+        setTimeout(refreshAfterAuth, 300);
         toast(t('auth.welcomeBackToast') || 'Welcome back!', 'success');
         if (router.canGoBack()) {
           router.back();
@@ -276,7 +278,7 @@ export default function AuthScreen() {
         setCurrentRole(userObj.role || selectedRole);
         updateProfile(userObj);
         login();
-        setTimeout(() => refreshTrips(), 300);
+        setTimeout(refreshAfterAuth, 300);
 
         const roleChanged = userObj.role && userObj.role !== selectedRole;
         if (roleChanged) {
@@ -695,7 +697,7 @@ const styles = StyleSheet.create({
       web: {
         cursor: 'pointer',
         outlineWidth: 0,
-      } as any,
+      } as unknown as ViewStyle,
     }),
   },
 
@@ -719,7 +721,7 @@ const styles = StyleSheet.create({
         WebkitClipPath: 'polygon(16px 50%, 0% 0%, 100% 0%, 100% 100%, 0% 100%)',
         WebkitTapHighlightColor: 'transparent',
         cursor: 'pointer',
-      } as any,
+      } as unknown as ViewStyle,
     }),
   },
   bookmarkContent: {

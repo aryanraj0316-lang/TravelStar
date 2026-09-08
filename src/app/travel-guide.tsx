@@ -135,7 +135,7 @@ interface WeatherData {
 export default function TravelGuideScreen() {
   const { t } = useTranslation();
   const router = useRouter();
-  const { profile } = useApp();
+  const { profile, isLoggedIn } = useApp();
   const confirm = useConfirm();
 
   const [activeTab, setActiveTab] = useState<'leads' | 'upload' | 'planning' | 'weather' | 'safety'>('leads');
@@ -146,7 +146,9 @@ export default function TravelGuideScreen() {
   // full dashboard (with fabricated stats standing in for the missing
   // data) in every case, including for a brand-new user who has never
   // applied to be a guide at all and has no way to do so from this screen.
-  const [guideStatus, setGuideStatus] = useState<'loading' | 'notApplied' | 'ready' | 'error'>('loading');
+  const [guideStatus, setGuideStatus] = useState<'loading' | 'notSignedIn' | 'notApplied' | 'ready' | 'error'>(
+    'loading',
+  );
   const [applying, setApplying] = useState(false);
   const [applyLicenseNumber, setApplyLicenseNumber] = useState('');
   const [applyExperienceYears, setApplyExperienceYears] = useState('');
@@ -192,6 +194,14 @@ export default function TravelGuideScreen() {
   const [quoteInputs, setQuoteInputs] = useState<Record<string, string>>({});
 
   const loadGuideProfile = async () => {
+    // GET /guides/me is behind a required token, so a logged-out visitor
+    // used to land on the generic error screen — which reads as "the guide
+    // dashboard is broken" rather than "this needs an account". The home
+    // screen already prompts before routing here; this covers a deep link.
+    if (!isLoggedIn) {
+      setGuideStatus('notSignedIn');
+      return;
+    }
     setGuideStatus('loading');
     try {
       const guide = await apiService.getMyGuideProfile();
@@ -939,6 +949,15 @@ export default function TravelGuideScreen() {
         </View>
         )}
       </View>
+
+      {guideStatus === 'notSignedIn' && (
+        <ScreenEmpty
+          title={t('travelGuide.signInTitle')}
+          message={t('travelGuide.signInMessage')}
+          actionLabel={t('travelGuide.signIn')}
+          onAction={() => router.push('/auth')}
+        />
+      )}
 
       {guideStatus === 'loading' && <ScreenLoading label={t('travelGuide.loadingGuideDashboard')} />}
 

@@ -31,7 +31,8 @@
     "inDays_one": "in {{count}} d",
     "inDays_other": "in {{count}} d",
     "inWeeks_one": "in {{count}} wk",
-    "inWeeks_other": "in {{count}} wk"
+    "inWeeks_other": "in {{count}} wk",
+    "offlineMessage": "You appear to be offline. Check your connection and try again."
   },
   "nav": {
     "home": "Home",
@@ -76,11 +77,10 @@
     "featuredGroupTrips": "Featured Group Trips",
     "trendingDestinations": "Trending Destinations",
     "destinationsEmpty": "No destinations to show yet — check back soon.",
-    "weatherEmpty": "Weather data isn't available yet.",
     "couldNotLoadTrips": "Could not load trips",
     "couldNotLoadTripsMessage": "We could not reach the server. Check your connection and try again.",
-    "noTripsYet": "No trips yet",
-    "noTripsYetMessage": "Nobody has published a trip yet. Create one and it will show up here.",
+    "noTripsYet": "No group trips yet",
+    "noTripsYetMessage": "Be the first to plan one — create an itinerary and invite travelers to join.",
     "createATrip": "Create a trip",
     "featured": "Featured",
     "guideIncluded": "Guide included",
@@ -90,22 +90,42 @@
     "seatsLeft_other": "{{count}} left",
     "totalPackage": "Total Package",
     "joinNow": "Join Now",
-    "joinChat": "Join Chat",
     "tripCardHint": "View this trip's details",
     "humidity": "Humidity {{value}}",
     "live": "LIVE",
     "viewDetails": "View Details",
-    "favoriteHint": "Add to favorites",
     "destinationCardLabel": "{{name}}, rated {{rating}}",
     "routeSafety": "Route Safety",
     "allClear": "All Clear",
-    "optimalConditions": "Optimal Conditions",
-    "noHazardAlertsDesc": "No active hazard alerts or road disruptions on monitored routes.",
-    "hazardRisk": "Hazard Risk",
-    "riskLow": "Low (0%)",
-    "transitStatus": "Transit",
-    "transitNormal": "Normal",
-    "allClearMinimalDesc": "All monitored routes are safe and running normally."
+    "allClearMinimalDesc": "All monitored routes are safe and running normally.",
+    "guestTraveler": "Guest Traveler",
+    "yourLocation": "Your location",
+    "wind": "Wind {{value}}",
+    "weatherLoading": "Reading local weather…",
+    "weatherErrorTitle": "Weather unavailable",
+    "weatherErrorMessage": "We couldn't reach the weather service. Try again in a moment.",
+    "weatherLocationOffTitle": "Local weather",
+    "weatherLocationOffMessage": "Enable location to see live weather where you are.",
+    "enableLocation": "Enable location",
+    "openSettings": "Open settings",
+    "checkingRoutes": "Checking routes…",
+    "couldNotLoadAlerts": "Route safety unavailable",
+    "couldNotLoadAlertsMessage": "We could not check for hazards on your routes. Try again.",
+    "couldNotLoadDestinations": "Could not load destinations",
+    "couldNotLoadDestinationsMessage": "We could not reach the server. Check your connection and try again.",
+    "destinationsEmptyTitle": "No destinations yet",
+    "couldNotLoadFeed": "Could not load the feed",
+    "couldNotLoadFeedMessage": "We could not reach the server. Check your connection and try again.",
+    "joinRequested": "Requested",
+    "signInToCreate": "Sign in to create one",
+    "createTripAuthTitle": "Plan a group trip",
+    "createTripAuthDesc": "Create an account to publish a trip, invite travellers and manage join requests.",
+    "joinTripAuthTitle": "Join this trip",
+    "joinTripAuthDesc": "Create an account to send a join request. The organizer reviews it and confirms your seat.",
+    "guideAuthTitle": "Become a travel guide",
+    "guideAuthDesc": "The guide dashboard is tied to your account — sign in to apply, list packages and manage leads.",
+    "organizerAuthTitle": "Organize a group",
+    "organizerAuthDesc": "The organizer dashboard is tied to your account — sign in to run a trip roster, logistics and chat."
   },
   "search": {
     "searchPlaceholder": "Search by state, city, guide...",
@@ -386,7 +406,15 @@
     "couldNotMarkRead": "Could not mark notifications as read.",
     "severityCritical": "CRITICAL",
     "severityWarning": "WARNING",
-    "severityAdvisory": "ADVISORY"
+    "severityAdvisory": "ADVISORY",
+    "signInTitle": "Sign in to see notifications",
+    "signInMessage": "Your trip updates, join requests and alerts live in your account.",
+    "signIn": "Sign in",
+    "loadingNotifications": "Loading notifications…",
+    "couldNotLoad": "Could not load notifications",
+    "couldNotLoadMessage": "We could not reach the server. Check your connection and try again.",
+    "emptyTitle": "Nothing new",
+    "emptyMessage": "You're all caught up. Trip updates and route alerts will appear here."
   },
   "budgetTracker": {
     "title": "Budget Tracker",
@@ -527,14 +555,15 @@
   },
   "stories": {
     "noStoriesYetTitle": "No stories yet",
-    "noStoriesFromLocation": "Nobody has shared a story from {{location}} yet.",
     "beFirstToShare": "Be the first to share a travel story.",
     "goBack": "Go back",
     "closeStories": "Close stories",
     "likeStory": "Like story",
     "unlikeStory": "Unlike story",
     "defaultCreatorName": "Traveler",
-    "defaultLocation": "India"
+    "loadingStories": "Loading stories…",
+    "couldNotLoadStories": "Could not load stories",
+    "couldNotLoadStoriesMessage": "We could not reach the server. Check your connection and try again."
   },
   "tripDetailModal": {
     "requestSubmitted": "Request Submitted!",
@@ -544,7 +573,6 @@
     "organizedBy": "Organized by {{name}}",
     "viewRouteOnMap": "View Route on Map",
     "close": "Close",
-    "backgroundVerifiedOrganizer": "Background-Verified Organizer",
     "scheduleDuration": "SCHEDULE & DURATION",
     "startDate": "START DATE",
     "endDate": "END DATE",
@@ -576,7 +604,9 @@
     "awaitingConfirmation": "Awaiting organizer confirmation",
     "withdrawRequest": "Withdraw Request",
     "requestSegmentJoin": "Request Segment Join",
-    "requestToJoin": "Request to Join"
+    "requestToJoin": "Request to Join",
+    "signInToJoin": "Sign in to join",
+    "organizerRole": "Trip organizer"
   },
   "profile": {
     "personalDetails": "PERSONAL DETAILS",
@@ -854,7 +884,10 @@
     "announcementPublished_other": "Published — sent to {{count}} trip members.",
     "announcementPublishedNoMembers": "Published, but no other members have joined this trip yet.",
     "couldNotSendAnnouncement": "Could not send the announcement.",
-    "deleteDayHint": "Long-press to remove this day"
+    "deleteDayHint": "Long-press to remove this day",
+    "signInTitle": "Sign in to organize a group",
+    "signInMessage": "Trip rosters, join-request approvals and group chat all live in your account.",
+    "signIn": "Sign in"
   },
   "createTrip": {
     "organizerConsole": "ORGANIZER CONSOLE",
@@ -1290,7 +1323,10 @@
     "contactNationalMedicalHelplineDesc": "Ambulance service and hospital updates",
     "contactStateDisasterDesk": "State Disaster Alert Desk",
     "contactStateDisasterDeskDesc": "Landslide, rainfall, and weather alerts",
-    "couldNotOpenDialerFor": "Could not open the dialer. Please dial {{phone}} for {{name}}."
+    "couldNotOpenDialerFor": "Could not open the dialer. Please dial {{phone}} for {{name}}.",
+    "signInTitle": "Sign in to open the guide dashboard",
+    "signInMessage": "Applying to guide, listing packages and managing leads all live in your account.",
+    "signIn": "Sign in"
   },
   "chat": {
     "you": "You",

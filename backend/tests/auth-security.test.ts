@@ -113,9 +113,16 @@ describe('Global auth requirement', () => {
     expect(res.status).toBe(401);
   });
 
+  // 401, not 403. An unverifiable token is a failure to authenticate, not a
+  // valid session lacking permission — and the client's silent refresh flow
+  // (src/services/api.ts) only fires on 401, so returning 403 here meant a
+  // naturally expired 15-minute access token surfaced to the user as a raw
+  // "Forbidden" instead of being refreshed transparently. The middleware was
+  // corrected in src/middleware/auth.ts; this assertion was left behind.
   it('rejects a request with a garbage token', async () => {
     const res = await request(app).get('/api/v1/auth/profile').set('Authorization', 'Bearer not-a-real-token');
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('UNAUTHORIZED');
   });
 
   it('allows public browse endpoints with no token', async () => {

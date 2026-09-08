@@ -4,7 +4,6 @@
 // reads real navigation state (`state`/`navigation` from React Navigation)
 // instead of the ad-hoc TabContext + horizontal-ScrollView pager that used
 // to live in the deleted src/components/app-tabs.tsx (REMEDIATION.md §7.1).
-import { LinearGradient } from 'expo-linear-gradient';
 import { Tabs, useRouter } from 'expo-router';
 import Home from 'lucide-react-native/icons/house';
 import Map from 'lucide-react-native/icons/map';
@@ -47,7 +46,6 @@ const TAB_LABEL_KEYS: Record<string, string> = {
   profile: 'nav.profile',
 };
 
-import Plus from 'lucide-react-native/icons/plus';
 
 const AnimatedTabButton = React.memo(function AnimatedTabButton({
   routeName,
@@ -67,7 +65,7 @@ const AnimatedTabButton = React.memo(function AnimatedTabButton({
   useEffect(() => {
     Animated.timing(scaleAnim, {
       toValue: isFocused ? 1 : 0,
-      duration: 120,
+      duration: 150,
       easing: Easing.out(Easing.ease),
       useNativeDriver: true,
     }).start();
@@ -75,31 +73,12 @@ const AnimatedTabButton = React.memo(function AnimatedTabButton({
 
   const scale = scaleAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.94, 1.04],
+    outputRange: [0.96, 1.03],
   });
 
   const Icon = TAB_ICONS[routeName] || Home;
   const labelKey = TAB_LABEL_KEYS[routeName];
   const label = labelKey ? t(labelKey) : routeName;
-
-  // Center button special treatment (Image 1 purple circular button)
-  if (routeName === 'create') {
-    return (
-      <Pressable
-        onPress={onPress}
-        style={styles.centerTabButton}
-        accessibilityRole="tab"
-        accessibilityLabel={label}
-        accessibilityState={{ selected: isFocused }}
-      >
-        <Animated.View style={{ transform: [{ scale }] }}>
-          <View style={styles.centerActionCircle}>
-            <Plus size={24} color="#FFFFFF" strokeWidth={2.8} />
-          </View>
-        </Animated.View>
-      </Pressable>
-    );
-  }
 
   return (
     <Pressable
@@ -109,24 +88,27 @@ const AnimatedTabButton = React.memo(function AnimatedTabButton({
       accessibilityLabel={label}
       accessibilityState={{ selected: isFocused }}
     >
-      <Animated.View style={{ transform: [{ scale }] }}>
-        {isFocused ? (
-          <View style={styles.activePillCapsule}>
-            <Icon size={20} color="#2563EB" strokeWidth={2.4} />
-            <Text style={styles.activeTabLabel}>{label}</Text>
-          </View>
-        ) : (
-          <View style={styles.inactiveTabBox}>
-            <View style={{ position: 'relative' }}>
-              <Icon size={20} color="#64748B" strokeWidth={1.8} />
-              {showDot && <View style={styles.tabDot} />}
-            </View>
-            <Text style={styles.inactiveTabLabel}>
-              {label}
-            </Text>
-          </View>
-        )}
+      <Animated.View style={{ transform: [{ scale: isFocused ? scale : 1 }] }}>
+        <View style={[styles.iconCircle, isFocused && styles.iconCircleActive]}>
+          <Icon
+            size={isFocused ? 21 : 20}
+            color={isFocused ? '#FFFFFF' : '#64748B'}
+            strokeWidth={isFocused ? 2.3 : 1.9}
+          />
+          {showDot && (
+            <View style={[styles.tabDot, isFocused && styles.tabDotActive]} />
+          )}
+        </View>
       </Animated.View>
+      {!isFocused && (
+        <Text
+          style={styles.inactiveTabLabel}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+        >
+          {label}
+        </Text>
+      )}
     </Pressable>
   );
 });
@@ -271,48 +253,31 @@ const styles = StyleSheet.create({
   tabButton: {
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  centerTabButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: -4,
-  },
-  centerActionCircle: {
-    width: 48,
+    width: '100%',
     height: 48,
-    borderRadius: 24,
+  },
+  iconCircle: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+    position: 'relative',
+  },
+  iconCircleActive: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: '#6366F1',
-    alignItems: 'center',
-    justifyContent: 'center',
     shadowColor: '#6366F1',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  activePillCapsule: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 16,
-  },
-  activeTabLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#2563EB',
-    marginTop: 2,
-    textAlign: 'center',
-  },
-  inactiveTabBox: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 4,
-    paddingVertical: 4,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 4,
   },
   inactiveTabLabel: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '500',
     color: '#64748B',
     marginTop: 2,
@@ -320,13 +285,18 @@ const styles = StyleSheet.create({
   },
   tabDot: {
     position: 'absolute',
-    top: -2,
-    right: -2,
+    top: -1,
+    right: -1,
     width: 8,
     height: 8,
     borderRadius: 4,
     backgroundColor: C.red,
     borderWidth: 1.5,
     borderColor: '#FFFFFF',
+  },
+  tabDotActive: {
+    top: 2,
+    right: 2,
+    borderColor: '#6366F1',
   },
 });

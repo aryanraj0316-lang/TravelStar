@@ -573,6 +573,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         logger.warn('[Hydrate] Stories fetch failed:', e);
         setDataStatus((prev) => ({ ...prev, stories: 'error' }));
       });
+
+    // Trips load on mount for everyone, not only once a session exists.
+    // GET /trips is a public read (backend/src/middleware/auth.ts's
+    // PUBLIC_GET_EXACT) and the app is browse-before-login, but the only
+    // call site used to be the reactive effect below, which returns early
+    // while logged out — so a guest's `dataStatus.trips` stayed 'loading'
+    // for the life of the session and every trips section rendered a
+    // skeleton forever (CONVENTIONS.md §6: no screen may show a spinner
+    // forever). The reactive effect still re-runs this after login so
+    // `isMyTrip` gets recomputed with the caller's token.
+    refreshTrips();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only hydration; refreshTrips is a stable useCallback with no deps
   }, []);
 
   // ── Reactive: refresh trips, join requests, and socket when login/room changes ──

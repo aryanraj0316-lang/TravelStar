@@ -6,11 +6,12 @@ const tsParser = require('@typescript-eslint/parser');
 module.exports = defineConfig([
   expoConfig,
   {
-    // scripts/** holds plain Node CommonJS tooling (e.g.
-    // generate-licenses.js) — same reason eslint.config.js itself is
-    // exempted: __dirname/require aren't configured as globals for the
-    // app-source TS/TSX rules below, and these aren't app source.
-    ignores: ['dist/*', 'backend/**', 'eslint.config.js', 'scripts/**', 'jest.config.js', 'jest.setup.js'],
+    // scripts/** and e2e/** hold plain Node CommonJS tooling (e.g.
+    // generate-licenses.js, the Playwright UI audit) — same reason
+    // eslint.config.js itself is exempted: __dirname/require aren't
+    // configured as globals for the app-source TS/TSX rules below, and
+    // these aren't app source.
+    ignores: ['dist/*', 'backend/**', 'e2e/**', 'eslint.config.js', 'scripts/**', 'jest.config.js', 'jest.setup.js'],
   },
   {
     files: ['**/*.ts', '**/*.tsx'],

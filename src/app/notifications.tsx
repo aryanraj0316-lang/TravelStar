@@ -23,7 +23,9 @@ import { logger } from '@/lib/logger';
 import { syncBadgeCount } from '@/lib/push';
 import { toast, errorToastMessage } from '@/lib/feedback';
 import { queryKeys } from '@/lib/query-keys';
+import { sectionState } from '@/lib/query-state';
 import { formatDateRange } from '@/lib/datetime';
+import { ScreenEmpty, ScreenError, ScreenLoading } from '@/components/ui';
 import {
   Image,
   ScrollView,
@@ -139,15 +141,21 @@ export default function NotificationsScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { setActiveRoomId, checkUnreadNotifications } = useApp();
+  const { setActiveRoomId, checkUnreadNotifications, isLoggedIn } = useApp();
   const [activeTab, setActiveTab] = useState<TabType>('ALL');
 
   // REMEDIATION.md §6.3: fetching now goes through TanStack Query for
   // caching/retry/offline-cache benefits.
-  const { data: notifications = [], refetch: refetchNotifications } = useQuery({
+  const notificationsQuery = useQuery({
     queryKey: queryKeys.notifications(),
     queryFn: async () => (await apiService.getNotifications()) ?? [],
+    // GET /notifications is behind a required token. Firing it while logged
+    // out returned a 401 that `?? []` quietly turned into "no notifications",
+    // so a guest saw an empty inbox instead of a reason to sign in.
+    enabled: isLoggedIn,
   });
+  const { data: notifications = [], refetch: refetchNotifications } = notificationsQuery;
+  const notificationsState = sectionState(notificationsQuery, notificationsQuery.data != null);
 
   // Hazard alerts come from the real Alert API, not the generic
   // notification feed (REMEDIATION.md §8.10). The old code sourced
@@ -206,8 +214,12 @@ export default function NotificationsScreen() {
   const { data: myTrips = [] } = useQuery({
     queryKey: queryKeys.myTrips(),
     queryFn: async () => (await apiService.getMyTrips()) ?? [],
+    enabled: isLoggedIn,
   });
   const activeTrips = myTrips.filter((t) => t.status === 'ONGOING' || t.status === 'UPCOMING');
+  // Every section of every tab draws from one of these three lists, so all
+  // three being empty means there is genuinely nothing to render.
+  const isFeedEmpty = notifications.length === 0 && mappedHazards.length === 0 && activeTrips.length === 0;
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
@@ -286,6 +298,26 @@ export default function NotificationsScreen() {
       {/* ════════════════════════════════════════════════
           3. MAIN NOTIFICATIONS FEED
           ════════════════════════════════════════════════ */}
+      {!isLoggedIn ? (
+        <ScreenEmpty
+          title={t('notifications.signInTitle')}
+          message={t('notifications.signInMessage')}
+          actionLabel={t('notifications.signIn')}
+          onAction={() => router.push('/auth')}
+        />
+      ) : notificationsState.kind === 'loading' ? (
+        <ScreenLoading label={t('notifications.loadingNotifications')} />
+      ) : notificationsState.kind === 'error' ? (
+        <ScreenError
+          title={t('notifications.couldNotLoad')}
+          message={
+            notificationsState.offline ? t('common.offlineMessage') : t('notifications.couldNotLoadMessage')
+          }
+          onRetry={() => void refetchNotifications()}
+        />
+      ) : isFeedEmpty ? (
+        <ScreenEmpty title={t('notifications.emptyTitle')} message={t('notifications.emptyMessage')} />
+      ) : (
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.feedScrollContent}
@@ -535,6 +567,7 @@ export default function NotificationsScreen() {
         {/* Bottom Clearance */}
         <View style={{ height: 60 }} />
       </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
