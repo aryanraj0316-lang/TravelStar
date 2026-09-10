@@ -73,21 +73,39 @@ export async function getDeviceLocationIfPermitted(): Promise<PassiveDeviceLocat
   }
 }
 
-export async function getCurrentDeviceLocation(): Promise<DeviceLocationResult> {
+async function requestDeviceLocation(accuracy: Location.Accuracy): Promise<DeviceLocationResult> {
   try {
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') {
       return { ok: false, reason: 'PERMISSION_DENIED' };
     }
 
-    const position = await withTimeout(
-      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
-      POSITION_TIMEOUT_MS,
-    );
+    const position = await withTimeout(Location.getCurrentPositionAsync({ accuracy }), POSITION_TIMEOUT_MS);
 
     return { ok: true, latitude: position.coords.latitude, longitude: position.coords.longitude };
   } catch (e) {
     logger.error('[DeviceLocation] Failed to get current position:', e);
     return { ok: false, reason: 'UNAVAILABLE' };
   }
+}
+
+// High accuracy: prefers a true GPS satellite fix over network-based
+// positioning. Safety-critical callers only (SOS in chat.tsx/map.tsx) —
+// never weaken this tier for those, per the file-level note above. A
+// precise fix can legitimately take longer, or fail outright, indoors or
+// with a poor sky view; that shows up as UNAVAILABLE rather than silently
+// falling back to something less precise, which is the correct trade for
+// an emergency location.
+export async function getCurrentDeviceLocation(): Promise<DeviceLocationResult> {
+  return requestDeviceLocation(Location.Accuracy.High);
+}
+
+// Balanced accuracy: can resolve from network/WiFi positioning, not just a
+// GPS satellite lock, so it succeeds far more often and faster indoors.
+// For ambient, non-critical features only — currently the home screen's
+// weather card's "Enable Location" button, whose reading is already
+// rounded to ~1km for the server's cache key, so street-level GPS
+// precision buys it nothing. Never use this for SOS/navigation.
+export async function getApproximateDeviceLocation(): Promise<DeviceLocationResult> {
+  return requestDeviceLocation(Location.Accuracy.Balanced);
 }

@@ -1,7 +1,7 @@
 import TripDetailModal from '@/components/TripDetailModal';
 import { ScreenEmpty, ScreenError, Skeleton, SkeletonCard } from '@/components/ui';
 import {
-  getCurrentDeviceLocation,
+  getApproximateDeviceLocation,
   getDeviceLocationIfPermitted,
   type PassiveDeviceLocationResult,
 } from '@/lib/device-location';
@@ -243,7 +243,7 @@ function useDeviceLocation() {
   /** The prompting path. Only ever called from a user tap. */
   const request = useCallback(() => {
     setState({ status: 'locating' });
-    void getCurrentDeviceLocation().then(apply);
+    void getApproximateDeviceLocation().then(apply);
   }, [apply]);
 
   return { state, request };
