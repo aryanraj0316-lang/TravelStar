@@ -16,7 +16,7 @@ import {
   type SessionMeta,
 } from '../../services/session';
 import { isLockedOut, recordFailure, recordSuccess } from '../../services/login-attempts';
-import { createAvatarUploadUrl, ObjectStorageNotConfiguredError } from '../../lib/object-storage';
+import { createAvatarUploadUrl, getMissingObjectStorageVars, ObjectStorageNotConfiguredError } from '../../lib/object-storage';
 
 const router = Router();
 
@@ -567,11 +567,20 @@ router.post('/avatar-upload-url', async (req, res) => {
       // honestly rather than accepting the request and quietly discarding
       // the photo — the client shows this as "photo upload isn't set up
       // yet" rather than silently keeping a local-only avatar.
+      //
+      // TEMPORARY DIAGNOSTIC — remove before merging. Names exactly which
+      // OBJECT_STORAGE_* vars are undefined at runtime, instead of the
+      // generic message, to debug a deployed environment where the vars
+      // are set in the dashboard but the process isn't seeing them.
+      const missing = getMissingObjectStorageVars();
       return res
         .status(503)
         .json({
           ok: false,
-          error: { code: 'STORAGE_UNAVAILABLE', message: 'Photo upload is not available right now.' },
+          error: {
+            code: 'STORAGE_UNAVAILABLE',
+            message: `Photo upload is not available right now. Missing: ${missing.join(', ')}.`,
+          },
         });
     }
     logger.error('[Auth] Avatar upload URL failed:', err);

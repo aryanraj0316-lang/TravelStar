@@ -25,14 +25,27 @@ const ALLOWED_CONTENT_TYPES: Record<string, string> = {
   'video/quicktime': 'mov',
 };
 
+// TEMPORARY DIAGNOSTIC — remove before merging. Names exactly which
+// required OBJECT_STORAGE_* vars are unset at runtime, since an operator
+// looking at Render's dashboard can see the key *names* they typed but not
+// whether the *values* actually saved and reached this process's env.
+// OBJECT_STORAGE_ENDPOINT is deliberately excluded — it's optional (AWS S3
+// itself doesn't need it; only non-AWS providers like R2/MinIO/B2 do).
+export function getMissingObjectStorageVars(): string[] {
+  const required: Record<string, string | undefined> = {
+    OBJECT_STORAGE_BUCKET: env.OBJECT_STORAGE_BUCKET,
+    OBJECT_STORAGE_REGION: env.OBJECT_STORAGE_REGION,
+    OBJECT_STORAGE_ACCESS_KEY_ID: env.OBJECT_STORAGE_ACCESS_KEY_ID,
+    OBJECT_STORAGE_SECRET_ACCESS_KEY: env.OBJECT_STORAGE_SECRET_ACCESS_KEY,
+    OBJECT_STORAGE_PUBLIC_URL_BASE: env.OBJECT_STORAGE_PUBLIC_URL_BASE,
+  };
+  return Object.entries(required)
+    .filter(([, value]) => !value)
+    .map(([name]) => name);
+}
+
 export function isObjectStorageConfigured(): boolean {
-  return !!(
-    env.OBJECT_STORAGE_BUCKET &&
-    env.OBJECT_STORAGE_REGION &&
-    env.OBJECT_STORAGE_ACCESS_KEY_ID &&
-    env.OBJECT_STORAGE_SECRET_ACCESS_KEY &&
-    env.OBJECT_STORAGE_PUBLIC_URL_BASE
-  );
+  return getMissingObjectStorageVars().length === 0;
 }
 
 export class ObjectStorageNotConfiguredError extends Error {
