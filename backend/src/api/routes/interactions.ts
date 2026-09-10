@@ -255,7 +255,7 @@ router.get('/incoming-requests', async (req, res) => {
       const applicantName = r.user.profile
         ? `${r.user.profile.firstName} ${r.user.profile.lastName}`.trim()
         : (r.user.email ? r.user.email.split('@')[0] : 'Traveler');
-      const applicantAvatar = r.user.profile?.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150';
+      const applicantAvatar = r.user.profile?.avatarUrl ?? null;
 
       return {
         id: r.id,

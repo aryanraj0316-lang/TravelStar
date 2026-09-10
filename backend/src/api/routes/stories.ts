@@ -58,15 +58,17 @@ router.post('/', async (req, res) => {
     const authorName = user?.profile
       ? `${user.profile.firstName} ${user.profile.lastName || ''}`.trim()
       : (user?.email ? (user.email.split('@')[0] ?? 'Traveler') : 'Traveler');
-    const authorAvatar = user?.profile?.avatarUrl
-      || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80';
+    const authorAvatar = user?.profile?.avatarUrl ?? null;
 
     const { title, content, coverImg, location, hasReel } = parsed.data;
     const story = await prisma.travelStory.create({
       data: {
         title,
         content,
-        coverImg: coverImg || 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1000&q=80',
+        // A story with no cover photo has no cover photo. This used to
+        // persist a stock Taj Mahal shot into the row as if the author
+        // had taken it.
+        coverImg: coverImg ?? null,
         authorName,
         authorAvatar,
         likesCount: 0,

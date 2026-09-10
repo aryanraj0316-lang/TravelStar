@@ -7,6 +7,7 @@ import { requireUserId, isAdmin } from '../../lib/auth-context';
 import { requireRole } from '../../middleware/auth';
 import { createGuideMediaUploadUrl, ObjectStorageNotConfiguredError } from '../../lib/object-storage';
 import { buildPage, cursorFilter, cursorPageQuerySchema, takeWithLookahead } from '../../lib/pagination';
+import { sendPushToUsers } from '../../lib/push';
 
 const router = Router();
 
@@ -90,28 +91,46 @@ router.get('/', async (req, res) => {
   try {
     const rows = await prisma.guideProfile.findMany({
       where: cursorFilter(cursor),
+      // Strictly createdAt-desc: cursorFilter pages on `createdAt < cursor`,
+      // so any other sort key silently skips rows across pages. Sorting
+      // verified guides first would also need VerificationStatus's enum
+      // order to put VERIFIED before PENDING, and it does not. The client
+      // badges each row's verifiedStatus instead.
       orderBy: { createdAt: 'desc' },
       take: takeWithLookahead(limit),
       include: {
-        user: {
-          include: { profile: true },
-        },
+        user: { include: { profile: true } },
+        _count: { select: { reviews: true } },
       },
     });
     const { items: dbGuides, nextCursor } = buildPage(rows, limit);
 
-    // Money crosses the wire as a string (docs/CONVENTIONS.md §3) so the
-    // client never has to guess whether it got a Decimal-as-string or a
-    // plain number.
+    // Every field here is either real or explicitly absent. This mapper used
+    // to name any guide without a filled-in profile "Verified Guide", give
+    // every unrated guide 5.0, and invent Hindi/English and Jaipur/Vrindavan
+    // for the two array columns - none of which the guide had said, on the
+    // one screen where a traveller decides who to trust with a trip.
     const mapped = dbGuides.map((g) => ({
       id: g.id,
       name: g.user?.profile?.firstName
         ? `${g.user.profile.firstName} ${g.user.profile.lastName || ''}`.trim()
-        : 'Verified Guide',
-      rating: g.rating || 5.0,
-      languages: g.languagesSpoken || ['Hindi', 'English'],
+        : null,
+      avatar: g.user?.profile?.avatarUrl ?? null,
+      // PENDING until an admin verifies the licence (POST /:id/verify). The
+      // client needs this to badge the row honestly.
+      verifiedStatus: g.verifiedStatus,
+      // Null means nobody has rated this guide yet, which is not the same
+      // as a perfect score.
+      rating: g.rating,
+      reviewCount: g._count.reviews,
+      languages: g.languagesSpoken,
+      // Money crosses the wire as a string (docs/CONVENTIONS.md §3) so the
+      // client never has to guess whether it got a Decimal-as-string or a
+      // plain number.
       dailyRate: g.dailyRate.toString(),
-      expertise: g.expertisePlaces || ['Jaipur', 'Vrindavan'],
+      hourlyRate: g.hourlyRate.toString(),
+      expertise: g.expertisePlaces,
+      experienceYears: g.experienceYears,
     }));
 
     // An empty list is returned as empty. This used to fall back to a
@@ -318,6 +337,26 @@ const earningsQuerySchema = z.object({
   range: z.enum(['week', 'month', 'year']).default('week'),
 });
 
+/**
+ * What counts as a "lead" for a guide: a public, active, not-yet-departed
+ * trip going somewhere the guide lists as their expertise.
+ *
+ * This deliberately reads only trip fields. It used to be built from
+ * JoinRequest rows, which meant every guide whose expertise city overlapped
+ * a trip could see the full name and photo of every traveller who had asked
+ * to join it - people who had never contacted that guide, had no
+ * relationship with them, and never agreed to be shown to them. A guide
+ * needs to know that demand exists and where it is going, not who is asking.
+ */
+function leadTripsWhere(expertisePlaces: string[]) {
+  return {
+    status: 'ACTIVE' as const,
+    privacy: 'PUBLIC' as const,
+    startDate: { gte: new Date() },
+    cities: { hasSome: expertisePlaces ?? [] },
+  };
+}
+
 // 2. GET Hub & Earnings details
 router.get('/:id/earnings', async (req, res) => {
   const { id } = req.params;
@@ -374,15 +413,10 @@ router.get('/:id/earnings', async (req, res) => {
       },
     });
 
-    // Scoped to this guide's own leads (pending requests on trips matching
-    // their expertise cities), same definition /leads uses below — the
-    // previous version counted every PENDING join request in the database
-    // as "this guide's" leads (docs/REMEDIATION.md §5.7).
-    const activeLeadsCount = await prisma.joinRequest.count({
-      where: {
-        status: 'PENDING',
-        trip: { cities: { hasSome: guideProfile.expertisePlaces || [] } },
-      },
+    // Exactly the set GET /:id/leads returns, via one shared definition, so
+    // the dashboard tile and the list underneath it can never disagree.
+    const activeLeadsCount = await prisma.trip.count({
+      where: leadTripsWhere(guideProfile.expertisePlaces),
     });
 
     // Populate daily chart heights based on day of week of booking date
@@ -414,7 +448,9 @@ router.get('/:id/earnings', async (req, res) => {
       data: {
         range,
         walletBalance,
-        totalEarnings,
+        // A string like walletBalance beside it - this was the one money
+        // field on the payload leaving as a float (docs/CONVENTIONS.md §3).
+        totalEarnings: totalEarnings.toFixed(2),
         completedTripsCount,
         activeLeadsCount,
         chartData,
@@ -721,60 +757,51 @@ router.post('/:id/live-status', async (req, res) => {
   }
 });
 
-// 6. Guide Leads — pending JoinRequests from trips matching guide expertise
+// 6. Guide leads - public trips matching this guide's expertise, with the
+// guide's own quote (if any) attached so the "Send Quote" button reflects
+// server truth rather than component state that dies on unmount.
 router.get('/:id/leads', async (req, res) => {
   const { id } = req.params;
   try {
     if (!(await assertOwnsGuideProfile(req, res, id!))) return;
 
-    const guideProfile = await prisma.guideProfile.findUnique({
-      where: { id },
-    });
-
+    const guideProfile = await prisma.guideProfile.findUnique({ where: { id } });
     if (!guideProfile) {
       return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Guide profile not found' } });
     }
 
-    const expertiseCities = guideProfile.expertisePlaces || [];
-
-    // Find pending join requests for trips that match guide's expertise cities
-    const joinRequests = await prisma.joinRequest.findMany({
-      where: {
-        status: 'PENDING',
-        trip: {
-          cities: {
-            hasSome: expertiseCities,
-          },
-        },
-      },
-      include: {
-        user: {
-          include: { profile: true },
-        },
-        trip: true,
-      },
-      orderBy: { createdAt: 'desc' },
+    const trips = await prisma.trip.findMany({
+      where: leadTripsWhere(guideProfile.expertisePlaces),
+      orderBy: { startDate: 'asc' },
       take: 20,
+      include: {
+        _count: { select: { requests: true } },
+        quotes: { where: { guideProfileId: id! } },
+      },
     });
 
-    const leads = joinRequests.map((jr) => {
-      const profile = jr.user?.profile;
+    const leads = trips.map((t) => {
+      const myQuote = t.quotes[0];
       return {
-        id: jr.id,
-        name: profile
-          ? `${profile.firstName} ${profile.lastName || ''}`.trim()
-          : jr.user?.email?.split('@')[0] || 'Traveler',
-        avatar:
-          profile?.avatarUrl ||
-          'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
-        destination: jr.trip?.cities?.join(' & ') || jr.trip?.name || 'Unknown',
-        groupSize: jr.trip?.totalSeats || 1,
-        durationDays: jr.trip?.durationDays || 1,
-        budget: jr.trip?.budget || 0,
-        startDate: jr.trip?.startDate ? new Date(jr.trip.startDate).toISOString().split('T')[0] : 'TBD',
-        description: jr.message || jr.trip?.description || 'Looking for a guide for this trip.',
-        status: 'PENDING' as const,
-        tripId: jr.tripId,
+        id: t.id,
+        tripId: t.id,
+        tripName: t.name,
+        destination: t.cities.join(' → '),
+        cities: t.cities,
+        groupSize: t.totalSeats,
+        seatsFilled: t.totalSeats - t.availableSeats,
+        interestedCount: t._count.requests,
+        durationDays: t.durationDays,
+        // Money as a string (docs/CONVENTIONS.md §3).
+        budget: t.budget.toFixed(2),
+        startDate: t.startDate.toISOString().split('T')[0],
+        // The organiser's own words about their trip, or nothing. The old
+        // version invented "Looking for a guide for this trip." and
+        // attributed it to a traveller who never wrote it.
+        description: t.description || null,
+        quote: myQuote
+          ? { id: myQuote.id, amount: myQuote.amount.toFixed(2), status: myQuote.status, message: myQuote.message }
+          : null,
       };
     });
 
@@ -782,6 +809,128 @@ router.get('/:id/leads', async (req, res) => {
   } catch (err) {
     logger.error('[Guides] Get leads error:', err);
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve leads' } });
+  }
+});
+
+// 7. Quotes. travel-guide.tsx has always had a "Send Quote" button; until
+// now it set a local Set<string> and toasted "your bid has been sent to the
+// traveler. They will be notified immediately." Nothing was sent, nothing
+// was stored, and no endpoint existed to receive it.
+const createQuoteSchema = z.object({
+  tripId: z.string().uuid(),
+  amount: z.number().positive().max(10_000_000),
+  message: z.string().trim().max(1000).optional(),
+});
+
+router.post('/:id/quotes', async (req, res) => {
+  const { id } = req.params;
+  const parsed = createQuoteSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      ok: false,
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'Please enter a quote amount in rupees.',
+        details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+      },
+    });
+  }
+
+  try {
+    if (!(await assertOwnsGuideProfile(req, res, id!))) return;
+
+    const guide = await prisma.guideProfile.findUnique({
+      where: { id },
+      include: { user: { include: { profile: true } } },
+    });
+    if (!guide) {
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Guide profile not found' } });
+    }
+
+    const { tripId, amount, message } = parsed.data;
+    const trip = await prisma.trip.findUnique({ where: { id: tripId } });
+    if (!trip) {
+      return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found.' } });
+    }
+    // Only quote on what the guide could actually see as a lead - not on a
+    // private trip, a finished one, or their own.
+    if (trip.creatorId === guide.userId) {
+      return res
+        .status(400)
+        .json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'You cannot quote on your own trip.' } });
+    }
+    if (trip.privacy !== 'PUBLIC' || trip.status !== 'ACTIVE' || trip.startDate.getTime() < Date.now()) {
+      return res
+        .status(400)
+        .json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'This trip is no longer open to quotes.' } });
+    }
+
+    // Re-quoting replaces the guide's standing offer and puts it back to
+    // PENDING, rather than stacking rows in the organiser's inbox.
+    const quote = await prisma.guideQuote.upsert({
+      where: { guideProfileId_tripId: { guideProfileId: id!, tripId } },
+      create: { guideProfileId: id!, tripId, amount, message: message ?? null, status: 'PENDING' },
+      update: { amount, message: message ?? null, status: 'PENDING' },
+    });
+
+    const guideName = guide.user?.profile?.firstName
+      ? `${guide.user.profile.firstName} ${guide.user.profile.lastName || ''}`.trim()
+      : 'A guide';
+    const title = 'New guide quote';
+    const content = `${guideName} quoted ₹${quote.amount.toFixed(2)} to guide ${trip.name}.`;
+    await prisma.notification.create({
+      data: { userId: trip.creatorId, type: 'TRIP', title, content, time: 'Just now', tripId },
+    });
+    await sendPushToUsers([trip.creatorId], 'TRIP', {
+      title,
+      body: content,
+      data: { screen: 'trip', tripId },
+    });
+
+    return res.status(201).json({
+      ok: true,
+      data: {
+        id: quote.id,
+        tripId: quote.tripId,
+        amount: quote.amount.toFixed(2),
+        message: quote.message,
+        status: quote.status,
+      },
+    });
+  } catch (err) {
+    logger.error('[Guides] Create quote error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not send your quote.' } });
+  }
+});
+
+// The guide's own outbox, so they can see what an organiser did with a bid.
+router.get('/:id/quotes', async (req, res) => {
+  const { id } = req.params;
+  try {
+    if (!(await assertOwnsGuideProfile(req, res, id!))) return;
+
+    const quotes = await prisma.guideQuote.findMany({
+      where: { guideProfileId: id },
+      orderBy: { updatedAt: 'desc' },
+      include: { trip: { select: { id: true, name: true, cities: true, startDate: true } } },
+    });
+
+    return res.status(200).json({
+      ok: true,
+      data: quotes.map((q) => ({
+        id: q.id,
+        tripId: q.tripId,
+        tripName: q.trip.name,
+        destination: q.trip.cities.join(' → '),
+        startDate: q.trip.startDate.toISOString().split('T')[0],
+        amount: q.amount.toFixed(2),
+        message: q.message,
+        status: q.status,
+      })),
+    });
+  } catch (err) {
+    logger.error('[Guides] List quotes error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not load your quotes.' } });
   }
 });
 

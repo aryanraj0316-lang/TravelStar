@@ -1,6 +1,7 @@
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 generator client {
@@ -324,11 +325,14 @@ model GuideProfile {
   dailyRate       Decimal            @db.Decimal(12, 2)
   availability    Json // Weekly/custom calendar representation
   verifiedStatus  VerificationStatus @default(PENDING)
-  rating          Float              @default(5.0)
+  // Null until a real review exists. It used to default to 5.0, so every
+  // brand-new unverified guide was presented to travellers at full marks.
+  rating          Float?
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
 
   packages GuidePackage[]
+  quotes   GuideQuote[]
   bookings Booking[]      @relation("GuideBookings")
   reviews  Review[]
   reels    GuideReel[]
@@ -405,6 +409,7 @@ model Trip {
   itinerary TripItineraryDay[]
   timeline  TripTimelineStop[]
   checklist TripChecklistItem[]
+  quotes    GuideQuote[]
 
   @@index([creatorId])
   @@index([createdAt])
@@ -1113,10 +1118,10 @@ model Alert {
 model TravelStory {
   id           String   @id @default(uuid())
   authorName   String
-  authorAvatar String
+  authorAvatar String?
   title        String
   content      String
-  coverImg     String
+  coverImg     String?
   likesCount   Int      @default(0)
   location     String
   hasReel      Boolean  @default(false)
@@ -1133,4 +1138,29 @@ model TripLike {
 
   @@unique([tripId, userId])
   @@index([tripId])
+}
+
+model GuideQuote {
+  id             String       @id @default(uuid())
+  guideProfileId String
+  guide          GuideProfile @relation(fields: [guideProfileId], references: [id], onDelete: Cascade)
+  tripId         String
+  trip           Trip         @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  amount         Decimal      @db.Decimal(12, 2)
+  message        String?
+  status         QuoteStatus  @default(PENDING)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  // One live quote per guide per trip - re-quoting updates the existing row
+  // rather than letting a guide flood an organizer's inbox.
+  @@unique([guideProfileId, tripId])
+  @@index([tripId])
+  @@index([guideProfileId])
+}
+
+enum QuoteStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
 }

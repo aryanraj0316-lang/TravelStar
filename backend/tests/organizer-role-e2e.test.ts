@@ -72,7 +72,9 @@ describe('roster before anyone joins', () => {
 
   it('does not dress the organizer in a stock photo of a stranger', async () => {
     const res = await request(app).get(`/api/v1/trips/${tripId}/members`).set(auth(organizer.token));
-    expect(res.body.data[0].avatar).not.toMatch(/unsplash/i);
+    // Null, so the client renders initials. It used to be one fixed
+    // Unsplash portrait of an unrelated person.
+    expect(res.body.data[0].avatar).toBeNull();
   });
 });
 

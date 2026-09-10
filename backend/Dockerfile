@@ -9,6 +9,10 @@ FROM node:20-bookworm-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
 COPY prisma ./prisma
+# argon2 compiles a native addon via node-gyp, which needs python3/make/g++ —
+# none of which node:20-bookworm-slim ships. Build-stage only: the runtime
+# stage below never installs these, so the final image stays slim.
+RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ && rm -rf /var/lib/apt/lists/*
 # Full install (incl. dev) so the build stage can run tsc; prisma generate
 # runs via the postinstall hook.
 RUN npm ci

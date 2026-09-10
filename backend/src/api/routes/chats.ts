@@ -102,7 +102,7 @@ router.get('/', async (req, res) => {
         id: room.id,
         tripId: trip?.id || null,
         name: room.name || trip?.name || 'Group Chat',
-        avatar: trip?.coverImage || 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=150&q=80',
+        avatar: trip?.coverImage ?? null,
         type: 'GROUP',
         latestMessage: lastMsgPreview,
         latestTime: lastMsg
@@ -161,7 +161,7 @@ router.get('/:id', async (req, res) => {
         : m.user.email
           ? m.user.email.split('@')[0]
           : 'Member',
-      avatar: m.user.profile?.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+      avatar: m.user.profile?.avatarUrl ?? null,
       role: m.user.id === room.trip?.creatorId ? 'Organizer' : 'Member',
     }));
 
@@ -171,7 +171,7 @@ router.get('/:id', async (req, res) => {
         id: room.id,
         tripId: room.trip?.id || null,
         name: room.name || room.trip?.name || 'Group Chat',
-        avatar: room.trip?.coverImage || 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=150&q=80',
+        avatar: room.trip?.coverImage ?? null,
         members: membersList,
       },
     });

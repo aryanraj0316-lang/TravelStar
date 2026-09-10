@@ -30,15 +30,13 @@ function deriveCategory(name: string): { travelStyle: string; category: string }
   return { travelStyle: 'ADVENTURE', category: 'Adventure' };
 }
 
-function deriveCoverImage(name: string, coverImage: string | null): string {
-  if (coverImage) return coverImage;
-  const n = name.toLowerCase();
-  if (n.includes('vrindavan')) return 'https://images.unsplash.com/photo-1548013146-72479768bada?w=600&q=80';
-  if (n.includes('ladakh')) return 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=600&q=80';
-  if (n.includes('kerala')) return 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=600&q=80';
-  if (n.includes('taj mahal')) return 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1000&q=80';
-  if (n.includes('golden triangle')) return 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=800&q=80';
-  return 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&q=80';
+// A trip whose organiser uploaded no cover photo has no cover photo. This
+// used to match on the trip's *name* and hand back a stock Unsplash shot -
+// so a trip called "Ladakh with friends" was presented with a photograph
+// nobody on it had taken, of a place it might not even visit. The client
+// renders a placeholder from the trip name instead.
+function deriveCoverImage(_name: string, coverImage: string | null): string | null {
+  return coverImage;
 }
 
 type TripWithCreator = {
@@ -48,6 +46,7 @@ type TripWithCreator = {
   creator: { role: string; profile: { firstName: string; lastName: string } | null } | null;
   chatRoom: { id: string } | null;
   cities: string[];
+  durationDays: number;
   startDate: Date;
   endDate: Date;
   budget: { toString(): string };
@@ -80,6 +79,7 @@ function mapTrip(t: TripWithCreator, tokenUserId: string | null) {
     cities: t.cities,
     startDate: t.startDate.toISOString().split('T')[0],
     endDate: t.endDate.toISOString().split('T')[0],
+    durationDays: t.durationDays,
     budget: t.budget.toString(), // money crosses the wire as a string — docs/CONVENTIONS.md §3
     availableSeats: t.availableSeats,
     totalSeats: t.totalSeats,
@@ -760,8 +760,9 @@ router.get('/:id/members', async (req, res) => {
       : trip.creator.email
         ? trip.creator.email.split('@')[0]
         : 'Organizer';
-    const creatorAvatar =
-      trip.creator.profile?.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150';
+    // Null, not a stock photograph of an unrelated person - the client's
+    // <Avatar> falls back to initials.
+    const creatorAvatar = trip.creator.profile?.avatarUrl ?? null;
 
     const creatorItem = {
       id: `creator-${trip.creatorId}`,
@@ -782,7 +783,7 @@ router.get('/:id/members', async (req, res) => {
         : m.user.email
           ? m.user.email.split('@')[0]
           : 'Traveler';
-      const avatar = m.user.profile?.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150';
+      const avatar = m.user.profile?.avatarUrl ?? null;
 
       return {
         id: m.id,
@@ -964,6 +965,119 @@ router.post('/:id/announcements', async (req, res) => {
   }
 });
 
+// --- Guide quotes on this trip (the receiving end of POST /guides/:id/quotes) ---
+// Only the organiser sees who bid what, and only they can accept or decline.
+
+router.get('/:tripId/quotes', async (req, res) => {
+  const userId = requireUserId(req);
+  const { tripId } = req.params;
+  try {
+    const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { creatorId: true } });
+    if (!trip) {
+      return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found' } });
+    }
+    if (trip.creatorId !== userId) {
+      return res
+        .status(403)
+        .json({ ok: false, error: { code: 'FORBIDDEN', message: 'Only the trip organizer can see quotes.' } });
+    }
+
+    const quotes = await prisma.guideQuote.findMany({
+      where: { tripId },
+      orderBy: [{ status: 'asc' }, { amount: 'asc' }],
+      include: {
+        guide: {
+          include: { user: { include: { profile: true } }, _count: { select: { reviews: true } } },
+        },
+      },
+    });
+
+    return res.status(200).json({
+      ok: true,
+      data: quotes.map((q) => ({
+        id: q.id,
+        guideProfileId: q.guideProfileId,
+        guideName: q.guide.user?.profile?.firstName
+          ? `${q.guide.user.profile.firstName} ${q.guide.user.profile.lastName || ''}`.trim()
+          : null,
+        guideAvatar: q.guide.user?.profile?.avatarUrl ?? null,
+        guideVerifiedStatus: q.guide.verifiedStatus,
+        guideRating: q.guide.rating,
+        guideReviewCount: q.guide._count.reviews,
+        guideExperienceYears: q.guide.experienceYears,
+        guideLanguages: q.guide.languagesSpoken,
+        amount: q.amount.toFixed(2),
+        message: q.message,
+        status: q.status,
+        createdAt: q.createdAt.toISOString(),
+      })),
+    });
+  } catch (err) {
+    logger.error('[Trips] List quotes error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not load quotes.' } });
+  }
+});
+
+const quoteDecisionSchema = z.object({ status: z.enum(['ACCEPTED', 'DECLINED']) });
+
+router.post('/:tripId/quotes/:quoteId/status', async (req, res) => {
+  const userId = requireUserId(req);
+  const { tripId, quoteId } = req.params;
+  const parsed = quoteDecisionSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res
+      .status(400)
+      .json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'status must be ACCEPTED or DECLINED.' } });
+  }
+
+  try {
+    const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { creatorId: true, name: true } });
+    if (!trip) {
+      return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found' } });
+    }
+    if (trip.creatorId !== userId) {
+      return res
+        .status(403)
+        .json({ ok: false, error: { code: 'FORBIDDEN', message: 'Only the trip organizer can answer a quote.' } });
+    }
+
+    const quote = await prisma.guideQuote.findUnique({
+      where: { id: quoteId },
+      include: { guide: { select: { userId: true } } },
+    });
+    if (!quote || quote.tripId !== tripId) {
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'That quote is gone.' } });
+    }
+    if (quote.status !== 'PENDING') {
+      return res.status(400).json({
+        ok: false,
+        error: { code: 'VALIDATION_FAILED', message: `This quote was already ${quote.status.toLowerCase()}.` },
+      });
+    }
+
+    const updated = await prisma.guideQuote.update({ where: { id: quoteId }, data: { status: parsed.data.status } });
+
+    const accepted = parsed.data.status === 'ACCEPTED';
+    const title = accepted ? 'Your quote was accepted' : 'Your quote was declined';
+    const content = accepted
+      ? `The organizer accepted your quote for ${trip.name}.`
+      : `The organizer declined your quote for ${trip.name}.`;
+    await prisma.notification.create({
+      data: { userId: quote.guide.userId, type: 'TRIP', title, content, time: 'Just now', tripId },
+    });
+    await sendPushToUsers([quote.guide.userId], 'TRIP', {
+      title,
+      body: content,
+      data: { screen: 'trip', tripId },
+    });
+
+    return res.status(200).json({ ok: true, data: { id: updated.id, status: updated.status } });
+  } catch (err) {
+    logger.error('[Trips] Quote decision error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not update the quote.' } });
+  }
+});
+
 // ─── Trip itinerary / day schedule (docs/REMEDIATION.md §8.6) ───
 // group-organizer.tsx's "Day Schedule" tab rendered the same two hardcoded
 // days ("Arrival & Welcoming Dinner", "Trekking & Sightseeing") for every
@@ -1108,7 +1222,7 @@ router.delete('/:tripId/itinerary/:dayId', async (req, res) => {
 // (its creator or a confirmed TripMember). The equal split is computed
 // from the current participant set at read time and never stored.
 
-type TripParticipant = { userId: string; name: string; avatar: string; isOrganizer: boolean };
+type TripParticipant = { userId: string; name: string; avatar: string | null; isOrganizer: boolean };
 
 async function loadTripParticipants(tripId: string): Promise<TripParticipant[] | null> {
   const trip = await prisma.trip.findUnique({
@@ -1123,7 +1237,7 @@ async function loadTripParticipants(tripId: string): Promise<TripParticipant[] |
   const nameOf = (u: { email: string | null; profile: { firstName: string; lastName: string } | null }) =>
     u.profile ? `${u.profile.firstName} ${u.profile.lastName}`.trim() : (u.email?.split('@')[0] ?? 'Traveler');
   const avatarOf = (u: { profile: { avatarUrl: string | null } | null }) =>
-    u.profile?.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150';
+    u.profile?.avatarUrl ?? null;
 
   const list: TripParticipant[] = [
     { userId: trip.creatorId, name: nameOf(trip.creator), avatar: avatarOf(trip.creator), isOrganizer: true },

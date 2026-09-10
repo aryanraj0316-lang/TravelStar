@@ -117,7 +117,7 @@ describe('guide dashboard reads', () => {
     const res = await request(app).get(`/api/v1/guides/${guideProfileId}/earnings`).set(auth(guideToken));
     expect(res.status).toBe(200);
     expect(res.body.data.walletBalance).toBe('0');
-    expect(res.body.data.totalEarnings).toBe(0);
+    expect(res.body.data.totalEarnings).toBe('0.00');
     expect(res.body.data.completedTripsCount).toBe(0);
     expect(res.body.data.hasActivity).toBe(false);
     expect(res.body.data.chartData).toHaveLength(7);
@@ -246,6 +246,7 @@ describe('what the traveller side sees', () => {
     const row = res.body.data.find((g: { id: string }) => g.id === guideProfileId);
     expect(row.name).not.toMatch(/verified/i);
     expect(row.verifiedStatus).toBe('PENDING');
+    expect(row.reviewCount).toBe(0);
   });
 
   it('does not invent a rating for a guide nobody has rated', async () => {
@@ -255,19 +256,20 @@ describe('what the traveller side sees', () => {
   });
 });
 
-describe('leads', () => {
-  it('does not leak a stock photo as a real traveller face', async () => {
-    // A lead row is a real person's identity shown to a guide. When they
-    // have no avatar, the honest answer is "no avatar", not a stranger's
-    // photograph from Unsplash.
+describe('leads are demand signals, not dossiers on travellers', () => {
+  let leadTripId: string;
+  let organizerToken: string;
+
+  beforeAll(async () => {
     const organizer = await registerUser('Lead Organizer');
+    organizerToken = organizer.token;
     const applicant = await registerUser('Lead Applicant');
 
     const trip = await request(app)
       .post('/api/v1/trips')
       .set(auth(organizer.token))
       .send({
-        name: `Leads Trip ${runId}`,
+        name: 'Leads Trip ' + runId,
         cities: ['Leh'],
         startDate: new Date(Date.now() + 30 * 864e5).toISOString(),
         endDate: new Date(Date.now() + 34 * 864e5).toISOString(),
@@ -277,29 +279,140 @@ describe('leads', () => {
         privacy: 'PUBLIC',
       });
     expect(trip.status).toBe(201);
+    leadTripId = trip.body.data.id;
 
     await request(app)
       .post('/api/v1/interactions/join-request')
       .set(auth(applicant.token))
-      .send({ tripId: trip.body.data.id, message: 'Keen to join' });
-
-    const leads = await request(app).get(`/api/v1/guides/${guideProfileId}/leads`).set(auth(guideToken));
-    expect(leads.status).toBe(200);
-    const lead = leads.body.data.find((l: { tripId: string }) => l.tripId === trip.body.data.id);
-    expect(lead).toBeDefined();
-    expect(lead.avatar).not.toMatch(/unsplash/i);
+      .send({ tripId: leadTripId, message: 'Keen to join' });
   });
-});
 
-describe('sending a quote on a lead', () => {
-  it('has an endpoint that records the quote and notifies the traveller', async () => {
-    // travel-guide.tsx tells the guide "your bid has been sent to the
-    // traveller, they will be notified immediately". Nothing is sent: there
-    // is no quote route, no stored bid, and the traveller receives nothing.
-    const routes = await request(app)
-      .post(`/api/v1/guides/${guideProfileId}/quotes`)
-      .set(auth(guideToken))
-      .send({ leadId: '00000000-0000-0000-0000-000000000000', amount: 5000 });
-    expect(routes.status).not.toBe(404);
+  const myLead = async () => {
+    const res = await request(app).get('/api/v1/guides/' + guideProfileId + '/leads').set(auth(guideToken));
+    expect(res.status).toBe(200);
+    return res.body.data.find((l: { tripId: string }) => l.tripId === leadTripId);
+  };
+
+  it('surfaces a matching trip to a guide with that expertise', async () => {
+    const lead = await myLead();
+    expect(lead).toBeDefined();
+    expect(lead.destination).toBe('Leh');
+    expect(lead.budget).toBe('20000.00');
+    expect(lead.interestedCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it('carries no personal identity of anyone who asked to join', async () => {
+    const lead = await myLead();
+    expect(lead.name).toBeUndefined();
+    expect(lead.avatar).toBeUndefined();
+    expect(JSON.stringify(lead)).not.toMatch(/unsplash/i);
+    expect(JSON.stringify(lead)).not.toMatch(/travelstar\.test/);
+  });
+
+  it('does not invent words the organizer never wrote', async () => {
+    const lead = await myLead();
+    expect(lead.description).not.toBe('Looking for a guide for this trip.');
+  });
+
+  it('agrees with the activeLeadsCount tile on the dashboard', async () => {
+    const leads = await request(app).get('/api/v1/guides/' + guideProfileId + '/leads').set(auth(guideToken));
+    const earnings = await request(app).get('/api/v1/guides/' + guideProfileId + '/earnings').set(auth(guideToken));
+    expect(earnings.body.data.activeLeadsCount).toBe(leads.body.data.length);
+  });
+
+  describe('sending a quote', () => {
+    let quoteId: string;
+
+    it('records the bid', async () => {
+      const res = await request(app)
+        .post('/api/v1/guides/' + guideProfileId + '/quotes')
+        .set(auth(guideToken))
+        .send({ tripId: leadTripId, amount: 8500, message: 'I run this route monthly.' });
+      expect(res.status).toBe(201);
+      expect(res.body.data.amount).toBe('8500.00');
+      expect(res.body.data.status).toBe('PENDING');
+      quoteId = res.body.data.id;
+    });
+
+    it('reaches the organizer as a real notification', async () => {
+      const res = await request(app).get('/api/v1/notifications').set(auth(organizerToken));
+      expect(res.status).toBe(200);
+      const row = (res.body.data as { title: string; content: string }[]).find((n) => n.title === 'New guide quote');
+      expect(row).toBeDefined();
+      expect(row!.content).toContain('8500.00');
+    });
+
+    it('shows on the lead itself, so the button reflects server truth', async () => {
+      const lead = await myLead();
+      expect(lead.quote).not.toBeNull();
+      expect(lead.quote.amount).toBe('8500.00');
+      expect(lead.quote.status).toBe('PENDING');
+    });
+
+    it('replaces the standing quote instead of stacking rows', async () => {
+      const res = await request(app)
+        .post('/api/v1/guides/' + guideProfileId + '/quotes')
+        .set(auth(guideToken))
+        .send({ tripId: leadTripId, amount: 7900 });
+      expect(res.status).toBe(201);
+      expect(res.body.data.id).toBe(quoteId);
+
+      const list = await request(app).get('/api/v1/guides/' + guideProfileId + '/quotes').set(auth(guideToken));
+      const mine = list.body.data.filter((q: { tripId: string }) => q.tripId === leadTripId);
+      expect(mine).toHaveLength(1);
+      expect(mine[0].amount).toBe('7900.00');
+    });
+
+    it('rejects an amount that is not real money', async () => {
+      for (const amount of ['abc', -100, 0]) {
+        const res = await request(app)
+          .post('/api/v1/guides/' + guideProfileId + '/quotes')
+          .set(auth(guideToken))
+          .send({ tripId: leadTripId, amount });
+        expect(res.status).toBe(400);
+      }
+    });
+
+    it('stops another user quoting as me', async () => {
+      const res = await request(app)
+        .post('/api/v1/guides/' + guideProfileId + '/quotes')
+        .set(auth(otherToken))
+        .send({ tripId: leadTripId, amount: 1 });
+      expect(res.status).toBe(403);
+    });
+
+    it('lets the organizer see it, with honest trust signals', async () => {
+      const list = await request(app).get('/api/v1/trips/' + leadTripId + '/quotes').set(auth(organizerToken));
+      expect(list.status).toBe(200);
+      expect(list.body.data).toHaveLength(1);
+      expect(list.body.data[0].amount).toBe('7900.00');
+      expect(list.body.data[0].guideVerifiedStatus).toBe('PENDING');
+      expect(list.body.data[0].guideRating).toBeNull();
+      expect(list.body.data[0].guideReviewCount).toBe(0);
+    });
+
+    it('hides the quote list from anyone but the organizer', async () => {
+      const res = await request(app).get('/api/v1/trips/' + leadTripId + '/quotes').set(auth(guideToken));
+      expect(res.status).toBe(403);
+    });
+
+    it('accepting notifies the guide', async () => {
+      const decide = await request(app)
+        .post('/api/v1/trips/' + leadTripId + '/quotes/' + quoteId + '/status')
+        .set(auth(organizerToken))
+        .send({ status: 'ACCEPTED' });
+      expect(decide.status).toBe(200);
+
+      const feed = await request(app).get('/api/v1/notifications').set(auth(guideToken));
+      expect((feed.body.data as { title: string }[]).some((n) => n.title === 'Your quote was accepted')).toBe(true);
+    });
+
+    it('will not answer the same quote twice', async () => {
+      const res = await request(app)
+        .post('/api/v1/trips/' + leadTripId + '/quotes/' + quoteId + '/status')
+        .set(auth(organizerToken))
+        .send({ status: 'DECLINED' });
+      expect(res.status).toBe(400);
+    });
   });
 });

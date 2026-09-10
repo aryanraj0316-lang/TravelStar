@@ -62,19 +62,25 @@ router.get('/', async (req, res) => {
     // Normalize reels
     const normalizedReels = reels.map((r) => {
       const profile = r.guide?.user?.profile;
+      // Null, not "Verified Guide". A guide who has not filled in their
+      // profile is not verified - verification is an admin decision
+      // (POST /guides/:id/verify), and this is the feed a traveller browses.
       const authorName = profile
         ? `${profile.firstName} ${profile.lastName || ''}`.trim()
-        : 'Verified Guide';
-      const authorAvatar = profile?.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80';
+        : null;
+      const authorAvatar = profile?.avatarUrl ?? null;
 
       return {
         id: r.id,
         sourceType: 'REEL' as const,
-        title: r.caption || 'Travel Reel',
-        coverImg: r.thumbnailUrl || 'https://images.unsplash.com/photo-1548013146-72479768bada?w=300&q=80',
+        title: r.caption || null,
+        coverImg: r.thumbnailUrl ?? null,
         authorName,
         authorAvatar,
-        location: 'Guide Tour',
+        // Reels carry no location. This was the literal string 'Guide
+        // Tour' on every reel in the feed, rendered where the story
+        // location goes.
+        location: null,
         likesCount: r.likesCount,
         hasReel: true,
         content: r.caption || '',
