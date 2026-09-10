@@ -55,14 +55,21 @@ function fetchLiveWeather(lat: number, lon: number): Promise<LiveWeather | null>
   return cached(weatherCacheKey(lat, lon), WEATHER_CACHE_TTL_SECONDS, () => fetchLiveWeatherUncached(lat, lon));
 }
 
-// TEMPORARY DIAGNOSTIC — remove once the real fetch failure is confirmed on
-// Render. Open-Meteo works fine when called directly, and this same fetch()
-// pattern fails there fast (well under FETCH_TIMEOUT_MS), so the actual
-// underlying error matters — a generic null is not enough to tell a DNS
-// failure from a TLS failure from a blocked outbound connection.
-let lastWeatherFetchError: string | null = null;
+// Open-Meteo's free tier rate-limits by *caller IP*, not by API key — and on
+// a host like Render, that IP's recent request history includes every other
+// tenant sharing it, not just this app's own (deliberately light) traffic.
+// A 429 there is a real, recurring operating condition, not an outage to
+// retry through immediately. This backoff is global (not per-coordinate,
+// unlike the per-location cache above) because the limit is on the IP
+// making the call, not on which coordinates it asked about — hitting a
+// different lat/lon mid-backoff would otherwise just draw a second 429.
+let openMeteoBackoffUntil = 0;
+const DEFAULT_BACKOFF_MS = 60 * 1000;
+const MAX_BACKOFF_MS = 5 * 60 * 1000;
 
 async function fetchLiveWeatherUncached(lat: number, lon: number): Promise<LiveWeather | null> {
+  if (Date.now() < openMeteoBackoffUntil) return null;
+
   try {
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&timezone=auto`;
     const controller = new AbortController();
@@ -73,19 +80,23 @@ async function fetchLiveWeatherUncached(lat: number, lon: number): Promise<LiveW
     } finally {
       clearTimeout(timeout);
     }
-    if (!response.ok) {
-      lastWeatherFetchError = `Open-Meteo responded ${response.status} ${response.statusText}`;
+
+    if (response.status === 429) {
+      const retryAfterSeconds = Number(response.headers.get('retry-after'));
+      const backoffMs =
+        Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+          ? Math.min(retryAfterSeconds * 1000, MAX_BACKOFF_MS)
+          : DEFAULT_BACKOFF_MS;
+      openMeteoBackoffUntil = Date.now() + backoffMs;
+      logger.warn(`[Weather] Open-Meteo rate-limited us; backing off ${Math.round(backoffMs / 1000)}s`);
       return null;
     }
+    if (!response.ok) return null;
 
     const data = (await response.json()) as OpenMeteoResponse;
     const current = data.current;
-    if (!current) {
-      lastWeatherFetchError = 'Open-Meteo response had no `current` block';
-      return null;
-    }
+    if (!current) return null;
 
-    lastWeatherFetchError = null;
     return {
       temp: `${Math.round(current.temperature_2m)}°C`,
       condition: mapWeatherCode(current.weather_code),
@@ -93,9 +104,6 @@ async function fetchLiveWeatherUncached(lat: number, lon: number): Promise<LiveW
       windSpeed: `${Math.round(current.wind_speed_10m)} km/h`,
     };
   } catch (err) {
-    const cause = err instanceof Error && err.cause ? ` (cause: ${String(err.cause)})` : '';
-    lastWeatherFetchError =
-      err instanceof Error ? `${err.name}: ${err.message}${cause}` : String(err);
     logger.warn('[Weather] Open-Meteo fetch failed:', err);
     return null;
   }
@@ -161,14 +169,7 @@ router.get('/live', async (req, res) => {
   try {
     const live = await fetchLiveWeather(lat, lon);
     if (!live) {
-      // TEMPORARY DIAGNOSTIC — remove once the real cause is confirmed.
-      return res.status(502).json({
-        ok: false,
-        error: {
-          code: 'INTERNAL',
-          message: `Unable to fetch live weather data${lastWeatherFetchError ? `: ${lastWeatherFetchError}` : ''}`,
-        },
-      });
+      return res.status(502).json({ ok: false, error: { code: 'INTERNAL', message: 'Unable to fetch live weather data' } });
     }
 
     return res.status(200).json({ ok: true, data: {

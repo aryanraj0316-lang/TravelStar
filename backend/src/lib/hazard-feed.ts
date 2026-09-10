@@ -46,17 +46,17 @@ function gdacsAlertId(p: GdacsProperties): string {
   return `${GDACS_ID_PREFIX}${p.eventtype}-${p.eventid}-${p.episodeid}`;
 }
 
-// TEMPORARY DIAGNOSTIC — remove once the real fetch failure is confirmed on
-// Render. This runs on a background timer with no request/response cycle of
-// its own, so this is the only way to see what actually happened on the
-// last attempt.
-let lastGdacsFetchError: string | null = null;
-
-export function getLastGdacsFetchError(): string | null {
-  return lastGdacsFetchError;
-}
+// Same reasoning as weather.ts's openMeteoBackoffUntil: a rate limit here
+// would be on Render's shared outbound IP, not on our (hourly, one-request)
+// call volume, so a 429 is worth backing off from rather than retrying on
+// the very next scheduled tick.
+let gdacsBackoffUntil = 0;
+const DEFAULT_BACKOFF_MS = 60 * 1000;
+const MAX_BACKOFF_MS = 5 * 60 * 1000;
 
 async function fetchGdacsIndia(): Promise<GdacsProperties[]> {
+  if (Date.now() < gdacsBackoffUntil) return [];
+
   const toDate = new Date();
   const fromDate = new Date(toDate.getTime() - 30 * 24 * 60 * 60 * 1000); // 30-day lookback
   const fmt = (d: Date) => d.toISOString().slice(0, 10);
@@ -66,12 +66,18 @@ async function fetchGdacsIndia(): Promise<GdacsProperties[]> {
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
     const res = await fetch(url, { signal: controller.signal });
-    if (!res.ok) {
-      lastGdacsFetchError = `GDACS responded ${res.status} ${res.statusText}`;
+    if (res.status === 429) {
+      const retryAfterSeconds = Number(res.headers.get('retry-after'));
+      const backoffMs =
+        Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+          ? Math.min(retryAfterSeconds * 1000, MAX_BACKOFF_MS)
+          : DEFAULT_BACKOFF_MS;
+      gdacsBackoffUntil = Date.now() + backoffMs;
+      logger.warn(`[hazard-feed] GDACS rate-limited us; backing off ${Math.round(backoffMs / 1000)}s`);
       return [];
     }
+    if (!res.ok) return [];
     const data = (await res.json()) as GdacsResponse;
-    lastGdacsFetchError = null;
     return (data.features || [])
       .map((f) => f.properties)
       .filter(
@@ -80,8 +86,6 @@ async function fetchGdacsIndia(): Promise<GdacsProperties[]> {
           p.iscurrent === 'true',
       );
   } catch (err) {
-    const cause = err instanceof Error && err.cause ? ` (cause: ${String(err.cause)})` : '';
-    lastGdacsFetchError = err instanceof Error ? `${err.name}: ${err.message}${cause}` : String(err);
     logger.warn('[hazard-feed] GDACS fetch failed:', err);
     return [];
   } finally {
