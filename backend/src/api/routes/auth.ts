@@ -426,7 +426,13 @@ router.get('/profile', async (req, res) => {
 
 const updateProfileSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
-  avatar: remoteMediaUrl.optional(),
+  // The login response echoes '' for a user with no avatar (toClientProfile
+  // below), and auth.tsx's login handler currently sends that whole object
+  // straight back through this route — so '' has to mean "no change",
+  // exactly like an absent key, rather than failing remoteMediaUrl's URL
+  // check. Preprocessing to undefined runs before that check, so an empty
+  // string never reaches it.
+  avatar: z.preprocess((val) => (val === '' ? undefined : val), remoteMediaUrl.optional()),
   gender: z.string().trim().max(40).optional(),
   bio: z.string().trim().max(500).optional(),
   phoneNumber: z.string().trim().max(30).optional(),
