@@ -46,6 +46,16 @@ function gdacsAlertId(p: GdacsProperties): string {
   return `${GDACS_ID_PREFIX}${p.eventtype}-${p.eventid}-${p.episodeid}`;
 }
 
+// TEMPORARY DIAGNOSTIC — remove once the real fetch failure is confirmed on
+// Render. This runs on a background timer with no request/response cycle of
+// its own, so this is the only way to see what actually happened on the
+// last attempt.
+let lastGdacsFetchError: string | null = null;
+
+export function getLastGdacsFetchError(): string | null {
+  return lastGdacsFetchError;
+}
+
 async function fetchGdacsIndia(): Promise<GdacsProperties[]> {
   const toDate = new Date();
   const fromDate = new Date(toDate.getTime() - 30 * 24 * 60 * 60 * 1000); // 30-day lookback
@@ -56,8 +66,12 @@ async function fetchGdacsIndia(): Promise<GdacsProperties[]> {
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
     const res = await fetch(url, { signal: controller.signal });
-    if (!res.ok) return [];
+    if (!res.ok) {
+      lastGdacsFetchError = `GDACS responded ${res.status} ${res.statusText}`;
+      return [];
+    }
     const data = (await res.json()) as GdacsResponse;
+    lastGdacsFetchError = null;
     return (data.features || [])
       .map((f) => f.properties)
       .filter(
@@ -66,6 +80,8 @@ async function fetchGdacsIndia(): Promise<GdacsProperties[]> {
           p.iscurrent === 'true',
       );
   } catch (err) {
+    const cause = err instanceof Error && err.cause ? ` (cause: ${String(err.cause)})` : '';
+    lastGdacsFetchError = err instanceof Error ? `${err.name}: ${err.message}${cause}` : String(err);
     logger.warn('[hazard-feed] GDACS fetch failed:', err);
     return [];
   } finally {

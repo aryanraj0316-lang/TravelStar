@@ -6,6 +6,7 @@ import { logger } from '../../lib/logger';
 import { sendPushToUsers } from '../../lib/push';
 import { requireRole } from '../../middleware/auth';
 import { buildPage, cursorFilter, cursorPageQuerySchema, takeWithLookahead } from '../../lib/pagination';
+import { getLastGdacsFetchError } from '../../lib/hazard-feed';
 
 const router = Router();
 
@@ -28,7 +29,17 @@ router.get('/', async (req, res) => {
       take: takeWithLookahead(limit),
     });
     const { items, nextCursor } = buildPage(rows, limit);
-    res.status(200).json({ ok: true, data: items, meta: { cursor: nextCursor } });
+    // TEMPORARY DIAGNOSTIC — remove once the real cause is confirmed. An
+    // empty result is ambiguous: it's the correct answer when there is
+    // genuinely nothing active, but identical to what a silently-failing
+    // background GDACS sync also produces. Only attached when there's
+    // actually a failure to report.
+    const lastHazardSyncError = items.length === 0 ? getLastGdacsFetchError() : null;
+    res.status(200).json({
+      ok: true,
+      data: items,
+      meta: { cursor: nextCursor, ...(lastHazardSyncError ? { lastHazardSyncError } : {}) },
+    });
   } catch (err) {
     logger.error('[Alerts] DB error:', err);
     res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve alerts' } });
