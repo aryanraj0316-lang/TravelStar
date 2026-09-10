@@ -55,6 +55,13 @@ function fetchLiveWeather(lat: number, lon: number): Promise<LiveWeather | null>
   return cached(weatherCacheKey(lat, lon), WEATHER_CACHE_TTL_SECONDS, () => fetchLiveWeatherUncached(lat, lon));
 }
 
+// TEMPORARY DIAGNOSTIC — remove once the real fetch failure is confirmed on
+// Render. Open-Meteo works fine when called directly, and this same fetch()
+// pattern fails there fast (well under FETCH_TIMEOUT_MS), so the actual
+// underlying error matters — a generic null is not enough to tell a DNS
+// failure from a TLS failure from a blocked outbound connection.
+let lastWeatherFetchError: string | null = null;
+
 async function fetchLiveWeatherUncached(lat: number, lon: number): Promise<LiveWeather | null> {
   try {
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&timezone=auto`;
@@ -66,12 +73,19 @@ async function fetchLiveWeatherUncached(lat: number, lon: number): Promise<LiveW
     } finally {
       clearTimeout(timeout);
     }
-    if (!response.ok) return null;
+    if (!response.ok) {
+      lastWeatherFetchError = `Open-Meteo responded ${response.status} ${response.statusText}`;
+      return null;
+    }
 
     const data = (await response.json()) as OpenMeteoResponse;
     const current = data.current;
-    if (!current) return null;
+    if (!current) {
+      lastWeatherFetchError = 'Open-Meteo response had no `current` block';
+      return null;
+    }
 
+    lastWeatherFetchError = null;
     return {
       temp: `${Math.round(current.temperature_2m)}°C`,
       condition: mapWeatherCode(current.weather_code),
@@ -79,6 +93,9 @@ async function fetchLiveWeatherUncached(lat: number, lon: number): Promise<LiveW
       windSpeed: `${Math.round(current.wind_speed_10m)} km/h`,
     };
   } catch (err) {
+    const cause = err instanceof Error && err.cause ? ` (cause: ${String(err.cause)})` : '';
+    lastWeatherFetchError =
+      err instanceof Error ? `${err.name}: ${err.message}${cause}` : String(err);
     logger.warn('[Weather] Open-Meteo fetch failed:', err);
     return null;
   }
@@ -144,7 +161,14 @@ router.get('/live', async (req, res) => {
   try {
     const live = await fetchLiveWeather(lat, lon);
     if (!live) {
-      return res.status(502).json({ ok: false, error: { code: 'INTERNAL', message: 'Unable to fetch live weather data' } });
+      // TEMPORARY DIAGNOSTIC — remove once the real cause is confirmed.
+      return res.status(502).json({
+        ok: false,
+        error: {
+          code: 'INTERNAL',
+          message: `Unable to fetch live weather data${lastWeatherFetchError ? `: ${lastWeatherFetchError}` : ''}`,
+        },
+      });
     }
 
     return res.status(200).json({ ok: true, data: {
