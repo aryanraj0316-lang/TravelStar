@@ -14,3 +14,4 @@ export { Sheet, type SheetProps } from './Sheet';
 export { Skeleton, SkeletonCard, type SkeletonProps } from './Skeleton';
 export { ScreenLoading, ScreenError, ScreenEmpty } from './ScreenState';
 export { default as GlassCard } from './GlassCard';
+export { CoverImage } from './CoverImage';

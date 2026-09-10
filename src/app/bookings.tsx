@@ -10,7 +10,6 @@ import Users from 'lucide-react-native/icons/users';
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FlatList, RefreshControl, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { apiService } from '@/services/api';
@@ -19,7 +18,7 @@ import { MyTripBooking, useApp } from '@/store/AppContext';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { formatDateRange } from '@/lib/datetime';
 import { formatINR } from '@/lib/money';
-import { ScreenEmpty, ScreenError, ScreenLoading } from '@/components/ui';
+import { CoverImage, ScreenEmpty, ScreenError, ScreenLoading } from '@/components/ui';
 
 
 type BookingFilter = 'ALL' | 'ONGOING' | 'UPCOMING' | 'COMPLETED';
@@ -101,13 +100,7 @@ function BookingCard({
     <View style={styles.bookingCard}>
       {/* Card Image Header */}
       <View style={styles.cardImageContainer}>
-        <Image
-          source={{ uri: booking.coverImage }}
-          style={styles.cardImage}
-          contentFit="cover"
-          transition={150}
-          cachePolicy="memory-disk"
-        />
+        <CoverImage uri={booking.coverImage} name={booking.name} style={styles.cardImage} />
         <LinearGradient colors={['rgba(7,9,19,0.15)', 'rgba(7,9,19,0.92)']} style={StyleSheet.absoluteFill} />
         <View style={styles.cardHeaderOverlay}>
           <StatusBadge status={booking.status} />

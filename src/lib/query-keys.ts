@@ -31,6 +31,11 @@ export const queryKeys = {
   guideReels: (guideId: string) => ['guides', guideId, 'reels'] as const,
   guideLiveStatus: (guideId: string) => ['guides', guideId, 'live-status'] as const,
   guideLeads: (guideId: string) => ['guides', guideId, 'leads'] as const,
+  guideQuotes: (guideId: string) => ['guides', guideId, 'quotes'] as const,
+  tripQuotes: (tripId: string) => ['trips', tripId, 'quotes'] as const,
+
+  myBookings: () => ['bookings', 'mine'] as const,
+  incomingBookings: () => ['bookings', 'incoming'] as const,
 
   stories: () => ['stories'] as const,
   feed: () => ['feed'] as const,

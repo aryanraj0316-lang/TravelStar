@@ -1,44 +1,45 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { useTranslation } from 'react-i18next';
-import { logger } from '@/lib/logger';
+import { Avatar, Button, Input, ScreenEmpty, Sheet } from '@/components/ui';
 import { formatRelative } from '@/lib/datetime';
-import {
-  ScrollView,
-  StyleSheet,
-  View,
-  TouchableOpacity,
-  Text,
-  StatusBar,
-  TextInput,
-  Image,
-  Dimensions,
-  ActivityIndicator,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { formatINR, parseMoney, type Money } from '@/lib/money';
+import { showPrompt, toast, useConfirm } from '@/lib/feedback';
+import { logger } from '@/lib/logger';
+import { apiService } from '@/services/api';
+import { useApp } from '@/store/AppContext';
+import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
+import type { IncomingJoinRequest, ReceivedGuideQuote, TripMemberRow } from '@/types/api';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useApp } from '@/store/AppContext';
-import { apiService } from '@/services/api';
-import type { IncomingJoinRequest, TripMemberRow } from '@/types/api';
-import ArrowLeft from 'lucide-react-native/icons/arrow-left';
-import Users from 'lucide-react-native/icons/users';
-import MessageSquare from 'lucide-react-native/icons/message-square';
-import DollarSign from 'lucide-react-native/icons/dollar-sign';
-import Calendar from 'lucide-react-native/icons/calendar';
-import TrendingUp from 'lucide-react-native/icons/trending-up';
-import Plus from 'lucide-react-native/icons/plus';
-import Clock from 'lucide-react-native/icons/clock';
-import Car from 'lucide-react-native/icons/car';
-import Hotel from 'lucide-react-native/icons/hotel';
-import ExternalLink from 'lucide-react-native/icons/external-link';
 import Activity from 'lucide-react-native/icons/activity';
-import CheckCircle from 'lucide-react-native/icons/circle-check-big';
-import X from 'lucide-react-native/icons/x';
+import ArrowLeft from 'lucide-react-native/icons/arrow-left';
+import Calendar from 'lucide-react-native/icons/calendar';
+import Car from 'lucide-react-native/icons/car';
 import Check from 'lucide-react-native/icons/check';
+import CheckCircle from 'lucide-react-native/icons/circle-check-big';
+import Clock from 'lucide-react-native/icons/clock';
+import DollarSign from 'lucide-react-native/icons/dollar-sign';
+import ExternalLink from 'lucide-react-native/icons/external-link';
+import Hotel from 'lucide-react-native/icons/hotel';
+import MessageSquare from 'lucide-react-native/icons/message-square';
+import Plus from 'lucide-react-native/icons/plus';
 import Send from 'lucide-react-native/icons/send';
-import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
-import { showPrompt, toast, useConfirm } from '@/lib/feedback';
-import { Button, Input, ScreenEmpty, Sheet } from '@/components/ui';
+import TrendingUp from 'lucide-react-native/icons/trending-up';
+import Users from 'lucide-react-native/icons/users';
+import X from 'lucide-react-native/icons/x';
+import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import {
+  ActivityIndicator,
+  Dimensions,
+  Image,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -51,9 +52,12 @@ interface ActiveTour {
   durationDays: number;
   maxSize: number;
   currentSize: number;
-  price: number;
+  // Money, so a string over the wire (docs/CONVENTIONS.md §3). This was
+  // typed `number` while actually holding the API's string, which sent
+  // .toLocaleString to String.prototype and rendered "₹24000" ungrouped.
+  price: Money;
   status: 'OPEN' | 'FULL' | 'COMPLETED';
-  coverImage?: string;
+  coverImage?: string | null;
 }
 
 interface GroupMember {
@@ -110,8 +114,15 @@ export default function GroupOrganizerScreen() {
 
   const [selectedTourIdx, setSelectedTourIdx] = useState(0);
   const currentTour: ActiveTour | undefined = tours[selectedTourIdx] || tours[0];
+  // Seats sold x package price. parseMoney keeps the multiplication off
+  // the raw Money string, which previously coerced through Number()
+  // implicitly inside the JSX.
+  const bookedRevenue =
+    currentTour === undefined ? null : (parseMoney(currentTour.price) ?? 0) * currentTour.currentSize;
 
   // Join Requests state
+  const [quotes, setQuotes] = useState<ReceivedGuideQuote[]>([]);
+  const [decidingQuoteId, setDecidingQuoteId] = useState<string | null>(null);
   const [joinRequests, setJoinRequests] = useState<JoinRequest[]>([]);
 
   // Members list (dynamic for currently selected tour)
@@ -135,10 +146,13 @@ export default function GroupOrganizerScreen() {
       id: t.id,
       groupName: t.name,
       destination: t.cities?.join(' ➔ ') || 'Custom Route',
-      durationDays: 5,
+      // The trip's own duration, not a hardcoded 5 for every tour.
+      durationDays: t.durationDays,
       maxSize: t.totalSeats || 10,
       currentSize: (t.totalSeats || 10) - (t.availableSeats || 0),
-      price: t.budget || 5000,
+      // The organizer's real budget. `|| 5000` invented a ₹5,000 package
+      // price for any trip whose budget was zero or missing.
+      price: t.budget,
       status: (t.availableSeats || 0) <= 0 ? 'FULL' : ('OPEN' as const),
       coverImage: t.coverImage,
     }));
@@ -169,6 +183,31 @@ export default function GroupOrganizerScreen() {
       })
       .catch((e) => logger.warn('Failed to fetch incoming requests:', e));
   }, []);
+
+  // Guide quotes received on this trip. A guide can now bid to run a trip
+  // (POST /guides/:id/quotes); this is the organizer's side of that.
+  const fetchTripQuotes = useCallback((tripId: string) => {
+    apiService
+      .getTripQuotes(tripId)
+      .then((data) => {
+        if (data) setQuotes(data);
+      })
+      .catch((e) => logger.warn('Failed to fetch trip quotes:', e));
+  }, []);
+
+  const decideQuote = async (tripId: string, quoteId: string, status: 'ACCEPTED' | 'DECLINED') => {
+    setDecidingQuoteId(quoteId);
+    try {
+      await apiService.decideTripQuote(tripId, quoteId, status);
+      toast(t(status === 'ACCEPTED' ? 'groupOrganizer.quoteAccepted' : 'groupOrganizer.quoteDeclined'), 'success');
+      fetchTripQuotes(tripId);
+    } catch (e) {
+      logger.warn('Quote decision failed:', e);
+      toast(t('groupOrganizer.quoteDecisionFailed'), 'error');
+    } finally {
+      setDecidingQuoteId(null);
+    }
+  };
 
   const fetchTourMembers = useCallback((tripId: string) => {
     apiService
@@ -249,9 +288,10 @@ export default function GroupOrganizerScreen() {
   useEffect(() => {
     if (currentTour) {
       fetchTourMembers(currentTour.id);
+      fetchTripQuotes(currentTour.id);
       void fetchItinerary(currentTour.id);
     }
-  }, [selectedTourIdx, tours, currentTour, fetchTourMembers, fetchItinerary]);
+  }, [selectedTourIdx, tours, currentTour, fetchTourMembers, fetchTripQuotes, fetchItinerary]);
 
   // Create new Tour form
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -658,530 +698,593 @@ export default function GroupOrganizerScreen() {
           onAction={() => router.push('/auth')}
         />
       ) : (
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* docs/REMEDIATION.md §8.6: `tours` used to always have at least
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          {/* docs/REMEDIATION.md §8.6: `tours` used to always have at least
             one entry (a hardcoded fixture) even for an organizer with zero
             real trips, so every tab below could assume `currentTour`
             existed. It's now sourced entirely from real trips, which means
             it can be empty — this is the real empty state instead of a
             crash or a fake trip. */}
-        {!currentTour ? (
-          <View style={styles.emptyTourState}>
-            <Users size={40} color={C.textMuted} />
-            <Text style={styles.emptyTourStateTitle}>{t('groupOrganizer.noToursYetTitle')}</Text>
-            <Text style={styles.emptyTourStateDesc}>{t('groupOrganizer.noToursYetDesc')}</Text>
-            <TouchableOpacity
-              style={styles.createTripBtn}
-              onPress={() => setShowCreateModal(true)}
-              accessibilityRole="button"
-              accessibilityLabel={t('groupOrganizer.launchNewTourGroup')}
-            >
-              <Plus size={16} color={C.white} />
-              <Text style={styles.createTripBtnText}>{t('groupOrganizer.launchNewTourGroup')}</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <>
-            {/* ========================================================
+          {!currentTour ? (
+            <View style={styles.emptyTourState}>
+              <Users size={40} color={C.textMuted} />
+              <Text style={styles.emptyTourStateTitle}>{t('groupOrganizer.noToursYetTitle')}</Text>
+              <Text style={styles.emptyTourStateDesc}>{t('groupOrganizer.noToursYetDesc')}</Text>
+              <TouchableOpacity
+                style={styles.createTripBtn}
+                onPress={() => setShowCreateModal(true)}
+                accessibilityRole="button"
+                accessibilityLabel={t('groupOrganizer.launchNewTourGroup')}
+              >
+                <Plus size={16} color={C.white} />
+                <Text style={styles.createTripBtnText}>{t('groupOrganizer.launchNewTourGroup')}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <>
+              {/* ========================================================
             TAB 1: DASHBOARD & ANALYTICS
             ======================================================== */}
-            {activeTab === 'dashboard' && (
-              <View>
-                {/* Dashboard Cards Grid */}
-                <View style={styles.metricsGrid}>
-                  <LinearGradient colors={['#181e3a', '#0b0d1b']} style={styles.metricCard}>
-                    <Users size={16} color={C.blueGlow} />
-                    <Text style={styles.metricVal}>
-                      {currentTour.currentSize} / {currentTour.maxSize}
-                    </Text>
-                    <Text style={styles.metricLabel}>{t('groupOrganizer.totalMembers')}</Text>
-                  </LinearGradient>
+              {activeTab === 'dashboard' && (
+                <View>
+                  {/* Dashboard Cards Grid */}
+                  <View style={styles.metricsGrid}>
+                    <LinearGradient colors={['#181e3a', '#0b0d1b']} style={styles.metricCard}>
+                      <Users size={16} color={C.blueGlow} />
+                      <Text style={styles.metricVal}>
+                        {currentTour.currentSize} / {currentTour.maxSize}
+                      </Text>
+                      <Text style={styles.metricLabel}>{t('groupOrganizer.totalMembers')}</Text>
+                    </LinearGradient>
 
-                  <LinearGradient colors={['#181e3a', '#0b0d1b']} style={styles.metricCard}>
-                    <Calendar size={16} color={C.purpleGlow} />
-                    <Text style={styles.metricVal}>{t('groupOrganizer.upcomingTripsCount', { count: tours.length })}</Text>
-                    <Text style={styles.metricLabel}>{t('groupOrganizer.upcomingTrips')}</Text>
-                  </LinearGradient>
+                    <LinearGradient colors={['#181e3a', '#0b0d1b']} style={styles.metricCard}>
+                      <Calendar size={16} color={C.purpleGlow} />
+                      <Text style={styles.metricVal}>{t('groupOrganizer.upcomingTripsCount', { count: tours.length })}</Text>
+                      <Text style={styles.metricLabel}>{t('groupOrganizer.upcomingTrips')}</Text>
+                    </LinearGradient>
 
-                  <LinearGradient colors={['#181e3a', '#0b0d1b']} style={styles.metricCard}>
-                    <DollarSign size={16} color={C.greenGlow} />
-                    <Text style={styles.metricVal}>
-                      ₹{(currentTour.currentSize * currentTour.price).toLocaleString('en-IN')}
-                    </Text>
-                    <Text style={styles.metricLabel}>{t('groupOrganizer.revenueBooking')}</Text>
-                  </LinearGradient>
+                    <LinearGradient colors={['#181e3a', '#0b0d1b']} style={styles.metricCard}>
+                      <DollarSign size={16} color={C.greenGlow} />
+                      <Text style={styles.metricVal}>
+                        {formatINR(bookedRevenue)}
+                      </Text>
+                      <Text style={styles.metricLabel}>{t('groupOrganizer.revenueBooking')}</Text>
+                    </LinearGradient>
 
-                  <LinearGradient colors={['#181e3a', '#0b0d1b']} style={styles.metricCard}>
-                    <Activity size={16} color={C.amberGlow} />
-                    <Text style={styles.metricVal}>
-                      {t('groupOrganizer.newCount', { count: joinRequests.filter((r) => r.tourId === currentTour.id).length })}
-                    </Text>
-                    <Text style={styles.metricLabel}>{t('groupOrganizer.pendingRequests')}</Text>
-                  </LinearGradient>
-                </View>
+                    <LinearGradient colors={['#181e3a', '#0b0d1b']} style={styles.metricCard}>
+                      <Activity size={16} color={C.amberGlow} />
+                      <Text style={styles.metricVal}>
+                        {t('groupOrganizer.newCount', { count: joinRequests.filter((r) => r.tourId === currentTour.id).length })}
+                      </Text>
+                      <Text style={styles.metricLabel}>{t('groupOrganizer.pendingRequests')}</Text>
+                    </LinearGradient>
+                  </View>
 
-                {/* Performance Analytics Block */}
-                <Text style={styles.sectionLabelInline}>{t('groupOrganizer.reportsStatisticsOverview')}</Text>
-                <View style={styles.analyticsBox}>
-                  {/* docs/REMEDIATION.md §8.6: this box used to also show a
+                  {/* Performance Analytics Block */}
+                  <Text style={styles.sectionLabelInline}>{t('groupOrganizer.reportsStatisticsOverview')}</Text>
+                  <View style={styles.analyticsBox}>
+                    {/* docs/REMEDIATION.md §8.6: this box used to also show a
                   hardcoded "Customer Satisfaction 96%★" and "Cancellation
                   Rate 4.5%" — fabricated numbers with no data behind them —
                   and a "Monthly Gross Revenue Log (Simulated)" bar chart of
                   four made-up values. Removed; occupancy is the one real,
                   derived stat here. */}
-                  <View style={styles.statsRow}>
-                    <View style={styles.subStatBox}>
-                      <Text style={styles.subStatLabel}>{t('groupOrganizer.occupancyRate')}</Text>
-                      <Text style={[styles.subStatValue, { color: C.blueGlow }]}>
-                        {((currentTour.currentSize / currentTour.maxSize) * 100).toFixed(0)}%
-                      </Text>
-                    </View>
-                    <View style={styles.subStatDivider} />
-                    <View style={styles.subStatBox}>
-                      <Text style={styles.subStatLabel}>{t('groupOrganizer.checkedIn')}</Text>
-                      <Text style={[styles.subStatValue, { color: C.greenGlow }]}>
-                        {checkedInCount} / {members.length}
-                      </Text>
-                    </View>
-                    <View style={styles.subStatDivider} />
-                    <View style={styles.subStatBox}>
-                      <Text style={styles.subStatLabel}>{t('groupOrganizer.pendingRequests')}</Text>
-                      <Text style={[styles.subStatValue, { color: C.amberGlow }]}>
-                        {joinRequests.filter((r) => r.tourId === currentTour.id).length}
-                      </Text>
+                    <View style={styles.statsRow}>
+                      <View style={styles.subStatBox}>
+                        <Text style={styles.subStatLabel}>{t('groupOrganizer.occupancyRate')}</Text>
+                        <Text style={[styles.subStatValue, { color: C.blueGlow }]}>
+                          {((currentTour.currentSize / currentTour.maxSize) * 100).toFixed(0)}%
+                        </Text>
+                      </View>
+                      <View style={styles.subStatDivider} />
+                      <View style={styles.subStatBox}>
+                        <Text style={styles.subStatLabel}>{t('groupOrganizer.checkedIn')}</Text>
+                        <Text style={[styles.subStatValue, { color: C.greenGlow }]}>
+                          {checkedInCount} / {members.length}
+                        </Text>
+                      </View>
+                      <View style={styles.subStatDivider} />
+                      <View style={styles.subStatBox}>
+                        <Text style={styles.subStatLabel}>{t('groupOrganizer.pendingRequests')}</Text>
+                        <Text style={[styles.subStatValue, { color: C.amberGlow }]}>
+                          {joinRequests.filter((r) => r.tourId === currentTour.id).length}
+                        </Text>
+                      </View>
                     </View>
                   </View>
-                </View>
-              </View>
-            )}
 
-            {/* ========================================================
+                  {/* Guide quotes on this trip */}
+                  {quotes.length > 0 && (
+                    <View style={styles.quotesBlock}>
+                      <Text style={styles.subTitle}>{t('groupOrganizer.guideQuotes')}</Text>
+                      {quotes.map((q) => {
+                        const busy = decidingQuoteId === q.id;
+                        const guideName = q.guideName ?? t('groupOrganizer.unnamedGuide');
+                        return (
+                          <View key={q.id} style={styles.quoteCard}>
+                            <View style={styles.quoteHeaderRow}>
+                              <Avatar uri={q.guideAvatar} name={guideName} size={34} />
+                              <View style={{ flex: 1 }}>
+                                <Text style={styles.quoteName} numberOfLines={1}>
+                                  {guideName}
+                                </Text>
+                                <Text style={styles.quoteMeta}>
+                                  {q.guideVerifiedStatus === 'VERIFIED'
+                                    ? t('groupOrganizer.guideVerified')
+                                    : t('groupOrganizer.guideNotVerified')}
+                                  {' · '}
+                                  {q.guideRating === null
+                                    ? t('groupOrganizer.guideNoRating')
+                                    : t('groupOrganizer.guideRating', {
+                                        rating: q.guideRating.toFixed(1),
+                                        count: q.guideReviewCount,
+                                      })}
+                                </Text>
+                              </View>
+                              <Text style={styles.quoteAmount}>{formatINR(q.amount)}</Text>
+                            </View>
+
+                            {q.message ? <Text style={styles.quoteMessage}>{q.message}</Text> : null}
+
+                            {q.status === 'PENDING' ? (
+                              <View style={styles.quoteActions}>
+                                <Button
+                                  label={t('groupOrganizer.declineQuote')}
+                                  variant="secondary"
+                                  size="sm"
+                                  disabled={busy}
+                                  onPress={() => void decideQuote(currentTour.id, q.id, 'DECLINED')}
+                                />
+                                <Button
+                                  label={t('groupOrganizer.acceptQuote')}
+                                  size="sm"
+                                  loading={busy}
+                                  onPress={() => void decideQuote(currentTour.id, q.id, 'ACCEPTED')}
+                                />
+                              </View>
+                            ) : (
+                              <Text style={styles.quoteMeta}>
+                                {q.status === 'ACCEPTED'
+                                  ? t('groupOrganizer.quoteStatusAccepted')
+                                  : t('groupOrganizer.quoteStatusDeclined')}
+                              </Text>
+                            )}
+                          </View>
+                        );
+                      })}
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {/* ========================================================
             TAB 2: TRIP & MEMBER MANAGER
             ======================================================== */}
-            {activeTab === 'trips' && (
-              <View>
-                {/* Roster & Roster Action tools */}
-                <View style={styles.leadsHeaderRow}>
-                  <View>
-                    <Text style={styles.subTitle}>{t('groupOrganizer.participantRosterManagement')}</Text>
-                    <Text style={styles.descSec}>{t('groupOrganizer.checkMembersInDesc')}</Text>
-                  </View>
-                </View>
-
-                {/* Checked-in status bar */}
-                {members.length > 0 && (
-                  <View style={styles.checkInProgressCard}>
-                    <View style={styles.checkInRow}>
-                      <Text style={styles.checkInProgressText}>{t('groupOrganizer.rosterCheckedInStatus')}</Text>
-                      <Text style={styles.checkInProgressValue}>
-                        {t('groupOrganizer.presentCount', { count: checkedInCount, total: members.length })}
-                      </Text>
-                    </View>
-                    <View style={styles.progressTrack}>
-                      <View
-                        style={[
-                          styles.progressFill,
-                          { width: `${(checkedInCount / members.length) * 100}%`, backgroundColor: C.green },
-                        ]}
-                      />
+              {activeTab === 'trips' && (
+                <View>
+                  {/* Roster & Roster Action tools */}
+                  <View style={styles.leadsHeaderRow}>
+                    <View>
+                      <Text style={styles.subTitle}>{t('groupOrganizer.participantRosterManagement')}</Text>
+                      <Text style={styles.descSec}>{t('groupOrganizer.checkMembersInDesc')}</Text>
                     </View>
                   </View>
-                )}
 
-                {members.map((member) => (
-                  <View key={member.id} style={styles.memberListItemCard}>
-                    <View style={styles.memberItemHeader}>
-                      <Image source={{ uri: member.avatar }} style={styles.memberAvatar} />
-                      <View style={{ flex: 1, marginLeft: 12 }}>
-                        <View style={styles.memberTitleRow}>
-                          <Text style={styles.memberName}>{member.name}</Text>
-                          <View
-                            style={[
-                              styles.roleBadge,
-                              member.role === 'LEADER'
-                                ? { backgroundColor: C.blueGlow }
-                                : member.role === 'GUIDE'
-                                  ? { backgroundColor: C.purpleGlow }
-                                  : { backgroundColor: C.border },
-                            ]}
-                          >
-                            <Text style={styles.roleBadgeText}>{t(ROLE_LABEL_KEYS[member.role])}</Text>
+                  {/* Checked-in status bar */}
+                  {members.length > 0 && (
+                    <View style={styles.checkInProgressCard}>
+                      <View style={styles.checkInRow}>
+                        <Text style={styles.checkInProgressText}>{t('groupOrganizer.rosterCheckedInStatus')}</Text>
+                        <Text style={styles.checkInProgressValue}>
+                          {t('groupOrganizer.presentCount', { count: checkedInCount, total: members.length })}
+                        </Text>
+                      </View>
+                      <View style={styles.progressTrack}>
+                        <View
+                          style={[
+                            styles.progressFill,
+                            { width: `${(checkedInCount / members.length) * 100}%`, backgroundColor: C.green },
+                          ]}
+                        />
+                      </View>
+                    </View>
+                  )}
+
+                  {members.map((member) => (
+                    <View key={member.id} style={styles.memberListItemCard}>
+                      <View style={styles.memberItemHeader}>
+                        <Image source={{ uri: member.avatar }} style={styles.memberAvatar} />
+                        <View style={{ flex: 1, marginLeft: 12 }}>
+                          <View style={styles.memberTitleRow}>
+                            <Text style={styles.memberName}>{member.name}</Text>
+                            <View
+                              style={[
+                                styles.roleBadge,
+                                member.role === 'LEADER'
+                                  ? { backgroundColor: C.blueGlow }
+                                  : member.role === 'GUIDE'
+                                    ? { backgroundColor: C.purpleGlow }
+                                    : { backgroundColor: C.border },
+                              ]}
+                            >
+                              <Text style={styles.roleBadgeText}>{t(ROLE_LABEL_KEYS[member.role])}</Text>
+                            </View>
                           </View>
                         </View>
                       </View>
-                    </View>
 
-                    {/* docs/REMEDIATION.md §8.6: the organizer's own row (LEADER)
+                      {/* docs/REMEDIATION.md §8.6: the organizer's own row (LEADER)
                     has no TripMember row to check in — nothing to toggle. */}
-                    {member.role !== 'LEADER' && (
-                      <>
-                        <View style={styles.memberActionsDivider} />
-                        <View style={styles.memberListItemActions}>
-                          <TouchableOpacity
-                            style={[
-                              styles.memberActionToggleBtn,
-                              member.checkedIn ? styles.memberActionToggleBtnActive : {},
-                            ]}
-                            onPress={() => handleCheckInToggle(member)}
-                            accessibilityRole="switch"
-                            accessibilityLabel={t('groupOrganizer.checkInLabel')}
-                            accessibilityState={{ checked: !!member.checkedIn }}
-                          >
-                            <CheckCircle size={12} color={member.checkedIn ? C.white : C.textSec} />
-                            <Text
+                      {member.role !== 'LEADER' && (
+                        <>
+                          <View style={styles.memberActionsDivider} />
+                          <View style={styles.memberListItemActions}>
+                            <TouchableOpacity
                               style={[
-                                styles.memberActionToggleBtnLabel,
-                                { color: member.checkedIn ? C.white : C.textSec },
+                                styles.memberActionToggleBtn,
+                                member.checkedIn ? styles.memberActionToggleBtnActive : {},
                               ]}
+                              onPress={() => handleCheckInToggle(member)}
+                              accessibilityRole="switch"
+                              accessibilityLabel={t('groupOrganizer.checkInLabel')}
+                              accessibilityState={{ checked: !!member.checkedIn }}
                             >
-                              {member.checkedIn ? t('groupOrganizer.checkedInLabel') : t('groupOrganizer.checkInLabel')}
-                            </Text>
-                          </TouchableOpacity>
-                        </View>
-                      </>
-                    )}
+                              <CheckCircle size={12} color={member.checkedIn ? C.white : C.textSec} />
+                              <Text
+                                style={[
+                                  styles.memberActionToggleBtnLabel,
+                                  { color: member.checkedIn ? C.white : C.textSec },
+                                ]}
+                              >
+                                {member.checkedIn ? t('groupOrganizer.checkedInLabel') : t('groupOrganizer.checkInLabel')}
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+                        </>
+                      )}
+                    </View>
+                  ))}
+
+                  {/* Trip management tool */}
+                  <View style={styles.cardHeader}>
+                    <Text style={styles.subTitle}>{t('groupOrganizer.configureTourInformation')}</Text>
+                    <Text style={styles.descSec}>{t('groupOrganizer.configureTourDesc')}</Text>
                   </View>
-                ))}
 
-                {/* Trip management tool */}
-                <View style={styles.cardHeader}>
-                  <Text style={styles.subTitle}>{t('groupOrganizer.configureTourInformation')}</Text>
-                  <Text style={styles.descSec}>{t('groupOrganizer.configureTourDesc')}</Text>
-                </View>
-
-                {/* Unified Trip Card Design */}
-                <View style={[styles.tripCard, { marginBottom: 16 }]}>
-                  {/* Left side: Image — docs/REMEDIATION.md §8.6: this used to
+                  {/* Unified Trip Card Design */}
+                  <View style={[styles.tripCard, { marginBottom: 16 }]}>
+                    {/* Left side: Image — docs/REMEDIATION.md §8.6: this used to
                   be a hardcoded Unsplash photo for every tour regardless of
                   the real trip's own cover image (see §8.4's real upload
                   flow in create.tsx). */}
-                  <View style={styles.tripImageContainer}>
-                    <Image
-                      source={{
-                        uri:
-                          currentTour.coverImage ||
-                          'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&q=80',
-                      }}
-                      style={styles.tripImage}
-                    />
-                    <LinearGradient
-                      colors={['rgba(0, 0, 0, 0.65)', 'rgba(0, 0, 0, 0.1)', 'rgba(0, 0, 0, 0.75)']}
-                      locations={[0, 0.45, 1]}
-                      style={StyleSheet.absoluteFill}
-                    />
-                    <View style={[styles.tripBadge, { backgroundColor: '#6C5CE7' }]}>
-                      <Text style={styles.tripBadgeText}>{t('groupOrganizer.activeTourBadge')}</Text>
+                    <View style={styles.tripImageContainer}>
+                      {currentTour.coverImage ? (
+                        <Image source={{ uri: currentTour.coverImage }} style={styles.tripImage} />
+                      ) : (
+                        <LinearGradient
+                          colors={['#2A3356', '#141A33']}
+                          style={styles.tripImage}
+                          accessibilityLabel={t('groupOrganizer.noCoverPhoto')}
+                        />
+                      )}
+                      <LinearGradient
+                        colors={['rgba(0, 0, 0, 0.65)', 'rgba(0, 0, 0, 0.1)', 'rgba(0, 0, 0, 0.75)']}
+                        locations={[0, 0.45, 1]}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      <View style={[styles.tripBadge, { backgroundColor: '#6C5CE7' }]}>
+                        <Text style={styles.tripBadgeText}>{t('groupOrganizer.activeTourBadge')}</Text>
+                      </View>
                     </View>
-                  </View>
 
-                  {/* Right side: Detailed trip content */}
-                  <View style={styles.tripContent}>
-                    <Text style={styles.tripName} numberOfLines={2}>
-                      {currentTour.groupName}
-                    </Text>
+                    {/* Right side: Detailed trip content */}
+                    <View style={styles.tripContent}>
+                      <Text style={styles.tripName} numberOfLines={2}>
+                        {currentTour.groupName}
+                      </Text>
 
-                    {/* docs/REMEDIATION.md §8.6: this row also carried a fixed
+                      {/* docs/REMEDIATION.md §8.6: this row also carried a fixed
                     "4.8★"/"Verified Route" badge for every tour — removed;
                     there is no real rating system for trips (§8.14, not
                     built). Seats-left is real. */}
-                    <View style={styles.tripDetailsMetaRow}>
-                      <Text style={{ fontSize: 12, fontWeight: '600', color: '#10B981' }}>
-                        {t('groupOrganizer.seatsLeft', { count: currentTour.maxSize - currentTour.currentSize })}
-                      </Text>
-                    </View>
-
-                    {/* Route cities with arrow */}
-                    <View style={styles.routeCities}>
-                      <Text style={styles.cityText}>{currentTour.destination}</Text>
-                    </View>
-
-                    {/* Subtitle / capsules */}
-                    <View style={styles.capsulesRow}>
-                      <View style={styles.capsule}>
-                        <Clock size={8} color="#7E8494" />
-                        <Text style={styles.capsuleText} numberOfLines={1}>
-                          {t('groupOrganizer.daysCount', { count: currentTour.durationDays })}
+                      <View style={styles.tripDetailsMetaRow}>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#10B981' }}>
+                          {t('groupOrganizer.seatsLeft', { count: currentTour.maxSize - currentTour.currentSize })}
                         </Text>
                       </View>
-                      <View style={styles.capsule}>
-                        <Users size={8} color="#7E8494" />
-                        <Text style={styles.capsuleText} numberOfLines={1}>
-                          {t('groupOrganizer.membersCount', { current: currentTour.currentSize, max: currentTour.maxSize })}
-                        </Text>
-                      </View>
-                    </View>
 
-                    {/* Price and Action Buttons */}
-                    <View style={styles.priceRow}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.priceLabel}>{t('groupOrganizer.packageCost')}</Text>
-                        <Text style={styles.priceAmount}>₹{currentTour.price.toLocaleString('en-IN')}</Text>
+                      {/* Route cities with arrow */}
+                      <View style={styles.routeCities}>
+                        <Text style={styles.cityText}>{currentTour.destination}</Text>
                       </View>
-                      <View style={{ gap: 4, width: 110 }}>
-                        {/* docs/REMEDIATION.md §8.6: "Edit Details" used to be
+
+                      {/* Subtitle / capsules */}
+                      <View style={styles.capsulesRow}>
+                        <View style={styles.capsule}>
+                          <Clock size={8} color="#7E8494" />
+                          <Text style={styles.capsuleText} numberOfLines={1}>
+                            {t('groupOrganizer.daysCount', { count: currentTour.durationDays })}
+                          </Text>
+                        </View>
+                        <View style={styles.capsule}>
+                          <Users size={8} color="#7E8494" />
+                          <Text style={styles.capsuleText} numberOfLines={1}>
+                            {t('groupOrganizer.membersCount', { current: currentTour.currentSize, max: currentTour.maxSize })}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Price and Action Buttons */}
+                      <View style={styles.priceRow}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.priceLabel}>{t('groupOrganizer.packageCost')}</Text>
+                          <Text style={styles.priceAmount}>{formatINR(currentTour.price)}</Text>
+                        </View>
+                        <View style={{ gap: 4, width: 110 }}>
+                          {/* docs/REMEDIATION.md §8.6: "Edit Details" used to be
                         an Alert.alert claiming "Edit configuration mode is
                         active" — there was never an edit mode. Removed;
                         the trip's own fields are configured at creation
                         time below. */}
-                        <TouchableOpacity
-                          style={[
-                            styles.joinBtn,
-                            {
-                              backgroundColor: 'transparent',
-                              borderWidth: 1,
-                              borderColor: '#0066FF',
-                              paddingVertical: 4,
-                            },
-                          ]}
-                          onPress={() => {
-                            setActiveTab('chat');
-                          }}
-                          accessibilityRole="button"
-                          accessibilityLabel={t('groupOrganizer.openChat')}
-                        >
-                          <MessageSquare size={9} color="#0066FF" style={{ marginRight: 2 }} />
-                          <Text style={[styles.joinBtnText, { color: '#0066FF' }]}>{t('groupOrganizer.openChat')}</Text>
-                        </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[
+                              styles.joinBtn,
+                              {
+                                backgroundColor: 'transparent',
+                                borderWidth: 1,
+                                borderColor: '#0066FF',
+                                paddingVertical: 4,
+                              },
+                            ]}
+                            onPress={() => {
+                              setActiveTab('chat');
+                            }}
+                            accessibilityRole="button"
+                            accessibilityLabel={t('groupOrganizer.openChat')}
+                          >
+                            <MessageSquare size={9} color="#0066FF" style={{ marginRight: 2 }} />
+                            <Text style={[styles.joinBtnText, { color: '#0066FF' }]}>{t('groupOrganizer.openChat')}</Text>
+                          </TouchableOpacity>
+                        </View>
                       </View>
                     </View>
                   </View>
-                </View>
 
-                <View style={styles.tripManagerConfigBox}>
-                  <View style={styles.tripDetailField}>
-                    <Text style={styles.tripFieldLabel}>{t('groupOrganizer.destinationTarget')}</Text>
-                    <Text style={styles.tripFieldValue}>{currentTour.destination}</Text>
-                  </View>
-
-                  <View style={styles.tripDetailField}>
-                    <Text style={styles.tripFieldLabel}>{t('groupOrganizer.tourDuration')}</Text>
-                    <Text style={styles.tripFieldValue}>{t('groupOrganizer.daysCount', { count: currentTour.durationDays })}</Text>
-                  </View>
-
-                  <View style={styles.tripDetailField}>
-                    <Text style={styles.tripFieldLabel}>{t('groupOrganizer.maxGroupCapacity')}</Text>
-                    <Text style={styles.tripFieldValue}>{t('groupOrganizer.personsCount', { count: currentTour.maxSize })}</Text>
-                  </View>
-
-                  <View style={styles.tripDetailField}>
-                    <Text style={styles.tripFieldLabel}>{t('groupOrganizer.pricePerTouristPackage')}</Text>
-                    <Text style={styles.tripFieldValue}>₹{currentTour.price.toLocaleString('en-IN')}</Text>
-                  </View>
-
-                  <View style={styles.tripDetailField}>
-                    <Text style={styles.tripFieldLabel}>{t('groupOrganizer.currentStatus')}</Text>
-                    <View
-                      style={[
-                        styles.statusBadge,
-                        {
-                          backgroundColor:
-                            currentTour.status === 'OPEN' ? C.green : currentTour.status === 'FULL' ? C.amber : C.rose,
-                        },
-                      ]}
-                    >
-                      <Text style={styles.statusBadgeText}>{t(STATUS_LABEL_KEYS[currentTour.status])}</Text>
+                  <View style={styles.tripManagerConfigBox}>
+                    <View style={styles.tripDetailField}>
+                      <Text style={styles.tripFieldLabel}>{t('groupOrganizer.destinationTarget')}</Text>
+                      <Text style={styles.tripFieldValue}>{currentTour.destination}</Text>
                     </View>
+
+                    <View style={styles.tripDetailField}>
+                      <Text style={styles.tripFieldLabel}>{t('groupOrganizer.tourDuration')}</Text>
+                      <Text style={styles.tripFieldValue}>{t('groupOrganizer.daysCount', { count: currentTour.durationDays })}</Text>
+                    </View>
+
+                    <View style={styles.tripDetailField}>
+                      <Text style={styles.tripFieldLabel}>{t('groupOrganizer.maxGroupCapacity')}</Text>
+                      <Text style={styles.tripFieldValue}>{t('groupOrganizer.personsCount', { count: currentTour.maxSize })}</Text>
+                    </View>
+
+                    <View style={styles.tripDetailField}>
+                      <Text style={styles.tripFieldLabel}>{t('groupOrganizer.pricePerTouristPackage')}</Text>
+                      <Text style={styles.tripFieldValue}>{formatINR(currentTour.price)}</Text>
+                    </View>
+
+                    <View style={styles.tripDetailField}>
+                      <Text style={styles.tripFieldLabel}>{t('groupOrganizer.currentStatus')}</Text>
+                      <View
+                        style={[
+                          styles.statusBadge,
+                          {
+                            backgroundColor:
+                              currentTour.status === 'OPEN' ? C.green : currentTour.status === 'FULL' ? C.amber : C.rose,
+                          },
+                        ]}
+                      >
+                        <Text style={styles.statusBadgeText}>{t(STATUS_LABEL_KEYS[currentTour.status])}</Text>
+                      </View>
+                    </View>
+
+                    <TouchableOpacity
+                      style={styles.createTripBtn}
+                      onPress={() => setShowCreateModal(true)}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('groupOrganizer.launchNewTourGroup')}
+                    >
+                      <Plus size={16} color={C.white} />
+                      <Text style={styles.createTripBtnText}>{t('groupOrganizer.launchNewTourGroup')}</Text>
+                    </TouchableOpacity>
                   </View>
-
-                  <TouchableOpacity
-                    style={styles.createTripBtn}
-                    onPress={() => setShowCreateModal(true)}
-                    accessibilityRole="button"
-                    accessibilityLabel={t('groupOrganizer.launchNewTourGroup')}
-                  >
-                    <Plus size={16} color={C.white} />
-                    <Text style={styles.createTripBtnText}>{t('groupOrganizer.launchNewTourGroup')}</Text>
-                  </TouchableOpacity>
                 </View>
-              </View>
-            )}
+              )}
 
-            {/* ========================================================
+              {/* ========================================================
             TAB 3: ITINERARY PLANNER & LOGISTICS
             ======================================================== */}
-            {activeTab === 'logistics' && (
-              <View>
-                {/* Logistics Subtabs */}
-                <View style={styles.plannerSubTabs}>
-                  {(
-                    [
-                      { key: 'itinerary', labelKey: 'groupOrganizer.subtabDaySchedule', Icon: Calendar },
-                      { key: 'transport', labelKey: 'groupOrganizer.subtabTransport', Icon: Car },
-                      { key: 'hotel', labelKey: 'groupOrganizer.subtabRoomAssigns', Icon: Hotel },
-                    ] as const
-                  ).map((sTab) => {
-                    const isSubActive = logisticsTab === sTab.key;
-                    return (
-                      <TouchableOpacity
-                        key={sTab.key}
-                        style={[styles.plannerSubTabItem, isSubActive && styles.plannerSubTabItemActive]}
-                        onPress={() => setLogisticsTab(sTab.key)}
-                        accessibilityRole="tab"
-                        accessibilityLabel={t(sTab.labelKey)}
-                        accessibilityState={{ selected: isSubActive }}
-                      >
-                        <Text style={[styles.plannerSubTabLabel, { color: isSubActive ? C.blueGlow : C.textSec }]}>
-                          {t(sTab.labelKey)}
-                        </Text>
-                        {isSubActive && <View style={styles.plannerSubTabIndicator} />}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                {/* 3A: Day Schedule */}
-                {logisticsTab === 'itinerary' && (
-                  <View style={styles.innerPlannerSection}>
-                    <Text style={styles.subTitle}>{t('groupOrganizer.dayWiseScheduleDetails')}</Text>
-                    <Text style={styles.descSec}>{t('groupOrganizer.dayScheduleDesc')}</Text>
-
-                    {itineraryLoading && itinerary.length === 0 ? (
-                      <View style={styles.itineraryStateBox}>
-                        <ActivityIndicator size="small" color={C.blueGlow} />
-                        <Text style={styles.itineraryStateText}>{t('groupOrganizer.loadingDaySchedule')}</Text>
-                      </View>
-                    ) : itineraryError ? (
-                      <View style={styles.itineraryStateBox}>
-                        <Text style={styles.itineraryStateText}>{itineraryError}</Text>
+              {activeTab === 'logistics' && (
+                <View>
+                  {/* Logistics Subtabs */}
+                  <View style={styles.plannerSubTabs}>
+                    {(
+                      [
+                        { key: 'itinerary', labelKey: 'groupOrganizer.subtabDaySchedule', Icon: Calendar },
+                        { key: 'transport', labelKey: 'groupOrganizer.subtabTransport', Icon: Car },
+                        { key: 'hotel', labelKey: 'groupOrganizer.subtabRoomAssigns', Icon: Hotel },
+                      ] as const
+                    ).map((sTab) => {
+                      const isSubActive = logisticsTab === sTab.key;
+                      return (
                         <TouchableOpacity
-                          onPress={() => currentTour && fetchItinerary(currentTour.id)}
-                          hitSlop={{ top: 14, bottom: 14, left: 10, right: 10 }}
-                          accessibilityRole="button"
-                          accessibilityLabel={t('groupOrganizer.retry')}
+                          key={sTab.key}
+                          style={[styles.plannerSubTabItem, isSubActive && styles.plannerSubTabItemActive]}
+                          onPress={() => setLogisticsTab(sTab.key)}
+                          accessibilityRole="tab"
+                          accessibilityLabel={t(sTab.labelKey)}
+                          accessibilityState={{ selected: isSubActive }}
                         >
-                          <Text style={styles.itineraryRetryText}>{t('groupOrganizer.retry')}</Text>
+                          <Text style={[styles.plannerSubTabLabel, { color: isSubActive ? C.blueGlow : C.textSec }]}>
+                            {t(sTab.labelKey)}
+                          </Text>
+                          {isSubActive && <View style={styles.plannerSubTabIndicator} />}
                         </TouchableOpacity>
-                      </View>
-                    ) : itinerary.length === 0 ? (
-                      <View style={styles.itineraryStateBox}>
-                        <Text style={styles.itineraryStateText}>{t('groupOrganizer.noDaysPlannedYet')}</Text>
-                      </View>
-                    ) : (
-                      itinerary.map((day) => (
-                        <TouchableOpacity
-                          key={day.id}
-                          style={styles.dayCard}
-                          activeOpacity={0.8}
-                          onLongPress={() => handleDeleteItineraryDay(day)}
-                          accessibilityRole="button"
-                          accessibilityLabel={t('groupOrganizer.dayNumber', { number: day.day })}
-                          accessibilityHint={t('groupOrganizer.deleteDayHint')}
-                        >
-                          <View style={styles.dayHeader}>
-                            <Text style={styles.dayNumber}>{t('groupOrganizer.dayNumber', { number: day.day })}</Text>
-                            <Text style={styles.dayTitleText}>{day.title}</Text>
-                          </View>
-                          <Text style={styles.dayActivitiesText}>{day.plan}</Text>
-                        </TouchableOpacity>
-                      ))
-                    )}
-
-                    <View style={styles.addDayBox}>
-                      <Text style={styles.addDayBoxTitle}>{t('groupOrganizer.addScheduleDay')}</Text>
-                      <Text style={styles.formInputLabel}>{t('groupOrganizer.dayHeading')}</Text>
-                      <TextInput
-                        style={styles.formInput}
-                        placeholder={t('groupOrganizer.dayHeadingPlaceholder')}
-                        placeholderTextColor={C.textMuted}
-                        value={newDayTitle}
-                        onChangeText={setNewDayTitle}
-                      />
-
-                      <Text style={styles.formInputLabel}>{t('groupOrganizer.planActivities')}</Text>
-                      <TextInput
-                        style={[styles.formInput, { height: 60, textAlignVertical: 'top' }]}
-                        placeholder={t('groupOrganizer.planActivitiesPlaceholder')}
-                        placeholderTextColor={C.textMuted}
-                        multiline
-                        value={newDayDesc}
-                        onChangeText={setNewDayDesc}
-                      />
-
-                      <TouchableOpacity
-                        style={[styles.addDayBtn, addingDay && { opacity: 0.6 }]}
-                        onPress={handleAddItineraryDay}
-                        disabled={addingDay}
-                        accessibilityRole="button"
-                        accessibilityLabel={t('groupOrganizer.insertItineraryDay')}
-                      >
-                        {addingDay ? (
-                          <ActivityIndicator size="small" color={C.white} />
-                        ) : (
-                          <Plus size={14} color={C.white} />
-                        )}
-                        <Text style={styles.addDayBtnText}>
-                          {addingDay ? t('groupOrganizer.saving') : t('groupOrganizer.insertItineraryDay')}
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
+                      );
+                    })}
                   </View>
-                )}
 
-                {/* 3B: Transport Manager */}
-                {logisticsTab === 'transport' && (
-                  <View style={styles.innerPlannerSection}>
-                    {/* docs/REMEDIATION.md §8.6: this tab also showed a
+                  {/* 3A: Day Schedule */}
+                  {logisticsTab === 'itinerary' && (
+                    <View style={styles.innerPlannerSection}>
+                      <Text style={styles.subTitle}>{t('groupOrganizer.dayWiseScheduleDetails')}</Text>
+                      <Text style={styles.descSec}>{t('groupOrganizer.dayScheduleDesc')}</Text>
+
+                      {itineraryLoading && itinerary.length === 0 ? (
+                        <View style={styles.itineraryStateBox}>
+                          <ActivityIndicator size="small" color={C.blueGlow} />
+                          <Text style={styles.itineraryStateText}>{t('groupOrganizer.loadingDaySchedule')}</Text>
+                        </View>
+                      ) : itineraryError ? (
+                        <View style={styles.itineraryStateBox}>
+                          <Text style={styles.itineraryStateText}>{itineraryError}</Text>
+                          <TouchableOpacity
+                            onPress={() => currentTour && fetchItinerary(currentTour.id)}
+                            hitSlop={{ top: 14, bottom: 14, left: 10, right: 10 }}
+                            accessibilityRole="button"
+                            accessibilityLabel={t('groupOrganizer.retry')}
+                          >
+                            <Text style={styles.itineraryRetryText}>{t('groupOrganizer.retry')}</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : itinerary.length === 0 ? (
+                        <View style={styles.itineraryStateBox}>
+                          <Text style={styles.itineraryStateText}>{t('groupOrganizer.noDaysPlannedYet')}</Text>
+                        </View>
+                      ) : (
+                        itinerary.map((day) => (
+                          <TouchableOpacity
+                            key={day.id}
+                            style={styles.dayCard}
+                            activeOpacity={0.8}
+                            onLongPress={() => handleDeleteItineraryDay(day)}
+                            accessibilityRole="button"
+                            accessibilityLabel={t('groupOrganizer.dayNumber', { number: day.day })}
+                            accessibilityHint={t('groupOrganizer.deleteDayHint')}
+                          >
+                            <View style={styles.dayHeader}>
+                              <Text style={styles.dayNumber}>{t('groupOrganizer.dayNumber', { number: day.day })}</Text>
+                              <Text style={styles.dayTitleText}>{day.title}</Text>
+                            </View>
+                            <Text style={styles.dayActivitiesText}>{day.plan}</Text>
+                          </TouchableOpacity>
+                        ))
+                      )}
+
+                      <View style={styles.addDayBox}>
+                        <Text style={styles.addDayBoxTitle}>{t('groupOrganizer.addScheduleDay')}</Text>
+                        <Text style={styles.formInputLabel}>{t('groupOrganizer.dayHeading')}</Text>
+                        <TextInput
+                          style={styles.formInput}
+                          placeholder={t('groupOrganizer.dayHeadingPlaceholder')}
+                          placeholderTextColor={C.textMuted}
+                          value={newDayTitle}
+                          onChangeText={setNewDayTitle}
+                        />
+
+                        <Text style={styles.formInputLabel}>{t('groupOrganizer.planActivities')}</Text>
+                        <TextInput
+                          style={[styles.formInput, { height: 60, textAlignVertical: 'top' }]}
+                          placeholder={t('groupOrganizer.planActivitiesPlaceholder')}
+                          placeholderTextColor={C.textMuted}
+                          multiline
+                          value={newDayDesc}
+                          onChangeText={setNewDayDesc}
+                        />
+
+                        <TouchableOpacity
+                          style={[styles.addDayBtn, addingDay && { opacity: 0.6 }]}
+                          onPress={handleAddItineraryDay}
+                          disabled={addingDay}
+                          accessibilityRole="button"
+                          accessibilityLabel={t('groupOrganizer.insertItineraryDay')}
+                        >
+                          {addingDay ? (
+                            <ActivityIndicator size="small" color={C.white} />
+                          ) : (
+                            <Plus size={14} color={C.white} />
+                          )}
+                          <Text style={styles.addDayBtnText}>
+                            {addingDay ? t('groupOrganizer.saving') : t('groupOrganizer.insertItineraryDay')}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
+
+                  {/* 3B: Transport Manager */}
+                  {logisticsTab === 'transport' && (
+                    <View style={styles.innerPlannerSection}>
+                      {/* docs/REMEDIATION.md §8.6: this tab also showed a
                     hardcoded driver/vehicle card ("Jaspreet Singh", a fixed
                     phone number and bus, for every tour) — removed; there
                     is no real driver-assignment feature or schema behind
                     it. Seat allocation below is real. */}
-                    <Text style={styles.subTitle}>{t('groupOrganizer.seatAllocationMatrix')}</Text>
-                    <Text style={styles.descSec}>{t('groupOrganizer.assignTransportSeatsDesc')}</Text>
+                      <Text style={styles.subTitle}>{t('groupOrganizer.seatAllocationMatrix')}</Text>
+                      <Text style={styles.descSec}>{t('groupOrganizer.assignTransportSeatsDesc')}</Text>
 
-                    {members
-                      .filter((m) => m.role !== 'LEADER')
-                      .map((m) => (
-                        <View key={m.id} style={styles.allocationRowItem}>
-                          <Text style={styles.allocNameText}>{m.name}</Text>
-                          <TouchableOpacity
-                            style={styles.allocButton}
-                            onPress={() => handleAllocateSeat(m)}
-                            accessibilityRole="button"
-                            accessibilityLabel={t('groupOrganizer.allocateTransportSeat')}
-                          >
-                            <Text style={styles.allocButtonText}>{m.seatAllocated || t('groupOrganizer.unassigned')}</Text>
-                            <ExternalLink size={10} color={C.blueGlow} />
-                          </TouchableOpacity>
-                        </View>
-                      ))}
-                  </View>
-                )}
+                      {members
+                        .filter((m) => m.role !== 'LEADER')
+                        .map((m) => (
+                          <View key={m.id} style={styles.allocationRowItem}>
+                            <Text style={styles.allocNameText}>{m.name}</Text>
+                            <TouchableOpacity
+                              style={styles.allocButton}
+                              onPress={() => handleAllocateSeat(m)}
+                              accessibilityRole="button"
+                              accessibilityLabel={t('groupOrganizer.allocateTransportSeat')}
+                            >
+                              <Text style={styles.allocButtonText}>{m.seatAllocated || t('groupOrganizer.unassigned')}</Text>
+                              <ExternalLink size={10} color={C.blueGlow} />
+                            </TouchableOpacity>
+                          </View>
+                        ))}
+                    </View>
+                  )}
 
-                {/* 3C: Room Assignments */}
-                {logisticsTab === 'hotel' && (
-                  <View style={styles.innerPlannerSection}>
-                    <Text style={styles.subTitle}>{t('groupOrganizer.hotelRoomAllocationMatrix')}</Text>
-                    <Text style={styles.descSec}>{t('groupOrganizer.assignHotelRoomsDesc')}</Text>
+                  {/* 3C: Room Assignments */}
+                  {logisticsTab === 'hotel' && (
+                    <View style={styles.innerPlannerSection}>
+                      <Text style={styles.subTitle}>{t('groupOrganizer.hotelRoomAllocationMatrix')}</Text>
+                      <Text style={styles.descSec}>{t('groupOrganizer.assignHotelRoomsDesc')}</Text>
 
-                    {members
-                      .filter((m) => m.role !== 'LEADER')
-                      .map((m) => (
-                        <View key={m.id} style={styles.allocationRowItem}>
-                          <Text style={styles.allocNameText}>{m.name}</Text>
-                          <TouchableOpacity
-                            style={styles.allocButton}
-                            onPress={() => handleAllocateRoom(m)}
-                            accessibilityRole="button"
-                            accessibilityLabel={t('groupOrganizer.allocateHotelRoom')}
-                          >
-                            <Text style={styles.allocButtonText}>{m.roomAllocated || t('groupOrganizer.unassigned')}</Text>
-                            <ExternalLink size={10} color={C.blueGlow} />
-                          </TouchableOpacity>
-                        </View>
-                      ))}
-                  </View>
-                )}
+                      {members
+                        .filter((m) => m.role !== 'LEADER')
+                        .map((m) => (
+                          <View key={m.id} style={styles.allocationRowItem}>
+                            <Text style={styles.allocNameText}>{m.name}</Text>
+                            <TouchableOpacity
+                              style={styles.allocButton}
+                              onPress={() => handleAllocateRoom(m)}
+                              accessibilityRole="button"
+                              accessibilityLabel={t('groupOrganizer.allocateHotelRoom')}
+                            >
+                              <Text style={styles.allocButtonText}>{m.roomAllocated || t('groupOrganizer.unassigned')}</Text>
+                              <ExternalLink size={10} color={C.blueGlow} />
+                            </TouchableOpacity>
+                          </View>
+                        ))}
+                    </View>
+                  )}
 
-                {/* docs/REMEDIATION.md §8.6: a "Meal Dietary" subtab used to
+                  {/* docs/REMEDIATION.md §8.6: a "Meal Dietary" subtab used to
                 live here — a per-member `diet` hardcoded to 'VEG' for
                 every member on every fetch, with zero edit affordance
                 (nothing ever set it to anything else), so the "counts" it
                 displayed were entirely decorative. Removed outright rather
                 than kept as a fake field with no real data behind it. */}
-              </View>
-            )}
+                </View>
+              )}
 
-            {/* docs/REMEDIATION.md §8.6: a "Billing & Permit" tab used to live
+              {/* docs/REMEDIATION.md §8.6: a "Billing & Permit" tab used to live
             here — three hardcoded names/deposits/balances that never
             changed no matter which tour was selected, a fake permit/
             insurance/ticket document list, and "Generate Invoice"/document
@@ -1191,36 +1294,36 @@ export default function GroupOrganizerScreen() {
             here — removed rather than rebuilt, which would mean bringing
             payments back. */}
 
-            {/* ========================================================
+              {/* ========================================================
             TAB 5: COMM & JOIN MODERATION
             ======================================================== */}
-            {activeTab === 'chat' && (
-              <View>
-                {/* Chat Moderation Panel */}
-                <View style={styles.chatGroupModeratorHeader}>
-                  <View>
-                    <Text style={styles.subTitle}>{t('groupOrganizer.groupChatModeration')}</Text>
-                    <Text style={styles.descSec}>{t('groupOrganizer.approveJoinRequestsDesc')}</Text>
+              {activeTab === 'chat' && (
+                <View>
+                  {/* Chat Moderation Panel */}
+                  <View style={styles.chatGroupModeratorHeader}>
+                    <View>
+                      <Text style={styles.subTitle}>{t('groupOrganizer.groupChatModeration')}</Text>
+                      <Text style={styles.descSec}>{t('groupOrganizer.approveJoinRequestsDesc')}</Text>
+                    </View>
                   </View>
-                </View>
 
-                {/* Moderation List of Requests */}
-                <Text style={styles.sectionLabelInline}>{t('groupOrganizer.pendingChatJoinRequests')}</Text>
-                {joinRequests.filter((r) => r.tourId === currentTour.id).length === 0 ? (
-                  <View style={styles.emptyRequestsCard}>
-                    <CheckCircle size={18} color={C.green} />
-                    <Text style={styles.emptyRequestsText}>{t('groupOrganizer.allRequestsProcessed')}</Text>
-                  </View>
-                ) : (
-                  joinRequests
-                    .filter((r) => r.tourId === currentTour.id)
-                    .map((req) => (
-                      <View key={req.id} style={styles.requestItemCard}>
-                        <View style={styles.requestHeaderRow}>
-                          <Image source={{ uri: req.userAvatar }} style={styles.reqAvatar} />
-                          <View style={{ flex: 1, marginLeft: 12 }}>
-                            <Text style={styles.reqName}>{req.userName}</Text>
-                            {/* No applicant message is rendered here. There
+                  {/* Moderation List of Requests */}
+                  <Text style={styles.sectionLabelInline}>{t('groupOrganizer.pendingChatJoinRequests')}</Text>
+                  {joinRequests.filter((r) => r.tourId === currentTour.id).length === 0 ? (
+                    <View style={styles.emptyRequestsCard}>
+                      <CheckCircle size={18} color={C.green} />
+                      <Text style={styles.emptyRequestsText}>{t('groupOrganizer.allRequestsProcessed')}</Text>
+                    </View>
+                  ) : (
+                    joinRequests
+                      .filter((r) => r.tourId === currentTour.id)
+                      .map((req) => (
+                        <View key={req.id} style={styles.requestItemCard}>
+                          <View style={styles.requestHeaderRow}>
+                            <Image source={{ uri: req.userAvatar }} style={styles.reqAvatar} />
+                            <View style={{ flex: 1, marginLeft: 12 }}>
+                              <Text style={styles.reqName}>{req.userName}</Text>
+                              {/* No applicant message is rendered here. There
                                 is no message field on JoinRequest and the
                                 endpoint never sent one, so this used to
                                 quote a hardcoded "Would love to join this
@@ -1228,82 +1331,82 @@ export default function GroupOrganizerScreen() {
                                 the applicant had written it — the same
                                 sentence for every person who ever applied
                                 (docs/REMEDIATION.md §0.2 rule 4). */}
+                            </View>
+                          </View>
+
+                          <View style={styles.reqActionButtonsRow}>
+                            <TouchableOpacity
+                              style={[styles.reqBtn, styles.reqBtnReject]}
+                              onPress={() => handleRejectRequest(req.id, req.userName)}
+                              accessibilityRole="button"
+                              accessibilityLabel={t('groupOrganizer.reject')}
+                            >
+                              <X size={12} color={C.rose} />
+                              <Text style={styles.reqBtnRejectText}>{t('groupOrganizer.reject')}</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                              style={[styles.reqBtn, styles.reqBtnApprove]}
+                              onPress={() => handleApproveRequest(req.id, req.userName, req.userAvatar)}
+                              accessibilityRole="button"
+                              accessibilityLabel={t('groupOrganizer.approveJoin')}
+                            >
+                              <Check size={12} color={C.white} />
+                              <Text style={styles.reqBtnApproveText}>{t('groupOrganizer.approveJoin')}</Text>
+                            </TouchableOpacity>
                           </View>
                         </View>
+                      ))
+                  )}
 
-                        <View style={styles.reqActionButtonsRow}>
-                          <TouchableOpacity
-                            style={[styles.reqBtn, styles.reqBtnReject]}
-                            onPress={() => handleRejectRequest(req.id, req.userName)}
-                            accessibilityRole="button"
-                            accessibilityLabel={t('groupOrganizer.reject')}
-                          >
-                            <X size={12} color={C.rose} />
-                            <Text style={styles.reqBtnRejectText}>{t('groupOrganizer.reject')}</Text>
-                          </TouchableOpacity>
+                  {/* Announcements Panel */}
+                  <Text style={styles.subTitle}>{t('groupOrganizer.groupAnnouncements')}</Text>
+                  <Text style={styles.descSec}>{t('groupOrganizer.broadcastWarningsDesc')}</Text>
 
-                          <TouchableOpacity
-                            style={[styles.reqBtn, styles.reqBtnApprove]}
-                            onPress={() => handleApproveRequest(req.id, req.userName, req.userAvatar)}
-                            accessibilityRole="button"
-                            accessibilityLabel={t('groupOrganizer.approveJoin')}
-                          >
-                            <Check size={12} color={C.white} />
-                            <Text style={styles.reqBtnApproveText}>{t('groupOrganizer.approveJoin')}</Text>
-                          </TouchableOpacity>
-                        </View>
+                  {announcements.map((ann) => (
+                    <View key={ann.id} style={styles.announceCard}>
+                      <View style={styles.announceCardHeader}>
+                        <Text style={styles.announceCardTitle}>{ann.title}</Text>
+                        <Text style={styles.announceCardDate}>{formatRelative(ann.createdAt)}</Text>
                       </View>
-                    ))
-                )}
-
-                {/* Announcements Panel */}
-                <Text style={styles.subTitle}>{t('groupOrganizer.groupAnnouncements')}</Text>
-                <Text style={styles.descSec}>{t('groupOrganizer.broadcastWarningsDesc')}</Text>
-
-                {announcements.map((ann) => (
-                  <View key={ann.id} style={styles.announceCard}>
-                    <View style={styles.announceCardHeader}>
-                      <Text style={styles.announceCardTitle}>{ann.title}</Text>
-                      <Text style={styles.announceCardDate}>{formatRelative(ann.createdAt)}</Text>
+                      <Text style={styles.announceCardContent}>{ann.content}</Text>
                     </View>
-                    <Text style={styles.announceCardContent}>{ann.content}</Text>
+                  ))}
+
+                  <View style={styles.addAnnounceBox}>
+                    <Text style={styles.formInputLabel}>{t('groupOrganizer.noticeTitle')}</Text>
+                    <TextInput
+                      style={styles.formInput}
+                      placeholder={t('groupOrganizer.noticeTitlePlaceholder')}
+                      placeholderTextColor={C.textMuted}
+                      value={newAnnounceTitle}
+                      onChangeText={setNewAnnounceTitle}
+                    />
+                    <Text style={styles.formInputLabel}>{t('groupOrganizer.noticeDescription')}</Text>
+                    <TextInput
+                      style={[styles.formInput, { height: 50 }]}
+                      placeholder={t('groupOrganizer.noticeDescriptionPlaceholder')}
+                      placeholderTextColor={C.textMuted}
+                      value={newAnnounceDesc}
+                      onChangeText={setNewAnnounceDesc}
+                    />
+                    <TouchableOpacity
+                      style={[styles.announceBtn, publishingAnnouncement && { opacity: 0.6 }]}
+                      onPress={handlePublishAnnouncement}
+                      disabled={publishingAnnouncement}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('groupOrganizer.broadcastNotice')}
+                    >
+                      <Send size={12} color={C.white} />
+                      <Text style={styles.announceBtnText}>
+                        {publishingAnnouncement ? t('groupOrganizer.sending') : t('groupOrganizer.broadcastNotice')}
+                      </Text>
+                    </TouchableOpacity>
                   </View>
-                ))}
-
-                <View style={styles.addAnnounceBox}>
-                  <Text style={styles.formInputLabel}>{t('groupOrganizer.noticeTitle')}</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    placeholder={t('groupOrganizer.noticeTitlePlaceholder')}
-                    placeholderTextColor={C.textMuted}
-                    value={newAnnounceTitle}
-                    onChangeText={setNewAnnounceTitle}
-                  />
-                  <Text style={styles.formInputLabel}>{t('groupOrganizer.noticeDescription')}</Text>
-                  <TextInput
-                    style={[styles.formInput, { height: 50 }]}
-                    placeholder={t('groupOrganizer.noticeDescriptionPlaceholder')}
-                    placeholderTextColor={C.textMuted}
-                    value={newAnnounceDesc}
-                    onChangeText={setNewAnnounceDesc}
-                  />
-                  <TouchableOpacity
-                    style={[styles.announceBtn, publishingAnnouncement && { opacity: 0.6 }]}
-                    onPress={handlePublishAnnouncement}
-                    disabled={publishingAnnouncement}
-                    accessibilityRole="button"
-                    accessibilityLabel={t('groupOrganizer.broadcastNotice')}
-                  >
-                    <Send size={12} color={C.white} />
-                    <Text style={styles.announceBtnText}>
-                      {publishingAnnouncement ? t('groupOrganizer.sending') : t('groupOrganizer.broadcastNotice')}
-                    </Text>
-                  </TouchableOpacity>
                 </View>
-              </View>
-            )}
+              )}
 
-            {/* docs/REMEDIATION.md §8.6: a "Live GPS & AI Desk" tab used to
+              {/* docs/REMEDIATION.md §8.6: a "Live GPS & AI Desk" tab used to
             live here, with three sub-tools:
             • "GPS Tracking" — a hand-drawn "Mock GPS Map Drawing" (the
               code's own comment) of fixed-position dots labelled with
@@ -1325,12 +1428,12 @@ export default function GroupOrganizerScreen() {
             None of these had a real backend or a reasonable one to build
             in this pass — removed rather than left as decorative or
             (for the SOS button) actively misleading UI. */}
-          </>
-        )}
+            </>
+          )}
 
-        {/* Bottom Spacer */}
-        <View style={{ height: 100 }} />
-      </ScrollView>
+          {/* Bottom Spacer */}
+          <View style={{ height: 100 }} />
+        </ScrollView>
       )}
 
       {/* CREATE NEW TOUR SHEET */}
@@ -1416,6 +1519,21 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     minHeight: 180,
   },
+  quotesBlock: { gap: 10, marginTop: 18 },
+  quoteCard: {
+    backgroundColor: C.card,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 12,
+    gap: 10,
+  },
+  quoteHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  quoteName: { fontSize: 13.5, fontWeight: '700', color: C.text },
+  quoteMeta: { fontSize: 11.5, color: C.textMuted },
+  quoteMessage: { fontSize: 12, color: C.textSec, lineHeight: 17 },
+  quoteAmount: { fontSize: 14, fontWeight: '800', color: C.amberGlow },
+  quoteActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
   tripImageContainer: {
     width: 110,
     alignSelf: 'stretch',

@@ -11,6 +11,16 @@ import type {
   FeedPage,
   GuideEarnings,
   GuideLead,
+  GuideQuoteInput,
+  SentGuideQuote,
+  ReceivedGuideQuote,
+  QuoteStatus,
+  PublicGuide,
+  GuideBooking,
+  MyGuideBooking,
+  IncomingGuideBooking,
+  CreateBookingInput,
+  BookingStatus,
   GuidePackage,
   GuidePackageInput,
   GuideProfile,
@@ -1130,9 +1140,75 @@ export const apiService = {
     return { items: data, nextCursor: meta?.cursor ?? null };
   },
 
-  // ── Guide Leads (pending JoinRequests as leads) ──────
+  // ── Guide leads (public trips matching the guide's expertise) ──────
   async getGuideLeads(guideId: string): Promise<GuideLead[] | null> {
     return request<GuideLead[]>(`/guides/${guideId}/leads`);
+  },
+
+
+  // ── Browsing guides as a traveller ──────
+  // GET /guides is public, so a logged-out visitor can browse before
+  // deciding to sign up. Until now nothing in the app called it: a guide
+  // could publish a full profile, packages and reels that no user of the
+  // app could reach.
+  async getPublicGuides(): Promise<PublicGuide[] | null> {
+    return request<PublicGuide[]>('/guides');
+  },
+
+  // ── Guide quotes ──────
+  async sendGuideQuote(guideId: string, input: GuideQuoteInput): Promise<SentGuideQuote | null> {
+    return request<SentGuideQuote>(`/guides/${guideId}/quotes`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+
+  async getSentGuideQuotes(guideId: string): Promise<SentGuideQuote[] | null> {
+    return request<SentGuideQuote[]>(`/guides/${guideId}/quotes`);
+  },
+
+  async getTripQuotes(tripId: string): Promise<ReceivedGuideQuote[] | null> {
+    return request<ReceivedGuideQuote[]>(`/trips/${tripId}/quotes`);
+  },
+
+  async decideTripQuote(
+    tripId: string,
+    quoteId: string,
+    status: Extract<QuoteStatus, 'ACCEPTED' | 'DECLINED'>,
+  ): Promise<{ id: string; status: QuoteStatus } | null> {
+    return request(`/trips/${tripId}/quotes/${quoteId}/status`, {
+      method: 'POST',
+      body: JSON.stringify({ status }),
+    });
+  },
+
+  // ── Guide bookings ──────
+  // The backend has had these four routes all along; nothing on the client
+  // called any of them, so no Booking row carrying a guideProfileId could
+  // ever be created and every guide's earnings were zero by construction.
+  async createGuideBooking(input: CreateBookingInput): Promise<GuideBooking | null> {
+    return request<GuideBooking>('/bookings', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+
+  async getMyGuideBookings(): Promise<MyGuideBooking[] | null> {
+    return request<MyGuideBooking[]>('/bookings/mine');
+  },
+
+  async getIncomingGuideBookings(): Promise<IncomingGuideBooking[] | null> {
+    return request<IncomingGuideBooking[]>('/bookings/incoming');
+  },
+
+  async updateGuideBookingStatus(
+    bookingId: string,
+    status: Extract<BookingStatus, 'CONFIRMED' | 'CANCELLED' | 'COMPLETED'>,
+  ): Promise<GuideBooking | null> {
+    return request<GuideBooking>(`/bookings/${bookingId}/status`, {
+      method: 'POST',
+      body: JSON.stringify({ status }),
+    });
   },
 
   // ── Live Weather (at specific coordinates) ──────

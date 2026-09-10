@@ -1,5 +1,5 @@
 import { RouteErrorFallback } from '@/components/route-error-fallback';
-import { Button, Chip, Input, ScreenEmpty, ScreenError, ScreenLoading, Sheet } from '@/components/ui';
+import { Button, Input, ScreenEmpty, ScreenError, ScreenLoading, Sheet } from '@/components/ui';
 import { recordConsent } from '@/lib/consent';
 import { errorToastMessage, showAlert, toast, useConfirm } from '@/lib/feedback';
 import { getAppLanguage, setAppLanguage } from '@/lib/i18n';

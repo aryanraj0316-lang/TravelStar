@@ -18,7 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { errorToastMessage, toast, useConfirm } from '@/lib/feedback';
 import { uploadFileToUrl } from '@/lib/upload';
 import { recordConsent } from '@/lib/consent';
-import { Button, Input, ScreenEmpty, ScreenError, ScreenLoading, Sheet } from '@/components/ui';
+import { Avatar, Button, CoverImage, Input, ScreenEmpty, ScreenError, ScreenLoading, Sheet } from '@/components/ui';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useApp } from '@/store/AppContext';
@@ -31,14 +31,16 @@ import type {
   GuideReel,
   GuideLiveStatus,
   LiveWeather,
+  QuoteStatus,
+  IncomingGuideBooking,
 } from '@/types/api';
 import type { SOSAlert } from '@/store/AppContext';
 import { formatDate, formatDateShort } from '@/lib/datetime';
+import { formatINR } from '@/lib/money';
 import { getCurrentDeviceLocation } from '@/lib/device-location';
 import * as ImagePicker from 'expo-image-picker';
 import ArrowLeft from 'lucide-react-native/icons/arrow-left';
 import Search from 'lucide-react-native/icons/search';
-import Users from 'lucide-react-native/icons/users';
 import MapPin from 'lucide-react-native/icons/map-pin';
 import Calendar from 'lucide-react-native/icons/calendar';
 import TrendingUp from 'lucide-react-native/icons/trending-up';
@@ -105,10 +107,29 @@ const ALERT_TYPE_LABEL_KEYS: Record<string, string> = {
   INFO: 'travelGuide.alertTypeInfo',
 };
 
-const LEAD_STATUS_LABEL_KEYS: Record<string, string> = {
-  PENDING: 'travelGuide.statusPending',
-  APPROVED: 'travelGuide.statusApproved',
-  REJECTED: 'travelGuide.statusRejected',
+const QUOTE_STATUS_LABEL_KEYS: Record<QuoteStatus, string> = {
+  PENDING: 'travelGuide.quoteStatusPending',
+  ACCEPTED: 'travelGuide.quoteStatusAccepted',
+  DECLINED: 'travelGuide.quoteStatusDeclined',
+};
+
+const BOOKING_DONE_LABEL_KEYS: Record<'CONFIRMED' | 'CANCELLED' | 'COMPLETED', string> = {
+  CONFIRMED: 'travelGuide.bookingConfirmed',
+  CANCELLED: 'travelGuide.bookingDeclined',
+  COMPLETED: 'travelGuide.bookingCompleted',
+};
+
+const BOOKING_STATUS_LABEL_KEYS: Record<string, string> = {
+  PENDING: 'travelGuide.bookingStatusPending',
+  CONFIRMED: 'travelGuide.bookingStatusConfirmed',
+  CANCELLED: 'travelGuide.bookingStatusCancelled',
+  COMPLETED: 'travelGuide.bookingStatusCompleted',
+};
+
+const QUOTE_STATUS_COLORS: Record<QuoteStatus, string> = {
+  PENDING: C.amberGlow,
+  ACCEPTED: C.greenGlow,
+  DECLINED: C.textMuted,
 };
 
 const BUDGET_CATEGORY_LABEL_KEYS: Record<string, string> = {
@@ -135,7 +156,7 @@ interface WeatherData {
 export default function TravelGuideScreen() {
   const { t } = useTranslation();
   const router = useRouter();
-  const { profile, isLoggedIn } = useApp();
+  const { isLoggedIn } = useApp();
   const confirm = useConfirm();
 
   const [activeTab, setActiveTab] = useState<'leads' | 'upload' | 'planning' | 'weather' | 'safety'>('leads');
@@ -218,6 +239,7 @@ export default function TravelGuideScreen() {
       void fetchReels(guide.id);
       void fetchLiveStatus(guide.id);
       void fetchLeads(guide.id);
+      void fetchBookings();
       void fetchSafetyData();
       void fetchLiveWeather(guide.id);
     } catch (e) {
@@ -269,6 +291,33 @@ export default function TravelGuideScreen() {
       toast(errorToastMessage(e, t('travelGuide.applyFailed')), 'error');
     } finally {
       setApplying(false);
+    }
+  };
+
+  const fetchBookings = async () => {
+    try {
+      const res = await apiService.getIncomingGuideBookings();
+      if (res) setBookings(res);
+    } catch (e) {
+      logger.warn('[TravelGuide] Fetch incoming bookings failed:', e);
+    }
+  };
+
+  const decideBooking = async (
+    bookingId: string,
+    status: 'CONFIRMED' | 'CANCELLED' | 'COMPLETED',
+  ) => {
+    setDecidingBookingId(bookingId);
+    try {
+      await apiService.updateGuideBookingStatus(bookingId, status);
+      toast(t(BOOKING_DONE_LABEL_KEYS[status]), 'success');
+      await fetchBookings();
+      if (guideProfile) await fetchEarnings(guideProfile.id);
+    } catch (e) {
+      logger.warn('[TravelGuide] Booking decision failed:', e);
+      toast(errorToastMessage(e, t('travelGuide.bookingDecisionFailed')), 'error');
+    } finally {
+      setDecidingBookingId(null);
     }
   };
 
@@ -532,30 +581,50 @@ export default function TravelGuideScreen() {
   }, [isBroadcasting, guideProfile]);
 
   const [leads, setLeads] = useState<GuideLead[]>([]);
-  // 'QUOTE_SENT' isn't a real JoinRequestStatus — there's no quote/response
-  // field on that model (see the note above), so this stays a purely local
-  // "did I click send" marker rather than overwriting the lead's real status.
-  const [quotedLeadIds, setQuotedLeadIds] = useState<Set<string>>(new Set());
+  const [sendingQuoteFor, setSendingQuoteFor] = useState<string | null>(null);
+  // Bookings travellers have requested against this guide's packages.
+  // GET /bookings/incoming has existed all along with nothing calling it,
+  // so a request could arrive and the guide had no way to answer it - which
+  // is also why no booking ever reached CONFIRMED and the earnings panel
+  // could only ever read zero.
+  const [bookings, setBookings] = useState<IncomingGuideBooking[]>([]);
+  const [decidingBookingId, setDecidingBookingId] = useState<string | null>(null);
 
-  const handleSendQuote = (leadId: string) => {
-    const quoteVal = quoteInputs[leadId] || '';
-    if (!quoteVal.trim() || isNaN(parseFloat(quoteVal))) {
-      toast('Invalid Quote — Please enter a valid numeric quote amount in ₹.', 'error');
+  // This used to add the lead id to a local Set and toast "your bid has
+  // been sent to the traveler. They will be notified immediately." No
+  // endpoint existed, nothing was stored, and nobody was notified. The
+  // quote now persists and the organizer gets a real notification; whether
+  // a lead has been quoted comes back on the lead itself, so it survives
+  // leaving the screen.
+  const handleSendQuote = async (lead: GuideLead) => {
+    if (!guideProfile) return;
+    const raw = (quoteInputs[lead.id] || '').trim();
+    const amount = Number(raw);
+    if (!raw || !Number.isFinite(amount) || amount <= 0) {
+      toast(t('travelGuide.quoteInvalid'), 'error');
       return;
     }
 
-    setQuotedLeadIds((prev) => new Set(prev).add(leadId));
-    toast(`Quote Sent Successfully! — Your bid of ₹${quoteVal} has been sent to the traveler. They will be notified immediately.`, 'success');
-    setQuoteInputs((prev) => ({ ...prev, [leadId]: '' }));
-    setSelectedLeadId(null);
+    setSendingQuoteFor(lead.id);
+    try {
+      await apiService.sendGuideQuote(guideProfile.id, { tripId: lead.tripId, amount });
+      toast(t('travelGuide.quoteSent', { amount: formatINR(amount) }), 'success');
+      setQuoteInputs((prev) => ({ ...prev, [lead.id]: '' }));
+      setSelectedLeadId(null);
+      await fetchLeads(guideProfile.id);
+    } catch (e) {
+      logger.warn('[TravelGuide] Send quote failed:', e);
+      toast(t('travelGuide.quoteFailed'), 'error');
+    } finally {
+      setSendingQuoteFor(null);
+    }
   };
 
   // Filtered Leads
-  const filteredLeads = leads.filter(
-    (l) =>
-      l.tripName.toLowerCase().includes(searchLeadQuery.toLowerCase()) ||
-      l.applicantName.toLowerCase().includes(searchLeadQuery.toLowerCase()),
-  );
+  const filteredLeads = leads.filter((l) => {
+    const q = searchLeadQuery.toLowerCase();
+    return l.tripName.toLowerCase().includes(q) || l.destination.toLowerCase().includes(q);
+  });
 
   // ────────────────────────────────────────────────────────
   // TABS 2: UPLOAD STORIES & REELS STATE
@@ -1048,11 +1117,8 @@ export default function TravelGuideScreen() {
                 <View>
                   <Text style={styles.walletLabel}>{t('travelGuide.totalWalletBalance')}</Text>
                   <View style={styles.amountRow}>
-                    <Text style={styles.rupeeSign}>₹</Text>
                     <Text style={styles.walletBalance}>
-                      {earnings
-                        ? earnings.walletBalance.toLocaleString('en-IN')
-                        : profile.walletBalance.toLocaleString('en-IN')}
+                      {formatINR(earnings?.walletBalance, { fallback: t('common.notAvailable') })}
                     </Text>
                   </View>
                 </View>
@@ -1071,13 +1137,10 @@ export default function TravelGuideScreen() {
                 <View style={styles.statBox}>
                   <Text style={styles.statLabel}>{t('travelGuide.rating')}</Text>
                   <Text style={[styles.statValue, { color: C.amberGlow }]}>
-                    {/* guideProfile always exists here — this tab only
-                        renders once guideStatus === 'ready'. A brand-new
-                        profile's real rating is 5.0 (prisma/schema.prisma's
-                        own default, the same "no reviews yet" convention
-                        Uber/Airbnb use), not a fabricated "4.9" standing in
-                        for it. */}
-                    {guideProfile?.rating.toFixed(1) ?? '—'} ★
+                    {/* Null until a real review exists. The column used to
+                        default to 5.0, so a brand-new unverified guide was
+                        shown top marks they had not earned. */}
+                    {guideProfile?.rating != null ? `${guideProfile.rating.toFixed(1)} ★` : t('travelGuide.noRatingYet')}
                   </Text>
                 </View>
                 <View style={styles.statBoxVerticalDivider} />
@@ -1115,6 +1178,63 @@ export default function TravelGuideScreen() {
               </View>
             </LinearGradient>
 
+            {/* Booking requests from travellers */}
+            {bookings.length > 0 && (
+              <View style={styles.bookingsBlock}>
+                <Text style={styles.subTitle}>{t('travelGuide.bookingRequests')}</Text>
+                {bookings.map((b) => {
+                  const busy = decidingBookingId === b.id;
+                  return (
+                    <View key={b.id} style={styles.bookingCard}>
+                      <View style={styles.bookingHeaderRow}>
+                        <Avatar uri={b.travellerAvatar} name={b.travellerName} size={34} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.bookingName} numberOfLines={1}>
+                            {b.travellerName}
+                          </Text>
+                          <Text style={styles.bookingMeta}>
+                            {t('travelGuide.bookingTravelDate', { date: formatDateShort(b.travelDate) })}
+                          </Text>
+                        </View>
+                        <Text style={styles.bookingAmount}>{formatINR(b.amount)}</Text>
+                      </View>
+
+                      {b.status === 'PENDING' ? (
+                        <View style={styles.bookingActions}>
+                          <Button
+                            label={t('travelGuide.declineBooking')}
+                            variant="secondary"
+                            size="sm"
+                            disabled={busy}
+                            onPress={() => void decideBooking(b.id, 'CANCELLED')}
+                          />
+                          <Button
+                            label={t('travelGuide.confirmBooking')}
+                            size="sm"
+                            loading={busy}
+                            onPress={() => void decideBooking(b.id, 'CONFIRMED')}
+                          />
+                        </View>
+                      ) : b.status === 'CONFIRMED' ? (
+                        <View style={styles.bookingActions}>
+                          <Button
+                            label={t('travelGuide.markCompleted')}
+                            size="sm"
+                            loading={busy}
+                            onPress={() => void decideBooking(b.id, 'COMPLETED')}
+                          />
+                        </View>
+                      ) : (
+                        <Text style={styles.bookingMeta}>
+                          {t(BOOKING_STATUS_LABEL_KEYS[b.status] ?? 'travelGuide.bookingStatusPending')}
+                        </Text>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+
             {/* Tourist Customers Lead Search */}
             <View style={styles.leadHeader}>
               <View>
@@ -1150,30 +1270,47 @@ export default function TravelGuideScreen() {
 
             {filteredLeads.map((lead) => {
               const isSelected = selectedLeadId === lead.id;
-              const hasQuote = quotedLeadIds.has(lead.id);
+              // Server truth, not a local Set that died on unmount.
+              const existingQuote = lead.quote;
+              const isSending = sendingQuoteFor === lead.id;
 
               return (
                 <View key={lead.id} style={[styles.leadCard, isSelected && styles.leadCardSelected]}>
                   {isSelected && <View style={styles.activeBorderGlow} />}
                   <View style={styles.leadHeaderRow}>
-                    {/* A GuideLead is a JoinRequest row — no applicant avatar
-                        on that model, so this is a generic placeholder
-                        rather than a made-up photo URL. */}
+                    {/* A lead is a trip that needs a guide, not a person.
+                        It used to show the name and photo of whoever had
+                        asked to join — travellers who had never contacted
+                        this guide. */}
                     <View style={[styles.avatarBorder, styles.leadAvatarPlaceholder]}>
-                      <Users size={16} color={C.textSec} />
+                      <MapPin size={16} color={C.textSec} />
                     </View>
                     <View style={styles.leadInfo}>
-                      <Text style={styles.leadName}>{lead.applicantName}</Text>
+                      <Text style={styles.leadName} numberOfLines={1}>
+                        {lead.tripName}
+                      </Text>
                       <View style={styles.leadDestinationRow}>
                         <MapPin size={11} color={C.green} />
                         <Text style={styles.leadDestination} numberOfLines={1}>
-                          {lead.tripName}
+                          {lead.destination}
                         </Text>
                       </View>
                     </View>
                     <View style={styles.leadRight}>
-                      <Text style={styles.leadDays}>{t(LEAD_STATUS_LABEL_KEYS[lead.status] ?? 'travelGuide.statusPending')}</Text>
+                      <Text style={styles.leadDays}>
+                        {t('travelGuide.leadDays', { count: lead.durationDays })}
+                      </Text>
                     </View>
+                  </View>
+
+                  <View style={styles.leadMetaRow}>
+                    <Text style={styles.leadMetaItem}>
+                      {t('travelGuide.leadGroupSize', { count: lead.groupSize })}
+                    </Text>
+                    <Text style={styles.leadMetaItem}>
+                      {t('travelGuide.leadInterested', { count: lead.interestedCount })}
+                    </Text>
+                    <Text style={styles.leadMetaItem}>{formatINR(lead.budget)}</Text>
                   </View>
 
                   {/* Toggle Detailed Lead quote input */}
@@ -1197,25 +1334,38 @@ export default function TravelGuideScreen() {
                           keyboardType="numeric"
                           value={quoteInputs[lead.id] || ''}
                           onChangeText={(text) => setQuoteInputs({ ...quoteInputs, [lead.id]: text })}
+                          editable={!isSending}
                         />
                         <TouchableOpacity
-                          style={styles.sendQuoteBtn}
-                          onPress={() => handleSendQuote(lead.id)}
+                          style={[styles.sendQuoteBtn, isSending && styles.sendQuoteBtnDisabled]}
+                          onPress={() => void handleSendQuote(lead)}
+                          disabled={isSending}
                           activeOpacity={0.8}
                           accessibilityRole="button"
+                          accessibilityState={{ disabled: isSending }}
                           accessibilityLabel={t('travelGuide.submitQuote')}
                         >
-                          <Text style={styles.sendQuoteBtnText}>{t('travelGuide.submitQuote')}</Text>
+                          {isSending ? (
+                            <ActivityIndicator size="small" color={C.bg} />
+                          ) : (
+                            <Text style={styles.sendQuoteBtnText}>{t('travelGuide.submitQuote')}</Text>
+                          )}
                         </TouchableOpacity>
                       </View>
                     </View>
                   ) : (
                     <View style={styles.leadActionRow}>
-                      <Text style={styles.dateLabel}>{t('travelGuide.requestedOn', { date: formatDate(lead.createdAt) })}</Text>
-                      {hasQuote ? (
+                      <Text style={styles.dateLabel}>
+                        {t('travelGuide.leadDeparts', { date: formatDate(lead.startDate) })}
+                      </Text>
+                      {existingQuote ? (
                         <View style={styles.quoteSentTag}>
-                          <CheckCircle size={11} color={C.greenGlow} />
-                          <Text style={styles.quoteSentTagText}>{t('travelGuide.quoteSent')}</Text>
+                          <CheckCircle size={11} color={QUOTE_STATUS_COLORS[existingQuote.status]} />
+                          <Text style={styles.quoteSentTagText}>
+                            {t(QUOTE_STATUS_LABEL_KEYS[existingQuote.status], {
+                              amount: formatINR(existingQuote.amount),
+                            })}
+                          </Text>
                         </View>
                       ) : (
                         <TouchableOpacity
@@ -1426,7 +1576,9 @@ export default function TravelGuideScreen() {
                     id: r.id,
                     type: 'REEL' as const,
                     title: r.caption || t('travelGuide.travelReelVlogFallback'),
-                    image: r.thumbnailUrl || 'https://images.unsplash.com/photo-1548013146-72479768bada?w=300',
+                    // A reel with no thumbnail has none; the tile renders a
+                    // placeholder rather than a stock photo of somewhere else.
+                    image: r.thumbnailUrl,
                     location: undefined,
                     likes: r.likesCount,
                     date: formatDateShort(r.createdAt),
@@ -1435,7 +1587,7 @@ export default function TravelGuideScreen() {
                 : activeMedia
               ).map((media) => (
                 <View key={media.id} style={styles.uploadCardItem}>
-                  <Image source={{ uri: media.image }} style={styles.uploadCardImg} />
+                  <CoverImage uri={media.image} name={media.title} style={styles.uploadCardImg} />
                   <View style={styles.uploadCardOverlay}>
                     <View style={styles.badgeCategory}>
                       <Text style={styles.badgeCategoryText}>
@@ -1815,7 +1967,7 @@ export default function TravelGuideScreen() {
                   {budgetBreakdown && (
                     <View style={styles.budgetResultCard}>
                       <Text style={styles.budgetResultTitle}>{t('travelGuide.totalTripBudget')}</Text>
-                      <Text style={styles.budgetResultAmount}>₹{budgetBreakdown.total.toLocaleString('en-IN')}</Text>
+                      <Text style={styles.budgetResultAmount}>{formatINR(budgetBreakdown.total)}</Text>
 
                       <Text style={styles.budgetResultSubtitle}>{t('travelGuide.expenseBreakdown')}</Text>
                       {Object.entries(budgetBreakdown.percentages).map(([name, pct]) => (
@@ -2514,6 +2666,33 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     borderRadius: 20,
+  },
+  bookingsBlock: { gap: 10, marginBottom: 18 },
+  bookingCard: {
+    backgroundColor: C.card,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 12,
+    gap: 10,
+  },
+  bookingHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  bookingName: { fontSize: 13.5, fontWeight: '700', color: C.text },
+  bookingMeta: { fontSize: 11.5, color: C.textMuted },
+  bookingAmount: { fontSize: 14, fontWeight: '800', color: C.amberText },
+  bookingActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
+  leadMetaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 8,
+  },
+  leadMetaItem: {
+    fontSize: 11,
+    color: C.textSec,
+  },
+  sendQuoteBtnDisabled: {
+    opacity: 0.6,
   },
   leadAvatarPlaceholder: {
     alignItems: 'center',

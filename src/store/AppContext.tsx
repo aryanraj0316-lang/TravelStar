@@ -1,4 +1,5 @@
 import { safeStorage } from '@/services/storage';
+import type { Money } from '@/lib/money';
 import { logger } from '@/lib/logger';
 import { registerForPushNotifications, unregisterPushNotifications } from '@/lib/push';
 import { toast, errorToastMessage } from '@/lib/feedback';
@@ -74,7 +75,12 @@ export interface Trip {
   cities: string[];
   startDate: string;
   endDate: string;
-  budget: number;
+  durationDays: number;
+  // Money crosses the wire as a string (docs/CONVENTIONS.md §3). This was
+  // typed `number` while every Trip row arrived with a string, so anything
+  // calling .toLocaleString on it silently hit String.prototype and
+  // rendered the digits ungrouped.
+  budget: Money;
   availableSeats: number;
   totalSeats: number;
   meetingPoint: string;
@@ -84,7 +90,7 @@ export interface Trip {
   cabIncluded?: boolean;
   privacy: 'PUBLIC' | 'PRIVATE' | 'INVITE_ONLY';
   membersCount: number;
-  coverImage?: string;
+  coverImage?: string | null;
   category?: string;
   travelStyle?: string;
   coordinates?: { latitude: number; longitude: number; name: string }[];

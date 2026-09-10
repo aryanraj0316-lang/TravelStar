@@ -78,9 +78,13 @@ export default function OnboardingScreen() {
   const [scrollX] = useState(() => new Animated.Value(0));
 
   // 3 independent hovering float animations for the 3 trip cards on slide 1
-  const hoverAnim1 = useRef(new Animated.Value(0)).current;
-  const hoverAnim2 = useRef(new Animated.Value(0)).current;
-  const hoverAnim3 = useRef(new Animated.Value(0)).current;
+  // useState, not useRef().current, so these are read as values rather
+  // than refs during render - `.interpolate()` below runs in the render
+  // body, which react-hooks/refs (correctly) rejects for a ref. Matches
+  // scrollX above.
+  const [hoverAnim1] = useState(() => new Animated.Value(0));
+  const [hoverAnim2] = useState(() => new Animated.Value(0));
+  const [hoverAnim3] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
     const loop1 = Animated.loop(

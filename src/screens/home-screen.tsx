@@ -84,6 +84,7 @@ const roles: { value: UserRole; labelKey: string; subKey: string; Icon: typeof G
 
 const quickAccessItems: { labelKey: string; Icon: typeof MapPin; isNew: boolean; route: Href }[] = [
   { labelKey: 'home.quickNearby', Icon: MapPin, isNew: false, route: '/nearby-trips' },
+  { labelKey: 'home.quickFindGuide', Icon: Map, isNew: true, route: '/find-guides' },
   { labelKey: 'home.quickBookings', Icon: CalendarCheck, isNew: false, route: '/bookings' },
   { labelKey: 'home.quickBudgetTracker', Icon: Wallet, isNew: true, route: '/budget-tracker' },
 ];
@@ -1111,6 +1112,16 @@ function TrendingDestinationsBase({ isFocused }: { isFocused: boolean }) {
 
 // ─── Stories / feed rail ────────────────────────────────────────────
 
+/**
+ * What to call a feed tile. A reel carries no location and may carry no
+ * caption - the server used to fill both in with the literal strings
+ * 'Guide Tour' and 'Travel Reel', so every reel in the rail claimed to be
+ * somewhere it was not. Falls back to the author, then to a plain label.
+ */
+function feedItemLabel(item: FeedItem, t: (key: string) => string): string {
+  return item.location || item.title || item.authorName || t('home.untitledFeedItem');
+}
+
 function StoriesRailBase({
   avatarUri,
   onAddStory,
@@ -1238,7 +1249,7 @@ function StoriesRailBase({
             router.push({ pathname: '/stories', params: { id: item.id } });
           }}
           accessibilityRole="button"
-          accessibilityLabel={t('home.storyLabel', { location: item.location || item.title })}
+          accessibilityLabel={t('home.storyLabel', { location: feedItemLabel(item, t) })}
         >
           <View style={styles.storyRing}>
             {item.coverImg ? (
@@ -1250,7 +1261,7 @@ function StoriesRailBase({
             )}
           </View>
           <Text style={styles.storyName} numberOfLines={2}>
-            {item.location || item.title}
+            {feedItemLabel(item, t)}
           </Text>
         </TouchableOpacity>
       ))}

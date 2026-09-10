@@ -1,4 +1,5 @@
 import { Trip, useApp } from '@/store/AppContext';
+import { parseMoney } from '@/lib/money';
 import { logger } from '@/lib/logger';
 import { toast, errorToastMessage } from '@/lib/feedback';
 import { apiService } from '@/services/api';
@@ -49,7 +50,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { eventBus } from '@/services/event-bus';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
-import { ScreenEmpty, ScreenError, ScreenLoading } from '@/components/ui';
+import { CoverImage, ScreenEmpty, ScreenError, ScreenLoading } from '@/components/ui';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/lib/i18n';
 
@@ -209,10 +210,6 @@ function TripResultCard({
   const displayMeeting = trip.meetingPoint;
   const displayDate = formatTripDate(trip.startDate);
   const badge = getCategoryBadge(trip);
-  // Use coverImage from DB, fallback to generic scenic photo
-  const imageUri =
-    trip.coverImage || 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=600&q=80';
-  const imageSource = typeof imageUri === 'string' ? { uri: imageUri } : imageUri;
 
   return (
     <TouchableOpacity
@@ -234,7 +231,7 @@ function TripResultCard({
       )}
       {/* Left side: Image */}
       <View style={styles.tripImageContainer}>
-        <Image source={imageSource} style={styles.tripImage} />
+        <CoverImage uri={trip.coverImage} name={trip.name} style={styles.tripImage} />
         {/* Subtle dark vignette overlay to make borders darker and enhance readability */}
         <LinearGradient
           colors={['rgba(0, 0, 0, 0.65)', 'rgba(0, 0, 0, 0.1)', 'rgba(0, 0, 0, 0.75)']}
@@ -617,8 +614,10 @@ function SearchScreen() {
       return true;
     })
     .sort((a, b) => {
-      const priceA = a.budget;
-      const priceB = b.budget;
+      // budget is Money (a string over the wire), so it has to be parsed
+      // before it can be compared numerically.
+      const priceA = parseMoney(a.budget) ?? 0;
+      const priceB = parseMoney(b.budget) ?? 0;
 
       if (sortOption === 'price_low') {
         return priceA - priceB;

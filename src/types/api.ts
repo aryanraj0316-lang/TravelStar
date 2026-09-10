@@ -287,14 +287,15 @@ export interface GuideProfile {
   dailyRate: Money;
   /** Only an admin action can set VERIFIED (§2.6). */
   verifiedStatus: VerificationStatus;
-  rating: number;
+  /** Null until a real review exists — it used to default to 5.0. */
+  rating: number | null;
   createdAt: IsoDateTime;
 }
 
 export interface GuideEarnings {
   range: 'week' | 'month' | 'year';
   walletBalance: Money;
-  totalEarnings: number;
+  totalEarnings: Money;
   completedTripsCount: number;
   /** Scoped to this guide — it used to be a global count (§5.7). */
   activeLeadsCount: number;
@@ -340,13 +341,123 @@ export interface GuideReelInput {
   caption?: string;
 }
 
+export interface GuideQuoteOnLead {
+  id: string;
+  amount: Money;
+  status: QuoteStatus;
+  message: string | null;
+}
+
+/**
+ * A lead is a public trip going somewhere this guide lists as expertise —
+ * a demand signal, not a person. It used to be built from JoinRequest rows
+ * and carried the full name and photo of every traveller who had asked to
+ * join a matching trip, none of whom had any relationship with the guide.
+ */
 export interface GuideLead {
   id: string;
   tripId: string;
   tripName: string;
-  applicantName: string;
-  status: JoinRequestStatus;
+  destination: string;
+  cities: string[];
+  groupSize: number;
+  seatsFilled: number;
+  interestedCount: number;
+  durationDays: number;
+  budget: Money;
+  startDate: string;
+  description: string | null;
+  /** This guide's own standing bid, so the button reflects server truth. */
+  quote: GuideQuoteOnLead | null;
+}
+
+export type QuoteStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED';
+
+export interface GuideQuoteInput {
+  tripId: string;
+  amount: number;
+  message?: string;
+}
+
+/** A quote as the guide who sent it sees it. */
+export interface SentGuideQuote {
+  id: string;
+  tripId: string;
+  tripName: string;
+  destination: string;
+  startDate: string;
+  amount: Money;
+  message: string | null;
+  status: QuoteStatus;
+}
+
+/** A quote as the trip organizer who received it sees it. */
+export interface ReceivedGuideQuote {
+  id: string;
+  guideProfileId: string;
+  guideName: string | null;
+  guideAvatar: string | null;
+  guideVerifiedStatus: VerificationStatus;
+  guideRating: number | null;
+  guideReviewCount: number;
+  guideExperienceYears: number;
+  guideLanguages: string[];
+  amount: Money;
+  message: string | null;
+  status: QuoteStatus;
   createdAt: IsoDateTime;
+}
+
+/**
+ * A guide as a traveller browsing for one sees them. Every field is real or
+ * explicitly absent: this row used to name any guide without a filled-in
+ * profile "Verified Guide", score every unrated guide 5.0, and invent
+ * languages and expertise the guide had never claimed.
+ */
+export interface PublicGuide {
+  id: string;
+  name: string | null;
+  avatar: string | null;
+  verifiedStatus: VerificationStatus;
+  rating: number | null;
+  reviewCount: number;
+  languages: string[];
+  dailyRate: Money;
+  hourlyRate: Money;
+  expertise: string[];
+  experienceYears: number;
+}
+
+// ── Guide bookings ─────────────────────────────────────────────────
+// v1 has no payment provider, so a booking is a request the guide accepts
+// or declines. paymentStatus stays PENDING throughout; nothing claims money
+// moved.
+
+export type BookingStatus = 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'COMPLETED';
+
+export interface GuideBooking {
+  id: string;
+  userId: string;
+  guideProfileId: string | null;
+  travelDate: string;
+  bookingDate: IsoDateTime;
+  amount: Money;
+  status: BookingStatus;
+  paymentStatus: string;
+}
+
+export interface MyGuideBooking extends GuideBooking {
+  guideName: string;
+}
+
+export interface IncomingGuideBooking extends GuideBooking {
+  travellerName: string;
+  travellerAvatar: string | null;
+}
+
+export interface CreateBookingInput {
+  packageId: string;
+  travelDate: string;
 }
 
 export interface LiveLocation {
@@ -385,11 +496,13 @@ export interface EmergencyContact {
 export interface FeedItem {
   id: string;
   sourceType: 'STORY' | 'REEL';
-  title: string;
+  /** A reel with no caption has no title. */
+  title: string | null;
   content: string;
   coverImg?: string | null;
   videoUrl?: string | null;
-  authorName: string;
+  /** Null when the author has not filled in a profile name. */
+  authorName: string | null;
   authorAvatar?: string | null;
   location?: string | null;
   likesCount: number;

@@ -1,3 +1,13 @@
+import { CoverImage, ScreenEmpty, ScreenError, ScreenLoading } from '@/components/ui';
+import { formatDateRange } from '@/lib/datetime';
+import { errorToastMessage, toast } from '@/lib/feedback';
+import { logger } from '@/lib/logger';
+import { syncBadgeCount } from '@/lib/push';
+import { queryKeys } from '@/lib/query-keys';
+import { sectionState } from '@/lib/query-state';
+import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
+import type { AppNotification } from '@/types/api';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import ArrowLeft from 'lucide-react-native/icons/arrow-left';
@@ -13,21 +23,9 @@ import Navigation from 'lucide-react-native/icons/navigation';
 import Plane from 'lucide-react-native/icons/plane';
 import ShieldAlert from 'lucide-react-native/icons/shield-alert';
 import Waves from 'lucide-react-native/icons/waves-horizontal';
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiService } from '../services/api';
-import type { AppNotification } from '@/types/api';
-import { useApp } from '../store/AppContext';
-import { logger } from '@/lib/logger';
-import { syncBadgeCount } from '@/lib/push';
-import { toast, errorToastMessage } from '@/lib/feedback';
-import { queryKeys } from '@/lib/query-keys';
-import { sectionState } from '@/lib/query-state';
-import { formatDateRange } from '@/lib/datetime';
-import { ScreenEmpty, ScreenError, ScreenLoading } from '@/components/ui';
 import {
-  Image,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -36,7 +34,8 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
+import { apiService } from '../services/api';
+import { useApp } from '../store/AppContext';
 
 
 
@@ -318,255 +317,260 @@ export default function NotificationsScreen() {
       ) : isFeedEmpty ? (
         <ScreenEmpty title={t('notifications.emptyTitle')} message={t('notifications.emptyMessage')} />
       ) : (
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.feedScrollContent}
-      >
-        {/* ── JOIN REQUEST ACCEPTANCES ── */}
-        {(activeTab === 'ALL' || activeTab === 'TRIPS') && notifications.some(n => n.category === 'JOIN_ACCEPTED' || n.category === 'CHAT_ADDED') && (
-          <View style={styles.sectionBlock}>
-            <View style={styles.sectionHeaderRow}>
-              <View style={styles.sectionHeaderTitleGroup}>
-                <CheckCheck size={18} color={C.green} />
-                <Text style={styles.sectionHeaderTitle}>{t('notifications.groupChatInvitations')}</Text>
-              </View>
-            </View>
-
-            {notifications.filter(n => n.category === 'JOIN_ACCEPTED' || n.category === 'CHAT_ADDED').map((notif) => (
-              <TouchableOpacity
-                key={notif.id}
-                style={[
-                  styles.hazardCard,
-                  {
-                    backgroundColor: notif.unread ? 'rgba(16, 185, 129, 0.08)' : C.card,
-                    borderColor: notif.unread ? 'rgba(16, 185, 129, 0.3)' : C.border,
-                  }
-                ]}
-                activeOpacity={0.85}
-                onPress={async () => {
-                  try {
-                    await apiService.markNotificationRead(notif.id);
-                  } catch (e) {
-                    logger.warn('[Notifications] Mark-read failed:', e);
-                  }
-                  await refetchNotifications();
-                  checkUnreadNotifications();
-                  void syncBadgeCount();
-                  if (notif.chatRoomId) {
-                    setActiveRoomId(notif.chatRoomId);
-                    // Navigating to a tab route that's already an ancestor
-                    // in the stack (the (tabs) group always is) pops back to
-                    // it rather than pushing a duplicate — this both closes
-                    // the notifications screen and focuses the chat tab.
-                    router.navigate('/chat');
-                  }
-                }}
-                accessibilityRole="button"
-                accessibilityLabel={notif.title}
-                accessibilityHint={t('notifications.tapToOpenGroupChat')}
-              >
-                <View style={styles.hazardHeader}>
-                  <View style={styles.hazardCategoryGroup}>
-                    <View style={[styles.hazardIconWrap, { backgroundColor: C.green }]}>
-                      <CheckCheck size={14} color={C.white} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.hazardTitle}>{notif.title}</Text>
-                      <Text style={styles.hazardLocation} numberOfLines={2}>{notif.content}</Text>
-                    </View>
-                  </View>
-                  <View style={styles.hazardMetaRight}>
-                    {notif.unread && (
-                      <View style={[styles.severityPill, { backgroundColor: C.green }]}>
-                        <Text style={styles.severityText}>{t('notifications.new')}</Text>
-                      </View>
-                    )}
-                    <Text style={styles.hazardTime}>{notif.time}</Text>
-                  </View>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.feedScrollContent}
+        >
+          {/* ── JOIN REQUEST ACCEPTANCES ── */}
+          {(activeTab === 'ALL' || activeTab === 'TRIPS') && notifications.some(n => n.category === 'JOIN_ACCEPTED' || n.category === 'CHAT_ADDED') && (
+            <View style={styles.sectionBlock}>
+              <View style={styles.sectionHeaderRow}>
+                <View style={styles.sectionHeaderTitleGroup}>
+                  <CheckCheck size={18} color={C.green} />
+                  <Text style={styles.sectionHeaderTitle}>{t('notifications.groupChatInvitations')}</Text>
                 </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-                  <Text style={{ fontSize: 12, color: C.blue, fontWeight: '700' }}>{t('notifications.tapToOpenGroupChat')}</Text>
-                  <ChevronRight size={12} color={C.blue} style={{ marginLeft: 2 }} />
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-
-        {/* ── REAL-TIME HAZARD & DISASTER NEWS ALERTS ── */}
-        {(activeTab === 'ALL' || activeTab === 'HAZARDS') && (
-          <View style={styles.sectionBlock}>
-            <View style={styles.sectionHeaderRow}>
-              <View style={styles.sectionHeaderTitleGroup}>
-                <ShieldAlert size={18} color={C.red} />
-                <Text style={styles.sectionHeaderTitle}>{t('notifications.liveHazardAlerts')}</Text>
               </View>
-              <View style={styles.liveNewsChip}>
-                <View style={styles.liveNewsDot} />
-                <Text style={styles.liveNewsText}>{t('notifications.newsWire')}</Text>
-              </View>
-            </View>
 
-            {mappedHazards.length === 0 && (
-              <Text style={{ fontSize: 12, color: C.textMuted }}>{t('notifications.noActiveHazards')}</Text>
-            )}
-
-            {mappedHazards.map((alert) => {
-              const IconComponent = alert.icon;
-              return (
-                <View
-                  key={alert.id}
+              {notifications.filter(n => n.category === 'JOIN_ACCEPTED' || n.category === 'CHAT_ADDED').map((notif) => (
+                <TouchableOpacity
+                  key={notif.id}
                   style={[
                     styles.hazardCard,
-                    { backgroundColor: alert.bgColor, borderColor: alert.borderColor },
+                    {
+                      backgroundColor: notif.unread ? 'rgba(16, 185, 129, 0.08)' : C.card,
+                      borderColor: notif.unread ? 'rgba(16, 185, 129, 0.3)' : C.border,
+                    }
                   ]}
+                  activeOpacity={0.85}
+                  onPress={async () => {
+                    try {
+                      await apiService.markNotificationRead(notif.id);
+                    } catch (e) {
+                      logger.warn('[Notifications] Mark-read failed:', e);
+                    }
+                    await refetchNotifications();
+                    checkUnreadNotifications();
+                    void syncBadgeCount();
+                    if (notif.chatRoomId) {
+                      setActiveRoomId(notif.chatRoomId);
+                      // Navigating to a tab route that's already an ancestor
+                      // in the stack (the (tabs) group always is) pops back to
+                      // it rather than pushing a duplicate — this both closes
+                      // the notifications screen and focuses the chat tab.
+                      router.navigate('/chat');
+                    }
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={notif.title}
+                  accessibilityHint={t('notifications.tapToOpenGroupChat')}
                 >
                   <View style={styles.hazardHeader}>
                     <View style={styles.hazardCategoryGroup}>
-                      <View style={[styles.hazardIconWrap, { backgroundColor: alert.borderColor }]}>
-                        <IconComponent size={14} color={C.white} />
+                      <View style={[styles.hazardIconWrap, { backgroundColor: C.green }]}>
+                        <CheckCheck size={14} color={C.white} />
                       </View>
-                      <View>
-                        <Text style={styles.hazardTitle}>{alert.title}</Text>
-                        <Text style={styles.hazardLocation}>{alert.location}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.hazardTitle}>{notif.title}</Text>
+                        <Text style={styles.hazardLocation} numberOfLines={2}>{notif.content}</Text>
                       </View>
                     </View>
                     <View style={styles.hazardMetaRight}>
-                      <View style={[styles.severityPill, { backgroundColor: alert.iconColor }]}>
-                        <Text style={styles.severityText}>
-                          {t(SEVERITY_LABEL_KEYS[alert.severity] ?? 'notifications.severityAdvisory')}
-                        </Text>
-                      </View>
-                      <Text style={styles.hazardTime}>{alert.time}</Text>
+                      {notif.unread && (
+                        <View style={[styles.severityPill, { backgroundColor: C.green }]}>
+                          <Text style={styles.severityText}>{t('notifications.new')}</Text>
+                        </View>
+                      )}
+                      <Text style={styles.hazardTime}>{notif.time}</Text>
                     </View>
                   </View>
-
-                  <Text style={styles.hazardDesc}>{alert.desc}</Text>
-
-                  <View style={styles.hazardFooter}>
-                    <View style={styles.affectedRouteRow}>
-                      <Navigation size={12} color={C.textSec} />
-                      <Text style={styles.affectedRouteText}>
-                        {t('notifications.affected', { route: alert.affectedRoute })}
-                      </Text>
-                    </View>
-                    <TouchableOpacity
-                      style={styles.altRouteBtn}
-                      activeOpacity={0.8}
-                      hitSlop={{ top: 14, bottom: 14, left: 10, right: 10 }}
-                      accessibilityRole="button"
-                      accessibilityLabel={t('notifications.detourRoute')}
-                    >
-                      <Text style={styles.altRouteBtnText}>{t('notifications.detourRoute')}</Text>
-                      <ChevronRight size={12} color={alert.iconColor} />
-                    </TouchableOpacity>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                    <Text style={{ fontSize: 12, color: C.blue, fontWeight: '700' }}>{t('notifications.tapToOpenGroupChat')}</Text>
+                    <ChevronRight size={12} color={C.blue} style={{ marginLeft: 2 }} />
                   </View>
-                </View>
-              );
-            })}
-          </View>
-        )}
-
-        {/* ── ONGOING & UPCOMING TRIPS ── */}
-        {(activeTab === 'ALL' || activeTab === 'TRIPS') && activeTrips.length > 0 && (
-          <View style={styles.sectionBlock}>
-            <View style={styles.sectionHeaderRow}>
-              <View style={styles.sectionHeaderTitleGroup}>
-                <Plane size={18} color={C.blue} />
-                <Text style={styles.sectionHeaderTitle}>{t('notifications.myActiveTrips')}</Text>
-              </View>
+                </TouchableOpacity>
+              ))}
             </View>
+          )}
 
-            {activeTrips.map((trip) => (
-              <TouchableOpacity
-                key={trip.id}
-                style={styles.fullCardWrap}
-                activeOpacity={0.9}
-                onPress={() => {
-                  if (trip.status === 'ONGOING') {
-                    router.navigate('/map');
-                  } else if (trip.chatRoomId) {
-                    setActiveRoomId(trip.chatRoomId);
-                    router.navigate('/chat');
-                  }
-                }}
-                accessibilityRole="button"
-                accessibilityLabel={trip.name}
-                accessibilityHint={
-                  trip.status === 'ONGOING'
-                    ? t('notifications.trackLiveTrip')
-                    : trip.chatRoomId
-                      ? t('notifications.openTripChat')
-                      : t('notifications.viewTrip')
-                }
-              >
-                {/* Full Tourist Location Background Image */}
-                <Image source={{ uri: trip.coverImage }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                <LinearGradient
-                  colors={['rgba(10,12,22,0.45)', 'rgba(10,12,22,0.85)', 'rgba(10,12,22,0.96)']}
-                  locations={[0, 0.45, 1]}
-                  style={StyleSheet.absoluteFill}
-                />
+          {/* ── REAL-TIME HAZARD & DISASTER NEWS ALERTS ── */}
+          {(activeTab === 'ALL' || activeTab === 'HAZARDS') && (
+            <View style={styles.sectionBlock}>
+              <View style={styles.sectionHeaderRow}>
+                <View style={styles.sectionHeaderTitleGroup}>
+                  <ShieldAlert size={18} color={C.red} />
+                  <Text style={styles.sectionHeaderTitle}>{t('notifications.liveHazardAlerts')}</Text>
+                </View>
+                <View style={styles.liveNewsChip}>
+                  <View style={styles.liveNewsDot} />
+                  <Text style={styles.liveNewsText}>{t('notifications.newsWire')}</Text>
+                </View>
+              </View>
 
-                {/* Top Header Row: Status Badge + Countdown Timer */}
-                <View style={styles.tripCardHeader}>
+              {mappedHazards.length === 0 && (
+                <Text style={{ fontSize: 12, color: C.textMuted }}>{t('notifications.noActiveHazards')}</Text>
+              )}
+
+              {mappedHazards.map((alert) => {
+                const IconComponent = alert.icon;
+                return (
                   <View
+                    key={alert.id}
                     style={[
-                      styles.statusBadge,
-                      {
-                        backgroundColor:
-                          trip.status === 'ONGOING'
-                            ? 'rgba(16, 185, 129, 0.9)'
-                            : 'rgba(59, 130, 246, 0.9)',
-                      },
+                      styles.hazardCard,
+                      { backgroundColor: alert.bgColor, borderColor: alert.borderColor },
                     ]}
                   >
-                    <Text style={styles.statusBadgeText}>
-                      {t(TRIP_STATUS_LABEL_KEYS[trip.status] ?? 'bookings.statusUpcoming')}
-                    </Text>
+                    <View style={styles.hazardHeader}>
+                      <View style={styles.hazardCategoryGroup}>
+                        <View style={[styles.hazardIconWrap, { backgroundColor: alert.borderColor }]}>
+                          <IconComponent size={14} color={C.white} />
+                        </View>
+                        <View>
+                          <Text style={styles.hazardTitle}>{alert.title}</Text>
+                          <Text style={styles.hazardLocation}>{alert.location}</Text>
+                        </View>
+                      </View>
+                      <View style={styles.hazardMetaRight}>
+                        <View style={[styles.severityPill, { backgroundColor: alert.iconColor }]}>
+                          <Text style={styles.severityText}>
+                            {t(SEVERITY_LABEL_KEYS[alert.severity] ?? 'notifications.severityAdvisory')}
+                          </Text>
+                        </View>
+                        <Text style={styles.hazardTime}>{alert.time}</Text>
+                      </View>
+                    </View>
+
+                    <Text style={styles.hazardDesc}>{alert.desc}</Text>
+
+                    <View style={styles.hazardFooter}>
+                      <View style={styles.affectedRouteRow}>
+                        <Navigation size={12} color={C.textSec} />
+                        <Text style={styles.affectedRouteText}>
+                          {t('notifications.affected', { route: alert.affectedRoute })}
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.altRouteBtn}
+                        activeOpacity={0.8}
+                        hitSlop={{ top: 14, bottom: 14, left: 10, right: 10 }}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('notifications.detourRoute')}
+                      >
+                        <Text style={styles.altRouteBtnText}>{t('notifications.detourRoute')}</Text>
+                        <ChevronRight size={12} color={alert.iconColor} />
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                  {trip.status === 'UPCOMING' && <TripCountdownBadge targetDate={trip.startDate} />}
+                );
+              })}
+            </View>
+          )}
+
+          {/* ── ONGOING & UPCOMING TRIPS ── */}
+          {(activeTab === 'ALL' || activeTab === 'TRIPS') && activeTrips.length > 0 && (
+            <View style={styles.sectionBlock}>
+              <View style={styles.sectionHeaderRow}>
+                <View style={styles.sectionHeaderTitleGroup}>
+                  <Plane size={18} color={C.blue} />
+                  <Text style={styles.sectionHeaderTitle}>{t('notifications.myActiveTrips')}</Text>
                 </View>
+              </View>
 
-                {/* Main Card Content */}
-                <View style={styles.tripCardBody}>
-                  <Text style={styles.fullTripTitle}>{trip.name}</Text>
-                  <Text style={styles.fullTripRoute}>{trip.cities.join(' → ')}</Text>
+              {activeTrips.map((trip) => (
+                <TouchableOpacity
+                  key={trip.id}
+                  style={styles.fullCardWrap}
+                  activeOpacity={0.9}
+                  onPress={() => {
+                    if (trip.status === 'ONGOING') {
+                      router.navigate('/map');
+                    } else if (trip.chatRoomId) {
+                      setActiveRoomId(trip.chatRoomId);
+                      router.navigate('/chat');
+                    }
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={trip.name}
+                  accessibilityHint={
+                    trip.status === 'ONGOING'
+                      ? t('notifications.trackLiveTrip')
+                      : trip.chatRoomId
+                        ? t('notifications.openTripChat')
+                        : t('notifications.viewTrip')
+                  }
+                >
+                  {/* Full Tourist Location Background Image */}
+                  <CoverImage
+                    uri={trip.coverImage}
+                    name={trip.name}
+                    showInitial={false}
+                    style={StyleSheet.absoluteFill as never}
+                  />
+                  <LinearGradient
+                    colors={['rgba(10,12,22,0.45)', 'rgba(10,12,22,0.85)', 'rgba(10,12,22,0.96)']}
+                    locations={[0, 0.45, 1]}
+                    style={StyleSheet.absoluteFill}
+                  />
 
-                  <View style={styles.tripInfoRow}>
-                    <View style={styles.tripInfoItem}>
-                      <Calendar size={13} color={C.cyan} />
-                      <Text style={styles.tripInfoText}>
-                        {formatDateRange(trip.startDate, trip.endDate)}
+                  {/* Top Header Row: Status Badge + Countdown Timer */}
+                  <View style={styles.tripCardHeader}>
+                    <View
+                      style={[
+                        styles.statusBadge,
+                        {
+                          backgroundColor:
+                            trip.status === 'ONGOING'
+                              ? 'rgba(16, 185, 129, 0.9)'
+                              : 'rgba(59, 130, 246, 0.9)',
+                        },
+                      ]}
+                    >
+                      <Text style={styles.statusBadgeText}>
+                        {t(TRIP_STATUS_LABEL_KEYS[trip.status] ?? 'bookings.statusUpcoming')}
                       </Text>
                     </View>
-                    <View style={styles.tripInfoItem}>
-                      <MapPin size={13} color={C.green} />
-                      <Text style={styles.tripInfoText} numberOfLines={1}>
-                        {trip.meetingPoint}
+                    {trip.status === 'UPCOMING' && <TripCountdownBadge targetDate={trip.startDate} />}
+                  </View>
+
+                  {/* Main Card Content */}
+                  <View style={styles.tripCardBody}>
+                    <Text style={styles.fullTripTitle}>{trip.name}</Text>
+                    <Text style={styles.fullTripRoute}>{trip.cities.join(' → ')}</Text>
+
+                    <View style={styles.tripInfoRow}>
+                      <View style={styles.tripInfoItem}>
+                        <Calendar size={13} color={C.cyan} />
+                        <Text style={styles.tripInfoText}>
+                          {formatDateRange(trip.startDate, trip.endDate)}
+                        </Text>
+                      </View>
+                      <View style={styles.tripInfoItem}>
+                        <MapPin size={13} color={C.green} />
+                        <Text style={styles.tripInfoText} numberOfLines={1}>
+                          {trip.meetingPoint}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.trackItineraryBtn}>
+                      <Text style={styles.trackItineraryText}>
+                        {trip.status === 'ONGOING'
+                          ? t('notifications.trackLiveTrip')
+                          : trip.chatRoomId
+                            ? t('notifications.openTripChat')
+                            : t('notifications.viewTrip')}
                       </Text>
+                      <ChevronRight size={14} color={C.white} />
                     </View>
                   </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
 
-                  <View style={styles.trackItineraryBtn}>
-                    <Text style={styles.trackItineraryText}>
-                      {trip.status === 'ONGOING'
-                        ? t('notifications.trackLiveTrip')
-                        : trip.chatRoomId
-                          ? t('notifications.openTripChat')
-                          : t('notifications.viewTrip')}
-                    </Text>
-                    <ChevronRight size={14} color={C.white} />
-                  </View>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-
-        {/* Bottom Clearance */}
-        <View style={{ height: 60 }} />
-      </ScrollView>
+          {/* Bottom Clearance */}
+          <View style={{ height: 60 }} />
+        </ScrollView>
       )}
     </SafeAreaView>
   );

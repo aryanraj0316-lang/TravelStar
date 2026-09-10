@@ -1,4 +1,5 @@
 import { useApp, type Trip } from '@/store/AppContext';
+import { formatINR } from '@/lib/money';
 import { logger } from '@/lib/logger';
 import { apiService, type CreateTripInput } from '@/services/api';
 import { parseTransitMinutes } from '@/lib/transit-time';
@@ -72,7 +73,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import { eventBus } from '@/services/event-bus';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
-import { Input, ScreenEmpty } from '@/components/ui';
+import { CoverImage, Input, ScreenEmpty } from '@/components/ui';
 
 // Coordinates registry for Indian cities
 const CITY_COORDS: Record<string, { latitude: number; longitude: number }> = {
@@ -2126,7 +2127,7 @@ function CreateTripScreen() {
                           }}
                           activeOpacity={0.85}
                         >
-                          <Image source={{ uri: displayImage }} style={styles.creationCardImg} />
+                          <CoverImage uri={displayImage} name={trip.name} style={styles.creationCardImg} />
                           <View style={styles.creationCardInfo}>
                             <View style={styles.creationCardHeader}>
                               <Text style={styles.creationCardTitle} numberOfLines={1}>
@@ -2160,7 +2161,7 @@ function CreateTripScreen() {
                             <View style={styles.creationStatsRow}>
                               <View style={styles.creationStat}>
                                 <Text style={styles.creationStatLabel}>{t('createTrip.budgetLabel')}</Text>
-                                <Text style={styles.creationStatVal}>₹{trip.budget.toLocaleString('en-IN')}</Text>
+                                <Text style={styles.creationStatVal}>{formatINR(trip.budget)}</Text>
                               </View>
                               <View style={styles.creationStat}>
                                 <Text style={styles.creationStatLabel}>{t('createTrip.slotsLabel')}</Text>
@@ -2301,7 +2302,7 @@ function CreateTripScreen() {
                     <View style={styles.detailStatCell}>
                       <Text style={styles.detailStatLabel}>{t('createTrip.budgetCaps')}</Text>
                       <Text style={[styles.detailStatVal, { color: '#10B981' }]}>
-                        ₹{selectedCreation.budget.toLocaleString('en-IN')}
+                        {formatINR(selectedCreation.budget)}
                       </Text>
                     </View>
                     <View style={styles.detailStatCell}>
