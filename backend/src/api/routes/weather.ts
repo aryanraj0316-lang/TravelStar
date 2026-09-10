@@ -3,44 +3,27 @@ import { z } from 'zod';
 import prisma from '../../services/db';
 import { cached } from '../../lib/cache';
 import { logger } from '../../lib/logger';
+import { env } from '../../config/env';
 
 const router = Router();
 
 const FETCH_TIMEOUT_MS = 5000;
 
-interface OpenMeteoResponse {
-  current?: {
-    temperature_2m: number;
-    relative_humidity_2m: number;
-    weather_code: number;
-    wind_speed_10m: number;
-  };
+interface OpenWeatherMapResponse {
+  main?: { temp: number; humidity: number };
+  wind?: { speed: number };
+  weather?: { main: string; description: string }[];
 }
 
-// Map Open-Meteo WMO weather codes to human-readable conditions
-function mapWeatherCode(code: number): string {
-  if (code === 0) return 'Clear Sky';
-  if (code === 1) return 'Mainly Clear';
-  if (code === 2) return 'Partly Cloudy';
-  if (code === 3) return 'Overcast';
-  if (code >= 45 && code <= 48) return 'Foggy';
-  if (code >= 51 && code <= 55) return 'Drizzle';
-  if (code >= 56 && code <= 57) return 'Freezing Drizzle';
-  if (code >= 61 && code <= 65) return 'Rain';
-  if (code >= 66 && code <= 67) return 'Freezing Rain';
-  if (code >= 71 && code <= 77) return 'Snowfall';
-  if (code >= 80 && code <= 82) return 'Rain Showers';
-  if (code >= 85 && code <= 86) return 'Snow Showers';
-  if (code === 95) return 'Thunderstorm';
-  if (code >= 96 && code <= 99) return 'Thunderstorm with Hail';
-  return 'Unknown';
+function titleCase(s: string): string {
+  return s.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 type LiveWeather = { temp: string; condition: string; humidity: string; windSpeed: string };
 
-// Cache TTL for a live Open-Meteo reading. Weather does not move fast enough
-// for a shorter window to buy anything, and Open-Meteo's free tier is a
-// courtesy we should not spend one request per instance per call
+// Cache TTL for a live reading. Weather does not move fast enough for a
+// shorter window to buy anything, and a request budget — even a generous
+// one — is a courtesy we should not spend one call per instance per call
 // (docs/REMEDIATION.md §10). Keys round coordinates to ~1km so a moving
 // guide doesn't miss the cache on every GPS jitter.
 const WEATHER_CACHE_TTL_SECONDS = 10 * 60;
@@ -49,29 +32,42 @@ function weatherCacheKey(lat: number, lon: number): string {
   return `weather:live:${lat.toFixed(2)},${lon.toFixed(2)}`;
 }
 
-// Fetch live weather from Open-Meteo (free, no API key), cached — shared
-// across instances when REDIS_URL is set, per-process otherwise.
+// Fetch live weather from OpenWeatherMap, cached — shared across instances
+// when REDIS_URL is set, per-process otherwise.
 function fetchLiveWeather(lat: number, lon: number): Promise<LiveWeather | null> {
   return cached(weatherCacheKey(lat, lon), WEATHER_CACHE_TTL_SECONDS, () => fetchLiveWeatherUncached(lat, lon));
 }
 
-// Open-Meteo's free tier rate-limits by *caller IP*, not by API key — and on
-// a host like Render, that IP's recent request history includes every other
-// tenant sharing it, not just this app's own (deliberately light) traffic.
-// A 429 there is a real, recurring operating condition, not an outage to
-// retry through immediately. This backoff is global (not per-coordinate,
-// unlike the per-location cache above) because the limit is on the IP
-// making the call, not on which coordinates it asked about — hitting a
-// different lat/lon mid-backoff would otherwise just draw a second 429.
-let openMeteoBackoffUntil = 0;
+// Was Open-Meteo (free, keyless) until its rate limit — scoped to *caller
+// IP*, not to any account of ours — turned into a real, sustained outage:
+// on a host with a shared outbound IP, that limit is shared with every
+// other tenant's traffic too, not just this app's own. A key-gated provider
+// scopes the limit to this app's own account instead, which a shared IP
+// cannot exhaust on our behalf.
+//
+// Still worth backing off on 429/401 rather than retrying immediately —
+// this is a generous free tier (1M calls/month), but a misconfigured key or
+// a genuine burst is still a real operating condition, not one to hammer
+// through. Global (not per-coordinate, unlike the per-location cache above)
+// since any such limit is on the account making the call, not on which
+// coordinates it asked about.
+let backoffUntil = 0;
 const DEFAULT_BACKOFF_MS = 60 * 1000;
 const MAX_BACKOFF_MS = 5 * 60 * 1000;
 
+class WeatherNotConfiguredError extends Error {
+  constructor() {
+    super('OPENWEATHERMAP_API_KEY is not set.');
+    this.name = 'WeatherNotConfiguredError';
+  }
+}
+
 async function fetchLiveWeatherUncached(lat: number, lon: number): Promise<LiveWeather | null> {
-  if (Date.now() < openMeteoBackoffUntil) return null;
+  if (!env.OPENWEATHERMAP_API_KEY) throw new WeatherNotConfiguredError();
+  if (Date.now() < backoffUntil) return null;
 
   try {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&timezone=auto`;
+    const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&units=metric&appid=${env.OPENWEATHERMAP_API_KEY}`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     let response: Response;
@@ -81,30 +77,38 @@ async function fetchLiveWeatherUncached(lat: number, lon: number): Promise<LiveW
       clearTimeout(timeout);
     }
 
+    if (response.status === 401) {
+      // A freshly created OpenWeatherMap key can take up to ~2 hours to
+      // activate — this is a documented, expected transient state right
+      // after signup, not necessarily a wrong or revoked key.
+      logger.warn('[Weather] OpenWeatherMap returned 401 — a new key can take up to 2h to activate.');
+      return null;
+    }
     if (response.status === 429) {
       const retryAfterSeconds = Number(response.headers.get('retry-after'));
       const backoffMs =
         Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
           ? Math.min(retryAfterSeconds * 1000, MAX_BACKOFF_MS)
           : DEFAULT_BACKOFF_MS;
-      openMeteoBackoffUntil = Date.now() + backoffMs;
-      logger.warn(`[Weather] Open-Meteo rate-limited us; backing off ${Math.round(backoffMs / 1000)}s`);
+      backoffUntil = Date.now() + backoffMs;
+      logger.warn(`[Weather] OpenWeatherMap rate-limited us; backing off ${Math.round(backoffMs / 1000)}s`);
       return null;
     }
     if (!response.ok) return null;
 
-    const data = (await response.json()) as OpenMeteoResponse;
-    const current = data.current;
-    if (!current) return null;
+    const data = (await response.json()) as OpenWeatherMapResponse;
+    if (!data.main || !data.wind) return null;
 
+    const description = data.weather?.[0]?.description;
     return {
-      temp: `${Math.round(current.temperature_2m)}°C`,
-      condition: mapWeatherCode(current.weather_code),
-      humidity: `${current.relative_humidity_2m}%`,
-      windSpeed: `${Math.round(current.wind_speed_10m)} km/h`,
+      temp: `${Math.round(data.main.temp)}°C`,
+      condition: description ? titleCase(description) : (data.weather?.[0]?.main ?? 'Unknown'),
+      humidity: `${data.main.humidity}%`,
+      // OpenWeatherMap's `units=metric` gives wind speed in m/s, not km/h.
+      windSpeed: `${Math.round(data.wind.speed * 3.6)} km/h`,
     };
   } catch (err) {
-    logger.warn('[Weather] Open-Meteo fetch failed:', err);
+    logger.warn('[Weather] OpenWeatherMap fetch failed:', err);
     return null;
   }
 }
@@ -179,6 +183,11 @@ router.get('/live', async (req, res) => {
         fetchedAt: new Date().toISOString(),
       } });
   } catch (err) {
+    if (err instanceof WeatherNotConfiguredError) {
+      return res
+        .status(503)
+        .json({ ok: false, error: { code: 'WEATHER_UNAVAILABLE', message: 'Live weather is not available right now.' } });
+    }
     logger.error('[Weather] Live weather error:', err);
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve live weather' } });
   }

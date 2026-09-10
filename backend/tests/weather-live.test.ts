@@ -11,17 +11,17 @@ import app from '../src/app';
  * permanently stuck on "not available". These tests pin the two properties
  * the client depends on: the route is publicly browsable with no token
  * (the app is browse-before-login), and it validates its coordinates rather
- * than passing junk upstream to Open-Meteo.
+ * than passing junk upstream to the weather provider.
  *
  * The success path deliberately is not asserted here: it makes a real
- * outbound call to Open-Meteo, so pinning it would make this suite depend
+ * outbound call to OpenWeatherMap, so pinning it would make this suite depend
  * on a third party's uptime. The client renders <ScreenError> for any
  * non-200 from this route, which is the branch that matters.
  */
 describe('GET /api/v1/weather/live', () => {
   it('is publicly reachable with no token', async () => {
     const res = await request(app).get('/api/v1/weather/live?lat=28.61&lon=77.21');
-    // 200 with a reading, or 502 when Open-Meteo is unreachable. Never 401:
+    // 200 with a reading, or 502 when the upstream is unreachable. Never 401:
     // a logged-out visitor must be able to see local weather.
     expect(res.status).not.toBe(401);
     expect([200, 502]).toContain(res.status);

@@ -61,6 +61,16 @@ const envSchema = z.object({
   // project enables push security in its Expo dashboard, so it stays
   // optional and push works without it.
   EXPO_ACCESS_TOKEN: z.string().min(1).optional(),
+
+  // OpenWeatherMap (weather.ts). Replaces the earlier keyless Open-Meteo
+  // integration: Open-Meteo's free tier rate-limits by caller IP, and on a
+  // host with a shared outbound IP that limit is shared with every other
+  // tenant's traffic too, not just this app's own. A key-gated provider
+  // scopes the limit to this app's own account instead. Optional here (not
+  // required to boot) so the server still starts without it — weather.ts
+  // reports a clear "not configured" error at the point of use rather than
+  // crashing the whole process over one feature.
+  OPENWEATHERMAP_API_KEY: z.string().min(1).optional(),
 });
 
 function loadEnv() {
