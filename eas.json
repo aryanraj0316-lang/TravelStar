@@ -14,7 +14,7 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://staging-api.travelstar.app"
+        "EXPO_PUBLIC_API_URL": "https://travelstar.onrender.com"
       }
     },
     "production": {

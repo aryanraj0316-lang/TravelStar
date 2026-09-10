@@ -1,5 +1,6 @@
 import { io, type Socket } from 'socket.io-client';
-import { getHostUrl, refreshAccessToken } from './api';
+import { clearTokens, getHostUrl, refreshAccessToken } from './api';
+import { eventBus } from './event-bus';
 import { secureStorage } from './secureStorage';
 import { logger } from '@/lib/logger';
 import type { Message, SOSAlert } from '@/store/AppContext';
@@ -115,7 +116,19 @@ class SocketService {
         // gives the next attempt a real token to pick up via the auth
         // callback, rather than retrying the same dead one for 10 attempts.
         if (err?.message === 'UNAUTHORIZED') {
-          void refreshAccessToken();
+          void refreshAccessToken().then((newToken) => {
+            if (newToken) return;
+            // Refresh itself failed — the session is dead (an expired
+            // refresh token, or an account removed since the token was
+            // issued), not just the access token. Retrying can never fix
+            // that, so without this the socket reconnects every ~1s with
+            // the same dead token and logs this same warning forever, with
+            // nothing telling the user they need to sign in again. Mirrors
+            // api.ts's REST 401 handler, which already does exactly this
+            // for the same condition.
+            void clearTokens();
+            eventBus.emit('sessionExpired', undefined);
+          });
         }
       });
     } catch (e) {
