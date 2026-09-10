@@ -31,6 +31,7 @@ import Globe from 'lucide-react-native/icons/globe';
 import ImageIcon from 'lucide-react-native/icons/image';
 import LifeBuoy from 'lucide-react-native/icons/life-buoy';
 import LogOut from 'lucide-react-native/icons/log-out';
+import Mail from 'lucide-react-native/icons/mail';
 import MapPin from 'lucide-react-native/icons/map-pin';
 import Pencil from 'lucide-react-native/icons/pencil';
 import Phone from 'lucide-react-native/icons/phone';
@@ -619,6 +620,15 @@ function ProfileScreen() {
                   <CheckCircle size={17} color="#38BDF8" fill="#38BDF8" style={{ marginLeft: 6 }} />
                 )}
               </View>
+
+              {Boolean(profile.email) && (
+                <View style={styles.userEmailRow}>
+                  <Mail size={13} color="#93C5FD" strokeWidth={2} />
+                  <Text style={styles.userEmailText} numberOfLines={1} ellipsizeMode="middle">
+                    {profile.email}
+                  </Text>
+                </View>
+              )}
 
               {/* Elite Membership Badge */}
               <View style={styles.badgeRow}>
@@ -1695,6 +1705,21 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#FFFFFF',
     letterSpacing: -0.3,
+  },
+  userEmailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    marginTop: 4,
+    paddingHorizontal: 16,
+    maxWidth: 280,
+  },
+  userEmailText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: 'rgba(255, 255, 255, 0.85)',
+    letterSpacing: -0.1,
   },
   badgeRow: {
     marginTop: 6,
