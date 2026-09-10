@@ -31,9 +31,10 @@ ENV NODE_ENV=production
 WORKDIR /app
 
 # dumb-init for correct signal forwarding (graceful shutdown in server.ts).
-RUN apt-get update \
- && apt-get install -y --no-install-recommends dumb-init \
- && rm -rf /var/lib/apt/lists/*
+# openssl so Prisma's runtime platform detection (ldconfig/openssl version)
+# can actually find libssl on this image instead of guessing the wrong
+# engine target.
+RUN apt-get update && apt-get install -y --no-install-recommends dumb-init openssl && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
@@ -45,6 +46,8 @@ EXPOSE 5000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||5000)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+ENV PRISMA_CLI_QUERY_ENGINE_TYPE=binary
 
 ENTRYPOINT ["dumb-init", "--"]
 CMD ["node", "dist/server.js"]
