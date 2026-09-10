@@ -12,6 +12,30 @@ export type DeviceLocationResult =
   | { ok: true; latitude: number; longitude: number }
   | { ok: false; reason: 'PERMISSION_DENIED' | 'UNAVAILABLE' };
 
+// getCurrentPositionAsync has no built-in timeout — on a device or emulator
+// with no GPS fix available (very common for an emulator with no mock
+// location configured), it can hang indefinitely, leaving a caller's UI on
+// its loading state forever. Every read below is raced against this so a
+// bad fix always surfaces as a real, retryable failure instead of a spinner
+// that never resolves.
+const POSITION_TIMEOUT_MS = 10_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Timed out after ${ms}ms`)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
 /** As above, plus the "we have not asked yet" case only the passive read below can report. */
 export type PassiveDeviceLocationResult =
   | { ok: true; latitude: number; longitude: number }
@@ -37,9 +61,10 @@ export async function getDeviceLocationIfPermitted(): Promise<PassiveDeviceLocat
       return { ok: false, reason: canAskAgain ? 'PERMISSION_NOT_REQUESTED' : 'PERMISSION_DENIED' };
     }
 
-    const position = await Location.getCurrentPositionAsync({
-      accuracy: Location.Accuracy.Balanced,
-    });
+    const position = await withTimeout(
+      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+      POSITION_TIMEOUT_MS,
+    );
 
     return { ok: true, latitude: position.coords.latitude, longitude: position.coords.longitude };
   } catch (e) {
@@ -55,9 +80,10 @@ export async function getCurrentDeviceLocation(): Promise<DeviceLocationResult> 
       return { ok: false, reason: 'PERMISSION_DENIED' };
     }
 
-    const position = await Location.getCurrentPositionAsync({
-      accuracy: Location.Accuracy.High,
-    });
+    const position = await withTimeout(
+      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
+      POSITION_TIMEOUT_MS,
+    );
 
     return { ok: true, latitude: position.coords.latitude, longitude: position.coords.longitude };
   } catch (e) {
