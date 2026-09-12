@@ -197,12 +197,37 @@ const TRENDING_WEATHER_SLIDE_MS = 3200;
  * slides in from off-screen to replace it, so the swap underneath is
  * invisible once the sliding layer finishes covering the base.
  */
+const CAROUSEL_SLOT_OFFSET = 260;
+
+function slotOffscreenOffset(dir: number): { x: number; y: number } {
+  if (dir === 0) return { x: -CAROUSEL_SLOT_OFFSET, y: 0 };
+  if (dir === 2) return { x: CAROUSEL_SLOT_OFFSET, y: 0 };
+  if (dir === 1) return { x: 0, y: -CAROUSEL_SLOT_OFFSET };
+  return { x: 0, y: CAROUSEL_SLOT_OFFSET };
+}
+
 function TrendingWeatherCardBase({ isFocused }: { isFocused: boolean }) {
   const { t } = useTranslation();
-  const [baseIndex, setBaseIndex] = useState(0);
-  const [slidingIndex, setSlidingIndex] = useState<number | null>(null);
-  const slideAnim = useState(() => new Animated.Value(0))[0];
-  const baseIndexRef = useRef(0);
+  // Two permanently-mounted card slots instead of conditionally mounting a
+  // "sliding" one each cycle. Mounting a fresh expo-image Image always costs
+  // one native round trip before its bitmap paints — even when the URL is
+  // already cache-resident — which is what read as a once-per-swap flicker.
+  // Keeping both slots alive for the component's whole lifetime means only
+  // their `source` prop ever changes, and that change always happens while
+  // the slot is fully hidden (positioned off-card and z-ordered underneath
+  // the visible one), so there is nothing left to flicker.
+  const [slotContentIdx, setSlotContentIdx] = useState<[number, number]>([0, 1]);
+  const [topSlot, setTopSlot] = useState<0 | 1>(0);
+  const slot0X = useState(() => new Animated.Value(0))[0];
+  const slot0Y = useState(() => new Animated.Value(0))[0];
+  const slot1X = useState(() => new Animated.Value(CAROUSEL_SLOT_OFFSET))[0];
+  const slot1Y = useState(() => new Animated.Value(0))[0];
+  const slotAnims = useState(() => [
+    { x: slot0X, y: slot0Y },
+    { x: slot1X, y: slot1Y },
+  ])[0];
+  const topSlotRef = useRef<0 | 1>(0);
+  const visibleContentIdxRef = useRef(0);
   const isAnimatingRef = useRef(false);
 
   const weatherQuery = useQuery({
@@ -218,10 +243,8 @@ function TrendingWeatherCardBase({ isFocused }: { isFocused: boolean }) {
   const destinationCount = destinations?.length ?? 0;
 
   useEffect(() => {
-    // Warm expo-image's cache for every card up front, so the slide-in
-    // animation always finds an already-decoded image instead of racing a
-    // fresh network/decode against the 600ms slide — that race, not the
-    // slide itself, was the source of the once-per-swap flicker.
+    // Warm expo-image's cache for every card up front too, so even a slot's
+    // very first (off-screen) content swap has nothing left to fetch.
     for (const d of destinations ?? []) {
       void ExpoImage.prefetch(d.image);
     }
@@ -233,39 +256,47 @@ function TrendingWeatherCardBase({ isFocused }: { isFocused: boolean }) {
       if (isAnimatingRef.current) return;
       isAnimatingRef.current = true;
 
-      const nextIdx = (baseIndexRef.current + 1) % destinationCount;
-      slideAnim.setValue(0);
-      setSlidingIndex(nextIdx);
+      const mover = topSlotRef.current === 0 ? 1 : 0;
+      const nextIdx = (visibleContentIdxRef.current + 1) % destinationCount;
+      const dir = nextIdx % 4;
+      const { x, y } = slotOffscreenOffset(dir);
 
-      Animated.timing(slideAnim, {
-        toValue: 1,
-        duration: 600,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start(({ finished }) => {
+      // The mover slot is currently hidden underneath the visible one, so
+      // repositioning and re-pointing it at the next destination here is
+      // invisible — only the animation below is ever seen.
+      slotAnims[mover].x.setValue(x);
+      slotAnims[mover].y.setValue(y);
+      setSlotContentIdx((prev) => {
+        const next: [number, number] = [...prev];
+        next[mover] = nextIdx;
+        return next;
+      });
+      topSlotRef.current = mover;
+      setTopSlot(mover);
+
+      Animated.parallel([
+        Animated.timing(slotAnims[mover].x, {
+          toValue: 0,
+          duration: 600,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(slotAnims[mover].y, {
+          toValue: 0,
+          duration: 600,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]).start(({ finished }) => {
         if (finished) {
-          baseIndexRef.current = nextIdx;
-          setBaseIndex(nextIdx);
-          setSlidingIndex(null);
+          visibleContentIdxRef.current = nextIdx;
         }
         isAnimatingRef.current = false;
       });
     }, TRENDING_WEATHER_SLIDE_MS);
 
     return () => clearInterval(interval);
-  }, [destinationCount, isFocused, slideAnim]);
-
-  // Slide direction alternates by index so consecutive transitions don't
-  // all arrive from the same edge.
-  const dir = slidingIndex !== null ? slidingIndex % 4 : 0;
-  const translateX = slideAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: dir === 0 ? [-260, 0] : dir === 2 ? [260, 0] : [0, 0],
-  });
-  const translateY = slideAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: dir === 1 ? [-260, 0] : dir === 3 ? [260, 0] : [0, 0],
-  });
+  }, [destinationCount, isFocused, slotAnims]); // slotAnims' identity is stable for the component's lifetime
 
   if (weatherState.kind === 'loading') {
     return (
@@ -352,8 +383,10 @@ function TrendingWeatherCardBase({ isFocused }: { isFocused: boolean }) {
     );
   }
 
-  const baseItem = destinations[baseIndex % destinations.length]!;
-  const slidingItem = slidingIndex !== null ? destinations[slidingIndex % destinations.length] : null;
+  const slotItems: [TrendingWeatherDestination, TrendingWeatherDestination] = [
+    destinations[slotContentIdx[0] % destinations.length]!,
+    destinations[slotContentIdx[1] % destinations.length]!,
+  ];
 
   const renderCard = (item: TrendingWeatherDestination) => {
     const GlyphIcon = WEATHER_GLYPH_ICON[weatherGlyph(item.condition)];
@@ -390,12 +423,20 @@ function TrendingWeatherCardBase({ isFocused }: { isFocused: boolean }) {
 
   return (
     <View style={[styles.weatherCard, styles.weatherCardPhoto]}>
-      <View style={StyleSheet.absoluteFill}>{renderCard(baseItem)}</View>
-      {slidingItem && (
-        <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ translateX }, { translateY }], zIndex: 10 }]}>
-          {renderCard(slidingItem)}
+      {([0, 1] as const).map((slot) => (
+        <Animated.View
+          key={slot}
+          style={[
+            StyleSheet.absoluteFill,
+            {
+              transform: [{ translateX: slotAnims[slot].x }, { translateY: slotAnims[slot].y }],
+              zIndex: topSlot === slot ? 2 : 1,
+            },
+          ]}
+        >
+          {renderCard(slotItems[slot])}
         </Animated.View>
-      )}
+      ))}
     </View>
   );
 }
