@@ -141,6 +141,7 @@ export interface Message {
   avatar?: string | null;
   content: string;
   timestamp: string;
+  createdAt?: string;
   mediaType?: 'NONE' | 'IMAGE' | 'VOICE';
   mediaUrl?: string;
   roomId?: string;
@@ -204,7 +205,7 @@ interface AppContextType {
   cancelJoinRequest: (tripId: string) => void;
   guides: Guide[];
   messages: Message[];
-  sendMessage: (content: string, mediaType?: 'NONE' | 'IMAGE' | 'VOICE') => void;
+  sendMessage: (content: string, mediaType?: 'NONE' | 'IMAGE' | 'VOICE', mediaUrl?: string) => void;
   setTyping: (isTyping: boolean) => void;
   typingUser: { roomId: string; userId: string; userName: string; userAvatar?: string | null; isTyping: boolean } | null;
   sosAlerts: SOSAlert[];
@@ -809,8 +810,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const sendMessage = useCallback(
-    (content: string, mediaType: 'NONE' | 'IMAGE' | 'VOICE' = 'NONE') => {
-      socketService.sendMessage(activeRoomId || 'trip-1', content, mediaType);
+    (content: string, mediaType: 'NONE' | 'IMAGE' | 'VOICE' = 'NONE', mediaUrl?: string) => {
+      socketService.sendMessage(activeRoomId || 'trip-1', content, mediaType, mediaUrl);
     },
     [activeRoomId],
   );

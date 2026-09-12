@@ -161,12 +161,13 @@ class SocketService {
   // senderName/senderRole are no longer sent: the server derives both from
   // the verified sender (socket.data.userId → their real profile), never
   // from client-supplied display fields.
-  sendMessage(chatRoomId: string, content: string, mediaType: string = 'NONE') {
+  sendMessage(chatRoomId: string, content: string, mediaType: string = 'NONE', mediaUrl?: string | null) {
     if (this.socket) {
       this.socket.emit('sendMessage', {
         chatRoomId,
         content,
         mediaType,
+        mediaUrl: mediaUrl || undefined,
       });
     }
   }

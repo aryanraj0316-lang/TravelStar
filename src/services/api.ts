@@ -696,6 +696,16 @@ export const apiService = {
     });
   },
 
+  async updateTrip(
+    tripId: string,
+    updates: { name?: string; description?: string; meetingPoint?: string; budget?: number }
+  ): Promise<Trip | null> {
+    return request<Trip>(`/trips/${tripId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+  },
+
   async joinTrip(tripId: string): Promise<Trip | null> {
     return request<Trip>(`/trips/${tripId}/join`, {
       method: 'POST',
@@ -748,6 +758,17 @@ export const apiService = {
     return request(`/trips/${tripId}/itinerary`, {
       method: 'POST',
       body: JSON.stringify(day),
+    });
+  },
+
+  async updateTripItineraryDay(
+    tripId: string,
+    dayId: string,
+    updates: { title?: string; plan?: string }
+  ): Promise<{ id: string; day: number; title: string; plan: string }> {
+    return request(`/trips/${tripId}/itinerary/${dayId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
     });
   },
 

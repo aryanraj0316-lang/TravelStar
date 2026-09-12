@@ -660,6 +660,55 @@ router.post('/:id/join', async (req, res) => {
   }
 });
 
+const updateTripSchema = z.object({
+  name: z.string().trim().min(1).max(200).optional(),
+  description: z.string().trim().max(2000).optional(),
+  meetingPoint: z.string().trim().min(1).max(300).optional(),
+  budget: z.coerce.number().positive().optional(),
+});
+
+// Update Trip (organizer only)
+router.patch('/:id', async (req, res) => {
+  const tripId = req.params.id;
+  const userId = requireUserId(req);
+  const parsed = updateTripSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      ok: false,
+      error: { code: 'VALIDATION_FAILED', message: 'Invalid trip update parameters.' },
+    });
+  }
+
+  try {
+    const trip = await prisma.trip.findUnique({
+      where: { id: tripId },
+      include: TRIP_INCLUDE,
+    });
+    if (!trip) {
+      return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found' } });
+    }
+    if (trip.creatorId !== userId) {
+      return res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'Only the organizer can edit this trip.' } });
+    }
+
+    const updated = await prisma.trip.update({
+      where: { id: tripId },
+      data: {
+        ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
+        ...(parsed.data.description !== undefined ? { description: parsed.data.description } : {}),
+        ...(parsed.data.meetingPoint !== undefined ? { meetingPoint: parsed.data.meetingPoint } : {}),
+        ...(parsed.data.budget !== undefined ? { budget: parsed.data.budget } : {}),
+      },
+      include: TRIP_INCLUDE,
+    });
+
+    return res.status(200).json({ ok: true, data: mapTrip(updated, userId) });
+  } catch (err) {
+    logger.error('[Trips] Update trip error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to update trip.' } });
+  }
+});
+
 // AI Recommendation generator — now scored against real trips instead of the
 // permanently-empty in-memory array (docs/REMEDIATION.md §5.3).
 const recommendationSchema = z.object({
@@ -1214,6 +1263,48 @@ router.delete('/:tripId/itinerary/:dayId', async (req, res) => {
   } catch (err) {
     logger.error('[Trips] Delete itinerary day error:', err);
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to delete the day' } });
+  }
+});
+
+router.patch('/:tripId/itinerary/:dayId', async (req, res) => {
+  const userId = requireUserId(req);
+  const { tripId, dayId } = req.params;
+  const parsed = createItineraryDaySchema.partial().safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      ok: false,
+      error: { code: 'VALIDATION_FAILED', message: 'Invalid itinerary update data.' },
+    });
+  }
+  try {
+    const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { creatorId: true } });
+    if (!trip) {
+      return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found' } });
+    }
+    if (trip.creatorId !== userId) {
+      return res
+        .status(403)
+        .json({ ok: false, error: { code: 'FORBIDDEN', message: 'Only the trip organizer can edit the itinerary.' } });
+    }
+
+    const day = await prisma.tripItineraryDay.findUnique({ where: { id: dayId } });
+    if (!day || day.tripId !== tripId) {
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'That itinerary day is gone.' } });
+    }
+
+    const updated = await prisma.tripItineraryDay.update({
+      where: { id: dayId },
+      data: {
+        ...(parsed.data.title !== undefined ? { title: parsed.data.title } : {}),
+        ...(parsed.data.plan !== undefined ? { plan: parsed.data.plan } : {}),
+      },
+      select: { id: true, day: true, title: true, plan: true },
+    });
+
+    return res.status(200).json({ ok: true, data: updated });
+  } catch (err) {
+    logger.error('[Trips] Update itinerary day error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to update the day' } });
   }
 });
 

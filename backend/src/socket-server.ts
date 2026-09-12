@@ -77,14 +77,15 @@ export function createSocketServer(httpServer: HttpServer): Server {
 
     const sendMessageSchema = z.object({
       chatRoomId: z.string().min(1),
-      content: z.string().min(1).max(4000),
+      content: z.string().max(4000).default(''),
       mediaType: z.enum(['NONE', 'IMAGE', 'VOICE']).optional(),
+      mediaUrl: z.string().nullable().optional(),
     });
 
     socket.on('sendMessage', async (raw: unknown) => {
       const parsed = sendMessageSchema.safeParse(raw);
       if (!parsed.success) return;
-      const { chatRoomId, content, mediaType } = parsed.data;
+      const { chatRoomId, content, mediaType, mediaUrl } = parsed.data;
 
       try {
         // Never accept sender identity from the payload — the socket's own
@@ -99,7 +100,13 @@ export function createSocketServer(httpServer: HttpServer): Server {
 
         const [savedMsg, sender, chatRoom] = await Promise.all([
           prisma.message.create({
-            data: { chatRoomId, senderId: userId, content, mediaType: mediaType || 'NONE' },
+            data: {
+              chatRoomId,
+              senderId: userId,
+              content: content || '',
+              mediaType: mediaType || 'NONE',
+              mediaUrl: mediaUrl || null,
+            },
           }),
           prisma.user.findUnique({ where: { id: userId }, include: { profile: true } }),
           prisma.chatRoom.findUnique({ where: { id: chatRoomId }, include: { trip: true } }),
@@ -118,8 +125,10 @@ export function createSocketServer(httpServer: HttpServer): Server {
           senderRole,
           senderAvatar,
           avatar: senderAvatar,
-          content: savedMsg.content,
-          timestamp: new Date(savedMsg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          content: savedMsg.content || '',
+          mediaUrl: savedMsg.mediaUrl,
+          timestamp: savedMsg.createdAt.toISOString(),
+          createdAt: savedMsg.createdAt.toISOString(),
           mediaType: savedMsg.mediaType || 'NONE',
         };
 

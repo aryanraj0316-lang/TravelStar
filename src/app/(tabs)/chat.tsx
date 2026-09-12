@@ -5,7 +5,7 @@ import { getCurrentDeviceLocation } from '@/lib/device-location';
 import { uploadFileToUrl } from '@/lib/upload';
 import { recordConsent } from '@/lib/consent';
 import { formatINR } from '@/lib/money';
-import { formatDateRange } from '@/lib/datetime';
+import { formatDateRange, formatTime } from '@/lib/datetime';
 import { useRouter, type ErrorBoundaryProps } from 'expo-router';
 import { RouteErrorFallback } from '@/components/route-error-fallback';
 import AlertCircle from 'lucide-react-native/icons/circle-alert';
@@ -28,6 +28,7 @@ import LogOut from 'lucide-react-native/icons/log-out';
 import MapPin from 'lucide-react-native/icons/map-pin';
 import MessageSquare from 'lucide-react-native/icons/message-square';
 import MoreVertical from 'lucide-react-native/icons/ellipsis-vertical';
+import Pencil from 'lucide-react-native/icons/pencil';
 import Pin from 'lucide-react-native/icons/pin';
 import Plus from 'lucide-react-native/icons/plus';
 import Search from 'lucide-react-native/icons/search';
@@ -46,6 +47,7 @@ import {
   Animated,
   Image,
   Keyboard,
+  LayoutAnimation,
   PanResponder,
   Platform,
   FlatList,
@@ -54,6 +56,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  UIManager,
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -74,6 +77,10 @@ try {
   ImagePicker = null;
 }
 
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
 // Color Palette matching search theme exactly
 
 // Custom Type for Rich Messages
@@ -84,6 +91,7 @@ interface CustomMessage {
   avatar: string;
   content: string;
   timestamp: string;
+  createdAt?: string | Date;
   isMe: boolean;
   senderId?: string;
   type?: 'text' | 'image' | 'voice' | 'poll' | 'expense' | 'location' | 'sos';
@@ -322,6 +330,23 @@ function findMemberAvatar(
   return '';
 }
 
+function formatChatTime(rawTime: string | number | Date | null | undefined): string {
+  if (!rawTime) return '';
+  const str = String(rawTime).trim();
+  if (str === 'Just Now' || str === 'Now') return str;
+
+  // Format via datetime.ts formatTime using device's resolved local timezone
+  const formatted = formatTime(rawTime);
+  if (formatted && formatted !== '—') return formatted;
+
+  // Fallback: If rawTime is already a pre-formatted time like "6:54 pm" or "18:54"
+  if (str.includes(':')) {
+    return str;
+  }
+
+  return str;
+}
+
 // One chat message. Extracted from an inline `.map()` so the message list can
 // be virtualized (the FlatList below) and so the React Compiler
 // (app.json > experiments.reactCompiler) can memoize bubbles independently —
@@ -535,21 +560,28 @@ function MessageBubble({
               <Text style={styles.voiceDuration}>0:04</Text>
             </View>
           ) : msg.type === 'image' ? (
-            <View style={styles.imageCard}>
-              <Image source={{ uri: msg.mediaUrl }} style={styles.imageMedia} />
-              <View style={styles.imageOverlayTextRow}>
-                <Text style={styles.imageCardDesc} numberOfLines={1}>
-                  {msg.content}
-                </Text>
-                <TouchableOpacity
-                  style={styles.imageDownloadBtn}
-                  hitSlop={{ top: 11, bottom: 11, left: 11, right: 11 }}
-                  accessibilityRole="button"
-                  accessibilityLabel={t('chat.downloadImage')}
-                >
-                  <Download size={14} color="#FFF" />
-                </TouchableOpacity>
+            <View style={[styles.imageCard, msg.isMe ? styles.imageCardMe : styles.imageCardOther]}>
+              <View style={styles.imageMediaWrapper}>
+                <Image
+                  source={{ uri: msg.mediaUrl || (msg.content && !msg.content.includes('📷') ? msg.content : undefined) }}
+                  style={styles.imageMedia}
+                  resizeMode="cover"
+                />
+                <View style={styles.imageTimeBadge}>
+                  <Text style={styles.imageTimeText}>{formatChatTime(msg.createdAt || msg.timestamp)}</Text>
+                </View>
               </View>
+              {msg.content &&
+              msg.content !== '📷 Photo' &&
+              !msg.content.includes('📷') &&
+              msg.content !== 'Photo' &&
+              msg.content.trim().length > 0 ? (
+                <View style={styles.imageCaptionRow}>
+                  <Text style={styles.imageCardDesc} numberOfLines={3}>
+                    {msg.content}
+                  </Text>
+                </View>
+              ) : null}
             </View>
           ) : msg.type === 'sos' ? (
             <View style={styles.sosCardAlert}>
@@ -631,7 +663,7 @@ function MessageBubble({
                       </View>
                     )}
                     <Text style={styles.bubbleTextMe}>{displayedContent}</Text>
-                    <Text style={styles.timestampTextMe}>{msg.timestamp}</Text>
+                    <Text style={styles.timestampTextMe}>{formatChatTime(msg.createdAt || msg.timestamp)}</Text>
                   </LinearGradient>
                 </TouchableOpacity>
               ) : (
@@ -692,7 +724,7 @@ function MessageBubble({
                         </Text>
                       </TouchableOpacity>
                     )}
-                    <Text style={styles.timestampText}>{msg.timestamp}</Text>
+                    <Text style={styles.timestampText}>{formatChatTime(msg.createdAt || msg.timestamp)}</Text>
                   </LinearGradient>
                 </TouchableOpacity>
               )}
@@ -798,11 +830,23 @@ function ChatScreen() {
   const selectedRoomId = activeRoomId;
   const setSelectedRoomId = setActiveRoomId;
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isTripDetailsExpanded, setIsTripDetailsExpanded] = useState(false);
+  const [isTripDetailsExpanded, setIsTripDetailsExpanded] = useState(true);
 
-  // Tab Selection
+  // Tab Selection (Itinerary & Members only)
   const confirm = useConfirm();
-  const [activeTab, setActiveTab] = useState<'chat' | 'itinerary' | 'members'>('chat');
+  const [overlayTab, setOverlayTab] = useState<'itinerary' | 'members'>('itinerary');
+  const [canEditItinerary, setCanEditItinerary] = useState(true);
+
+  // Trip Editing State
+  const [isEditTripModalOpen, setIsEditTripModalOpen] = useState(false);
+  const [tripEditForm, setTripEditForm] = useState({ name: '', meetingPoint: '', budget: '' });
+  const [isSavingTrip, setIsSavingTrip] = useState(false);
+
+  // Itinerary Day Editing State
+  const [itineraryModalMode, setItineraryModalMode] = useState<'NONE' | 'ADD' | 'EDIT'>('NONE');
+  const [editingDayId, setEditingDayId] = useState<string | null>(null);
+  const [itineraryDayForm, setItineraryDayForm] = useState({ title: '', plan: '' });
+  const [isSavingDay, setIsSavingDay] = useState(false);
 
   // Load message history from DB
   useEffect(() => {
@@ -830,9 +874,11 @@ function ChatScreen() {
                 senderRole: m.senderRole,
                 avatar: isMe ? (profile.avatar || messageAvatar) : messageAvatar,
                 content: m.content,
-                timestamp: m.timestamp,
+                timestamp: m.createdAt || m.timestamp,
+                createdAt: m.createdAt || m.timestamp,
                 isMe: isMe,
                 type: m.mediaType === 'IMAGE' ? 'image' : m.mediaType === 'VOICE' ? 'voice' : 'text',
+                mediaUrl: m.mediaUrl || undefined,
               };
             });
 
@@ -848,10 +894,15 @@ function ChatScreen() {
               const otherRooms = prevRooms.filter((r) => r.id !== selectedRoomId);
 
               if (existingRoom) {
+                const isMe = lastMsg.senderName === profile.name;
+                const senderLabel = isMe ? 'You' : lastMsg.senderName;
+                const displayContent = lastMsg.mediaType === 'IMAGE'
+                  ? (lastMsg.content && !lastMsg.content.includes('📷') ? lastMsg.content : 'Photo')
+                  : lastMsg.content;
                 const updatedRoom: ChatRoom = {
                   ...existingRoom,
-                  latestMessage: `${lastMsg.senderName === profile.name ? 'You' : lastMsg.senderName}: ${lastMsg.content}`,
-                  latestTime: lastMsg.timestamp,
+                  latestMessage: `${senderLabel}: ${displayContent}`,
+                  latestTime: lastMsg.createdAt || lastMsg.timestamp,
                   unreadCount: 0,
                   lastMessageAt: nowIso,
                 };
@@ -876,7 +927,7 @@ function ChatScreen() {
   // room switch, not a correctness issue.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setActiveTab('chat');
+    setOverlayTab('itinerary');
   }, [activeRoomId]);
 
   // Sync real-time socket messages from context to component's map state.
@@ -915,7 +966,12 @@ function ChatScreen() {
 
         const isMe = latestMsg.senderId === profile.id || !!(profile.name && latestMsg.senderName === profile.name);
         const dupIdx = isMe
-          ? roomMsgs.findIndex((m) => m.isMe && m.content === latestMsg.content && m.id.startsWith('msg-'))
+          ? roomMsgs.findIndex(
+              (m) =>
+                m.isMe &&
+                (m.content === latestMsg.content || (m.type === 'image' && latestMsg.mediaType === 'IMAGE')) &&
+                m.id.startsWith('msg-'),
+            )
           : -1;
 
         if (dupIdx >= 0) {
@@ -923,7 +979,9 @@ function ChatScreen() {
           updatedMsgs[dupIdx] = {
             ...updatedMsgs[dupIdx],
             id: latestMsg.id,
-            timestamp: latestMsg.timestamp,
+            timestamp: latestMsg.createdAt || latestMsg.timestamp || updatedMsgs[dupIdx].timestamp,
+            createdAt: latestMsg.createdAt || updatedMsgs[dupIdx].createdAt,
+            mediaUrl: latestMsg.mediaUrl || updatedMsgs[dupIdx].mediaUrl,
           };
           return {
             ...prev,
@@ -943,9 +1001,11 @@ function ChatScreen() {
           senderRole: latestMsg.senderRole,
           avatar: isMe ? (profile.avatar || incomingAvatar) : incomingAvatar,
           content: latestMsg.content,
-          timestamp: latestMsg.timestamp,
+          timestamp: latestMsg.createdAt || latestMsg.timestamp || new Date().toISOString(),
+          createdAt: latestMsg.createdAt || latestMsg.timestamp || new Date().toISOString(),
           isMe: isMe,
           type: latestMsg.mediaType === 'IMAGE' ? 'image' : latestMsg.mediaType === 'VOICE' ? 'voice' : 'text',
+          mediaUrl: latestMsg.mediaUrl,
         };
 
         return {
@@ -958,7 +1018,10 @@ function ChatScreen() {
         const nowIso = new Date().toISOString();
         const isMe = latestMsg.senderId === profile.id || !!(profile.name && latestMsg.senderName === profile.name);
         const senderLabel = isMe ? 'You' : latestMsg.senderName || 'System';
-        const snippetText = `${senderLabel}: ${latestMsg.content}`;
+        const displayContent = latestMsg.mediaType === 'IMAGE'
+          ? (latestMsg.content && !latestMsg.content.includes('📷') ? latestMsg.content : 'Photo')
+          : latestMsg.content;
+        const snippetText = `${senderLabel}: ${displayContent}`;
 
         const existingRoom = prevRooms.find((room) => room.id === key);
         const otherRooms = prevRooms.filter((room) => room.id !== key);
@@ -967,7 +1030,7 @@ function ChatScreen() {
           const updatedRoom: ChatRoom = {
             ...existingRoom,
             latestMessage: snippetText,
-            latestTime: latestMsg.timestamp || 'Just Now',
+            latestTime: latestMsg.createdAt || latestMsg.timestamp || nowIso,
             unreadCount: key === activeRoomId ? 0 : existingRoom.unreadCount + 1,
             lastMessageAt: nowIso,
           };
@@ -987,7 +1050,7 @@ function ChatScreen() {
             avatar: roomAvatar,
             type: roomType,
             latestMessage: snippetText,
-            latestTime: latestMsg.timestamp || 'Just Now',
+            latestTime: latestMsg.createdAt || latestMsg.timestamp || nowIso,
             unreadCount: key === activeRoomId || isMe ? 0 : 1,
             badge: roomType === 'GUIDE' ? 'Guide' : 'Group Chat',
             lastMessageAt: nowIso,
@@ -1220,7 +1283,12 @@ function ChatScreen() {
     setChatItineraryLoading(true);
     apiService
       .getTripItinerary(selectedTripId)
-      .then((res) => setChatItinerary(res?.days ?? []))
+      .then((res) => {
+        setChatItinerary(res?.days ?? []);
+        if (typeof res?.canEdit === 'boolean') {
+          setCanEditItinerary(res.canEdit);
+        }
+      })
       .catch((e) => {
         logger.warn('[Chat] Failed to load trip itinerary:', e);
         setChatItinerary([]);
@@ -1301,6 +1369,118 @@ function ChatScreen() {
     handleStartDirectMessage(member.name, member.avatar);
   };
 
+  // Trip Editing Handlers
+  const handleOpenEditTrip = () => {
+    if (activeTrip) {
+      setTripEditForm({
+        name: activeTrip.name,
+        meetingPoint: activeTrip.meetingPoint || '',
+        budget: String(activeTrip.budget || ''),
+      });
+      setIsEditTripModalOpen(true);
+    }
+  };
+
+  const handleSaveTrip = async () => {
+    if (!activeTrip) return;
+    if (!tripEditForm.name.trim()) {
+      toast('Please enter a trip name', 'error');
+      return;
+    }
+    setIsSavingTrip(true);
+    try {
+      const budgetNum = parseFloat(tripEditForm.budget);
+      const res = await apiService.updateTrip(activeTrip.id, {
+        name: tripEditForm.name.trim(),
+        meetingPoint: tripEditForm.meetingPoint.trim() || undefined,
+        budget: isNaN(budgetNum) ? undefined : budgetNum,
+      });
+      if (res) {
+        toast('Trip details updated successfully!', 'success');
+        refreshTrips();
+        setIsEditTripModalOpen(false);
+      }
+    } catch (e) {
+      logger.warn('[Chat] Failed to update trip:', e);
+      toast('Failed to save trip updates', 'error');
+    } finally {
+      setIsSavingTrip(false);
+    }
+  };
+
+  // Itinerary Day Editing Handlers
+  const handleOpenAddDay = () => {
+    setEditingDayId(null);
+    setItineraryDayForm({ title: '', plan: '' });
+    setItineraryModalMode('ADD');
+  };
+
+  const handleOpenEditDay = (day: { id: string; title: string; plan: string }) => {
+    setEditingDayId(day.id);
+    setItineraryDayForm({ title: day.title, plan: day.plan });
+    setItineraryModalMode('EDIT');
+  };
+
+  const handleSaveDay = async () => {
+    if (!selectedTripId) return;
+    if (!itineraryDayForm.title.trim()) {
+      toast('Please provide a day heading', 'error');
+      return;
+    }
+    setIsSavingDay(true);
+    try {
+      if (itineraryModalMode === 'ADD') {
+        const res = await apiService.addTripItineraryDay(selectedTripId, {
+          title: itineraryDayForm.title.trim(),
+          plan: itineraryDayForm.plan.trim(),
+        });
+        if (res) {
+          toast('Itinerary day added!', 'success');
+          const updated = await apiService.getTripItinerary(selectedTripId);
+          setChatItinerary(updated?.days ?? []);
+          setItineraryModalMode('NONE');
+        }
+      } else if (itineraryModalMode === 'EDIT' && editingDayId) {
+        const res = await apiService.updateTripItineraryDay(selectedTripId, editingDayId, {
+          title: itineraryDayForm.title.trim(),
+          plan: itineraryDayForm.plan.trim(),
+        });
+        if (res) {
+          toast('Itinerary day updated!', 'success');
+          const updated = await apiService.getTripItinerary(selectedTripId);
+          setChatItinerary(updated?.days ?? []);
+          setItineraryModalMode('NONE');
+        }
+      }
+    } catch (e) {
+      logger.warn('[Chat] Failed to save itinerary day:', e);
+      toast('Could not save itinerary day', 'error');
+    } finally {
+      setIsSavingDay(false);
+    }
+  };
+
+  const handleDeleteDay = async (dayId: string) => {
+    if (!selectedTripId) return;
+    const ok = await confirm({
+      title: 'Delete Itinerary Day',
+      message: 'Are you sure you want to remove this day from the itinerary?',
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
+
+    try {
+      await apiService.deleteTripItineraryDay(selectedTripId, dayId);
+      toast('Itinerary day removed', 'success');
+      const updated = await apiService.getTripItinerary(selectedTripId);
+      setChatItinerary(updated?.days ?? []);
+    } catch (e) {
+      logger.warn('[Chat] Failed to delete itinerary day:', e);
+      toast('Failed to delete day', 'error');
+    }
+  };
+
   // Toggle Attachment panel Animation
   useEffect(() => {
     Animated.timing(attachPanelHeight, {
@@ -1378,9 +1558,10 @@ function ChatScreen() {
     const key = selectedRoomId || selectedTripId;
     const mediaType = msgData.type === 'image' ? 'IMAGE' : msgData.type === 'voice' ? 'VOICE' : 'NONE';
 
-    // Call global websocket sender
-    sendMessage(msgData.content || '', mediaType);
+    // Call global websocket sender with mediaUrl
+    sendMessage(msgData.content || '', mediaType, msgData.mediaUrl);
 
+    const nowIso = new Date().toISOString();
     const newMsg: CustomMessage = {
       id: `msg-${Date.now()}`,
       senderId: profile.id,
@@ -1388,8 +1569,10 @@ function ChatScreen() {
       senderRole: profile.role === 'TOURIST' ? 'Tourist' : 'Organizer',
       avatar: profile.avatar,
       content: msgData.content || '',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      timestamp: nowIso,
+      createdAt: nowIso,
       isMe: true,
+      mediaUrl: msgData.mediaUrl,
       ...msgData,
     };
 
@@ -1401,15 +1584,17 @@ function ChatScreen() {
 
     // Update the WhatsApp Inbox snippet text dynamically and move room to index 0 (TOP)!
     setInboxRooms((prevRooms) => {
-      const nowIso = new Date().toISOString();
       const existingRoom = prevRooms.find((r) => r.id === selectedRoomId);
       const otherRooms = prevRooms.filter((r) => r.id !== selectedRoomId);
 
       if (existingRoom) {
+        const displaySnippet = msgData.type === 'image'
+          ? (msgData.content && !msgData.content.includes('📷') ? msgData.content : 'Photo')
+          : (msgData.content || 'Attachment shared');
         const updatedRoom: ChatRoom = {
           ...existingRoom,
-          latestMessage: `You: ${msgData.content || 'Attachment shared'}`,
-          latestTime: newMsg.timestamp,
+          latestMessage: `You: ${displaySnippet}`,
+          latestTime: nowIso,
           unreadCount: 0,
           lastMessageAt: nowIso,
         };
@@ -1514,7 +1699,7 @@ function ChatScreen() {
         avatar: avatar,
         type: 'GUIDE', // treat as GUIDE/DM in inbox rendering
         latestMessage: `Direct chat started with ${senderName}`,
-        latestTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        latestTime: new Date().toISOString(),
         unreadCount: 0,
         badge: 'Member',
         lastMessageAt: new Date().toISOString(),
@@ -1532,7 +1717,8 @@ function ChatScreen() {
             senderRole: 'Tourist',
             avatar: avatar,
             content: `This is the beginning of your private message thread with ${senderName}. 👋`,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            timestamp: new Date().toISOString(),
+            createdAt: new Date().toISOString(),
             isMe: false,
           },
         ],
@@ -1661,7 +1847,8 @@ function ChatScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         allowsEditing: true,
-        quality: 0.8,
+        quality: 0.7,
+        base64: true,
       });
       if (result.canceled || !result.assets?.length) return;
 
@@ -1672,13 +1859,25 @@ function ChatScreen() {
         asset.mimeType === 'image/png' || asset.mimeType === 'image/webp' ? asset.mimeType : 'image/jpeg';
 
       setPhotoUploading(true);
-      const { uploadUrl, publicUrl } = await apiService.getChatMediaUploadUrl(contentType);
-      await uploadFileToUrl(asset.uri, uploadUrl, contentType);
+      let mediaUrl = asset.uri;
+
+      try {
+        const { uploadUrl, publicUrl } = await apiService.getChatMediaUploadUrl(contentType);
+        await uploadFileToUrl(asset.uri, uploadUrl, contentType);
+        if (publicUrl) mediaUrl = publicUrl;
+      } catch (uploadErr) {
+        logger.warn('[Chat] Remote storage upload not available; using data/local photo:', uploadErr);
+        if (asset.base64) {
+          mediaUrl = `data:${contentType};base64,${asset.base64}`;
+        } else {
+          mediaUrl = asset.uri;
+        }
+      }
 
       sendNewMessage({
-        content: '📷 Photo',
+        content: '',
         type: 'image',
-        mediaUrl: publicUrl,
+        mediaUrl,
       });
     } catch (err) {
       logger.warn('[Chat] Photo send failed:', err);
@@ -1739,7 +1938,8 @@ function ChatScreen() {
       senderName: profile.name,
       senderRole: 'Tourist',
       avatar: profile.avatar,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      timestamp: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
       isMe: true,
     };
 
@@ -1977,7 +2177,7 @@ function ChatScreen() {
                         {pinnedRoomIds.has(room.id) && <Pin size={12} color={C.blue} />}
                       </View>
                       <Text style={[styles.roomTimeText, hasUnread && { color: C.blue, fontWeight: '700' }]}>
-                        {room.latestTime}
+                        {formatChatTime(room.latestTime)}
                       </Text>
                     </View>
 
@@ -2218,8 +2418,8 @@ function ChatScreen() {
             </Text>
             <View style={styles.activityStatusRow}>
               <View style={styles.statusGreenDot} />
-              <Text style={styles.roomHeaderStatusText}>
-                {activeTrip ? t('chat.activeGroupLedgerWithMembers', { count: activeTrip.membersCount }) : t('chat.activeGroupLedger')}
+              <Text style={styles.roomHeaderStatusText} numberOfLines={1}>
+                {t('chat.memberCount', { count: activeTrip?.membersCount ?? (dbMembers.length || 1) })}
               </Text>
             </View>
           </TouchableOpacity>
@@ -2236,6 +2436,7 @@ function ChatScreen() {
           >
             <MapPin size={17} color={C.text} />
           </TouchableOpacity>
+
           <TouchableOpacity
             style={styles.actionRoundBtn}
             onPress={() => setIsSettingsOpen(true)}
@@ -2248,47 +2449,6 @@ function ChatScreen() {
           </TouchableOpacity>
         </View>
       </View>
-
-      {/* ─── TAB SELECTION BAR ───────────────────────────────── */}
-      {activeRoom?.type === 'GROUP' && (
-        <View style={styles.tabBarWrapper}>
-          <TouchableOpacity
-            style={[styles.tabItemTouch, activeTab === 'chat' && styles.tabItemTouchActive]}
-            onPress={() => setActiveTab('chat')}
-            activeOpacity={0.8}
-            accessibilityRole="tab"
-            accessibilityLabel={t('chat.tabChat')}
-            accessibilityState={{ selected: activeTab === 'chat' }}
-          >
-            <MessageSquare size={17} color={activeTab === 'chat' ? C.blue : C.textSec} />
-            <Text style={[styles.tabItemLabel, activeTab === 'chat' && styles.tabItemLabelActive]}>{t('chat.tabChat')}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tabItemTouch, activeTab === 'itinerary' && styles.tabItemTouchActive]}
-            onPress={() => setActiveTab('itinerary')}
-            activeOpacity={0.8}
-            accessibilityRole="tab"
-            accessibilityLabel={t('chat.tabItinerary')}
-            accessibilityState={{ selected: activeTab === 'itinerary' }}
-          >
-            <Calendar size={17} color={activeTab === 'itinerary' ? C.blue : C.textSec} />
-            <Text style={[styles.tabItemLabel, activeTab === 'itinerary' && styles.tabItemLabelActive]}>{t('chat.tabItinerary')}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tabItemTouch, activeTab === 'members' && styles.tabItemTouchActive]}
-            onPress={() => setActiveTab('members')}
-            activeOpacity={0.8}
-            accessibilityRole="tab"
-            accessibilityLabel={t('chat.tabMembers')}
-            accessibilityState={{ selected: activeTab === 'members' }}
-          >
-            <UsersIcon size={17} color={activeTab === 'members' ? C.blue : C.textSec} />
-            <Text style={[styles.tabItemLabel, activeTab === 'members' && styles.tabItemLabelActive]}>{t('chat.tabMembers')}</Text>
-          </TouchableOpacity>
-        </View>
-      )}
 
       {/* ─── SOS ACTIVE BANNER ─────────────────────────────────── */}
       {activeSOS && (
@@ -2323,9 +2483,8 @@ function ChatScreen() {
         </LinearGradient>
       )}
 
-      {/* ─── WORKSPACE CONTENT AREA (CLEAN CONVERSATION FEED OR TABS) ───── */}
-      {activeTab === 'chat' ? (
-        <View style={{ flex: 1 }}>
+      {/* ─── WORKSPACE CONTENT AREA (CLEAN CONVERSATION FEED) ───── */}
+      <View style={{ flex: 1 }}>
           {/* docs/REMEDIATION.md §9.3/§9.4 follow-up: a "Pinned Group Update"
           banner used to live here — fully fabricated content (a fixed
           Leh-Ladakh acclimatization notice for `selectedTripId === 'trip-2'`,
@@ -2471,7 +2630,11 @@ function ChatScreen() {
                 accessibilityLabel={t('chat.attachmentOptions')}
                 accessibilityState={{ expanded: isAttachmentOpen }}
               >
-                <Plus size={18} color="#FFF" style={{ transform: [{ rotate: isAttachmentOpen ? '45deg' : '0deg' }] }} />
+                {isAttachmentOpen ? (
+                  <X size={18} color="#FFFFFF" />
+                ) : (
+                  <Plus size={20} color={C.blue} />
+                )}
               </TouchableOpacity>
 
               <View style={styles.textInputWrapper}>
@@ -2497,7 +2660,7 @@ function ChatScreen() {
               <TouchableOpacity
                 style={[
                   styles.sendIconCircle,
-                  { backgroundColor: inputText.trim() === '' ? 'rgba(255, 255, 255, 0.08)' : C.blue },
+                  inputText.trim() === '' ? styles.sendIconCircleDisabled : styles.sendIconCircleActive,
                 ]}
                 onPress={handleSendText}
                 disabled={inputText.trim() === ''}
@@ -2511,176 +2674,7 @@ function ChatScreen() {
             </View>
           </Animated.View>
         </View>
-      ) : activeTab === 'itinerary' ? (
-        <ScrollView
-          style={styles.tabScrollView}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.tabScrollViewContent}
-        >
-          {/* Summary / Stats Card */}
-          <LinearGradient
-            colors={['#181236', '#0F0D22']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.statsSummaryCard}
-          >
-            <View style={styles.statsHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Compass size={16} color="#C084FC" />
-                <Text style={styles.statsTitle}>{t('chat.tripCommandCenter')}</Text>
-              </View>
-              <View style={styles.statsStatusBadge}>
-                <Text style={styles.statsStatusText}>{t('chat.active')}</Text>
-              </View>
-            </View>
 
-            {activeTrip ? (
-              <View style={styles.statsGrid}>
-                <View style={styles.statsCell}>
-                  <Text style={styles.statsValLabel}>{t('chat.seatsLeft')}</Text>
-                  <Text style={styles.statsValText}>{activeTrip.availableSeats}</Text>
-                </View>
-                <View style={styles.statsCell}>
-                  <Text style={styles.statsValLabel}>{t('chat.budgetPerPerson')}</Text>
-                  <Text style={[styles.statsValText, { color: C.greenText }]}>{formatINR(activeTrip.budget)}</Text>
-                </View>
-              </View>
-            ) : null}
-
-            <View style={styles.statsFooter}>
-              <Clock size={12} color="#C084FC" style={{ marginRight: 6 }} />
-              <Text style={styles.statsFooterText}>
-                {t('chat.assemblyPoint', { place: activeTrip?.meetingPoint ?? t('chat.notSet') })}
-              </Text>
-            </View>
-          </LinearGradient>
-
-          {/* Vertical Roadmap Timeline */}
-          <View style={styles.timelineCard}>
-            <View style={styles.timelineHeader}>
-              <MapPin size={16} color="#0066FF" style={{ marginRight: 6 }} />
-              <Text style={styles.timelineTitleText}>{t('chat.verticalItineraryRoadmap')}</Text>
-            </View>
-
-            <View style={styles.timelineList}>
-              {chatItineraryLoading ? (
-                <ActivityIndicator color={C.blueGlow} />
-              ) : chatItinerary.length === 0 ? (
-                <Text style={styles.verticalTimelineDesc}>{t('chat.noItineraryYet')}</Text>
-              ) : (
-                chatItinerary.map((day, idx) => {
-                  const isLast = idx === chatItinerary.length - 1;
-                  return (
-                    <View key={day.id} style={styles.verticalTimelineStep}>
-                      <View style={styles.verticalTimelineLeft}>
-                        <View style={styles.verticalTimelineDot}>
-                          <View style={styles.verticalTimelineInnerDot} />
-                        </View>
-                        {!isLast && <View style={styles.verticalTimelineLine} />}
-                      </View>
-                      <View style={styles.verticalTimelineCard}>
-                        <View style={styles.verticalTimelineHeaderRow}>
-                          <Text style={styles.verticalTimelineDayText}>{t('chat.dayNumber', { number: day.day })}</Text>
-                          <Text style={styles.verticalTimelineNodeTitle}>{day.title}</Text>
-                        </View>
-                        <Text style={styles.verticalTimelineDesc}>{day.plan}</Text>
-                      </View>
-                    </View>
-                  );
-                })
-              )}
-            </View>
-          </View>
-        </ScrollView>
-      ) : (
-        <ScrollView
-          style={styles.tabScrollView}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.tabScrollViewContent}
-        >
-          {/* The "Docs" tab and its Trip Documents Vault were removed, not
-              rebuilt (docs/REMEDIATION.md §8.7 / §0.2 rule 4). Nothing about
-              the vault was real: it was seeded with hardcoded documents keyed
-              by the old seed trip ids — including a fabricated IRCTC PNR
-              number — it had no file picker, no object storage and no backend
-              model, and "uploading" was a setInterval that advanced a
-              progress bar to 100% before adding a local row with status
-              'Approved' and toasting "Document uploaded and verified
-              successfully". Nothing was uploaded and nothing was verified.
-              group-organizer.tsx's identical documents list (three fake
-              filenames, no storage) was already removed for the same reason
-              in the §8.6 follow-up; this is that call applied consistently.
-              A real version is the §8.2/§8.4/§8.7 upload pipeline plus a
-              TripDocument model, which is a feature rather than a fix. */}
-
-          {/* Members Title Info */}
-          <View style={styles.docsHeaderBlock}>
-            <Text style={styles.docsHeaderTitleText}>{t('chat.groupDirectory')}</Text>
-            <Text style={styles.docsHeaderDescText}>{t('chat.groupDirectoryDesc')}</Text>
-          </View>
-
-          {/* Members List Container */}
-          <View style={styles.membersTabList}>
-            {groupMembers.map((member) => (
-              <TouchableOpacity
-                key={member.name}
-                style={styles.memberTabCard}
-                onPress={() => handleMemberClick(member)}
-                activeOpacity={0.8}
-                accessibilityRole="button"
-                accessibilityLabel={t('chat.startPrivateChatWith', { name: member.name })}
-              >
-                <View style={styles.memberTabCardLeft}>
-                  <Avatar uri={member.avatar} name={member.name} size={42} style={styles.memberTabAvatar} />
-                  <View style={styles.memberTabMeta}>
-                    <Text style={styles.memberTabNameText}>{member.name}</Text>
-                    <Text style={styles.memberTabRoleText}>
-                      {SENDER_ROLE_LABEL_KEYS[member.role] ? t(SENDER_ROLE_LABEL_KEYS[member.role]) : member.role}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.memberTabCardRight}>
-                  <View
-                    style={[
-                      styles.memberRoleBadge,
-                      member.role === 'Organizer'
-                        ? styles.roleBadgeOrganizer
-                        : member.role === 'Guide'
-                          ? styles.roleBadgeGuide
-                          : styles.roleBadgeTourist,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.memberRoleBadgeText,
-                        member.role === 'Organizer'
-                          ? { color: '#0066FF' }
-                          : member.role === 'Guide'
-                            ? { color: '#10B981' }
-                            : { color: '#94A3B8' },
-                      ]}
-                    >
-                      {(SENDER_ROLE_LABEL_KEYS[member.role] ? t(SENDER_ROLE_LABEL_KEYS[member.role]) : member.role).toUpperCase()}
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.dmMemberBtn}
-                    onPress={() => handleMemberClick(member)}
-                    activeOpacity={0.8}
-                    hitSlop={{ top: 9, bottom: 9, left: 8, right: 8 }}
-                    accessibilityRole="button"
-                    accessibilityLabel={t('chat.directMessageName', { name: member.name })}
-                  >
-                    <MessageSquare size={12} color="#FFF" style={{ marginRight: 3 }} />
-                    <Text style={styles.dmMemberBtnText}>{t('chat.dm')}</Text>
-                  </TouchableOpacity>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </ScrollView>
-      )}
 
       {/* ─── MESSAGE LONG PRESS OPTIONS OVERLAY ────────────────── */}
       {selectedMessageForOptions && (
@@ -2792,7 +2786,7 @@ function ChatScreen() {
       {/* ─── GROUP INFO & OPTIONS SETTINGS OVERLAY ───────────── */}
       {isSettingsOpen && (
         <View style={styles.settingsOverlay}>
-          <SafeAreaView style={{ flex: 1 }}>
+          <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}>
             {/* Floating Close Button */}
             <TouchableOpacity
               onPress={() => setIsSettingsOpen(false)}
@@ -2802,7 +2796,7 @@ function ChatScreen() {
               accessibilityRole="button"
               accessibilityLabel={t('chat.closeSettings')}
             >
-              <ArrowLeft size={20} color="#FFF" />
+              <ArrowLeft size={18} color={C.text} />
             </TouchableOpacity>
 
             <ScrollView contentContainerStyle={styles.settingsScrollContent} showsVerticalScrollIndicator={false}>
@@ -2817,222 +2811,240 @@ function ChatScreen() {
                 ) : null}
               </View>
 
-              {/* ADVANCED TELEMETRY MONITOR CARD */}
-              <TouchableOpacity
-                onPress={() => setIsTripDetailsExpanded((prev) => !prev)}
-                activeOpacity={0.85}
-                style={{ marginBottom: 16 }}
-                accessibilityRole="button"
-                accessibilityLabel={
-                  isTripDetailsExpanded ? t('chat.tapToCollapseSettings') : t('chat.tapToExpandSettings')
-                }
-                accessibilityState={{ expanded: isTripDetailsExpanded }}
-              >
-                <LinearGradient
-                  colors={['#2E1065', '#120D26']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.telemetryCardGradient}
-                >
-                  <View style={styles.telemetryHeader}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Compass size={15} color="#C084FC" />
-                      <Text style={[styles.telemetryTitle, { color: '#E9D5FF' }]}>{t('chat.tripCommandCenter')}</Text>
-                    </View>
-                    <View
-                      style={[
-                        styles.telemetryStatusBadge,
-                        { backgroundColor: 'rgba(192, 132, 252, 0.15)', borderColor: 'rgba(192, 132, 252, 0.3)' },
-                      ]}
-                    >
-                      <Text style={[styles.telemetryStatusText, { color: '#F3E8FF' }]}>{t('chat.activeRun')}</Text>
-                    </View>
-                  </View>
-
-                  <Text style={styles.telemetryLabel}>{t('chat.itinerarySyncProgress')}</Text>
-                  <View style={styles.progressBarBg}>
-                    <LinearGradient
-                      colors={['#0066FF', '#8B5CF6']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                      style={[styles.progressBarFill, { width: '45%' }]}
-                    />
-                  </View>
-
-                  <View style={styles.telemetryMetaGrid}>
-                    <View style={styles.telemetryMetaCell}>
-                      <Text style={styles.telemetryMetaVal}>{activeTrip?.cities[1] ?? '—'}</Text>
-                      <Text style={styles.telemetryMetaLbl}>{t('chat.lastNode')}</Text>
-                    </View>
-                    <View style={[styles.telemetryMetaCell, { alignItems: 'flex-end' }]}>
-                      <Text style={styles.telemetryMetaVal}>
-                        {activeTrip?.cities[activeTrip.cities.length - 1] ?? '—'}
-                      </Text>
-                      <Text style={styles.telemetryMetaLbl}>{t('chat.targetNode')}</Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.telemetryDivider} />
-
-                  <View style={styles.telemetryFooter}>
-                    <Text style={[styles.telemetryFooterText, { color: '#C084FC' }]}>
-                      {isTripDetailsExpanded ? t('chat.tapToCollapseSettings') : t('chat.tapToExpandSettings')}
+              {/* HORIZONTAL EXPANDED TABS (OPTIONS SECTION) */}
+              {activeRoom?.type === 'GROUP' && (
+                <View style={styles.tabBarWrapper}>
+                  <TouchableOpacity
+                    style={[styles.tabItemTouch, overlayTab === 'itinerary' && styles.tabItemTouchActive]}
+                    onPress={() => setOverlayTab('itinerary')}
+                    activeOpacity={0.8}
+                    accessibilityRole="tab"
+                    accessibilityLabel={t('chat.tabItinerary')}
+                    accessibilityState={{ selected: overlayTab === 'itinerary' }}
+                  >
+                    <Calendar size={16} color={overlayTab === 'itinerary' ? C.blue : C.textSec} />
+                    <Text style={[styles.tabItemLabel, overlayTab === 'itinerary' && styles.tabItemLabelActive]}>
+                      {t('chat.tabItinerary')}
                     </Text>
-                    {isTripDetailsExpanded ? (
-                      <ChevronUp size={14} color="#C084FC" />
-                    ) : (
-                      <ChevronDown size={14} color="#C084FC" />
-                    )}
-                  </View>
-                </LinearGradient>
-              </TouchableOpacity>
+                  </TouchableOpacity>
 
-              {isTripDetailsExpanded && (
+                  <TouchableOpacity
+                    style={[styles.tabItemTouch, overlayTab === 'members' && styles.tabItemTouchActive]}
+                    onPress={() => setOverlayTab('members')}
+                    activeOpacity={0.8}
+                    accessibilityRole="tab"
+                    accessibilityLabel={t('chat.tabMembers')}
+                    accessibilityState={{ selected: overlayTab === 'members' }}
+                  >
+                    <UsersIcon size={16} color={overlayTab === 'members' ? C.blue : C.textSec} />
+                    <Text style={[styles.tabItemLabel, overlayTab === 'members' && styles.tabItemLabelActive]}>
+                      {t('chat.tabMembers')}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* CONSOLIDATED TAB 1: ITINERARY & TRIP DETAILS */}
+              {overlayTab === 'itinerary' && (
                 <>
-                  {/* 1. Trip Progress Timeline */}
-                  <View style={styles.settingSectionCard}>
-                    <View style={styles.sectionHeader}>
-                      <MapPin size={16} color="#0066FF" style={{ marginRight: 6 }} />
-                      <Text style={styles.sectionHeaderTitle}>{t('chat.itineraryTimeline')}</Text>
+                  {/* TRIP OVERVIEW & METRICS CARD */}
+                  <LinearGradient
+                    colors={['#EEF2FF', '#F8FAFC']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.statsSummaryCard}
+                  >
+                    <View style={styles.statsHeader}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                        <Compass size={16} color="#4F46E5" />
+                        <Text style={styles.statsTitle} numberOfLines={1}>
+                          {activeTrip?.name ? activeTrip.name.toUpperCase() : t('chat.tripCommandCenter')}
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.editTripHeaderBtn}
+                        onPress={handleOpenEditTrip}
+                        activeOpacity={0.7}
+                        accessibilityRole="button"
+                        accessibilityLabel="Edit Trip Details"
+                      >
+                        <Pencil size={12} color="#2563EB" />
+                        <Text style={styles.editTripHeaderBtnText}>Edit Trip</Text>
+                      </TouchableOpacity>
                     </View>
-                    <View style={styles.timelineRow}>
-                      {(activeTrip?.cities ?? []).map((city, idx) => {
-                        const isLast = idx === (activeTrip?.cities.length ?? 0) - 1;
-                        const isPassed = idx <= 1;
-                        return (
-                          <View key={city} style={styles.timelineStepWrap}>
-                            <View style={styles.timelineDotContainer}>
-                              <View
-                                style={[
-                                  styles.timelineDot,
-                                  isPassed ? styles.timelineDotActive : styles.timelineDotInactive,
-                                ]}
-                              >
-                                {isPassed && <Check size={8} color="#FFF" />}
-                              </View>
-                              {!isLast && (
-                                <View
-                                  style={[
-                                    styles.timelineLine,
-                                    isPassed ? styles.timelineLineActive : styles.timelineLineInactive,
-                                  ]}
-                                />
-                              )}
-                            </View>
-                            <Text
-                              style={[
-                                styles.timelineCityText,
-                                isPassed ? styles.timelineCityTextActive : styles.timelineCityTextInactive,
-                              ]}
-                              numberOfLines={1}
-                            >
-                              {city}
-                            </Text>
-                          </View>
-                        );
-                      })}
+
+                    {/* Progress Bar */}
+                    <Text style={styles.telemetryLabel}>{t('chat.itinerarySyncProgress')}</Text>
+                    <View style={styles.progressBarBg}>
+                      <LinearGradient
+                        colors={['#2563EB', '#6366F1']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={[styles.progressBarFill, { width: '50%' }]}
+                      />
                     </View>
-                    <View style={styles.meetingPointPanel}>
-                      <Clock size={14} color="#0066FF" style={{ marginRight: 6 }} />
-                      <Text style={styles.meetingTitle}>{t('chat.assemblyPointLabel')}</Text>
-                      <Text style={styles.meetingLocation} numberOfLines={1}>
-                        {activeTrip?.meetingPoint ?? t('chat.notSet')}
+
+                    {/* Node Endpoints */}
+                    <View style={styles.telemetryMetaGrid}>
+                      <View style={styles.telemetryMetaCell}>
+                        <Text style={styles.telemetryMetaVal}>
+                          {activeTrip?.cities?.[0] ?? 'Departure'}
+                        </Text>
+                        <Text style={styles.telemetryMetaLbl}>{t('chat.lastNode')}</Text>
+                      </View>
+                      <View style={[styles.telemetryMetaCell, { alignItems: 'flex-end' }]}>
+                        <Text style={styles.telemetryMetaVal}>
+                          {activeTrip?.cities?.[activeTrip.cities.length - 1] ?? 'Destination'}
+                        </Text>
+                        <Text style={styles.telemetryMetaLbl}>{t('chat.targetNode')}</Text>
+                      </View>
+                    </View>
+
+                    {/* Key Stats Grid */}
+                    {activeTrip ? (
+                      <View style={styles.statsGrid}>
+                        <View style={styles.statsCell}>
+                          <Text style={styles.statsValLabel}>{t('chat.seatsLeft')}</Text>
+                          <Text style={styles.statsValText}>{activeTrip.availableSeats}</Text>
+                        </View>
+                        <View style={styles.statsCell}>
+                          <Text style={styles.statsValLabel}>{t('chat.budgetPerPerson')}</Text>
+                          <Text style={[styles.statsValText, { color: C.greenText }]}>
+                            {formatINR(activeTrip.budget)}
+                          </Text>
+                        </View>
+                      </View>
+                    ) : null}
+
+                    {/* Assembly Point */}
+                    <View style={styles.statsFooter}>
+                      <Clock size={12} color="#4F46E5" style={{ marginRight: 6 }} />
+                      <Text style={styles.statsFooterText}>
+                        {t('chat.assemblyPoint', { place: activeTrip?.meetingPoint ?? t('chat.notSet') })}
                       </Text>
                     </View>
-                  </View>
 
-                  {/* 2. Group Expenses & Split */}
-                  <View style={styles.settingSectionCard}>
-                    <View style={styles.sectionHeader}>
-                      <DollarSign size={16} color="#0066FF" style={{ marginRight: 6 }} />
-                      <Text style={styles.sectionHeaderTitle}>{t('chat.groupBudgetSplits')}</Text>
-                    </View>
-
-                    <View style={styles.budgetOverviewRow}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.budgetLabel}>{t('chat.budgetPerPersonShort')}</Text>
-                        <Text style={styles.budgetValue}>{formatINR(activeTrip?.budget)}</Text>
-                      </View>
-                    </View>
-
-                    {/* Opens the real, persisted expense ledger (§8.12)
-                        rather than the local-only one this panel used to
-                        keep, which never agreed with it. */}
-                    <TouchableOpacity
-                      style={[styles.settingsOutlineBtn, { borderColor: C.blue }]}
-                      onPress={() => {
-                        setIsSettingsOpen(false);
-                        router.push('/budget-tracker');
-                      }}
-                      accessibilityRole="button"
-                      accessibilityLabel={t('chat.openExpenseTracker')}
-                    >
-                      <DollarSign size={14} color={C.blue} style={{ marginRight: 4 }} />
-                      <Text style={[styles.settingsOutlineBtnText, { color: C.blue }]}>{t('chat.openExpenseTracker')}</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  {/* The "Group Polls" section was removed, not rebuilt
-                      (docs/REMEDIATION.md §8.7) — see the note where
-                      INITIAL_TRIP_POLLS used to be defined. */}
-
-                  {/* The "Your Travel Guide" card was removed here — see the
-                      note at activeGuide's former definition. */}
-
-                  {/* 5. Safety Desk Controls & SOS Trigger */}
-                  <View style={[styles.settingSectionCard, { borderColor: 'rgba(239,68,68,0.2)' }]}>
-                    <View style={styles.sectionHeader}>
-                      <ShieldAlert size={16} color="#0066FF" style={{ marginRight: 6 }} />
-                      <Text style={styles.sectionHeaderTitle}>{t('chat.safetyCommandTitle')}</Text>
-                    </View>
-
-                    {/* docs/REMEDIATION.md §9.3/§9.4 follow-up: two more fake
-                    status rows used to live here. "Live Location Pinging"
-                    always showed "ACTIVE" with no background telemetry
-                    feature anywhere in this codebase to back it. "Government
-                    Aadhaar verification" always showed a green checkmark and
-                    "Aadhaar status: verified" for every member regardless of
-                    any real verification state — worse, Aadhaar/KYC was
-                    already explicitly removed from this app for v1 per an
-                    earlier decision (docs/REMEDIATION.md §12.1: "rip it out
-                    for v1... no Aadhaar number / ID photo / face-verification
-                    fields, models, or UI"), so this leftover badge directly
-                    contradicted that. Both removed rather than kept faked. */}
-
-                    {sosCountdown !== null ? (
-                      <View style={styles.settingsArmedBox}>
-                        <Text style={styles.armedLabel}>{t('chat.armingSosIn')}</Text>
-                        <Text style={styles.armedTimer}>{sosCountdown}</Text>
-                        <TouchableOpacity
-                          style={styles.armedCancelTouch}
-                          onPress={cancelSOS}
-                          hitSlop={{ top: 11, bottom: 11, left: 11, right: 11 }}
-                          accessibilityRole="button"
-                          accessibilityLabel={t('chat.cancel')}
-                        >
-                          <Text style={styles.armedCancelText}>{t('chat.cancel')}</Text>
-                        </TouchableOpacity>
-                      </View>
-                    ) : (
+                    {/* Quick Management Actions */}
+                    <View style={styles.tripActionsRow}>
                       <TouchableOpacity
-                        style={styles.settingsSOSBtn}
+                        style={styles.tripActionBtn}
+                        onPress={() => {
+                          setIsSettingsOpen(false);
+                          router.push('/budget-tracker');
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('chat.openExpenseTracker')}
+                      >
+                        <DollarSign size={14} color="#2563EB" />
+                        <Text style={styles.tripActionBtnText}>{t('chat.groupBudgetSplits')}</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[styles.tripActionBtn, { borderColor: '#FECACA', backgroundColor: '#FEF2F2' }]}
                         onPress={startSOSCountdown}
                         accessibilityRole="button"
                         accessibilityLabel={t('chat.triggerPanicSosAlert')}
                       >
-                        <ShieldAlert size={18} color="#FFF" style={{ marginRight: 6 }} />
-                        <Text style={styles.settingsSOSBtnText}>{t('chat.triggerPanicSosAlert')}</Text>
+                        <ShieldAlert size={14} color="#EF4444" />
+                        <Text style={[styles.tripActionBtnText, { color: '#DC2626' }]}>Emergency SOS</Text>
                       </TouchableOpacity>
-                    )}
+                    </View>
+                  </LinearGradient>
+
+                  {/* DAY-BY-DAY ITINERARY ROADMAP CARD */}
+                  <View style={styles.timelineCard}>
+                    <View style={styles.timelineHeader}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                        <MapPin size={16} color="#0066FF" />
+                        <Text style={styles.timelineTitleText}>{t('chat.verticalItineraryRoadmap')}</Text>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.addDayHeaderBtn}
+                        onPress={handleOpenAddDay}
+                        activeOpacity={0.7}
+                        accessibilityRole="button"
+                        accessibilityLabel="Add Itinerary Day"
+                      >
+                        <Plus size={13} color="#FFFFFF" />
+                        <Text style={styles.addDayHeaderBtnText}>Add Day</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={styles.timelineList}>
+                      {chatItineraryLoading ? (
+                        <ActivityIndicator color={C.blueGlow} />
+                      ) : chatItinerary.length === 0 ? (
+                        <View style={styles.emptyItineraryWrap}>
+                          <Text style={styles.emptyItineraryText}>{t('chat.noItineraryYet')}</Text>
+                          <TouchableOpacity
+                            style={styles.emptyAddDayBtn}
+                            onPress={handleOpenAddDay}
+                            activeOpacity={0.8}
+                            accessibilityRole="button"
+                            accessibilityLabel="Add First Day"
+                          >
+                            <Plus size={14} color="#FFFFFF" />
+                            <Text style={styles.emptyAddDayBtnText}>Add First Day</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : (
+                        chatItinerary.map((day, idx) => {
+                          const isLast = idx === chatItinerary.length - 1;
+                          return (
+                            <View key={day.id} style={styles.verticalTimelineStep}>
+                              <View style={styles.verticalTimelineLeft}>
+                                <View style={styles.verticalTimelineDot}>
+                                  <View style={styles.verticalTimelineInnerDot} />
+                                </View>
+                                {!isLast && <View style={styles.verticalTimelineLine} />}
+                              </View>
+                              <View style={styles.verticalTimelineCard}>
+                                <View style={styles.verticalTimelineHeaderRow}>
+                                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                                    <Text style={styles.verticalTimelineDayText}>
+                                      {t('chat.dayNumber', { number: day.day })}
+                                    </Text>
+                                    <Text style={styles.verticalTimelineNodeTitle} numberOfLines={1}>
+                                      {day.title}
+                                    </Text>
+                                  </View>
+                                  <View style={styles.dayActionsRow}>
+                                    <TouchableOpacity
+                                      onPress={() => handleOpenEditDay(day)}
+                                      style={styles.dayActionIconBtn}
+                                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                      accessibilityRole="button"
+                                      accessibilityLabel="Edit Day"
+                                    >
+                                      <Pencil size={12} color="#2563EB" />
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                      onPress={() => handleDeleteDay(day.id)}
+                                      style={styles.dayActionIconBtn}
+                                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                      accessibilityRole="button"
+                                      accessibilityLabel="Delete Day"
+                                    >
+                                      <Trash2 size={12} color="#EF4444" />
+                                    </TouchableOpacity>
+                                  </View>
+                                </View>
+                                <Text style={styles.verticalTimelineDesc}>{day.plan}</Text>
+                              </View>
+                            </View>
+                          );
+                        })
+                      )}
+                    </View>
                   </View>
                 </>
               )}
 
-              {/* 6. Group Members List (Core Info shown directly) */}
-              {activeRoom?.type === 'GROUP' && (
-                <View style={{ marginBottom: 14, paddingHorizontal: 4 }}>
+              {/* TAB 2: MEMBERS */}
+              {overlayTab === 'members' && (
+                <View style={{ marginBottom: 14 }}>
                   <View style={styles.sectionHeader}>
-                    <UsersIcon size={16} color="#0066FF" style={{ marginRight: 6 }} />
+                    <UsersIcon size={16} color={C.blue} style={{ marginRight: 6 }} />
                     <Text style={styles.sectionHeaderTitle}>
                       {t('chat.groupMembersCount', { count: groupMembers.length })}
                     </Text>
@@ -3046,7 +3058,7 @@ function ChatScreen() {
                           key={member.name}
                           style={[
                             styles.memberItemRow,
-                            !isLast && { borderBottomWidth: 0.8, borderBottomColor: '#1E293B', paddingBottom: 12 },
+                            !isLast && { borderBottomWidth: 0.8, borderBottomColor: '#F1F5F9', paddingBottom: 12 },
                           ]}
                           onPress={() => handleMemberClick(member)}
                           activeOpacity={0.7}
@@ -3061,7 +3073,6 @@ function ChatScreen() {
                             </Text>
                           </View>
 
-                          {/* Role Badge indicator */}
                           <View
                             style={[
                               styles.roleBadge,
@@ -3076,10 +3087,10 @@ function ChatScreen() {
                               style={[
                                 styles.roleBadgeText,
                                 member.role === 'Organizer'
-                                  ? { color: '#0066FF' }
+                                  ? { color: '#2563EB' }
                                   : member.role === 'Guide'
-                                    ? { color: '#10B981' }
-                                    : { color: '#94A3B8' },
+                                    ? { color: '#059669' }
+                                    : { color: '#475569' },
                               ]}
                             >
                               {(SENDER_ROLE_LABEL_KEYS[member.role] ? t(SENDER_ROLE_LABEL_KEYS[member.role]) : member.role).toUpperCase()}
@@ -3202,6 +3213,99 @@ function ChatScreen() {
                 </View>
               </View>
             )}
+          </View>
+        </View>
+      )}
+
+      {/* Edit Trip Modal */}
+      {isEditTripModalOpen && (
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContentCard}>
+            <Text style={styles.modalHeading}>Edit Trip Details</Text>
+
+            <Input
+              label="Trip Name"
+              placeholder="e.g. Goa Beach Tour"
+              value={tripEditForm.name}
+              onChangeText={(val) => setTripEditForm((p) => ({ ...p, name: val }))}
+              containerStyle={{ marginBottom: 12 }}
+            />
+
+            <Input
+              label="Meeting / Assembly Point"
+              placeholder="e.g. Airport Gate 4, Terminal 2"
+              value={tripEditForm.meetingPoint}
+              onChangeText={(val) => setTripEditForm((p) => ({ ...p, meetingPoint: val }))}
+              containerStyle={{ marginBottom: 12 }}
+            />
+
+            <Input
+              label="Budget Per Person (₹)"
+              placeholder="e.g. 8500"
+              keyboardType="numeric"
+              value={tripEditForm.budget}
+              onChangeText={(val) => setTripEditForm((p) => ({ ...p, budget: val }))}
+              containerStyle={{ marginBottom: 16 }}
+            />
+
+            <View style={styles.modalActionButtons}>
+              <Button
+                label={t('common.cancel')}
+                variant="secondary"
+                size="sm"
+                onPress={() => setIsEditTripModalOpen(false)}
+              />
+              <Button
+                label={isSavingTrip ? 'Saving...' : 'Save Changes'}
+                size="sm"
+                disabled={isSavingTrip}
+                onPress={handleSaveTrip}
+              />
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Add / Edit Itinerary Day Modal */}
+      {itineraryModalMode !== 'NONE' && (
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContentCard}>
+            <Text style={styles.modalHeading}>
+              {itineraryModalMode === 'ADD' ? 'Add Itinerary Day' : 'Edit Itinerary Day'}
+            </Text>
+
+            <Input
+              label="Day Title"
+              placeholder="e.g. Coastal Hike & Sunset Point"
+              value={itineraryDayForm.title}
+              onChangeText={(val) => setItineraryDayForm((p) => ({ ...p, title: val }))}
+              containerStyle={{ marginBottom: 12 }}
+            />
+
+            <Input
+              label="Day Plan / Activities"
+              placeholder="e.g. Morning assembly at 9 AM, guided trek, beach lunch, and evening sunset watch."
+              value={itineraryDayForm.plan}
+              onChangeText={(val) => setItineraryDayForm((p) => ({ ...p, plan: val }))}
+              multiline
+              numberOfLines={3}
+              containerStyle={{ marginBottom: 16 }}
+            />
+
+            <View style={styles.modalActionButtons}>
+              <Button
+                label={t('common.cancel')}
+                variant="secondary"
+                size="sm"
+                onPress={() => setItineraryModalMode('NONE')}
+              />
+              <Button
+                label={isSavingDay ? 'Saving...' : 'Save Day'}
+                size="sm"
+                disabled={isSavingDay}
+                onPress={handleSaveDay}
+              />
+            </View>
           </View>
         </View>
       )}
@@ -3601,23 +3705,28 @@ const styles = StyleSheet.create({
 
   // Collapsible Accordion Itinerary Settings Panel (Settings overlay)
   settingSectionCard: {
-    backgroundColor: '#09090C',
-    borderWidth: 1.2,
-    borderColor: 'rgba(0, 102, 255, 0.25)',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     borderRadius: 16,
     padding: 14,
     marginBottom: 14,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 10,
-    borderBottomWidth: 0.8,
-    borderBottomColor: '#1E293B',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
     paddingBottom: 6,
   },
   sectionHeaderTitle: {
-    color: '#FFF',
+    color: '#0F172A',
     fontSize: 12.5,
     fontWeight: '800',
     textTransform: 'uppercase',
@@ -3646,7 +3755,7 @@ const styles = StyleSheet.create({
     width: 14,
     height: 14,
     borderRadius: 7,
-    backgroundColor: C.border,
+    backgroundColor: '#CBD5E1',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 10,
@@ -3655,7 +3764,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.green,
   },
   timelineDotInactive: {
-    backgroundColor: C.border,
+    backgroundColor: '#CBD5E1',
   },
   timelineLine: {
     height: 2,
@@ -3669,7 +3778,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.green,
   },
   timelineLineInactive: {
-    backgroundColor: C.border,
+    backgroundColor: '#E2E8F0',
   },
   timelineCityText: {
     fontSize: 12,
@@ -3678,31 +3787,31 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   timelineCityTextActive: {
-    color: '#FFF',
+    color: '#0F172A',
   },
   timelineCityTextInactive: {
-    color: C.textMuted,
+    color: '#94A3B8',
   },
 
   // Meeting Point Panel
   meetingPointPanel: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(251, 191, 36, 0.08)',
-    borderWidth: 0.5,
-    borderColor: 'rgba(251, 191, 36, 0.25)',
+    backgroundColor: '#FEFCE8',
+    borderWidth: 1,
+    borderColor: '#FEF08A',
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
   meetingTitle: {
-    color: C.yellow,
+    color: '#B45309',
     fontSize: 12,
     fontWeight: '800',
     marginRight: 4,
   },
   meetingLocation: {
-    color: '#FFF',
+    color: '#0F172A',
     fontSize: 12,
     fontWeight: '600',
     flex: 1,
@@ -3720,7 +3829,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   budgetValue: {
-    color: '#FFF',
+    color: '#0F172A',
     fontSize: 18,
     fontWeight: '900',
   },
@@ -3729,6 +3838,7 @@ const styles = StyleSheet.create({
   settingsOutlineBtn: {
     borderWidth: 1,
     borderRadius: 10,
+    backgroundColor: '#EFF6FF',
     minHeight: MIN_TOUCH_TARGET,
     paddingVertical: 8,
     flexDirection: 'row',
@@ -3737,7 +3847,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   settingsOutlineBtnText: {
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: '800',
   },
 
@@ -3859,16 +3969,16 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   settingsArmedBox: {
-    backgroundColor: '#3F0E14',
+    backgroundColor: '#FEF2F2',
     borderWidth: 1.5,
-    borderColor: C.red,
+    borderColor: '#EF4444',
     borderRadius: 10,
     padding: 12,
     alignItems: 'center',
     marginTop: 6,
   },
   armedLabel: {
-    color: '#FFF',
+    color: '#991B1B',
     fontSize: 12,
     fontWeight: '800',
   },
@@ -4345,32 +4455,64 @@ const styles = StyleSheet.create({
 
   // Image Card
   imageCard: {
-    backgroundColor: C.card,
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 14,
+    borderRadius: 18,
     overflow: 'hidden',
-    maxWidth: '92%',
+    maxWidth: '85%',
+    backgroundColor: '#1E293B',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  imageCardMe: {
+    alignSelf: 'flex-end',
+    borderColor: 'rgba(59, 130, 246, 0.35)',
+  },
+  imageCardOther: {
+    alignSelf: 'flex-start',
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  imageMediaWrapper: {
+    position: 'relative',
+    width: 240,
+    height: 180,
+    backgroundColor: '#0F172A',
+    borderRadius: 16,
+    overflow: 'hidden',
   },
   imageMedia: {
-    width: 220,
-    height: 140,
+    width: '100%',
+    height: '100%',
+    borderRadius: 16,
   },
-  imageOverlayTextRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 8,
-    backgroundColor: C.cardAlt,
+  imageTimeBadge: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    backgroundColor: 'rgba(15, 23, 42, 0.72)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  imageTimeText: {
+    color: '#F8FAFC',
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+  },
+  imageCaptionRow: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
   },
   imageCardDesc: {
-    color: C.text,
-    fontSize: 12,
-    fontWeight: '600',
-    flex: 1,
-  },
-  imageDownloadBtn: {
-    padding: 4,
+    color: '#F1F5F9',
+    fontSize: 13,
+    fontWeight: '500',
+    lineHeight: 18,
   },
 
   // SOS Card Alert
@@ -4509,52 +4651,84 @@ const styles = StyleSheet.create({
     right: 0,
     flexDirection: 'column',
     alignItems: 'stretch',
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingTop: 8,
+    paddingBottom: 8,
     backgroundColor: C.bg,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
     zIndex: 90,
   },
   plusCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: 'rgba(0, 102, 255, 0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 102, 255, 0.3)',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1.2,
+    borderColor: '#BFDBFE',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 10,
+    marginRight: 8,
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
   },
   plusCircleOpen: {
-    backgroundColor: C.red,
-    borderColor: C.red,
+    backgroundColor: C.blue,
+    borderColor: C.blue,
+    shadowColor: C.blue,
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 2,
   },
   textInputWrapper: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    height: 40,
+    backgroundColor: C.card,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 14,
+    height: 42,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
   },
   textInput: {
     flex: 1,
-    color: '#FFF',
+    color: C.text,
     fontSize: 14.5,
-    paddingVertical: 4,
+    paddingVertical: 6,
   },
   smileIcon: {
     padding: 2,
+    marginLeft: 6,
   },
   sendIconCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: C.blue,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: 10,
+    marginLeft: 8,
+  },
+  sendIconCircleActive: {
+    backgroundColor: C.blue,
+    shadowColor: C.blue,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  sendIconCircleDisabled: {
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
 
   // Floating Attachments Panel
@@ -4562,11 +4736,16 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 10,
     right: 10,
-    backgroundColor: '#070913F5',
+    backgroundColor: '#FFFFFF',
     overflow: 'hidden',
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: C.border,
+    borderColor: '#E2E8F0',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 8,
     zIndex: 91,
   },
   attachScrollInner: {
@@ -4599,7 +4778,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: '#000000',
+    backgroundColor: C.bg,
     zIndex: 200,
   },
   settingsHeader: {
@@ -4610,43 +4789,44 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: C.border,
-    backgroundColor: '#070913',
+    backgroundColor: '#FFFFFF',
   },
   settingsBackBtn: {
     padding: 4,
   },
   settingsHeaderTitle: {
-    color: '#FFF',
+    color: '#0F172A',
     fontSize: 16,
     fontWeight: '800',
   },
   settingsScrollContent: {
     padding: 16,
+    paddingTop: 56,
   },
   settingsAvatarBlock: {
     alignItems: 'center',
     marginBottom: 20,
     paddingBottom: 16,
     borderBottomWidth: 1.2,
-    borderBottomColor: '#1E293B',
+    borderBottomColor: '#E2E8F0',
   },
   settingsAvatarImg: {
     width: 72,
     height: 72,
     borderRadius: 36,
     borderWidth: 2,
-    borderColor: C.blueGlow,
+    borderColor: C.blue,
     marginBottom: 10,
   },
   settingsRoomName: {
-    color: '#FFF',
-    fontSize: 16,
+    color: '#0F172A',
+    fontSize: 18,
     fontWeight: '800',
     textAlign: 'center',
   },
   settingsTripDates: {
     color: C.textSec,
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
     marginTop: 4,
   },
@@ -4658,7 +4838,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.85)',
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 1000,
@@ -4670,14 +4850,14 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     padding: 20,
     width: '85%',
-    shadowColor: '#000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.5,
+    shadowOpacity: 0.15,
     shadowRadius: 16,
     elevation: 10,
   },
   modalHeading: {
-    color: '#FFF',
+    color: '#0F172A',
     fontSize: 16,
     fontWeight: '800',
     marginBottom: 14,
@@ -4860,8 +5040,18 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   membersListContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 10,
     marginTop: 4,
     gap: 8,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
   },
   memberItemRow: {
     flexDirection: 'row',
@@ -4880,12 +5070,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   memberName: {
-    color: '#FFF',
-    fontSize: 13,
+    color: '#0F172A',
+    fontSize: 13.5,
     fontWeight: '700',
   },
   memberRoleText: {
-    color: C.textMuted,
+    color: C.textSec,
     fontSize: 12,
     marginTop: 1,
   },
@@ -4897,19 +5087,19 @@ const styles = StyleSheet.create({
     marginRight: 4,
   },
   roleBadgeOrganizer: {
-    backgroundColor: 'rgba(0, 102, 255, 0.1)',
-    borderColor: 'rgba(0, 102, 255, 0.3)',
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
   },
   roleBadgeGuide: {
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-    borderColor: 'rgba(16, 185, 129, 0.3)',
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
   },
   roleBadgeTourist: {
-    backgroundColor: 'rgba(148, 163, 184, 0.08)',
-    borderColor: 'rgba(148, 163, 184, 0.2)',
+    backgroundColor: '#F1F5F9',
+    borderColor: '#CBD5E1',
   },
   roleBadgeText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.5,
   },
@@ -4918,6 +5108,14 @@ const styles = StyleSheet.create({
   telemetryCardGradient: {
     borderRadius: 16,
     padding: 16,
+    borderWidth: 1,
+    borderColor: '#E0E7FF',
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
   },
   telemetryHeader: {
     flexDirection: 'row',
@@ -4926,34 +5124,34 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   telemetryTitle: {
-    color: C.purple,
+    color: '#4F46E5',
     fontSize: 12,
     fontWeight: '800',
     letterSpacing: 1,
   },
   telemetryStatusBadge: {
-    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+    backgroundColor: '#EEF2FF',
     borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderWidth: 0.8,
-    borderColor: 'rgba(139, 92, 246, 0.45)',
+    borderColor: '#C7D2FE',
   },
   telemetryStatusText: {
-    color: C.purple,
+    color: '#4338CA',
     fontSize: 12,
     fontWeight: '800',
     letterSpacing: 0.5,
   },
   telemetryLabel: {
-    color: '#FFF',
+    color: '#1E293B',
     fontSize: 13,
     fontWeight: '700',
     marginBottom: 8,
   },
   progressBarBg: {
     height: 6,
-    backgroundColor: '#0F172A',
+    backgroundColor: '#E2E8F0',
     borderRadius: 3,
     overflow: 'hidden',
     marginBottom: 12,
@@ -4971,19 +5169,19 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   telemetryMetaVal: {
-    color: '#F8FAFC',
-    fontSize: 12,
+    color: '#0F172A',
+    fontSize: 12.5,
     fontWeight: '700',
   },
   telemetryMetaLbl: {
-    color: C.textMuted,
-    fontSize: 12,
+    color: '#64748B',
+    fontSize: 11.5,
     fontWeight: '600',
     marginTop: 2,
   },
   telemetryDivider: {
     height: 1,
-    backgroundColor: '#1E293B',
+    backgroundColor: '#E2E8F0',
     marginVertical: 12,
   },
   telemetryFooter: {
@@ -4992,24 +5190,37 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   telemetryFooterText: {
-    color: C.purple,
+    color: '#4F46E5',
     fontSize: 12,
     fontWeight: '600',
   },
   settingsAbsoluteCloseBtn: {
     position: 'absolute',
-    top: 45,
-    left: 20,
+    top: 14,
+    left: 16,
     zIndex: 300,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 3,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   settingsExitBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: MIN_TOUCH_TARGET,
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    backgroundColor: '#FEF2F2',
     borderWidth: 1.2,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
+    borderColor: '#FECACA',
     borderRadius: 14,
     paddingVertical: 14,
     marginTop: 10,
@@ -5017,12 +5228,12 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   settingsExitBtnText: {
-    color: C.red,
+    color: '#DC2626',
     fontSize: 13.5,
     fontWeight: '700',
   },
 
-  // ─── TAB SELECTION BAR STYLES ─────────────────────────────────
+  // ─── TAB SELECTION BAR STYLES (TRIP DETAILS OVERLAY) ──────────
   tabBarWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -5033,8 +5244,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    marginHorizontal: 12,
-    marginVertical: 10,
+    marginBottom: 16,
     elevation: 2,
     shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
@@ -5080,31 +5290,54 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 16,
     marginBottom: 16,
-    borderWidth: 1.2,
-    borderColor: 'rgba(139, 92, 246, 0.2)',
+    borderWidth: 1,
+    borderColor: '#E0E7FF',
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
   },
   statsHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 12,
+    gap: 8,
+  },
+  editTripHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  editTripHeaderBtnText: {
+    color: '#2563EB',
+    fontSize: 11.5,
+    fontWeight: '700',
   },
   statsTitle: {
-    color: '#E2E8F0',
+    color: '#312E81',
     fontSize: 12,
     fontWeight: '800',
     letterSpacing: 1.2,
   },
   statsStatusBadge: {
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
-    borderColor: 'rgba(16, 185, 129, 0.3)',
+    backgroundColor: '#EEF2FF',
+    borderColor: '#C7D2FE',
     borderWidth: 1,
     borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 2,
   },
   statsStatusText: {
-    color: C.greenText,
+    color: '#4338CA',
     fontSize: 12,
     fontWeight: '800',
     letterSpacing: 0.5,
@@ -5119,13 +5352,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   statsValLabel: {
-    color: C.textMuted,
+    color: '#64748B',
     fontSize: 12,
     fontWeight: '600',
     marginBottom: 3,
   },
   statsValText: {
-    color: '#FFF',
+    color: '#0F172A',
     fontSize: 18,
     fontWeight: '800',
   },
@@ -5133,36 +5366,105 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderTopWidth: 0.8,
-    borderTopColor: '#1E293B',
+    borderTopColor: '#E2E8F0',
     paddingTop: 10,
   },
   statsFooterText: {
-    color: '#C084FC',
+    color: '#4F46E5',
     fontSize: 12,
     fontWeight: '600',
     flex: 1,
   },
+  tripActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 14,
+  },
+  tripActionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 10,
+    paddingVertical: 9,
+    paddingHorizontal: 8,
+  },
+  tripActionBtnText: {
+    color: '#2563EB',
+    fontSize: 12,
+    fontWeight: '700',
+  },
 
   // ─── ROADMAP TIMELINE STYLES ──────────────────────────────────
   timelineCard: {
-    backgroundColor: C.card,
+    backgroundColor: '#FFFFFF',
     borderRadius: 20,
-    borderWidth: 1.2,
-    borderColor: C.border,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     padding: 16,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
   },
   timelineHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 20,
+    gap: 8,
   },
   timelineTitleText: {
-    color: '#FFF',
+    color: '#0F172A',
     fontSize: 14.5,
+    fontWeight: '700',
+  },
+  addDayHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#2563EB',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  addDayHeaderBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
     fontWeight: '700',
   },
   timelineList: {
     paddingLeft: 4,
+  },
+  emptyItineraryWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 24,
+    gap: 12,
+  },
+  emptyItineraryText: {
+    color: '#64748B',
+    fontSize: 13,
+  },
+  emptyAddDayBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#2563EB',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  emptyAddDayBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
   },
   verticalTimelineStep: {
     flexDirection: 'row',
@@ -5193,22 +5495,36 @@ const styles = StyleSheet.create({
   verticalTimelineLine: {
     width: 2,
     flex: 1,
-    backgroundColor: '#1E293B',
+    backgroundColor: '#CBD5E1',
     marginVertical: 4,
   },
   verticalTimelineCard: {
     flex: 1,
-    backgroundColor: C.cardAlt,
+    backgroundColor: '#F8FAFC',
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#1E293B',
+    borderColor: '#E2E8F0',
     padding: 12,
   },
   verticalTimelineHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 4,
     gap: 8,
+  },
+  dayActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  dayActionIconBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   verticalTimelineDayText: {
     color: C.blue,
@@ -5220,13 +5536,13 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   verticalTimelineNodeTitle: {
-    color: '#FFF',
+    color: '#0F172A',
     fontSize: 13.5,
     fontWeight: '700',
     flex: 1,
   },
   verticalTimelineDesc: {
-    color: C.textMuted,
+    color: '#64748B',
     fontSize: 12,
     lineHeight: 16,
   },
@@ -5237,7 +5553,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   docsHeaderTitleText: {
-    color: '#FFF',
+    color: '#0F172A',
     fontSize: 18,
     fontWeight: '800',
     marginBottom: 4,
@@ -5301,7 +5617,7 @@ const styles = StyleSheet.create({
     paddingRight: 6,
   },
   docTitleText: {
-    color: '#FFF',
+    color: '#0F172A',
     fontSize: 13,
     fontWeight: '700',
     marginBottom: 1,
@@ -5366,7 +5682,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   memberTabNameText: {
-    color: '#FFF',
+    color: '#0F172A',
     fontSize: 13.5,
     fontWeight: '700',
   },

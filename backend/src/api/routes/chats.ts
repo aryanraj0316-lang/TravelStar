@@ -124,7 +124,7 @@ router.get('/', async (req, res) => {
         type: roomType,
         latestMessage: lastMsgPreview,
         latestTime: lastMsg
-          ? new Date(lastMsg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          ? lastMsg.createdAt.toISOString()
           : 'Just Now',
         unread: unreadCount > 0,
         unreadCount,
@@ -270,9 +270,10 @@ router.get('/:id/messages', async (req, res) => {
           senderAvatar: avatar,
           avatar: avatar,
           content: m.content || '',
-          timestamp: new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          timestamp: m.createdAt.toISOString(),
+          createdAt: m.createdAt.toISOString(),
           mediaType: m.mediaType || 'NONE',
-          createdAt: m.createdAt,
+          mediaUrl: m.mediaUrl || null,
         };
       })
       .reverse(); // chronological order for display

@@ -236,6 +236,7 @@ export interface ChatMessage {
   content: string;
   timestamp: string;
   mediaType: 'NONE' | 'IMAGE' | 'VOICE';
+  mediaUrl?: string | null;
   createdAt: IsoDateTime;
 }
 
