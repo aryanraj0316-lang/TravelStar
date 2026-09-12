@@ -9,6 +9,7 @@ import { initObservability, captureException, flushObservability } from './lib/o
 import { closeCache } from './lib/cache';
 import { startRetentionScheduler, stopRetentionScheduler } from './lib/data-retention';
 import { startHazardFeedScheduler, stopHazardFeedScheduler } from './lib/hazard-feed';
+import { startDestinationTrendsScheduler, stopDestinationTrendsScheduler } from './lib/destination-trends';
 
 initObservability();
 
@@ -23,6 +24,7 @@ server.listen(env.PORT, () => {
 
 startRetentionScheduler();
 startHazardFeedScheduler();
+startDestinationTrendsScheduler();
 
 // ── Graceful shutdown (docs/REMEDIATION.md Phase 11) ────────────────
 // SIGTERM (orchestrator stop) / SIGINT (Ctrl-C): stop accepting new
@@ -36,6 +38,7 @@ async function shutdown(signal: string): Promise<void> {
   logger.info(`[shutdown] received ${signal}, draining…`);
   stopRetentionScheduler();
   stopHazardFeedScheduler();
+  stopDestinationTrendsScheduler();
 
   const hardExit = setTimeout(() => {
     logger.error('[shutdown] drain timed out, forcing exit');
