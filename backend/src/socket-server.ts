@@ -109,12 +109,15 @@ export function createSocketServer(httpServer: HttpServer): Server {
           ? `${sender.profile.firstName} ${sender.profile.lastName}`.trim()
           : (sender?.email?.split('@')[0] ?? 'Member');
         const senderRole = userId === chatRoom?.trip?.creatorId ? 'Organizer' : 'Tourist';
+        const senderAvatar = sender?.profile?.avatarUrl ?? null;
 
         const newMsg = {
           id: savedMsg.id,
           senderId: userId,
           senderName,
           senderRole,
+          senderAvatar,
+          avatar: senderAvatar,
           content: savedMsg.content,
           timestamp: new Date(savedMsg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           mediaType: savedMsg.mediaType || 'NONE',
@@ -155,10 +158,11 @@ export function createSocketServer(httpServer: HttpServer): Server {
         const senderName = sender?.profile
           ? `${sender.profile.firstName} ${sender.profile.lastName}`.trim()
           : (sender?.email?.split('@')[0] ?? 'Member');
+        const userAvatar = sender?.profile?.avatarUrl ?? null;
 
         // `socket.to()`, not `io.to()` — excludes the sender's own socket,
         // so a client never has to filter out its own typing echo.
-        socket.to(chatRoomId).emit('userTyping', { roomId: chatRoomId, userId, userName: senderName, isTyping });
+        socket.to(chatRoomId).emit('userTyping', { roomId: chatRoomId, userId, userName: senderName, userAvatar, isTyping });
       } catch (e) {
         logger.error('[Socket] typing failed:', e);
       }

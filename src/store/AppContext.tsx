@@ -137,6 +137,8 @@ export interface Message {
   id: string;
   senderName: string;
   senderRole: string;
+  senderAvatar?: string | null;
+  avatar?: string | null;
   content: string;
   timestamp: string;
   mediaType?: 'NONE' | 'IMAGE' | 'VOICE';
@@ -204,7 +206,7 @@ interface AppContextType {
   messages: Message[];
   sendMessage: (content: string, mediaType?: 'NONE' | 'IMAGE' | 'VOICE') => void;
   setTyping: (isTyping: boolean) => void;
-  typingUser: { roomId: string; userId: string; userName: string; isTyping: boolean } | null;
+  typingUser: { roomId: string; userId: string; userName: string; userAvatar?: string | null; isTyping: boolean } | null;
   sosAlerts: SOSAlert[];
   triggerSOS: (lat: number, lng: number) => void;
   resolveSOS: (id: string) => void;
@@ -254,6 +256,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     roomId: string;
     userId: string;
     userName: string;
+    userAvatar?: string | null;
     isTyping: boolean;
   } | null>(null);
   const [hasUnreadNotification, setHasUnreadNotification] = useState<boolean>(false);

@@ -61,7 +61,7 @@ import { apiService } from '@/services/api';
 import { eventBus } from '@/services/event-bus';
 import { useApp } from '@/store/AppContext';
 import { C, MIN_TOUCH_TARGET, fontSize, radii } from '@/theme/tokens';
-import { Button, Input } from '@/components/ui';
+import { Avatar, Button, Input } from '@/components/ui';
 
 // Deliberately require(), not import(): needs to synchronously catch a
 // missing/unlinked native module at load time (same reasoning as
@@ -275,6 +275,53 @@ const SENDER_ROLE_LABEL_KEYS: Record<string, string> = {
   System: 'chat.roleSystem',
 };
 
+function findMemberAvatar(
+  senderId: string | undefined,
+  senderName: string | undefined,
+  senderRole: string | undefined,
+  members: { id?: string; name: string; avatar: string; role?: string }[],
+): string {
+  if (!members || members.length === 0) return '';
+
+  const cleanName = (senderName || '').trim().toLowerCase();
+
+  // 1. Match by senderId against member id
+  if (senderId) {
+    const byId = members.find((m) => m.id && m.id === senderId);
+    if (byId?.avatar) return byId.avatar;
+  }
+
+  // 2. Match by exact clean name
+  if (cleanName) {
+    const byExactName = members.find((m) => m.name.trim().toLowerCase() === cleanName);
+    if (byExactName?.avatar) return byExactName.avatar;
+
+    // 3. Match by name stripping suffixes like "(Creator)", "(Organizer)", "(Guide)"
+    const byStrippedName = members.find((m) => {
+      const mClean = m.name.replace(/\s*\((Creator|Organizer|Guide|Member)\)\s*$/i, '').trim().toLowerCase();
+      return mClean === cleanName;
+    });
+    if (byStrippedName?.avatar) return byStrippedName.avatar;
+
+    // 4. Prefix or substring matching
+    const byPrefix = members.find((m) => {
+      const mClean = m.name.replace(/\s*\((Creator|Organizer|Guide|Member)\)\s*$/i, '').trim().toLowerCase();
+      return mClean.length > 0 && (mClean.startsWith(cleanName) || cleanName.startsWith(mClean));
+    });
+    if (byPrefix?.avatar) return byPrefix.avatar;
+  }
+
+  // 5. If role is Organizer and there is an Organizer in members
+  if (senderRole === 'Organizer' || senderRole === 'ORGANIZER') {
+    const organizer = members.find(
+      (m) => m.role === 'Organizer' || m.role === 'ORGANIZER' || m.name.toLowerCase().includes('creator'),
+    );
+    if (organizer?.avatar) return organizer.avatar;
+  }
+
+  return '';
+}
+
 // One chat message. Extracted from an inline `.map()` so the message list can
 // be virtualized (the FlatList below) and so the React Compiler
 // (app.json > experiments.reactCompiler) can memoize bubbles independently —
@@ -292,6 +339,7 @@ function MessageBubble({
   onOpenMap,
   canResolveSOS,
   onResolveSOS,
+  members,
 }: {
   msg: CustomMessage;
   previousSenderName: string | null;
@@ -305,12 +353,14 @@ function MessageBubble({
   // *active* alert rather than this message — hence no message argument.
   canResolveSOS: boolean;
   onResolveSOS: () => void;
+  members?: { id?: string; name: string; avatar: string; role?: string }[];
 }) {
   const { t } = useTranslation();
   const hasTranslation = isTranslated;
   const displayedContent = hasTranslation && msg.translations?.hindi ? msg.translations.hindi : msg.content;
   const isSOS = msg.type === 'sos';
   const isSystem = msg.senderRole === 'SYSTEM' || msg.senderName === 'System';
+  const senderAvatar = msg.avatar || findMemberAvatar(msg.senderId, msg.senderName, msg.senderRole, members || []);
 
   if (isSystem) {
     return (
@@ -336,9 +386,7 @@ function MessageBubble({
         {!msg.isMe && (
           <View style={styles.avatarContainer}>
             {!isConsecutive && (
-              <>
-                <Image source={{ uri: msg.avatar }} style={styles.messageAvatar} />
-              </>
+              <Avatar uri={senderAvatar} name={msg.senderName} size={36} style={styles.messageAvatar} />
             )}
           </View>
         )}
@@ -350,10 +398,10 @@ function MessageBubble({
                 style={[
                   styles.senderNameText,
                   msg.senderRole === 'Organizer'
-                    ? { color: C.blueGlow }
+                    ? { color: C.blueText }
                     : msg.senderRole === 'Guide'
-                      ? { color: C.purple }
-                      : { color: C.green },
+                      ? { color: C.purpleText }
+                      : { color: C.text },
                 ]}
               >
                 {msg.isMe ? t('chat.you') : msg.senderName}
@@ -369,7 +417,16 @@ function MessageBubble({
                         : styles.rolePillTourist,
                   ]}
                 >
-                  <Text style={styles.rolePillText}>
+                  <Text
+                    style={[
+                      styles.rolePillText,
+                      msg.senderRole === 'Organizer'
+                        ? styles.rolePillTextOrganizer
+                        : msg.senderRole === 'Guide'
+                          ? styles.rolePillTextGuide
+                          : styles.rolePillTextTourist,
+                    ]}
+                  >
                     {SENDER_ROLE_LABEL_KEYS[msg.senderRole] ? t(SENDER_ROLE_LABEL_KEYS[msg.senderRole]) : msg.senderRole}
                   </Text>
                 </View>
@@ -585,7 +642,30 @@ function MessageBubble({
                   accessibilityLabel={msg.senderName}
                   accessibilityHint={t('chat.messageOptionsHint')}
                 >
-                  <View style={[styles.bubble, styles.bubbleOther]}>
+                  <LinearGradient
+                    colors={['#0066FF', '#7C3AED', '#BA68C8']}
+                    start={(() => {
+                      let hash = 0;
+                      const idStr = msg.id || 'random';
+                      for (let i = 0; i < idStr.length; i++) {
+                        hash = idStr.charCodeAt(i) + ((hash << 5) - hash);
+                      }
+                      const normX = (Math.abs(hash) % 5) / 10;
+                      const normY = (Math.abs(hash >> 2) % 5) / 10;
+                      return { x: normX, y: normY };
+                    })()}
+                    end={(() => {
+                      let hash = 0;
+                      const idStr = msg.id || 'random';
+                      for (let i = 0; i < idStr.length; i++) {
+                        hash = idStr.charCodeAt(i) + ((hash << 3) - hash);
+                      }
+                      const normX = 0.6 + (Math.abs(hash) % 5) / 10;
+                      const normY = 0.6 + (Math.abs(hash >> 2) % 5) / 10;
+                      return { x: normX, y: normY };
+                    })()}
+                    style={styles.instagramGradientBubbleOther}
+                  >
                     {msg.replyTo && (
                       <View style={styles.bubbleReplyHeaderOther}>
                         <Text style={styles.bubbleReplySenderOther} numberOfLines={1}>
@@ -606,14 +686,14 @@ function MessageBubble({
                         accessibilityRole="button"
                         accessibilityLabel={hasTranslation ? t('chat.showOriginal') : t('chat.translateToHindi')}
                       >
-                        <TranslateIcon size={12} color={C.blueGlow} />
+                        <TranslateIcon size={12} color="#FFF" />
                         <Text style={styles.translateText}>
                           {hasTranslation ? t('chat.showOriginal') : t('chat.translateToHindi')}
                         </Text>
                       </TouchableOpacity>
                     )}
                     <Text style={styles.timestampText}>{msg.timestamp}</Text>
-                  </View>
+                  </LinearGradient>
                 </TouchableOpacity>
               )}
             </View>
@@ -742,14 +822,13 @@ function ChatScreen() {
           if (history && history.length > 0) {
             const mappedHistory: CustomMessage[] = history.map((m) => {
               const isMe = m.senderId === profile.id || !!(profile.name && m.senderName === profile.name);
+              const messageAvatar = m.senderAvatar || m.avatar || findMemberAvatar(m.senderId, m.senderName, m.senderRole, dbMembers);
               return {
                 id: m.id,
                 senderId: m.senderId,
                 senderName: m.senderName,
                 senderRole: m.senderRole,
-                avatar: isMe
-                  ? profile.avatar
-                  : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
+                avatar: isMe ? (profile.avatar || messageAvatar) : messageAvatar,
                 content: m.content,
                 timestamp: m.timestamp,
                 isMe: isMe,
@@ -821,7 +900,7 @@ function ChatScreen() {
             ...prev,
             {
               name: userName,
-              avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
+              avatar: latestMsg.senderAvatar || latestMsg.avatar || '',
               role: 'Tourist',
             },
           ];
@@ -852,14 +931,17 @@ function ChatScreen() {
           };
         }
 
+        const memberMatch = dbMembers.find(
+          (mb) => (latestMsg.senderId && mb.id === latestMsg.senderId) || mb.name === latestMsg.senderName,
+        );
+        const incomingAvatar = latestMsg.senderAvatar || latestMsg.avatar || memberMatch?.avatar || '';
+
         const newMsg: CustomMessage = {
           id: latestMsg.id,
           senderId: latestMsg.senderId,
           senderName: latestMsg.senderName,
           senderRole: latestMsg.senderRole,
-          avatar: isMe
-            ? profile.avatar
-            : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
+          avatar: isMe ? (profile.avatar || incomingAvatar) : incomingAvatar,
           content: latestMsg.content,
           timestamp: latestMsg.timestamp,
           isMe: isMe,
@@ -892,13 +974,17 @@ function ChatScreen() {
           return [updatedRoom, ...otherRooms];
         } else {
           const roomType = key.includes('guide') || key.includes('dm') ? 'GUIDE' : 'GROUP';
+          const memberMatch = dbMembers.find(
+            (mb) => (latestMsg.senderId && mb.id === latestMsg.senderId) || mb.name === latestMsg.senderName,
+          );
+          const roomAvatar = isMe
+            ? (latestMsg.senderAvatar || latestMsg.avatar || profile.avatar)
+            : (latestMsg.senderAvatar || latestMsg.avatar || memberMatch?.avatar || profile.avatar);
           const newRoom: ChatRoom = {
             id: key,
             tripId: selectedTripId,
             name: key.includes('group') ? 'New Group Chat' : latestMsg.senderName || 'New Chat',
-            avatar: isMe
-              ? profile.avatar
-              : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
+            avatar: roomAvatar,
             type: roomType,
             latestMessage: snippetText,
             latestTime: latestMsg.timestamp || 'Just Now',
@@ -910,31 +996,44 @@ function ChatScreen() {
         }
       });
     }
-  }, [messages, activeRoomId, profile.avatar, profile.id, profile.name, selectedTripId]);
+  }, [messages, activeRoomId, profile.avatar, profile.id, profile.name, selectedTripId, dbMembers]);
 
   // Filters for the Inbox List view
   const [inboxFilter, setInboxFilter] = useState<'ALL' | 'GROUPS' | 'GUIDES'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Load trip members from database dynamically when selectedTripId changes
+  // Load trip members from database dynamically when selectedTripId or selectedRoomId changes
   useEffect(() => {
     if (selectedTripId) {
       apiService
         .getTripMembers(selectedTripId)
         .then((membersData) => {
           if (membersData && Array.isArray(membersData)) {
-            // TripMemberRow (src/types/api.ts) carries `isCreator`, not a
-            // `role`/nested `user` shape — this used to read fields that
-            // never existed on the real response (`m.role`, `m.user.role`,
-            // `m.user.profile.*`), so every member silently rendered as
-            // 'Tourist' regardless of who actually organized the trip.
             const mapped = membersData.map((m) => ({
               id: m.userId,
               name: m.name,
-              avatar: m.avatar,
+              avatar: m.avatar || '',
               role: m.isCreator ? 'Organizer' : 'Tourist',
             }));
             setDbMembers(mapped);
+
+            setTripMessages((prev) => {
+              let changed = false;
+              const updated: Record<string, CustomMessage[]> = {};
+              Object.keys(prev).forEach((roomId) => {
+                updated[roomId] = prev[roomId].map((msg) => {
+                  if (!msg.avatar) {
+                    const resolved = findMemberAvatar(msg.senderId, msg.senderName, msg.senderRole, mapped);
+                    if (resolved) {
+                      changed = true;
+                      return { ...msg, avatar: resolved };
+                    }
+                  }
+                  return msg;
+                });
+              });
+              return changed ? updated : prev;
+            });
           } else {
             setDbMembers([]);
           }
@@ -943,8 +1042,43 @@ function ChatScreen() {
           logger.warn('Failed to fetch trip members:', err);
           setDbMembers([]);
         });
+    } else if (selectedRoomId) {
+      apiService
+        .getChatDetails(selectedRoomId)
+        .then((roomDetails: any) => {
+          if (roomDetails && Array.isArray(roomDetails.members)) {
+            const mapped = roomDetails.members.map((m: any) => ({
+              id: m.id,
+              name: m.name,
+              avatar: m.avatar || '',
+              role: m.role || 'Tourist',
+            }));
+            setDbMembers(mapped);
+
+            setTripMessages((prev) => {
+              let changed = false;
+              const updated: Record<string, CustomMessage[]> = {};
+              Object.keys(prev).forEach((roomId) => {
+                updated[roomId] = prev[roomId].map((msg) => {
+                  if (!msg.avatar) {
+                    const resolved = findMemberAvatar(msg.senderId, msg.senderName, msg.senderRole, mapped);
+                    if (resolved) {
+                      changed = true;
+                      return { ...msg, avatar: resolved };
+                    }
+                  }
+                  return msg;
+                });
+              });
+              return changed ? updated : prev;
+            });
+          }
+        })
+        .catch((err) => {
+          logger.warn('Failed to fetch room details for members:', err);
+        });
     }
-  }, [selectedTripId]);
+  }, [selectedTripId, selectedRoomId]);
 
   // Bottom attachments overlay
   const [isAttachmentOpen, setIsAttachmentOpen] = useState(false);
@@ -1106,10 +1240,15 @@ function ChatScreen() {
   const activeSOS = sosAlerts.find((sos) => sos.status === 'ACTIVE');
 
   // Retrieve current active messages list (unified feed)
-  const currentMessages = useMemo(
-    () => tripMessages[selectedRoomId || selectedTripId] || [],
-    [tripMessages, selectedRoomId, selectedTripId],
-  );
+  const currentMessages = useMemo(() => {
+    const rawMsgs = tripMessages[selectedRoomId || selectedTripId] || [];
+    return rawMsgs.map((msg) => {
+      const resolved = msg.isMe
+        ? (profile.avatar || msg.avatar || findMemberAvatar(msg.senderId, msg.senderName, msg.senderRole, dbMembers))
+        : (msg.avatar || findMemberAvatar(msg.senderId, msg.senderName, msg.senderRole, dbMembers));
+      return resolved && resolved !== msg.avatar ? { ...msg, avatar: resolved } : msg;
+    });
+  }, [tripMessages, selectedRoomId, selectedTripId, dbMembers, profile.avatar]);
 
   // Dynamically extract group members from message history in this room/trip
   const groupMembers = useMemo(() => {
@@ -1139,9 +1278,7 @@ function ChatScreen() {
         if (!membersMap.has(msg.senderName)) {
           membersMap.set(msg.senderName, {
             name: msg.senderName,
-            avatar:
-              msg.avatar ||
-              'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
+            avatar: msg.avatar || '',
             role: msg.senderRole || 'Tourist',
           });
         }
@@ -1827,7 +1964,7 @@ function ChatScreen() {
                 >
                   {/* Avatar left */}
                   <View style={styles.roomAvatarWrap}>
-                    <Image source={{ uri: room.avatar }} style={styles.roomAvatarImg} />
+                    <Avatar uri={room.avatar || findMemberAvatar(undefined, room.name, undefined, dbMembers)} name={room.name} size={48} style={styles.roomAvatarImg} />
                   </View>
 
                   {/* Info Center */}
@@ -2066,7 +2203,7 @@ function ChatScreen() {
             <ArrowLeft size={20} color={C.text} />
           </TouchableOpacity>
 
-          <Image source={{ uri: activeRoom?.avatar }} style={styles.roomHeaderAvatar} />
+          <Avatar uri={activeRoom?.avatar || findMemberAvatar(undefined, activeRoom?.name, undefined, dbMembers)} name={activeRoom?.name || 'Chat'} size={40} style={styles.roomHeaderAvatar} />
 
           <TouchableOpacity
             style={styles.roomHeaderTitles}
@@ -2214,6 +2351,7 @@ function ChatScreen() {
                 onOpenMap={() => router.navigate('/map')}
                 canResolveSOS={profile.role === 'ORGANIZER' || profile.role === 'GUIDE'}
                 onResolveSOS={handleResolveSOSEvent}
+                members={dbMembers}
               />
             )}
             showsVerticalScrollIndicator={false}
@@ -2493,7 +2631,7 @@ function ChatScreen() {
                 accessibilityLabel={t('chat.startPrivateChatWith', { name: member.name })}
               >
                 <View style={styles.memberTabCardLeft}>
-                  <Image source={{ uri: member.avatar }} style={styles.memberTabAvatar} />
+                  <Avatar uri={member.avatar} name={member.name} size={42} style={styles.memberTabAvatar} />
                   <View style={styles.memberTabMeta}>
                     <Text style={styles.memberTabNameText}>{member.name}</Text>
                     <Text style={styles.memberTabRoleText}>
@@ -2670,7 +2808,7 @@ function ChatScreen() {
             <ScrollView contentContainerStyle={styles.settingsScrollContent} showsVerticalScrollIndicator={false}>
               {/* Group Meta Display */}
               <View style={styles.settingsAvatarBlock}>
-                <Image source={{ uri: activeRoom?.avatar }} style={styles.settingsAvatarImg} />
+                <Avatar uri={activeRoom?.avatar} name={activeRoom?.name || 'Chat'} size={72} style={styles.settingsAvatarImg} />
                 <Text style={styles.settingsRoomName}>{activeRoom?.name}</Text>
                 {activeTrip ? (
                   <Text style={styles.settingsTripDates}>
@@ -2915,7 +3053,7 @@ function ChatScreen() {
                           accessibilityRole="button"
                           accessibilityLabel={t('chat.startPrivateChatWith', { name: member.name })}
                         >
-                          <Image source={{ uri: member.avatar }} style={styles.memberAvatar} />
+                          <Avatar uri={member.avatar} name={member.name} size={40} style={styles.memberAvatar} />
                           <View style={styles.memberMeta}>
                             <Text style={styles.memberName}>{member.name}</Text>
                             <Text style={styles.memberRoleText}>
@@ -3807,42 +3945,53 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 4,
+    gap: 6,
   },
   senderNameText: {
-    fontSize: 12,
-    fontWeight: '800',
-    marginRight: 6,
+    fontSize: 13,
+    fontWeight: '700',
+    color: C.text,
   },
   rolePill: {
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 1.5,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   rolePillOrganizer: {
-    backgroundColor: 'rgba(0, 102, 255, 0.15)',
-    borderWidth: 0.5,
-    borderColor: C.blue,
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
   },
   rolePillGuide: {
-    backgroundColor: 'rgba(139, 92, 246, 0.15)',
-    borderWidth: 0.5,
-    borderColor: C.purple,
+    backgroundColor: '#F5F3FF',
+    borderColor: '#DDD6FE',
   },
   rolePillTourist: {
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
-    borderWidth: 0.5,
-    borderColor: C.green,
+    backgroundColor: '#F8FAFC',
+    borderColor: '#E2E8F0',
   },
   rolePillText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#FFF',
+    fontSize: 10.5,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  rolePillTextOrganizer: {
+    color: '#1D4ED8',
+  },
+  rolePillTextGuide: {
+    color: '#6D28D9',
+  },
+  rolePillTextTourist: {
+    color: '#64748B',
   },
 
   // Bubble
   bubble: {
-    borderRadius: 14,
-    paddingHorizontal: 12,
+    borderRadius: 18,
+    paddingHorizontal: 14,
     paddingVertical: 10,
     maxWidth: '100%',
     alignSelf: 'flex-start',
@@ -3853,7 +4002,7 @@ const styles = StyleSheet.create({
   },
   bubbleContainerOther: {
     alignSelf: 'flex-start',
-    maxWidth: '92%',
+    maxWidth: '85%',
   },
   instagramGradientBubble: {
     borderRadius: 18,
@@ -3867,14 +4016,30 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
+  instagramGradientBubbleOther: {
+    borderRadius: 18,
+    borderTopLeftRadius: 3,
+    borderTopRightRadius: 18,
+    borderBottomLeftRadius: 18,
+    borderBottomRightRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    minWidth: 70,
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 4,
+  },
   bubbleTextMe: {
     color: '#FFF',
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '500',
+    lineHeight: 20,
   },
   timestampTextMe: {
-    color: 'rgba(255, 255, 255, 0.65)',
-    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 11,
     alignSelf: 'flex-end',
     marginTop: 4,
   },
@@ -3893,19 +4058,25 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   bubbleOther: {
-    backgroundColor: C.card,
-    borderWidth: 1.2,
-    borderColor: 'rgba(37, 39, 64, 0.8)',
-    borderTopLeftRadius: 2,
-    borderTopRightRadius: 16,
-    borderBottomLeftRadius: 16,
-    borderBottomRightRadius: 16,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderTopLeftRadius: 4,
+    borderTopRightRadius: 18,
+    borderBottomLeftRadius: 18,
+    borderBottomRightRadius: 18,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 3,
+    elevation: 1,
   },
   bubbleText: {
-    color: '#F8FAFC',
-    fontSize: 13.5,
-    lineHeight: 19,
+    color: '#FFF',
+    fontSize: 14,
     fontWeight: '500',
+    lineHeight: 20,
+    letterSpacing: 0.1,
   },
   translateRow: {
     flexDirection: 'row',
@@ -3913,17 +4084,17 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingTop: 6,
     borderTopWidth: 0.5,
-    borderTopColor: C.border,
+    borderTopColor: 'rgba(255, 255, 255, 0.25)',
   },
   translateText: {
-    color: C.blueGlow,
+    color: '#FFF',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
     marginLeft: 4,
   },
   timestampText: {
-    color: C.textMuted,
-    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 11,
     alignSelf: 'flex-end',
     marginTop: 4,
   },
@@ -3943,7 +4114,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   pollQuestionText: {
-    color: '#FFF',
+    color: C.text,
     fontSize: 13,
     fontWeight: '800',
     flex: 1,
@@ -3977,7 +4148,7 @@ const styles = StyleSheet.create({
     zIndex: 5,
   },
   pollOptionLabel: {
-    color: '#D1D5DB',
+    color: C.text,
     fontSize: 12.5,
     fontWeight: '600',
   },
@@ -4015,12 +4186,12 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   expenseBillDesc: {
-    color: '#FFF',
+    color: C.text,
     fontSize: 13,
     fontWeight: '700',
   },
   expenseBillAmount: {
-    color: '#FFF',
+    color: C.text,
     fontSize: 20,
     fontWeight: '900',
     marginTop: 4,
@@ -4060,13 +4231,13 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   locationCardTitle: {
-    color: C.blueGlow,
+    color: C.blueText,
     fontSize: 12,
     fontWeight: '800',
     marginLeft: 6,
   },
   locationText: {
-    color: '#FFF',
+    color: C.text,
     fontSize: 13,
     fontWeight: '600',
     marginBottom: 8,
@@ -4108,16 +4279,16 @@ const styles = StyleSheet.create({
     bottom: 6,
   },
   locationActionTouch: {
-    backgroundColor: 'rgba(0, 102, 255, 0.12)',
+    backgroundColor: '#EFF6FF',
     borderRadius: 8,
     paddingVertical: 6,
     alignItems: 'center',
     marginTop: 8,
-    borderWidth: 0.5,
-    borderColor: C.blue,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
   },
   locationActionText: {
-    color: C.blueGlow,
+    color: C.blueText,
     fontSize: 12,
     fontWeight: '800',
   },
@@ -4193,7 +4364,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.cardAlt,
   },
   imageCardDesc: {
-    color: '#E2E8F0',
+    color: C.text,
     fontSize: 12,
     fontWeight: '600',
     flex: 1,
@@ -4585,22 +4756,22 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   bubbleReplyHeaderOther: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     borderLeftWidth: 3,
-    borderLeftColor: C.blue,
+    borderLeftColor: '#FFF',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 4,
     marginBottom: 6,
   },
   bubbleReplySenderOther: {
-    color: C.blueGlow,
-    fontWeight: '800',
+    color: '#FFF',
+    fontWeight: '700',
     fontSize: 12,
     marginBottom: 1,
   },
   bubbleReplyContentOther: {
-    color: C.textSec,
+    color: 'rgba(255, 255, 255, 0.85)',
     fontSize: 12,
   },
 

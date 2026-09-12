@@ -49,7 +49,13 @@ router.get('/', async (req, res) => {
         chatRoom: {
           include: {
             trip: true,
-            members: true,
+            members: {
+              include: {
+                user: {
+                  include: { profile: true },
+                },
+              },
+            },
             messages: {
               orderBy: { createdAt: 'desc' },
               take: 1,
@@ -90,6 +96,18 @@ router.get('/', async (req, res) => {
     const rooms = memberships.map((m) => {
       const room = m.chatRoom;
       const trip = room.trip;
+      const otherMember = !room.isGroup ? room.members.find((mb) => mb.userId !== tokenUserId) : null;
+      const otherName = otherMember?.user?.profile
+        ? `${otherMember.user.profile.firstName} ${otherMember.user.profile.lastName}`.trim()
+        : otherMember?.user?.email
+          ? otherMember.user.email.split('@')[0]
+          : null;
+      const otherAvatar = otherMember?.user?.profile?.avatarUrl ?? null;
+
+      const roomName = room.name || otherName || trip?.name || (room.isGroup ? 'Group Chat' : 'Direct Chat');
+      const roomAvatar = (!room.isGroup && otherAvatar) ? otherAvatar : (trip?.coverImage ?? otherAvatar ?? null);
+      const roomType = room.isGroup ? 'GROUP' : 'GUIDE';
+
       const lastMsg = room.messages[0];
       const lastMsgPreview = lastMsg
         ? `${lastMsg.sender?.profile?.firstName || 'User'}: ${lastMsg.content || ''}`
@@ -101,16 +119,16 @@ router.get('/', async (req, res) => {
       return {
         id: room.id,
         tripId: trip?.id || null,
-        name: room.name || trip?.name || 'Group Chat',
-        avatar: trip?.coverImage ?? null,
-        type: 'GROUP',
+        name: roomName,
+        avatar: roomAvatar,
+        type: roomType,
         latestMessage: lastMsgPreview,
         latestTime: lastMsg
           ? new Date(lastMsg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           : 'Just Now',
         unread: unreadCount > 0,
         unreadCount,
-        badge: 'Member',
+        badge: room.isGroup ? 'Member' : 'Direct',
         lastMessageAt: sortDate.toISOString(),
       };
     });
@@ -165,13 +183,24 @@ router.get('/:id', async (req, res) => {
       role: m.user.id === room.trip?.creatorId ? 'Organizer' : 'Member',
     }));
 
+    const otherMember = !room.isGroup ? room.members.find((m) => m.user.id !== tokenUserId) : null;
+    const otherName = otherMember?.user?.profile
+      ? `${otherMember.user.profile.firstName} ${otherMember.user.profile.lastName}`.trim()
+      : otherMember?.user?.email
+        ? otherMember.user.email.split('@')[0]
+        : null;
+    const roomName = room.name || otherName || room.trip?.name || (room.isGroup ? 'Group Chat' : 'Direct Chat');
+    const roomAvatar = (!room.isGroup && otherMember?.user?.profile?.avatarUrl)
+      ? otherMember.user.profile.avatarUrl
+      : (room.trip?.coverImage ?? otherMember?.user?.profile?.avatarUrl ?? null);
+
     return res.status(200).json({
       ok: true,
       data: {
         id: room.id,
         tripId: room.trip?.id || null,
-        name: room.name || room.trip?.name || 'Group Chat',
-        avatar: room.trip?.coverImage ?? null,
+        name: roomName,
+        avatar: roomAvatar,
         members: membersList,
       },
     });
@@ -221,6 +250,7 @@ router.get('/:id/messages', async (req, res) => {
       .map((m) => {
         let name = 'System';
         let role = 'SYSTEM';
+        let avatar: string | null = null;
 
         if (!m.isSystem) {
           name = m.sender?.profile
@@ -229,6 +259,7 @@ router.get('/:id/messages', async (req, res) => {
               ? (m.sender.email.split('@')[0] ?? 'Member')
               : 'Member';
           role = m.senderId === m.chatRoom?.trip?.creatorId ? 'Organizer' : 'Tourist';
+          avatar = m.sender?.profile?.avatarUrl ?? null;
         }
 
         return {
@@ -236,6 +267,8 @@ router.get('/:id/messages', async (req, res) => {
           senderId: m.senderId,
           senderName: name,
           senderRole: role,
+          senderAvatar: avatar,
+          avatar: avatar,
           content: m.content || '',
           timestamp: new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           mediaType: m.mediaType || 'NONE',

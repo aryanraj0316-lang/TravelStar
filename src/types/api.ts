@@ -231,6 +231,8 @@ export interface ChatMessage {
   senderId: string;
   senderName: string;
   senderRole: string;
+  senderAvatar?: string | null;
+  avatar?: string | null;
   content: string;
   timestamp: string;
   mediaType: 'NONE' | 'IMAGE' | 'VOICE';

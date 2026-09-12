@@ -162,6 +162,7 @@ describe('Room join authorization (docs/REMEDIATION.md §3.2)', () => {
       .set('Authorization', `Bearer ${member.token}`);
     expect(messagesRes.status).toBe(200);
     expect(messagesRes.body.data.some((m: { content: string }) => m.content === 'pre-existing history')).toBe(true);
+    expect(messagesRes.body.data[0]).toHaveProperty('senderAvatar');
   });
 
   it('a non-member cannot send a message into the room either', async () => {
@@ -180,7 +181,7 @@ describe('Room join authorization (docs/REMEDIATION.md §3.2)', () => {
     });
     expect(joined).toBe(true);
 
-    const receivedPromise = waitForEvent<{ message: { senderId: string; senderName: string } }>(
+    const receivedPromise = waitForEvent<{ message: { senderId: string; senderName: string; senderAvatar?: string | null } }>(
       socket,
       'messageReceived',
     );
@@ -195,6 +196,7 @@ describe('Room join authorization (docs/REMEDIATION.md §3.2)', () => {
     const { message } = await receivedPromise;
     expect(message.senderId).toBe(member.id);
     expect(message.senderName).toBe('room-member');
+    expect('senderAvatar' in message).toBe(true);
     socket.disconnect();
   });
 });

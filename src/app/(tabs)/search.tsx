@@ -1637,11 +1637,11 @@ const styles = StyleSheet.create({
   },
   ctaHotspot: {
     position: 'absolute',
-    left: '4.2%',
-    bottom: '25.5%',
-    width: '20.8%',
-    height: '18.5%',
-    borderRadius: 8,
+    left: '6.2%',
+    top: '59.0%',
+    width: '37.2%',
+    height: '18.4%',
+    borderRadius: 999,
     backgroundColor: 'transparent',
   },
 

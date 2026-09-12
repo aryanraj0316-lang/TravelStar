@@ -27,8 +27,13 @@ function initials(name: string): string {
 export function Avatar({ uri, name, size = 40, style }: AvatarProps) {
   const dimension = { width: size, height: size, borderRadius: radii.pill };
   const label = `Profile picture of ${name}`;
+  const [hasError, setHasError] = React.useState(false);
 
-  if (!uri) {
+  React.useEffect(() => {
+    setHasError(false);
+  }, [uri]);
+
+  if (!uri || hasError) {
     return (
       <View style={[styles.fallback, dimension, style as StyleProp<ViewStyle>]} accessibilityRole="image" accessibilityLabel={label}>
         <Text style={[styles.initials, { fontSize: size * 0.4 }]}>{initials(name)}</Text>
@@ -44,6 +49,7 @@ export function Avatar({ uri, name, size = 40, style }: AvatarProps) {
       transition={150}
       cachePolicy="memory-disk"
       accessibilityLabel={label}
+      onError={() => setHasError(true)}
     />
   );
 }
