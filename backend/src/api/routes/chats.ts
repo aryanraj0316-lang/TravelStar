@@ -128,7 +128,9 @@ router.get('/', async (req, res) => {
           : 'Just Now',
         unread: unreadCount > 0,
         unreadCount,
-        badge: room.isGroup ? 'Member' : 'Direct',
+        badge: room.isGroup
+          ? (trip?.creatorId === tokenUserId ? 'Organizer' : 'Member')
+          : 'Direct',
         lastMessageAt: sortDate.toISOString(),
       };
     });

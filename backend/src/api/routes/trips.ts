@@ -816,7 +816,7 @@ router.get('/:id/members', async (req, res) => {
     const creatorItem = {
       id: `creator-${trip.creatorId}`,
       userId: trip.creatorId,
-      name: `${creatorName} (Creator)`,
+      name: creatorName,
       avatar: creatorAvatar,
       isCreator: true,
       // The organizer has no TripMember row (they're the trip itself, not a

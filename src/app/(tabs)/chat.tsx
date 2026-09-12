@@ -21,6 +21,7 @@ import Clock from 'lucide-react-native/icons/clock';
 import Compass from 'lucide-react-native/icons/compass';
 import Copy from 'lucide-react-native/icons/copy';
 import CornerUpLeft from 'lucide-react-native/icons/corner-up-left';
+import DeleteIcon from 'lucide-react-native/icons/delete';
 import DollarSign from 'lucide-react-native/icons/dollar-sign';
 import Download from 'lucide-react-native/icons/download';
 import ImageIcon from 'lucide-react-native/icons/image';
@@ -64,7 +65,7 @@ import { apiService } from '@/services/api';
 import { eventBus } from '@/services/event-bus';
 import { useApp } from '@/store/AppContext';
 import { C, MIN_TOUCH_TARGET, fontSize, radii } from '@/theme/tokens';
-import { Avatar, Button, Input } from '@/components/ui';
+import { Avatar, Button, Input, ScreenEmpty } from '@/components/ui';
 
 // Deliberately require(), not import(): needs to synchronously catch a
 // missing/unlinked native module at load time (same reasoning as
@@ -272,6 +273,8 @@ interface ChatRoom {
   latestTime: string;
   unreadCount: number;
   badge?: string;
+  myRole?: string; // 'Organizer' | 'Member' – current user's role in this room
+  tripName?: string; // for DMs – the shared trip name
   lastMessageAt?: string;
 }
 
@@ -736,6 +739,46 @@ function MessageBubble({
   );
 }
 
+interface EmojiCategory {
+  id: string;
+  name: string;
+  icon: string;
+  emojis: string[];
+}
+
+const EMOJI_CATEGORIES: EmojiCategory[] = [
+  {
+    id: 'popular',
+    name: 'Top',
+    icon: '🔥',
+    emojis: ['❤️', '😂', '🔥', '👍', '✈️', '🌴', '🙌', '🎉', '😍', '✨', '😎', '🥳', '🏖️', '🧳', '📍', '🍻', '☀️', '💯', '🤩', '🚀', '🍕', '☕', '🏕️', '📸', '💪', '🙏', '👏', '💃', '💖', '🥰', '🎈', '🌟'],
+  },
+  {
+    id: 'travel',
+    name: 'Travel',
+    icon: '✈️',
+    emojis: ['✈️', '🏖️', '🌴', '🧳', '🗺️', '📍', '🏕️', '⛰️', '🚗', '🚕', '🚂', '🛳️', '🌅', '🏨', '🎒', '🛂', '🎫', '🧭', '🗼', '🗽', '🏰', '🏝️', '🛵', '⛵', '🌊', '📸', '☀️', '🌍', '🏔️', '⛺', '⛽', '🚁'],
+  },
+  {
+    id: 'smileys',
+    name: 'Smileys',
+    icon: '😀',
+    emojis: ['😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '😉', '😊', '😇', '🥰', '😍', '🤩', '😘', '😋', '😜', '🤪', '😎', '🥳', '😏', '🤔', '🤫', '🤭', '😴', '🤤', '🤯', '😭', '😱', '🥺', '😳'],
+  },
+  {
+    id: 'gestures',
+    name: 'Gestures',
+    icon: '👍',
+    emojis: ['👍', '👎', '👌', '✌️', '🤞', '🤙', '👏', '🙌', '🤝', '🙏', '💪', '👋', '👊', '✊', '🤛', '🤜', '🫡', '👆', '👇', '👈', '👉', '🫶', '❤️', '🔥', '✨', '🤘', '🤟', '✋', '🤚', '✍️', '💅', '👀'],
+  },
+  {
+    id: 'vibes',
+    name: 'Vibes',
+    icon: '🎉',
+    emojis: ['🎉', '🎊', '🥳', '🍾', '🍻', '🥂', '🍹', '🍕', '🍔', '🌮', '🍩', '☕', '🎸', '🎵', '🎶', '🏖️', '🏕️', '🚀', '⭐', '🌟', '💫', '⚡', '🌈', '💯', '🎯', '🎲', '🏆', '🥇', '👑', '💎', '🍿', '🔥'],
+  },
+];
+
 const messageKeyExtractor = (m: CustomMessage) => m.id;
 
 function ChatScreen() {
@@ -761,6 +804,7 @@ function ChatScreen() {
     typingUser,
     clearChatUnread,
     refreshTrips,
+    isLoggedIn,
   } = useApp();
 
   // Active Trip selection (binds details drawer + polls + expenses)
@@ -781,6 +825,10 @@ function ChatScreen() {
   const [inboxRooms, setInboxRooms] = useState<ChatRoom[]>([]);
 
   const loadInboxRooms = useCallback(async () => {
+    if (!isLoggedIn) {
+      setInboxRooms([]);
+      return;
+    }
     try {
       const res = await apiService.getChats();
       if (res && res.length > 0) {
@@ -794,7 +842,8 @@ function ChatScreen() {
           latestTime: r.latestTime,
           unreadCount: r.unreadCount || 0,
           badge: r.badge || 'Member',
-          lastMessageAt: r.lastMessageAt || new Date().toISOString(),
+          myRole: r.badge === 'Organizer' || r.badge === 'Organizer Trip' ? 'Organizer' : 'Member',
+          lastMessageAt: r.lastMessageAt || '1970-01-01T00:00:00.000Z',
         }));
 
         setInboxRooms((prevRooms) => {
@@ -813,9 +862,14 @@ function ChatScreen() {
     } catch (e) {
       logger.warn('Failed to load chat rooms from backend:', e);
     }
-  }, []);
+  }, [isLoggedIn]);
 
   useEffect(() => {
+    if (!isLoggedIn) {
+      setInboxRooms([]);
+      setSelectedRoomId(null);
+      return;
+    }
     clearChatUnread();
     refreshTrips();
     // False positive: the linter traces into loadInboxRooms and sees it
@@ -824,7 +878,7 @@ function ChatScreen() {
     // within this effect's body.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadInboxRooms();
-  }, [clearChatUnread, refreshTrips, loadInboxRooms]);
+  }, [isLoggedIn, clearChatUnread, refreshTrips, loadInboxRooms]);
 
   // Navigation States
   const selectedRoomId = activeRoomId;
@@ -1062,7 +1116,7 @@ function ChatScreen() {
   }, [messages, activeRoomId, profile.avatar, profile.id, profile.name, selectedTripId, dbMembers]);
 
   // Filters for the Inbox List view
-  const [inboxFilter, setInboxFilter] = useState<'ALL' | 'GROUPS' | 'GUIDES'>('ALL');
+  const [inboxFilter, setInboxFilter] = useState<'ALL' | 'GROUPS' | 'GUIDES' | 'DMS'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Load trip members from database dynamically when selectedTripId or selectedRoomId changes
@@ -1074,7 +1128,7 @@ function ChatScreen() {
           if (membersData && Array.isArray(membersData)) {
             const mapped = membersData.map((m) => ({
               id: m.userId,
-              name: m.name,
+              name: (m.name || '').replace(/\s*\((Creator|Organizer)\)\s*$/i, '').trim(),
               avatar: m.avatar || '',
               role: m.isCreator ? 'Organizer' : 'Tourist',
             }));
@@ -1147,6 +1201,13 @@ function ChatScreen() {
   const [isAttachmentOpen, setIsAttachmentOpen] = useState(false);
   const attachPanelHeight = useState(() => new Animated.Value(0))[0];
 
+  // Emoji picker drawer state
+  const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
+  const [selectedEmojiCategory, setSelectedEmojiCategory] = useState('popular');
+  useEffect(() => {
+    setIsEmojiPickerOpen(false);
+  }, [selectedRoomId]);
+
   // Keyboard height tracking for input bar repositioning
   const keyboardOffset = useState(() => new Animated.Value(0))[0];
 
@@ -1182,9 +1243,15 @@ function ChatScreen() {
   // derived value of `trips` alone — this backfills any trip that doesn't
   // have a room yet without discarding what those other sources loaded.
   useEffect(() => {
+    if (!isLoggedIn) {
+      setInboxRooms([]);
+      return;
+    }
+    // Only synchronize trips where the user is actually confirmed or creator
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setInboxRooms((prevRooms) => {
-      const missingTrips = trips.filter((t) => !prevRooms.some((r) => r.tripId === t.id));
+      const myTrips = trips.filter((t) => t.isMyTrip || (profile.id && t.creatorId === profile.id));
+      const missingTrips = myTrips.filter((t) => !prevRooms.some((r) => r.tripId === t.id));
       if (missingTrips.length === 0) return prevRooms;
 
       const newRooms: ChatRoom[] = missingTrips.map((t) => ({
@@ -1196,16 +1263,34 @@ function ChatScreen() {
         latestMessage: 'System: Welcome to the group chat! Start planning together.',
         latestTime: 'Just Now',
         unreadCount: 0,
-        badge: 'Organizer Trip',
-        lastMessageAt: new Date().toISOString(),
+        badge: t.creatorId === profile.id ? 'Organizer Trip' : 'Member',
+        myRole: t.creatorId === profile.id ? 'Organizer' : 'Member',
+        // Use the trip's real last-activity time so we don't bump it to the
+        // top just because the trips list refreshed. Fall back to createdAt,
+        // and ultimately to epoch so the room sorts below any room that has
+        // real messages.
+        lastMessageAt: (t as any).lastMessageAt || (t as any).createdAt || '1970-01-01T00:00:00.000Z',
       }));
 
       return [...prevRooms, ...newRooms];
     });
-  }, [trips]);
+  }, [isLoggedIn, trips, profile.id]);
 
   // Input states
   const [inputText, setInputText] = useState('');
+
+  const handleSelectEmoji = useCallback((emoji: string) => {
+    setInputText((prev) => prev + emoji);
+  }, []);
+
+  const handleEmojiBackspace = useCallback(() => {
+    setInputText((prev) => {
+      if (!prev) return '';
+      const chars = Array.from(prev);
+      chars.pop();
+      return chars.join('');
+    });
+  }, []);
   // docs/REMEDIATION.md §8.7 — emits real 'typing' events instead of doing
   // nothing (the indicator the *other* side sees was a fake timer; this is
   // the half that actually tells them). Sends isTyping:true once per burst
@@ -1320,7 +1405,7 @@ function ChatScreen() {
 
   // Dynamically extract group members from message history in this room/trip
   const groupMembers = useMemo(() => {
-    const membersMap = new Map<string, { name: string; avatar: string; role: string }>();
+    const membersMap = new Map<string, { name: string; avatar: string; role: string; id?: string; isMe?: boolean }>();
 
     // Add database/real-time members
     if (dbMembers && dbMembers.length > 0) {
@@ -1331,10 +1416,17 @@ function ChatScreen() {
         if (roleName === 'ORGANIZER') roleName = 'Organizer';
         if (roleName === 'GUIDE') roleName = 'Guide';
 
-        membersMap.set(m.name, {
-          name: m.name,
-          avatar: m.avatar,
+        const cleanName = (m.name || '').replace(/\s*\((Creator|Organizer)\)\s*$/i, '').trim();
+        const isMe =
+          (m.id && profile.id && m.id === profile.id) ||
+          (profile.name && cleanName.toLowerCase() === profile.name.trim().toLowerCase());
+
+        membersMap.set(cleanName, {
+          name: cleanName,
+          avatar: isMe ? profile.avatar || m.avatar : m.avatar,
           role: roleName,
+          id: m.id,
+          isMe: !!isMe,
         });
       });
     }
@@ -1342,12 +1434,15 @@ function ChatScreen() {
     // Add other senders from the current active messages
     currentMessages.forEach((msg) => {
       if (msg.senderName && !msg.isMe) {
+        const cleanSender = (msg.senderName || '').replace(/\s*\((Creator|Organizer)\)\s*$/i, '').trim();
         // Only add if not already present to avoid overriding database entries
-        if (!membersMap.has(msg.senderName)) {
-          membersMap.set(msg.senderName, {
-            name: msg.senderName,
+        if (!membersMap.has(cleanSender)) {
+          membersMap.set(cleanSender, {
+            name: cleanSender,
             avatar: msg.avatar || '',
             role: msg.senderRole || 'Tourist',
+            id: msg.senderId,
+            isMe: false,
           });
         }
       }
@@ -1361,7 +1456,7 @@ function ChatScreen() {
     // group regardless of who was actually in it.
 
     return Array.from(membersMap.values());
-  }, [currentMessages, dbMembers]);
+  }, [currentMessages, dbMembers, profile.id, profile.name, profile.avatar]);
 
   // Click a member to direct message
   const handleMemberClick = (member: { name: string; avatar: string }) => {
@@ -1688,8 +1783,13 @@ function ChatScreen() {
     // Check if DM room already exists in state
     const existingRoom = inboxRooms.find((r) => r.id === dmRoomId);
     if (existingRoom) {
+      if (!existingRoom.tripId && selectedTripId) {
+        existingRoom.tripId = selectedTripId;
+      }
       setSelectedRoomId(dmRoomId);
-      setSelectedTripId(existingRoom.tripId);
+      if (existingRoom.tripId || selectedTripId) {
+        setSelectedTripId(existingRoom.tripId || selectedTripId);
+      }
     } else {
       // Create new private chat room
       const newRoom: ChatRoom = {
@@ -1702,7 +1802,10 @@ function ChatScreen() {
         latestTime: new Date().toISOString(),
         unreadCount: 0,
         badge: 'Member',
-        lastMessageAt: new Date().toISOString(),
+        // Use epoch so a brand-new DM with no messages doesn't jump to top.
+        // lastMessageAt will be updated to the real timestamp when a message
+        // is actually sent or received.
+        lastMessageAt: '1970-01-01T00:00:00.000Z',
       };
 
       setInboxRooms((prev) => [newRoom, ...prev]);
@@ -1990,6 +2093,7 @@ function ChatScreen() {
         if (inboxFilter === 'ALL') return true;
         if (inboxFilter === 'GROUPS') return room.type === 'GROUP';
         if (inboxFilter === 'GUIDES') return room.type === 'GUIDE';
+        if (inboxFilter === 'DMS') return room.type !== 'GROUP';
 
         return true;
       })
@@ -2008,23 +2112,69 @@ function ChatScreen() {
   // Find Room info of the selected room
   let activeRoom = inboxRooms.find((r) => r.id === selectedRoomId);
   if (!activeRoom && selectedRoomId) {
-    const matchedTrip = trips.find((t) => t.chatRoomId === selectedRoomId || `room-${t.id}` === selectedRoomId);
-    if (matchedTrip) {
-      activeRoom = {
-        id: selectedRoomId,
-        tripId: matchedTrip.id,
-        name:
-          matchedTrip.name.includes('Chat') || matchedTrip.name.includes('Group')
-            ? matchedTrip.name
-            : `${matchedTrip.name} Group Chat`,
-        avatar: matchedTrip.coverImage || 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=150&q=80',
-        type: 'GROUP',
-        latestMessage: 'System: Welcome to the group chat! Start planning together.',
-        latestTime: 'Just Now',
-        unreadCount: 0,
-        badge: 'Member',
-      };
+    if (!isLoggedIn) {
+      setSelectedRoomId(null);
+    } else {
+      const matchedTrip = trips.find(
+        (t) =>
+          (t.isMyTrip || t.creatorId === profile.id) &&
+          (t.chatRoomId === selectedRoomId || `room-${t.id}` === selectedRoomId),
+      );
+      if (matchedTrip) {
+        activeRoom = {
+          id: selectedRoomId,
+          tripId: matchedTrip.id,
+          name:
+            matchedTrip.name.includes('Chat') || matchedTrip.name.includes('Group')
+              ? matchedTrip.name
+              : `${matchedTrip.name} Group Chat`,
+          avatar: matchedTrip.coverImage || 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=150&q=80',
+          type: 'GROUP',
+          latestMessage: 'System: Welcome to the group chat! Start planning together.',
+          latestTime: 'Just Now',
+          unreadCount: 0,
+          badge: 'Member',
+        };
+      }
     }
+  }
+
+  const isDM = !!activeRoom && activeRoom.type !== 'GROUP';
+  const dmTrip =
+    isDM
+      ? trips.find((t) => t.id === activeRoom?.tripId) ||
+        trips.find((t) => t.id === selectedTripId) ||
+        trips.find((t) => t.creator?.trim().toLowerCase() === activeRoom?.name?.trim().toLowerCase()) ||
+        null
+      : null;
+
+  const handleOpenTripGroup = () => {
+    if (!dmTrip) return;
+    const existingGroup = inboxRooms.find((r) => r.tripId === dmTrip.id && r.type === 'GROUP');
+    const targetRoomId = existingGroup ? existingGroup.id : dmTrip.chatRoomId || `room-${dmTrip.id}`;
+    setSelectedTripId(dmTrip.id);
+    setSelectedRoomId(targetRoomId);
+    setActiveRoomId(targetRoomId);
+    setIsSettingsOpen(false);
+  };
+
+  // --- SCREEN 0: GUEST SIGN-IN REQUIRED VIEW ---
+  if (!isLoggedIn) {
+    return (
+      <SafeAreaView edges={['top', 'left', 'right']} style={styles.inboxContainer}>
+        {/* WhatsApp-Style Header */}
+        <View style={styles.inboxHeader}>
+          <Text style={styles.inboxHeaderTitle}>{t('chat.travelStarChats')}</Text>
+        </View>
+
+        <ScreenEmpty
+          title={t('chat.signInToChat', 'Sign in to access your chats')}
+          message={t('chat.signInToChatMessage', 'Connect with your travel buddies and local guides once you sign in.')}
+          actionLabel={t('chat.signIn', 'Sign In')}
+          onAction={() => router.push('/auth')}
+        />
+      </SafeAreaView>
+    );
   }
 
   // --- SCREEN 1: WHATSAPP-STYLE INBOX LIST VIEW ---
@@ -2070,6 +2220,7 @@ function ChatScreen() {
             [
               { key: 'ALL', labelKey: 'chat.filterAllChats' },
               { key: 'GROUPS', labelKey: 'chat.filterGroups' },
+              { key: 'DMS', labelKey: 'chat.filterDMs' },
               { key: 'GUIDES', labelKey: 'chat.filterGuides' },
             ] as const
           ).map((filter) => {
@@ -2150,7 +2301,7 @@ function ChatScreen() {
               return (
                 <TouchableOpacity
                   key={room.id}
-                  style={styles.roomItemTouch}
+                  style={[styles.roomItemTouch, room.type === 'GROUP' && styles.roomItemTouchGroup]}
                   onPress={() => {
                     setSelectedRoomId(room.id);
                     setSelectedTripId(room.tripId);
@@ -2164,51 +2315,93 @@ function ChatScreen() {
                 >
                   {/* Avatar left */}
                   <View style={styles.roomAvatarWrap}>
-                    <Avatar uri={room.avatar || findMemberAvatar(undefined, room.name, undefined, dbMembers)} name={room.name} size={48} style={styles.roomAvatarImg} />
+                    <Avatar
+                      uri={room.avatar || findMemberAvatar(undefined, room.name, undefined, dbMembers)}
+                      name={room.name}
+                      size={48}
+                      style={[styles.roomAvatarImg, room.type === 'GROUP' && styles.roomAvatarImgGroup]}
+                    />
+                    {room.type === 'GROUP' && (
+                      <View style={styles.groupBadgeMini}>
+                        <UsersIcon size={10} color="#FFFFFF" />
+                      </View>
+                    )}
                   </View>
 
                   {/* Info Center */}
                   <View style={styles.roomMetaWrap}>
-                    <View style={styles.roomNameRow}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 6 }}>
-                        <Text style={[styles.roomNameText, { flex: 1, marginRight: 4 }]} numberOfLines={1}>
-                          {room.name}
-                        </Text>
-                        {pinnedRoomIds.has(room.id) && <Pin size={12} color={C.blue} />}
-                      </View>
-                      <Text style={[styles.roomTimeText, hasUnread && { color: C.blue, fontWeight: '700' }]}>
-                        {formatChatTime(room.latestTime)}
-                      </Text>
-                    </View>
+                    {/* Derive role live from trips so it's always accurate */}
+                    {(() => {
+                      const tripForRoom = room.type === 'GROUP'
+                        ? trips.find((t) => t.id === room.tripId)
+                        : null;
+                      const liveRole = tripForRoom
+                        ? (tripForRoom.creatorId === profile.id ? 'Organizer' : 'Member')
+                        : (room.myRole || null);
 
-                    <View style={styles.roomSnippetRow}>
-                      <Text
-                        style={[styles.roomSnippetText, hasUnread && { color: C.text, fontWeight: '600' }]}
-                        numberOfLines={1}
-                      >
-                        {room.latestMessage}
-                      </Text>
-                      <View style={styles.roomBadgeWrap}>
-                        {room.badge && (
-                          <View style={[styles.inboxTag, room.type === 'GUIDE' ? styles.tagPurple : styles.tagBlue]}>
-                            <Text
-                              style={[
-                                styles.inboxTagText,
-                                room.type === 'GUIDE' ? styles.tagPurpleText : styles.tagBlueText,
-                              ]}
-                            >
-                              {room.badge}
+                      return (
+                        <>
+                          {/* Row 1: name (+ role pill hugging it) | spacer | time */}
+                          <View style={styles.roomNameRow}>
+                            {/* Left: name + pill — pill hugs name, does NOT stretch */}
+                            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 4, overflow: 'hidden', marginRight: 8 }}>
+                              <Text style={[styles.roomNameText, { flex: 0, flexShrink: 1 }]} numberOfLines={1}>
+                                {room.name}
+                              </Text>
+                              {/* GROUP: role pill right beside the name */}
+                              {room.type === 'GROUP' && liveRole && (
+                                <View style={[
+                                  styles.inboxTag,
+                                  liveRole === 'Organizer' ? styles.tagBlueSolid : styles.tagGrey,
+                                ]}>
+                                  <Text style={[
+                                    styles.inboxTagText,
+                                    liveRole === 'Organizer' ? styles.tagBlueSolidText : styles.tagGreyText,
+                                  ]}>
+                                    {liveRole}
+                                  </Text>
+                                </View>
+                              )}
+                              {pinnedRoomIds.has(room.id) && <Pin size={12} color={C.blue} />}
+                            </View>
+                            {/* Right: time — stays at far right */}
+                            <Text style={[styles.roomTimeText, hasUnread && { color: C.blue, fontWeight: '700' }]}>
+                              {formatChatTime(room.latestTime)}
                             </Text>
                           </View>
-                        )}
-                        {hasUnread && (
-                          <View style={styles.unreadBadge}>
-                            <Text style={styles.unreadBadgeText}>{room.unreadCount}</Text>
+
+                          {/* Row 2: snippet | DM trip chip + unread badge */}
+                          <View style={styles.roomSnippetRow}>
+                            <Text
+                              style={[styles.roomSnippetText, hasUnread && { color: C.text, fontWeight: '600' }]}
+                              numberOfLines={1}
+                            >
+                              {room.latestMessage}
+                            </Text>
+                            <View style={styles.roomBadgeWrap}>
+                              {/* DM: show shared trip name at bottom-right */}
+                              {room.type !== 'GROUP' && room.tripId && (() => {
+                                const sharedTrip = trips.find((t) => t.id === room.tripId);
+                                return sharedTrip ? (
+                                  <View style={styles.dmTripChip}>
+                                    <Text style={styles.dmTripChipText} numberOfLines={1}>
+                                      {sharedTrip.name}
+                                    </Text>
+                                  </View>
+                                ) : null;
+                              })()}
+                              {hasUnread && (
+                                <View style={styles.unreadBadge}>
+                                  <Text style={styles.unreadBadgeText}>{room.unreadCount}</Text>
+                                </View>
+                              )}
+                            </View>
                           </View>
-                        )}
-                      </View>
-                    </View>
+                        </>
+                      );
+                    })()}
                   </View>
+
                 </TouchableOpacity>
               );
             })
@@ -2405,24 +2598,39 @@ function ChatScreen() {
 
           <Avatar uri={activeRoom?.avatar || findMemberAvatar(undefined, activeRoom?.name, undefined, dbMembers)} name={activeRoom?.name || 'Chat'} size={40} style={styles.roomHeaderAvatar} />
 
-          <TouchableOpacity
-            style={styles.roomHeaderTitles}
-            onPress={() => setIsSettingsOpen(true)}
-            activeOpacity={0.7}
-            hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
-            accessibilityRole="button"
-            accessibilityLabel={t('chat.openRoomSettings')}
-          >
-            <Text style={styles.roomHeaderNameText} numberOfLines={1}>
-              {activeRoom?.name}
-            </Text>
-            <View style={styles.activityStatusRow}>
-              <View style={styles.statusGreenDot} />
-              <Text style={styles.roomHeaderStatusText} numberOfLines={1}>
-                {t('chat.memberCount', { count: activeTrip?.membersCount ?? (dbMembers.length || 1) })}
-              </Text>
+          <View style={styles.roomHeaderTitles}>
+            <View style={styles.roomHeaderNameRow}>
+              <TouchableOpacity
+                onPress={() => setIsSettingsOpen(true)}
+                activeOpacity={0.7}
+                hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+                accessibilityRole="button"
+                accessibilityLabel={t('chat.openRoomSettings')}
+              >
+                <Text style={styles.roomHeaderNameText} numberOfLines={1}>
+                  {activeRoom?.name}
+                </Text>
+              </TouchableOpacity>
+
+
+
             </View>
-          </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setIsSettingsOpen(true)}
+              activeOpacity={0.7}
+              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+            >
+              <View style={styles.activityStatusRow}>
+                <View style={styles.statusGreenDot} />
+                <Text style={styles.roomHeaderStatusText} numberOfLines={1}>
+                  {isDM
+                    ? t('chat.directMessage', 'Direct Message')
+                    : t('chat.memberCount', { count: activeTrip?.membersCount ?? (dbMembers.length || 1) })}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.headerRightActions}>
@@ -2516,6 +2724,9 @@ function ChatScreen() {
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.scrollContent}
             onContentSizeChange={() => scrollToBottom(false)}
+            onTouchStart={() => {
+              if (isEmojiPickerOpen) setIsEmojiPickerOpen(false);
+            }}
             initialNumToRender={15}
             maxToRenderPerBatch={12}
             windowSize={11}
@@ -2532,7 +2743,16 @@ function ChatScreen() {
                 )}
 
                 {/* Scroll spacer dynamically adjusts with keyboard height to keep latest messages just above the input box */}
-                <Animated.View style={{ height: Animated.add(selectedRoomId ? 110 : 170, keyboardOffset) }} />
+                <Animated.View
+                  style={{
+                    height: Animated.add(
+                      selectedRoomId
+                        ? (isEmojiPickerOpen ? 340 : 110)
+                        : (isEmojiPickerOpen ? 400 : 170),
+                      keyboardOffset,
+                    ),
+                  }}
+                />
               </>
             }
           />
@@ -2624,7 +2844,12 @@ function ChatScreen() {
             <View style={styles.inputRowContainer}>
               <TouchableOpacity
                 style={[styles.plusCircle, isAttachmentOpen && styles.plusCircleOpen]}
-                onPress={() => setIsAttachmentOpen(!isAttachmentOpen)}
+                onPress={() => {
+                  if (!isAttachmentOpen && isEmojiPickerOpen) {
+                    setIsEmojiPickerOpen(false);
+                  }
+                  setIsAttachmentOpen(!isAttachmentOpen);
+                }}
                 hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
                 accessibilityRole="button"
                 accessibilityLabel={t('chat.attachmentOptions')}
@@ -2645,15 +2870,30 @@ function ChatScreen() {
                   value={inputText}
                   onChangeText={handleInputChange}
                   onSubmitEditing={handleSendText}
+                  onFocus={() => {
+                    if (isEmojiPickerOpen) {
+                      setIsEmojiPickerOpen(false);
+                    }
+                  }}
                   accessibilityLabel={t('chat.messagePlaceholder')}
                 />
                 <TouchableOpacity
-                  style={styles.smileIcon}
+                  style={[styles.smileIcon, isEmojiPickerOpen && styles.smileIconActive]}
                   hitSlop={{ top: 11, bottom: 11, left: 8, right: 8 }}
                   accessibilityRole="button"
                   accessibilityLabel={t('chat.emojiPicker')}
+                  onPress={() => {
+                    if (isEmojiPickerOpen) {
+                      setIsEmojiPickerOpen(false);
+                    } else {
+                      Keyboard.dismiss();
+                      setIsAttachmentOpen(false);
+                      setIsEmojiPickerOpen(true);
+                      scrollToBottom();
+                    }
+                  }}
                 >
-                  <Smile size={18} color={C.textSec} />
+                  <Smile size={18} color={isEmojiPickerOpen ? C.blue : C.textSec} />
                 </TouchableOpacity>
               </View>
 
@@ -2672,6 +2912,67 @@ function ChatScreen() {
                 <Send size={15} color={inputText.trim() === '' ? C.textMuted : '#FFF'} />
               </TouchableOpacity>
             </View>
+
+            {/* EMOJI PICKER DRAWER */}
+            {isEmojiPickerOpen && (
+              <View style={styles.emojiPickerContainer}>
+                <View style={styles.emojiTopBar}>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.emojiCategoryRow}
+                  >
+                    {EMOJI_CATEGORIES.map((cat) => {
+                      const isActive = selectedEmojiCategory === cat.id;
+                      return (
+                        <TouchableOpacity
+                          key={cat.id}
+                          style={[styles.emojiCategoryPill, isActive && styles.emojiCategoryPillActive]}
+                          onPress={() => setSelectedEmojiCategory(cat.id)}
+                          accessibilityRole="button"
+                          accessibilityLabel={cat.name}
+                        >
+                          <Text style={styles.emojiCategoryIcon}>{cat.icon}</Text>
+                          <Text style={[styles.emojiCategoryPillText, isActive && styles.emojiCategoryPillTextActive]}>
+                            {cat.name}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+
+                  <TouchableOpacity
+                    style={styles.emojiBackspaceBtn}
+                    onPress={handleEmojiBackspace}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('chat.deleteLastCharacter', 'Delete last character')}
+                  >
+                    <DeleteIcon size={18} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
+
+                <ScrollView
+                  style={styles.emojiGridScroll}
+                  contentContainerStyle={styles.emojiGridContainer}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                >
+                  {(EMOJI_CATEGORIES.find((c) => c.id === selectedEmojiCategory)?.emojis ?? []).map((emoji, idx) => (
+                    <TouchableOpacity
+                      key={`${emoji}-${idx}`}
+                      style={styles.emojiCellTouch}
+                      onPress={() => handleSelectEmoji(emoji)}
+                      activeOpacity={0.6}
+                      accessibilityRole="button"
+                      accessibilityLabel={emoji}
+                    >
+                      <Text style={styles.emojiCellText}>{emoji}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
           </Animated.View>
         </View>
 
@@ -3053,21 +3354,27 @@ function ChatScreen() {
                   <View style={styles.membersListContainer}>
                     {groupMembers.map((member, idx) => {
                       const isLast = idx === groupMembers.length - 1;
+                      const isMe =
+                        member.isMe ||
+                        (profile.name && member.name.trim().toLowerCase() === profile.name.trim().toLowerCase()) ||
+                        (member.id && profile.id && member.id === profile.id);
+
                       return (
-                        <TouchableOpacity
+                        <View
                           key={member.name}
                           style={[
                             styles.memberItemRow,
                             !isLast && { borderBottomWidth: 0.8, borderBottomColor: '#F1F5F9', paddingBottom: 12 },
                           ]}
-                          onPress={() => handleMemberClick(member)}
-                          activeOpacity={0.7}
-                          accessibilityRole="button"
-                          accessibilityLabel={t('chat.startPrivateChatWith', { name: member.name })}
                         >
                           <Avatar uri={member.avatar} name={member.name} size={40} style={styles.memberAvatar} />
                           <View style={styles.memberMeta}>
-                            <Text style={styles.memberName}>{member.name}</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                              <Text style={styles.memberName}>
+                                {member.name.replace(/\s*\((Creator|Organizer)\)\s*$/i, '').trim()}
+                              </Text>
+                              {isMe && <Text style={styles.memberYouTag}> ({t('chat.you')})</Text>}
+                            </View>
                             <Text style={styles.memberRoleText}>
                               {SENDER_ROLE_LABEL_KEYS[member.role] ? t(SENDER_ROLE_LABEL_KEYS[member.role]) : member.role}
                             </Text>
@@ -3097,17 +3404,19 @@ function ChatScreen() {
                             </Text>
                           </View>
 
-                          <TouchableOpacity
-                            style={styles.dmMemberBtn}
-                            onPress={() => handleMemberClick(member)}
-                            activeOpacity={0.8}
-                            accessibilityRole="button"
-                            accessibilityLabel={t('chat.directMessageName', { name: member.name })}
-                          >
-                            <MessageSquare size={12} color="#FFF" style={{ marginRight: 3 }} />
-                            <Text style={styles.dmMemberBtnText}>{t('chat.dm')}</Text>
-                          </TouchableOpacity>
-                        </TouchableOpacity>
+                          {!isMe && (
+                            <TouchableOpacity
+                              style={styles.dmMemberBtn}
+                              onPress={() => handleMemberClick(member)}
+                              activeOpacity={0.8}
+                              accessibilityRole="button"
+                              accessibilityLabel={t('chat.directMessageName', { name: member.name })}
+                            >
+                              <MessageSquare size={12} color="#FFF" style={{ marginRight: 3 }} />
+                              <Text style={styles.dmMemberBtnText}>{t('chat.dm')}</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
                       );
                     })}
                   </View>
@@ -3462,6 +3771,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
   },
+  roomItemTouchGroup: {
+    backgroundColor: '#F0F6FE',
+    borderBottomColor: '#E0EDFE',
+    borderLeftWidth: 3.5,
+    borderLeftColor: C.blue,
+  },
   roomAvatarWrap: {
     position: 'relative',
     marginRight: 14,
@@ -3473,6 +3788,28 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: '#E2E8F0',
     backgroundColor: '#F1F5F9',
+  },
+  roomAvatarImgGroup: {
+    borderColor: '#BFDBFE',
+    borderWidth: 2,
+  },
+  groupBadgeMini: {
+    position: 'absolute',
+    bottom: -1,
+    right: -1,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: C.blue,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+    shadowColor: C.blue,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
   },
   onlineBadgeGuide: {
     position: 'absolute',
@@ -3533,6 +3870,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#DBEAFE',
   },
+  tagBlueSolid: {
+    backgroundColor: '#2563EB',
+    borderWidth: 0,
+  },
+  tagBlueSolidText: {
+    color: '#FFFFFF',
+  },
   tagPurple: {
     backgroundColor: '#F5F3FF',
     borderWidth: 1,
@@ -3547,6 +3891,36 @@ const styles = StyleSheet.create({
   inboxTagText: {
     fontSize: 11,
     fontWeight: '700',
+  },
+  tagGreen: {
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  tagGreenText: {
+    color: '#065F46',
+  },
+  tagGrey: {
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+  },
+  tagGreyText: {
+    color: '#475569',
+  },
+  dmTripChip: {
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    borderRadius: 5,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    maxWidth: 110,
+  },
+  dmTripChipText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#0369A1',
   },
   unreadBadge: {
     minWidth: 20,
@@ -3625,10 +3999,31 @@ const styles = StyleSheet.create({
   roomHeaderTitles: {
     flex: 1,
   },
+  roomHeaderNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'nowrap',
+  },
   roomHeaderNameText: {
     color: '#0F172A',
     fontSize: 14.5,
     fontWeight: '800',
+    maxWidth: 140,
+  },
+  headerDmTripTouch: {
+    marginLeft: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 8,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    maxWidth: 160,
+  },
+  headerDmTripText: {
+    color: C.blue,
+    fontSize: 12,
+    fontWeight: '700',
   },
   roomHeaderStatusText: {
     color: C.textSec,
@@ -4706,8 +5101,88 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   smileIcon: {
-    padding: 2,
+    padding: 4,
     marginLeft: 6,
+    borderRadius: 12,
+  },
+  smileIconActive: {
+    backgroundColor: '#EFF6FF',
+  },
+  emojiPickerContainer: {
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    marginTop: 10,
+    paddingTop: 8,
+    paddingBottom: 6,
+    height: 230,
+    borderRadius: 12,
+  },
+  emojiTopBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
+    paddingBottom: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E2E8F0',
+  },
+  emojiCategoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  emojiCategoryPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    backgroundColor: '#F1F5F9',
+    marginRight: 6,
+  },
+  emojiCategoryPillActive: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  emojiCategoryIcon: {
+    fontSize: 13,
+  },
+  emojiCategoryPillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+    marginLeft: 4,
+  },
+  emojiCategoryPillTextActive: {
+    color: C.blue,
+    fontWeight: '700',
+  },
+  emojiBackspaceBtn: {
+    padding: 7,
+    borderRadius: 10,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginLeft: 8,
+  },
+  emojiGridScroll: {
+    flex: 1,
+  },
+  emojiGridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 4,
+    paddingVertical: 6,
+  },
+  emojiCellTouch: {
+    width: '12.5%',
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emojiCellText: {
+    fontSize: 24,
   },
   sendIconCircle: {
     width: 40,
@@ -5073,6 +5548,12 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     fontSize: 13.5,
     fontWeight: '700',
+  },
+  memberYouTag: {
+    color: C.blue,
+    fontSize: 12,
+    fontWeight: '700',
+    marginLeft: 4,
   },
   memberRoleText: {
     color: C.textSec,
