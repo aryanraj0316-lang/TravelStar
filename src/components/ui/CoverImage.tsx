@@ -18,16 +18,24 @@ export interface CoverImageProps {
   style?: StyleProp<ImageStyle>;
   /** Hide the initial when the cover sits behind other content. */
   showInitial?: boolean;
+  /**
+   * Milliseconds for expo-image's own cross-fade-in. Defaults to 150, which
+   * is right for a cover that pops into an otherwise-static layout. Pass 0
+   * when the image is already being moved by an external animation (e.g. a
+   * slide-in carousel) — layering this fade on top of that motion is what
+   * reads as a flicker once the two finish at slightly different times.
+   */
+  transition?: number;
 }
 
-export function CoverImage({ uri, name, style, showInitial = true }: CoverImageProps) {
+export function CoverImage({ uri, name, style, showInitial = true, transition = 150 }: CoverImageProps) {
   if (uri) {
     return (
       <Image
         source={{ uri }}
         style={style}
         contentFit="cover"
-        transition={150}
+        transition={transition}
         cachePolicy="memory-disk"
         accessibilityLabel={name}
       />

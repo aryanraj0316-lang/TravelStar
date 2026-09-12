@@ -12,6 +12,7 @@ import { useApp, UserRole, type Trip } from '@/store/AppContext';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import type { FeedItem, HazardAlert, TrendingWeatherDestination } from '@/types/api';
 import { useQuery } from '@tanstack/react-query';
+import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation, useRouter, type Href } from 'expo-router';
 import Bell from 'lucide-react-native/icons/bell';
@@ -217,6 +218,16 @@ function TrendingWeatherCardBase({ isFocused }: { isFocused: boolean }) {
   const destinationCount = destinations?.length ?? 0;
 
   useEffect(() => {
+    // Warm expo-image's cache for every card up front, so the slide-in
+    // animation always finds an already-decoded image instead of racing a
+    // fresh network/decode against the 600ms slide — that race, not the
+    // slide itself, was the source of the once-per-swap flicker.
+    for (const d of destinations ?? []) {
+      void ExpoImage.prefetch(d.image);
+    }
+  }, [destinations]);
+
+  useEffect(() => {
     if (!isFocused || destinationCount <= 1) return;
     const interval = setInterval(() => {
       if (isAnimatingRef.current) return;
@@ -348,7 +359,7 @@ function TrendingWeatherCardBase({ isFocused }: { isFocused: boolean }) {
     const GlyphIcon = WEATHER_GLYPH_ICON[weatherGlyph(item.condition)];
     return (
       <>
-        <CoverImage uri={item.image} name={item.name} style={StyleSheet.absoluteFill} showInitial={false} />
+        <CoverImage uri={item.image} name={item.name} style={StyleSheet.absoluteFill} showInitial={false} transition={0} />
         <LinearGradient colors={['rgba(13,15,26,0.35)', 'rgba(13,15,26,0.92)']} style={StyleSheet.absoluteFill} />
         <View style={styles.weatherContent}>
           <View style={styles.locationRow}>
@@ -573,8 +584,26 @@ function RouteSafetyCardBase({ isFocused }: { isFocused: boolean }) {
             {t('home.routeSafety')}
           </Text>
         </View>
+        {/* GDACS's own live map-marker icon for this event category, not a
+            stock photo — it's small and transparent by design, so it sits in
+            the same circular badge the CategoryIcon fallback uses rather
+            than being stretched to fill the card. The lucide icon renders
+            underneath so a broken/expired GDACS icon URL still leaves a
+            real icon visible instead of an empty badge. transition=0 for
+            the same reason as the weather card: this Image already lives
+            inside an Animated opacity fade, and letting expo-image run its
+            own cross-fade on top of that is what read as a flicker. */}
         <View style={[styles.cardHeaderIconCircle, { backgroundColor: '#FEE2E2' }]}>
-          <CategoryIcon size={13} color={C.redText} />
+          <View style={[StyleSheet.absoluteFill, styles.advisoryIconFallback]}>
+            <CategoryIcon size={13} color={C.redText} />
+          </View>
+          <CoverImage
+            uri={activeAlert.image}
+            name={activeAlert.title}
+            style={styles.advisoryIcon}
+            showInitial={false}
+            transition={0}
+          />
         </View>
       </View>
 
@@ -582,7 +611,16 @@ function RouteSafetyCardBase({ isFocused }: { isFocused: boolean }) {
         <Text style={styles.advisoryTitle} numberOfLines={2}>
           {activeAlert.title}
         </Text>
-        <Text style={styles.advisoryDesc} numberOfLines={3}>
+        <View style={styles.locationRowDark}>
+          <MapPin size={11} color={C.redText} />
+          <Text style={styles.advisoryLocation} numberOfLines={1}>
+            {activeAlert.location}
+          </Text>
+          <Text style={styles.advisoryTime} numberOfLines={1}>
+            · {activeAlert.time}
+          </Text>
+        </View>
+        <Text style={styles.advisoryDesc} numberOfLines={2}>
           {activeAlert.desc}
         </Text>
       </View>
@@ -2416,6 +2454,14 @@ const styles = StyleSheet.create({
   },
 
   // ── Advisory (Hazard) Center & Footer ──
+  advisoryIconFallback: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  advisoryIcon: {
+    width: 16,
+    height: 16,
+  },
   advisoryCenter: {
     paddingVertical: 2,
     justifyContent: 'center',
@@ -2425,6 +2471,22 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: C.redText,
     lineHeight: 17,
+  },
+  locationRowDark: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 3,
+  },
+  advisoryLocation: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: C.redText,
+    flexShrink: 1,
+  },
+  advisoryTime: {
+    fontSize: 10.5,
+    color: C.textMuted,
   },
   advisoryDesc: {
     fontSize: 11,
