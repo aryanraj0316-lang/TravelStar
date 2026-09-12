@@ -13,11 +13,10 @@ export type DeviceLocationResult =
   | { ok: false; reason: 'PERMISSION_DENIED' | 'UNAVAILABLE' };
 
 // getCurrentPositionAsync has no built-in timeout — on a device or emulator
-// with no GPS fix available (very common for an emulator with no mock
-// location configured), it can hang indefinitely, leaving a caller's UI on
-// its loading state forever. Every read below is raced against this so a
-// bad fix always surfaces as a real, retryable failure instead of a spinner
-// that never resolves.
+// with no GPS fix available, it can hang indefinitely, leaving a caller's
+// UI on its loading state forever. The read below is raced against this so
+// a bad fix always surfaces as a real, retryable failure instead of a
+// spinner that never resolves.
 const POSITION_TIMEOUT_MS = 10_000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -36,76 +35,26 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   });
 }
 
-/** As above, plus the "we have not asked yet" case only the passive read below can report. */
-export type PassiveDeviceLocationResult =
-  | { ok: true; latitude: number; longitude: number }
-  | { ok: false; reason: 'PERMISSION_DENIED' | 'PERMISSION_NOT_REQUESTED' | 'UNAVAILABLE' };
-
-/**
- * Reads the device position only if foreground location permission has
- * already been granted, and never shows the system permission dialog.
- *
- * This exists for ambient, non-critical features — the home screen's live
- * weather card — where prompting for location the moment the app opens,
- * before the user has asked for anything, is the wrong trade. The caller
- * renders a "turn on location" affordance for `PERMISSION_NOT_REQUESTED`
- * and calls `getCurrentDeviceLocation()` (which does prompt) from that
- * button, so the dialog is always a response to a deliberate tap.
- */
-export async function getDeviceLocationIfPermitted(): Promise<PassiveDeviceLocationResult> {
-  try {
-    const { status, canAskAgain } = await Location.getForegroundPermissionsAsync();
-    if (status !== 'granted') {
-      // `canAskAgain` separates "not asked yet" (a prompt would work) from
-      // "already refused" (only the system settings screen can undo it).
-      return { ok: false, reason: canAskAgain ? 'PERMISSION_NOT_REQUESTED' : 'PERMISSION_DENIED' };
-    }
-
-    const position = await withTimeout(
-      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
-      POSITION_TIMEOUT_MS,
-    );
-
-    return { ok: true, latitude: position.coords.latitude, longitude: position.coords.longitude };
-  } catch (e) {
-    logger.warn('[DeviceLocation] Passive position read failed:', e);
-    return { ok: false, reason: 'UNAVAILABLE' };
-  }
-}
-
-async function requestDeviceLocation(accuracy: Location.Accuracy): Promise<DeviceLocationResult> {
+// High accuracy: prefers a true GPS satellite fix over network-based
+// positioning. A precise fix can legitimately take longer, or fail
+// outright, indoors or with a poor sky view; that shows up as UNAVAILABLE
+// rather than silently falling back to something less precise, which is
+// the correct trade for an emergency location — never weaken this tier.
+export async function getCurrentDeviceLocation(): Promise<DeviceLocationResult> {
   try {
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') {
       return { ok: false, reason: 'PERMISSION_DENIED' };
     }
 
-    const position = await withTimeout(Location.getCurrentPositionAsync({ accuracy }), POSITION_TIMEOUT_MS);
+    const position = await withTimeout(
+      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
+      POSITION_TIMEOUT_MS,
+    );
 
     return { ok: true, latitude: position.coords.latitude, longitude: position.coords.longitude };
   } catch (e) {
     logger.error('[DeviceLocation] Failed to get current position:', e);
     return { ok: false, reason: 'UNAVAILABLE' };
   }
-}
-
-// High accuracy: prefers a true GPS satellite fix over network-based
-// positioning. Safety-critical callers only (SOS in chat.tsx/map.tsx) —
-// never weaken this tier for those, per the file-level note above. A
-// precise fix can legitimately take longer, or fail outright, indoors or
-// with a poor sky view; that shows up as UNAVAILABLE rather than silently
-// falling back to something less precise, which is the correct trade for
-// an emergency location.
-export async function getCurrentDeviceLocation(): Promise<DeviceLocationResult> {
-  return requestDeviceLocation(Location.Accuracy.High);
-}
-
-// Balanced accuracy: can resolve from network/WiFi positioning, not just a
-// GPS satellite lock, so it succeeds far more often and faster indoors.
-// For ambient, non-critical features only — currently the home screen's
-// weather card's "Enable Location" button, whose reading is already
-// rounded to ~1km for the server's cache key, so street-level GPS
-// precision buys it nothing. Never use this for SOS/navigation.
-export async function getApproximateDeviceLocation(): Promise<DeviceLocationResult> {
-  return requestDeviceLocation(Location.Accuracy.Balanced);
 }

@@ -40,6 +40,7 @@ import type {
   IncomingJoinRequest,
   JoinRequestSummary,
   StoryPayload,
+  TrendingWeatherDestination,
   TripExpenses,
   TripMemberRow,
   UploadImageContentType,
@@ -1214,6 +1215,11 @@ export const apiService = {
   // ── Live Weather (at specific coordinates) ──────
   async getLiveWeather(lat: number, lon: number): Promise<LiveWeather | null> {
     return request<LiveWeather>(`/weather/live?lat=${lat}&lon=${lon}`);
+  },
+
+  // ── Trending destinations' live weather + air quality ──────
+  async getTrendingWeather(): Promise<TrendingWeatherDestination[] | null> {
+    return request<TrendingWeatherDestination[]>('/weather/trending');
   },
 
   // ── Emergency Contacts CRUD ──────

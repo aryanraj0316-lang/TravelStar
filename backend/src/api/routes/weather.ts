@@ -4,6 +4,7 @@ import prisma from '../../services/db';
 import { cached } from '../../lib/cache';
 import { logger } from '../../lib/logger';
 import { env } from '../../config/env';
+import { coordsForCity } from '../../lib/india-city-coords';
 
 const router = Router();
 
@@ -113,6 +114,67 @@ async function fetchLiveWeatherUncached(lat: number, lon: number): Promise<LiveW
   }
 }
 
+interface AirPollutionResponse {
+  list?: { main: { aqi: number } }[];
+}
+
+const AQI_LABELS = ['Good', 'Fair', 'Moderate', 'Poor', 'Very Poor'] as const;
+
+const AQI_CACHE_TTL_SECONDS = 10 * 60;
+
+function aqiCacheKey(lat: number, lon: number): string {
+  return `weather:aqi:${lat.toFixed(2)},${lon.toFixed(2)}`;
+}
+
+// Same reasoning as fetchLiveWeather's backoff — a separate tracker since
+// this is a different OpenWeatherMap endpoint with its own limit.
+let aqiBackoffUntil = 0;
+
+function fetchAirQuality(lat: number, lon: number): Promise<string | null> {
+  return cached(aqiCacheKey(lat, lon), AQI_CACHE_TTL_SECONDS, () => fetchAirQualityUncached(lat, lon));
+}
+
+async function fetchAirQualityUncached(lat: number, lon: number): Promise<string | null> {
+  if (!env.OPENWEATHERMAP_API_KEY) return null;
+  if (Date.now() < aqiBackoffUntil) return null;
+
+  try {
+    const url = `https://api.openweathermap.org/data/2.5/air_pollution?lat=${lat}&lon=${lon}&appid=${env.OPENWEATHERMAP_API_KEY}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    let response: Response;
+    try {
+      response = await fetch(url, { signal: controller.signal });
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    if (response.status === 429) {
+      const retryAfterSeconds = Number(response.headers.get('retry-after'));
+      const backoffMs =
+        Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+          ? Math.min(retryAfterSeconds * 1000, MAX_BACKOFF_MS)
+          : DEFAULT_BACKOFF_MS;
+      aqiBackoffUntil = Date.now() + backoffMs;
+      logger.warn(`[Weather] OpenWeatherMap air-pollution rate-limited us; backing off ${Math.round(backoffMs / 1000)}s`);
+      return null;
+    }
+    if (!response.ok) {
+      logger.warn(`[Weather] OpenWeatherMap air-pollution responded ${response.status} ${response.statusText}`);
+      return null;
+    }
+
+    const data = (await response.json()) as AirPollutionResponse;
+    const aqi = data.list?.[0]?.main.aqi;
+    if (!aqi || aqi < 1 || aqi > 5) return null;
+
+    return AQI_LABELS[aqi - 1] ?? null;
+  } catch (err) {
+    logger.warn('[Weather] OpenWeatherMap air-pollution fetch failed:', err);
+    return null;
+  }
+}
+
 // GET /weather — All weather locations with staleness-based live refresh
 router.get('/', async (req, res) => {
   try {
@@ -190,6 +252,54 @@ router.get('/live', async (req, res) => {
     }
     logger.error('[Weather] Live weather error:', err);
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve live weather' } });
+  }
+});
+
+// GET /weather/trending — Live weather + air quality for this app's
+// curated destination catalogue (the same `Destination` rows the home
+// screen's Trending Destinations carousel already reads, ordered by the
+// same `rank`). There is no reliable free API for "what's trending this
+// season" — that data is normally a paid tourism-analytics product — so
+// this reuses the one real, non-fabricated definition of "trending
+// places" already in the app, rather than inventing a second one or
+// faking a live-internet-trends feed. A destination whose name has no
+// entry in the coordinate table, or whose live weather/AQI genuinely
+// fails, is left out of the response rather than shown with invented
+// numbers — the client's empty state covers the all-fail case.
+router.get('/trending', async (req, res) => {
+  try {
+    const destinations = await prisma.destination.findMany({ orderBy: { rank: 'asc' } });
+
+    const withCoords = destinations
+      .map((d) => ({ destination: d, coords: coordsForCity(d.name) }))
+      .filter((d): d is { destination: (typeof destinations)[number]; coords: { lat: number; lng: number } } => {
+        if (!d.coords) logger.warn(`[Weather] No coordinates for trending destination "${d.destination.name}"`);
+        return d.coords !== null;
+      });
+
+    const results = await Promise.all(
+      withCoords.map(async ({ destination, coords }) => {
+        const [live, aqi] = await Promise.all([
+          fetchLiveWeather(coords.lat, coords.lng),
+          fetchAirQuality(coords.lat, coords.lng),
+        ]);
+        if (!live) return null;
+        return {
+          id: destination.id,
+          name: destination.name,
+          tags: destination.tags,
+          image: destination.image,
+          ...live,
+          aqi,
+        };
+      }),
+    );
+
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.status(200).json({ ok: true, data: results.filter((r) => r !== null) });
+  } catch (err) {
+    logger.error('[Weather] Trending weather error:', err);
+    res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve trending weather' } });
   }
 });
 

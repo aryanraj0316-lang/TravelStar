@@ -55,6 +55,7 @@ export const INDIA_CITY_COORDS: Record<string, { lat: number; lng: number }> = {
   goa: { lat: 15.2993, lng: 74.124 },
   panaji: { lat: 15.4909, lng: 73.8278 },
   kochi: { lat: 9.9312, lng: 76.2673 },
+  kerala: { lat: 9.9312, lng: 76.2673 }, // a state, not a point — Kochi as its representative city
   cochin: { lat: 9.9312, lng: 76.2673 },
   munnar: { lat: 10.0889, lng: 77.0595 },
   alleppey: { lat: 9.4981, lng: 76.3388 },
@@ -79,6 +80,8 @@ export const INDIA_CITY_COORDS: Record<string, { lat: number; lng: number }> = {
   vadodara: { lat: 22.3072, lng: 73.1812 },
   rann: { lat: 23.7337, lng: 70.8412 },
   'rann of kutch': { lat: 23.7337, lng: 70.8412 },
+  ladakh: { lat: 34.1526, lng: 77.5771 }, // Leh, the region's main town
+  andaman: { lat: 11.6234, lng: 92.7265 }, // Port Blair, the archipelago's capital
 };
 
 const EARTH_RADIUS_KM = 6371;

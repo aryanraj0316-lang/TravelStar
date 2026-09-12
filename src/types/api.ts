@@ -534,6 +534,28 @@ export interface LiveWeather {
   fetchedAt: IsoDateTime;
 }
 
+// GET /weather/trending — live weather + air quality for this app's
+// curated Destination catalogue (the same rows the Trending Destinations
+// carousel reads, ordered the same way). There is no reliable free API for
+// "trending this season", so this reuses that one real, non-fabricated
+// definition of "trending places" rather than a second, invented one. A
+// destination the server could not get a live reading for is left out of
+// the array entirely — never sent with a placeholder value — so `aqi` is
+// the only field that can legitimately be null (air quality is a second,
+// independent upstream call and can fail on its own without failing the
+// whole entry).
+export interface TrendingWeatherDestination {
+  id: string;
+  name: string;
+  tags: string;
+  image: string;
+  temp: string;
+  condition: string;
+  humidity: string;
+  windSpeed: string;
+  aqi: string | null;
+}
+
 /** Endpoints whose only job is to succeed; the body carries a message. */
 export interface MessageResponse {
   message: string;

@@ -101,15 +101,10 @@
     "allClear": "ऑल क्लियर",
     "allClearMinimalDesc": "सभी मार्ग सुरक्षित हैं और सामान्य रूप से चालू हैं।",
     "guestTraveler": "अतिथि यात्री",
-    "yourLocation": "आपका स्थान",
     "wind": "हवा {{value}}",
     "weatherLoading": "स्थानीय मौसम पढ़ा जा रहा है…",
     "weatherErrorTitle": "मौसम उपलब्ध नहीं",
     "weatherErrorMessage": "हम मौसम सेवा तक नहीं पहुंच सके। कुछ देर बाद फिर से प्रयास करें।",
-    "weatherLocationOffTitle": "स्थानीय मौसम",
-    "weatherLocationOffMessage": "आप जहां हैं वहां का लाइव मौसम देखने के लिए लोकेशन चालू करें।",
-    "enableLocation": "लोकेशन चालू करें",
-    "openSettings": "सेटिंग्स खोलें",
     "checkingRoutes": "मार्गों की जांच हो रही है…",
     "couldNotLoadAlerts": "मार्ग सुरक्षा उपलब्ध नहीं",
     "couldNotLoadAlertsMessage": "हम आपके मार्गों पर खतरों की जांच नहीं कर सके। फिर से प्रयास करें।",
@@ -129,7 +124,11 @@
     "organizerAuthTitle": "ग्रुप आयोजित करें",
     "organizerAuthDesc": "आयोजक डैशबोर्ड आपके खाते से जुड़ा है — ट्रिप रोस्टर, लॉजिस्टिक्स और चैट चलाने के लिए साइन इन करें।",
     "quickFindGuide": "गाइड खोजें",
-    "untitledFeedItem": "यात्रा पोस्ट"
+    "untitledFeedItem": "यात्रा पोस्ट",
+    "trendingWeatherTitle": "ट्रेंडिंग मौसम",
+    "trendingWeatherEmpty": "अभी दिखाने के लिए कोई ट्रेंडिंग स्थान नहीं है।",
+    "trendingWeatherAqi": "{{level}} AQI",
+    "trendingWeatherHumidity": "नमी {{value}}"
   },
   "search": {
     "searchPlaceholder": "राज्य, शहर या गाइड खोजें...",

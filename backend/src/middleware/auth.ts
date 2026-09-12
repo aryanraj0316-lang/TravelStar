@@ -41,6 +41,7 @@ const PUBLIC_GET_EXACT = new Set([
   '/destinations',
   '/weather',
   '/weather/live',
+  '/weather/trending',
   '/alerts',
   '/feed',
   '/stories',

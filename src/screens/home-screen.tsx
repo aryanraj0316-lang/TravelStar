@@ -1,24 +1,18 @@
 import TripDetailModal from '@/components/TripDetailModal';
-import { ScreenEmpty, ScreenError, Skeleton, SkeletonCard } from '@/components/ui';
-import {
-  getApproximateDeviceLocation,
-  getDeviceLocationIfPermitted,
-  type PassiveDeviceLocationResult,
-} from '@/lib/device-location';
+import { CoverImage, ScreenEmpty, ScreenError, Skeleton, SkeletonCard } from '@/components/ui';
 import { logger } from '@/lib/logger';
 import { formatINR } from '@/lib/money';
 import { queryKeys } from '@/lib/query-keys';
 import { sectionState } from '@/lib/query-state';
 import { formatTripDuration, tripCoverImage, tripTransportLabel } from '@/lib/trip-display';
-import { coarseCoordinate, weatherGlyph } from '@/lib/weather-display';
+import { weatherGlyph } from '@/lib/weather-display';
 import { apiService } from '@/services/api';
 import { eventBus } from '@/services/event-bus';
 import { useApp, UserRole, type Trip } from '@/store/AppContext';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
-import type { FeedItem, HazardAlert } from '@/types/api';
+import type { FeedItem, HazardAlert, TrendingWeatherDestination } from '@/types/api';
 import { useQuery } from '@tanstack/react-query';
 import { LinearGradient } from 'expo-linear-gradient';
-import * as ExpoLinking from 'expo-linking';
 import { useNavigation, useRouter, type Href } from 'expo-router';
 import Bell from 'lucide-react-native/icons/bell';
 import CalendarCheck from 'lucide-react-native/icons/calendar-check';
@@ -33,7 +27,6 @@ import CloudLightning from 'lucide-react-native/icons/cloud-lightning';
 import CloudRain from 'lucide-react-native/icons/cloud-rain';
 import CloudSnow from 'lucide-react-native/icons/cloud-snow';
 import CloudSun from 'lucide-react-native/icons/cloud-sun';
-import Droplet from 'lucide-react-native/icons/droplet';
 import Globe from 'lucide-react-native/icons/globe';
 import Map from 'lucide-react-native/icons/map';
 import MapPin from 'lucide-react-native/icons/map-pin';
@@ -48,7 +41,6 @@ import User from 'lucide-react-native/icons/user';
 import Users from 'lucide-react-native/icons/users';
 import Wallet from 'lucide-react-native/icons/wallet';
 import Waves from 'lucide-react-native/icons/waves-horizontal';
-import Wind from 'lucide-react-native/icons/wind';
 import X from 'lucide-react-native/icons/x';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -60,7 +52,6 @@ import {
   Image,
   ImageBackground,
   Modal,
-  Platform,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -184,71 +175,6 @@ function AppleMultilingualGreetingBase({ isFocused }: { isFocused: boolean }) {
 
 // ─── Weather ────────────────────────────────────────────────────────
 
-type DeviceLocationState =
-  | { status: 'locating' }
-  | { status: 'ready'; latitude: number; longitude: number }
-  /** Permission was never asked for — a prompt would still work. */
-  | { status: 'notAsked' }
-  /** Refused, and the OS will not show the prompt again. Only Settings can undo it. */
-  | { status: 'denied' }
-  | { status: 'unavailable' };
-
-/**
- * Resolves the device's own coordinates for the weather card, and exposes
- * `request` for the CTA on the states where there is nothing to show.
- *
- * The mount path is deliberately passive (`getDeviceLocationIfPermitted`):
- * it uses a permission the user has already granted, and never raises the
- * system dialog on its own. Throwing a location prompt at someone the
- * instant the app opens — before they have asked for anything — is the
- * wrong trade for an ambient card, so the prompt only ever comes from the
- * "Enable location" button below.
- *
- * There is deliberately no fallback city. The previous weather card read
- * GET /weather (the `WeatherLocation` table), which is empty in a clean
- * database and has no live source that ever fills it — so the card was
- * permanently "not available" rather than wrong, but equally useless.
- * Substituting a hardcoded city here instead would have been worse: a real
- * temperature for somewhere the user is not.
- */
-function useDeviceLocation() {
-  const [state, setState] = useState<DeviceLocationState>({ status: 'locating' });
-
-  const apply = useCallback((result: PassiveDeviceLocationResult) => {
-    if (result.ok) {
-      setState({ status: 'ready', latitude: result.latitude, longitude: result.longitude });
-      return;
-    }
-    if (result.reason === 'PERMISSION_NOT_REQUESTED') {
-      setState({ status: 'notAsked' });
-    } else if (result.reason === 'PERMISSION_DENIED') {
-      setState({ status: 'denied' });
-    } else {
-      setState({ status: 'unavailable' });
-    }
-  }, []);
-
-  useEffect(() => {
-    // setState only ever runs from the resolved promise, never synchronously
-    // in this effect body (react-hooks/set-state-in-effect).
-    let cancelled = false;
-    void getDeviceLocationIfPermitted().then((result) => {
-      if (!cancelled) apply(result);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [apply]);
-
-  /** The prompting path. Only ever called from a user tap. */
-  const request = useCallback(() => {
-    setState({ status: 'locating' });
-    void getApproximateDeviceLocation().then(apply);
-  }, [apply]);
-
-  return { state, request };
-}
-
 const WEATHER_GLYPH_ICON = {
   sun: Sun,
   'cloud-sun': CloudSun,
@@ -259,128 +185,114 @@ const WEATHER_GLYPH_ICON = {
   storm: CloudLightning,
 } as const;
 
-function LiveWeatherCardBase() {
-  const { t } = useTranslation();
-  const { state: locationState, request: requestLocation } = useDeviceLocation();
+const TRENDING_WEATHER_SLIDE_MS = 3200;
 
-  const coords = locationState.status === 'ready' ? locationState : null;
-  // Rounded to the same ~1km granularity the server caches at, so ordinary
-  // GPS jitter reuses the cached reading instead of refetching every mount.
-  const lat = coords ? coarseCoordinate(coords.latitude) : 0;
-  const lon = coords ? coarseCoordinate(coords.longitude) : 0;
+/**
+ * A single card that slides between this app's curated trending
+ * destinations (GET /weather/trending — real weather + air quality per
+ * destination, never a per-user current-location reading). Two-layer
+ * base/sliding trick, same mechanic this card originally shipped with:
+ * the base layer is always visible and never animates, and a second copy
+ * slides in from off-screen to replace it, so the swap underneath is
+ * invisible once the sliding layer finishes covering the base.
+ */
+function TrendingWeatherCardBase({ isFocused }: { isFocused: boolean }) {
+  const { t } = useTranslation();
+  const [baseIndex, setBaseIndex] = useState(0);
+  const [slidingIndex, setSlidingIndex] = useState<number | null>(null);
+  const slideAnim = useState(() => new Animated.Value(0))[0];
+  const baseIndexRef = useRef(0);
+  const isAnimatingRef = useRef(false);
 
   const weatherQuery = useQuery({
-    queryKey: queryKeys.liveWeather(lat, lon),
-    queryFn: () => apiService.getLiveWeather(lat, lon),
-    enabled: coords !== null,
-    // Matches WEATHER_CACHE_TTL_SECONDS on the server: a reading older than
-    // this is worth refetching, anything newer is the same upstream answer.
+    queryKey: queryKeys.trendingWeather(),
+    queryFn: async () => (await apiService.getTrendingWeather()) ?? [],
+    // Matches the server's own weather/AQI cache window — a reading newer
+    // than this is the same upstream answer.
     staleTime: 10 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
   });
-  const { data: weather, refetch } = weatherQuery;
-  const weatherState = sectionState(weatherQuery, weather != null);
+  const { data: destinations, refetch } = weatherQuery;
+  const weatherState = sectionState(weatherQuery, destinations != null);
+  const destinationCount = destinations?.length ?? 0;
 
-  if (locationState.status === 'locating' || (coords !== null && weatherState.kind === 'loading')) {
+  useEffect(() => {
+    if (!isFocused || destinationCount <= 1) return;
+    const interval = setInterval(() => {
+      if (isAnimatingRef.current) return;
+      isAnimatingRef.current = true;
+
+      const nextIdx = (baseIndexRef.current + 1) % destinationCount;
+      slideAnim.setValue(0);
+      setSlidingIndex(nextIdx);
+
+      Animated.timing(slideAnim, {
+        toValue: 1,
+        duration: 600,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (finished) {
+          baseIndexRef.current = nextIdx;
+          setBaseIndex(nextIdx);
+          setSlidingIndex(null);
+        }
+        isAnimatingRef.current = false;
+      });
+    }, TRENDING_WEATHER_SLIDE_MS);
+
+    return () => clearInterval(interval);
+  }, [destinationCount, isFocused, slideAnim]);
+
+  // Slide direction alternates by index so consecutive transitions don't
+  // all arrive from the same edge.
+  const dir = slidingIndex !== null ? slidingIndex % 4 : 0;
+  const translateX = slideAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: dir === 0 ? [-260, 0] : dir === 2 ? [260, 0] : [0, 0],
+  });
+  const translateY = slideAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: dir === 1 ? [-260, 0] : dir === 3 ? [260, 0] : [0, 0],
+  });
+
+  if (weatherState.kind === 'loading') {
     return (
       <View style={styles.weatherCard}>
         <View style={styles.cardHeaderRow}>
           <View style={styles.cardHeaderBadge}>
             <View style={[styles.cardLiveDot, styles.cardDotInactive]} />
             <Text style={styles.cardHeaderText} numberOfLines={1}>
-              {t('home.weatherLocationOffTitle')}
+              {t('home.trendingWeatherTitle')}
             </Text>
           </View>
           <View style={[styles.cardHeaderIconCircle, { backgroundColor: '#EFF6FF' }]}>
             <CloudSun size={13} color="#2563EB" />
           </View>
         </View>
-
         <View style={styles.cardStateCenter}>
           <ActivityIndicator size="small" color="#2563EB" />
           <Text style={styles.cardStateMessage}>{t('home.weatherLoading')}</Text>
         </View>
-
         <View style={styles.cardFooterSpacer} />
       </View>
     );
   }
 
-  if (
-    locationState.status === 'notAsked' ||
-    locationState.status === 'denied' ||
-    locationState.status === 'unavailable'
-  ) {
-    // A hard refusal can only be undone in the system settings — re-calling
-    // the permission API just resolves "denied" again on both platforms, so
-    // offering "Enable location" there would be a button that does nothing.
-    // `openSettings` has no web implementation, where re-asking through the
-    // browser prompt is the real affordance.
-    const canOpenSettings = locationState.status === 'denied' && Platform.OS !== 'web';
+  if (weatherState.kind === 'error' || !destinations) {
     return (
       <View style={styles.weatherCard}>
         <View style={styles.cardHeaderRow}>
           <View style={styles.cardHeaderBadge}>
             <View style={[styles.cardLiveDot, styles.cardDotInactive]} />
             <Text style={styles.cardHeaderText} numberOfLines={1}>
-              {t('home.weatherLocationOffTitle')}
-            </Text>
-          </View>
-          <View style={[styles.cardHeaderIconCircle, { backgroundColor: '#F1F5F9' }]}>
-            <MapPin size={13} color={C.textMuted} />
-          </View>
-        </View>
-
-        <View style={styles.cardStateCenter}>
-          <View style={[styles.cardCenterIconCircle, { backgroundColor: '#EFF6FF', borderColor: '#DBEAFE' }]}>
-            <MapPin size={18} color="#2563EB" strokeWidth={2.2} />
-          </View>
-          <Text style={styles.cardPromptTitle}>{t('home.weatherLocationOffTitle')}</Text>
-          <Text style={styles.cardPromptMessage} numberOfLines={2}>
-            {t('home.weatherLocationOffMessage')}
-          </Text>
-        </View>
-
-        <TouchableOpacity
-          style={styles.cardPrimaryCta}
-          activeOpacity={0.8}
-          onPress={() => {
-            if (canOpenSettings) {
-              void ExpoLinking.openSettings().catch((e) =>
-                logger.warn('[Home] Could not open system settings for location permission:', e),
-              );
-              return;
-            }
-            requestLocation();
-          }}
-          accessibilityRole="button"
-          accessibilityLabel={canOpenSettings ? t('home.openSettings') : t('home.enableLocation')}
-        >
-          <Text style={styles.cardPrimaryCtaText}>
-            {canOpenSettings ? t('home.openSettings') : t('home.enableLocation')}
-          </Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  // A 502 from /weather/live (Open-Meteo unreachable) surfaces as an error,
-  // never as a stale or invented reading.
-  if (weatherState.kind !== 'ready' || !weather) {
-    return (
-      <View style={styles.weatherCard}>
-        <View style={styles.cardHeaderRow}>
-          <View style={styles.cardHeaderBadge}>
-            <View style={[styles.cardLiveDot, styles.cardDotInactive]} />
-            <Text style={styles.cardHeaderText} numberOfLines={1}>
-              {t('home.weatherLocationOffTitle')}
+              {t('home.trendingWeatherTitle')}
             </Text>
           </View>
           <View style={[styles.cardHeaderIconCircle, { backgroundColor: '#FEF2F2' }]}>
             <AlertTriangle size={13} color={C.redText} />
           </View>
         </View>
-
         <View style={styles.cardStateCenter}>
           <View style={[styles.cardCenterIconCircle, { backgroundColor: '#FEF2F2', borderColor: '#FEE2E2' }]}>
             <AlertTriangle size={18} color={C.amberText} strokeWidth={2.2} />
@@ -392,7 +304,6 @@ function LiveWeatherCardBase() {
               : t('home.weatherErrorMessage')}
           </Text>
         </View>
-
         <TouchableOpacity
           style={styles.cardSecondaryCta}
           activeOpacity={0.8}
@@ -406,49 +317,74 @@ function LiveWeatherCardBase() {
     );
   }
 
-  const GlyphIcon = WEATHER_GLYPH_ICON[weatherGlyph(weather.condition)];
+  if (destinations.length === 0) {
+    return (
+      <View style={styles.weatherCard}>
+        <View style={styles.cardHeaderRow}>
+          <View style={styles.cardHeaderBadge}>
+            <View style={[styles.cardLiveDot, styles.cardDotInactive]} />
+            <Text style={styles.cardHeaderText} numberOfLines={1}>
+              {t('home.trendingWeatherTitle')}
+            </Text>
+          </View>
+          <View style={[styles.cardHeaderIconCircle, { backgroundColor: '#F1F5F9' }]}>
+            <CloudSun size={13} color={C.textMuted} />
+          </View>
+        </View>
+        <View style={styles.cardStateCenter}>
+          <Text style={styles.cardPromptMessage} numberOfLines={3}>
+            {t('home.trendingWeatherEmpty')}
+          </Text>
+        </View>
+        <View style={styles.cardFooterSpacer} />
+      </View>
+    );
+  }
+
+  const baseItem = destinations[baseIndex % destinations.length]!;
+  const slidingItem = slidingIndex !== null ? destinations[slidingIndex % destinations.length] : null;
+
+  const renderCard = (item: TrendingWeatherDestination) => {
+    const GlyphIcon = WEATHER_GLYPH_ICON[weatherGlyph(item.condition)];
+    return (
+      <>
+        <CoverImage uri={item.image} name={item.name} style={StyleSheet.absoluteFill} showInitial={false} />
+        <LinearGradient colors={['rgba(13,15,26,0.35)', 'rgba(13,15,26,0.92)']} style={StyleSheet.absoluteFill} />
+        <View style={styles.weatherContent}>
+          <View style={styles.locationRow}>
+            <MapPin size={13} color={C.green} />
+            <Text style={styles.locationText} numberOfLines={1}>
+              {item.name}
+            </Text>
+          </View>
+          <View style={styles.tempRow}>
+            <Text style={styles.tempText}>{item.temp}</Text>
+            <GlyphIcon size={30} color={C.orange} />
+          </View>
+          <Text style={styles.weatherCondition} numberOfLines={1}>
+            {item.condition}
+          </Text>
+          {item.aqi && <Text style={styles.aqiText}>{t('home.trendingWeatherAqi', { level: item.aqi })}</Text>}
+          <View style={styles.weatherBottom}>
+            <Text style={styles.weatherDetail}>{t('home.trendingWeatherHumidity', { value: item.humidity })}</Text>
+            <View style={styles.badgeLive}>
+              <View style={styles.liveDot} />
+              <Text style={styles.liveText}>{t('home.live')}</Text>
+            </View>
+          </View>
+        </View>
+      </>
+    );
+  };
 
   return (
-    <View style={styles.weatherCard}>
-      <View style={styles.cardHeaderRow}>
-        <View style={styles.cardHeaderBadge}>
-          <View style={[styles.cardLiveDot, styles.cardDotBlue]} />
-          <Text style={styles.cardHeaderText} numberOfLines={1}>
-            {t('home.weatherLocationOffTitle')}
-          </Text>
-        </View>
-        <View style={[styles.cardHeaderIconCircle, { backgroundColor: '#EFF6FF' }]}>
-          <GlyphIcon size={14} color="#2563EB" />
-        </View>
-      </View>
-
-      <View style={styles.weatherCenter}>
-        <Text style={styles.weatherTempText}>{weather.temp}</Text>
-        <Text style={styles.weatherConditionText} numberOfLines={1}>
-          {weather.condition}
-        </Text>
-        <View style={styles.weatherLocationRow}>
-          <MapPin size={11} color={C.greenText} />
-          <Text style={styles.weatherLocationText} numberOfLines={1}>
-            {t('home.yourLocation')}
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.weatherFooterRow}>
-        <View style={styles.weatherStatPill}>
-          <Droplet size={11} color="#0284C7" />
-          <Text style={styles.weatherStatValue} numberOfLines={1}>
-            {weather.humidity}
-          </Text>
-        </View>
-        <View style={styles.weatherStatPill}>
-          <Wind size={11} color="#64748B" />
-          <Text style={styles.weatherStatValue} numberOfLines={1}>
-            {weather.windSpeed}
-          </Text>
-        </View>
-      </View>
+    <View style={[styles.weatherCard, styles.weatherCardPhoto]}>
+      <View style={StyleSheet.absoluteFill}>{renderCard(baseItem)}</View>
+      {slidingItem && (
+        <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ translateX }, { translateY }], zIndex: 10 }]}>
+          {renderCard(slidingItem)}
+        </Animated.View>
+      )}
     </View>
   );
 }
@@ -1275,7 +1211,7 @@ function StoriesRailBase({
 // re-renders — and so no longer interrupts the animation of — every other
 // section on the screen.
 const AppleMultilingualGreeting = React.memo(AppleMultilingualGreetingBase);
-const LiveWeatherCard = React.memo(LiveWeatherCardBase);
+const TrendingWeatherCard = React.memo(TrendingWeatherCardBase);
 const RouteSafetyCard = React.memo(RouteSafetyCardBase);
 const FeaturedTripsCarousel = React.memo(FeaturedTripsCarouselBase);
 const TrendingDestinations = React.memo(TrendingDestinationsBase);
@@ -1583,7 +1519,7 @@ function HomeScreen() {
             WEATHER & ROUTE SAFETY — Two column
             ════════════════════════════════════════════════ */}
         <View style={styles.weatherAlertRow}>
-          <LiveWeatherCard />
+          <TrendingWeatherCard isFocused={isFocused} />
           <View style={styles.alertsColumn}>
             <RouteSafetyCard isFocused={isFocused} />
           </View>
@@ -2287,59 +2223,81 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // ── Weather Center (Loaded) ──
-  weatherCenter: {
-    paddingVertical: 2,
-    alignItems: 'flex-start',
+  // ── Trending Weather Card (photo background, loaded state) ──
+  weatherCardPhoto: {
+    padding: 0,
+    overflow: 'hidden',
   },
-  weatherTempText: {
-    fontSize: 30,
+  weatherContent: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    padding: 13,
+  },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  locationText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  tempRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 6,
+  },
+  tempText: {
+    fontSize: 28,
     fontWeight: '800',
-    color: '#0F172A',
+    color: '#FFFFFF',
     letterSpacing: -0.5,
-    lineHeight: 34,
   },
-  weatherConditionText: {
+  weatherCondition: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#475569',
-    marginTop: 1,
+    color: 'rgba(255,255,255,0.85)',
+    marginTop: 2,
   },
-  weatherLocationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    marginTop: 4,
-  },
-  weatherLocationText: {
-    fontSize: 10.5,
-    color: C.textMuted,
-    fontWeight: '500',
-  },
-
-  // ── Weather Footer (Loaded) ──
-  weatherFooterRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  weatherStatPill: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 4,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-  },
-  weatherStatValue: {
+  aqiText: {
     fontSize: 10.5,
     fontWeight: '600',
-    color: '#334155',
+    color: 'rgba(255,255,255,0.7)',
+    marginTop: 3,
+  },
+  weatherBottom: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  weatherDetail: {
+    fontSize: 10.5,
+    color: 'rgba(255,255,255,0.75)',
+    fontWeight: '500',
+  },
+  badgeLive: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(16,185,129,0.25)',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  liveDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#34D399',
+  },
+  liveText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#34D399',
+    letterSpacing: 0.4,
   },
 
   // ── All Clear Center ──

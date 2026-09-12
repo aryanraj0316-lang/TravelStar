@@ -101,15 +101,10 @@
     "allClear": "All Clear",
     "allClearMinimalDesc": "All monitored routes are safe and running normally.",
     "guestTraveler": "Guest Traveler",
-    "yourLocation": "Your location",
     "wind": "Wind {{value}}",
     "weatherLoading": "Reading local weather…",
     "weatherErrorTitle": "Weather unavailable",
     "weatherErrorMessage": "We couldn't reach the weather service. Try again in a moment.",
-    "weatherLocationOffTitle": "Local weather",
-    "weatherLocationOffMessage": "Enable location to see live weather where you are.",
-    "enableLocation": "Enable location",
-    "openSettings": "Open settings",
     "checkingRoutes": "Checking routes…",
     "couldNotLoadAlerts": "Route safety unavailable",
     "couldNotLoadAlertsMessage": "We could not check for hazards on your routes. Try again.",
@@ -129,7 +124,11 @@
     "organizerAuthTitle": "Organize a group",
     "organizerAuthDesc": "The organizer dashboard is tied to your account — sign in to run a trip roster, logistics and chat.",
     "quickFindGuide": "Find a guide",
-    "untitledFeedItem": "Travel post"
+    "untitledFeedItem": "Travel post",
+    "trendingWeatherTitle": "Trending weather",
+    "trendingWeatherEmpty": "No trending destinations to show right now.",
+    "trendingWeatherAqi": "{{level}} AQI",
+    "trendingWeatherHumidity": "Humidity {{value}}"
   },
   "search": {
     "searchPlaceholder": "Search by state, city, guide...",
