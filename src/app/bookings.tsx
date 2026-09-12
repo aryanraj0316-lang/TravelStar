@@ -3,7 +3,10 @@ import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import ArrowLeft from 'lucide-react-native/icons/arrow-left';
 import Calendar from 'lucide-react-native/icons/calendar';
+import CalendarCheck from 'lucide-react-native/icons/calendar-check';
+import Check from 'lucide-react-native/icons/check';
 import ChevronRight from 'lucide-react-native/icons/chevron-right';
+import Compass from 'lucide-react-native/icons/compass';
 import MapPin from 'lucide-react-native/icons/map-pin';
 import MessageCircle from 'lucide-react-native/icons/message-circle';
 import Users from 'lucide-react-native/icons/users';
@@ -38,13 +41,13 @@ function StatusBadge({ status }: { status: 'ONGOING' | 'UPCOMING' | 'COMPLETED' 
           style={[
             styles.badgeContainer,
             {
-              backgroundColor: 'rgba(16,185,129,0.1)',
-              borderColor: 'rgba(16,185,129,0.35)',
+              backgroundColor: '#ECFDF5',
+              borderColor: '#A7F3D0',
             },
           ]}
         >
           <View style={[styles.pulseDot, { backgroundColor: C.green }]} />
-          <Text style={[styles.badgeText, { color: C.green }]}>{t(STATUS_LABEL_KEYS.ONGOING)}</Text>
+          <Text style={[styles.badgeText, { color: C.greenText }]}>{t(STATUS_LABEL_KEYS.ONGOING)}</Text>
         </View>
       );
     case 'UPCOMING':
@@ -53,13 +56,13 @@ function StatusBadge({ status }: { status: 'ONGOING' | 'UPCOMING' | 'COMPLETED' 
           style={[
             styles.badgeContainer,
             {
-              backgroundColor: 'rgba(245,158,11,0.1)',
-              borderColor: 'rgba(245,158,11,0.35)',
+              backgroundColor: '#EFF6FF',
+              borderColor: '#BFDBFE',
             },
           ]}
         >
-          <View style={[styles.pulseDot, { backgroundColor: C.amber }]} />
-          <Text style={[styles.badgeText, { color: C.amber }]}>{t(STATUS_LABEL_KEYS.UPCOMING)}</Text>
+          <View style={[styles.pulseDot, { backgroundColor: C.blue }]} />
+          <Text style={[styles.badgeText, { color: C.blueText }]}>{t(STATUS_LABEL_KEYS.UPCOMING)}</Text>
         </View>
       );
     case 'COMPLETED':
@@ -68,8 +71,8 @@ function StatusBadge({ status }: { status: 'ONGOING' | 'UPCOMING' | 'COMPLETED' 
           style={[
             styles.badgeContainer,
             {
-              backgroundColor: 'rgba(139,92,246,0.1)',
-              borderColor: 'rgba(139,92,246,0.35)',
+              backgroundColor: '#F5F3FF',
+              borderColor: '#DDD6FE',
             },
           ]}
         >
@@ -101,11 +104,15 @@ function BookingCard({
       {/* Card Image Header */}
       <View style={styles.cardImageContainer}>
         <CoverImage uri={booking.coverImage} name={booking.name} style={styles.cardImage} />
-        <LinearGradient colors={['rgba(7,9,19,0.15)', 'rgba(7,9,19,0.92)']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={['rgba(15,23,42,0.1)', 'rgba(15,23,42,0.55)']} style={StyleSheet.absoluteFill} />
         <View style={styles.cardHeaderOverlay}>
           <StatusBadge status={booking.status} />
           {booking.memberRole !== 'MEMBER' && (
-            <Text style={styles.bookingIdText}>{booking.memberRole === 'ORGANIZER' ? t('bookings.roleOrganizer') : t('bookings.roleCoLead')}</Text>
+            <View style={styles.bookingIdBadge}>
+              <Text style={styles.bookingIdText}>
+                {booking.memberRole === 'ORGANIZER' ? t('bookings.roleOrganizer') : t('bookings.roleCoLead')}
+              </Text>
+            </View>
           )}
         </View>
       </View>
@@ -247,90 +254,143 @@ export default function BookingsScreen() {
       <View style={styles.header}>
         <TouchableOpacity
           activeOpacity={0.7}
-          onPress={() => router.back()}
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
           style={styles.backBtn}
           accessibilityRole="button"
           accessibilityLabel={t('bookings.goBack')}
         >
-          <ArrowLeft size={18} color={C.white} />
+          <ArrowLeft size={18} color={C.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('bookings.title')}</Text>
         <View style={{ width: MIN_TOUCH_TARGET }} />
       </View>
 
-      {/* Tabs / Segment Filter */}
-      <View style={styles.tabsRow}>
-        {(['ALL', 'ONGOING', 'UPCOMING', 'COMPLETED'] as BookingFilter[]).map((tab) => {
-          const isActive = filter === tab;
-          return (
-            <TouchableOpacity
-              key={tab}
-              activeOpacity={0.8}
-              onPress={() => setFilter(tab)}
-              style={styles.tabBtn}
-              accessibilityRole="button"
-              accessibilityLabel={t(FILTER_LABEL_KEYS[tab])}
-              accessibilityState={{ selected: isActive }}
-            >
-              {isActive ? (
-                <LinearGradient
-                  colors={['#00F2FE', '#0066FF']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.activeTabGradient}
-                >
-                  <Text style={[styles.tabText, styles.activeTabText]}>
-                    {t(FILTER_LABEL_KEYS[tab])}
-                  </Text>
-                </LinearGradient>
-              ) : (
-                <View style={styles.inactiveTabBox}>
-                  <Text style={[styles.tabText, styles.inactiveTabText]}>
-                    {t(FILTER_LABEL_KEYS[tab])}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      {/* Bookings List */}
       {!isLoggedIn ? (
-        <ScreenEmpty
-          title={t('bookings.signInRequired')}
-          message={t('bookings.signInRequiredMessage')}
-          actionLabel={t('bookings.signIn')}
-          onAction={() => router.navigate('/auth')}
-        />
-      ) : isLoading ? (
-        <ScreenLoading label={t('bookings.loadingBookings')} />
-      ) : isError ? (
-        <ScreenError
-          message={error instanceof Error ? error.message : t('bookings.couldNotLoadBookings')}
-          onRetry={() => refetch()}
-        />
+        <View style={styles.guestContainer}>
+          <View style={styles.guestCard}>
+            <View style={styles.guestIconCircle}>
+              <CalendarCheck size={28} color={C.blue} strokeWidth={2.2} />
+            </View>
+
+            <Text style={styles.guestTitle}>{t('bookings.signInRequired')}</Text>
+            <Text style={styles.guestSubtitle}>{t('bookings.signInRequiredMessage')}</Text>
+
+            <View style={styles.guestBenefitList}>
+              <View style={styles.guestBenefitRow}>
+                <View style={styles.guestCheckCircle}>
+                  <Check size={11} color={C.greenText} strokeWidth={3} />
+                </View>
+                <Text style={styles.guestBenefitText}>{t('bookings.signInBenefit1')}</Text>
+              </View>
+
+              <View style={styles.guestBenefitRow}>
+                <View style={styles.guestCheckCircle}>
+                  <Check size={11} color={C.greenText} strokeWidth={3} />
+                </View>
+                <Text style={styles.guestBenefitText}>{t('bookings.signInBenefit2')}</Text>
+              </View>
+
+              <View style={styles.guestBenefitRow}>
+                <View style={styles.guestCheckCircle}>
+                  <Check size={11} color={C.greenText} strokeWidth={3} />
+                </View>
+                <Text style={styles.guestBenefitText}>{t('bookings.signInBenefit3')}</Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={styles.guestPrimaryBtn}
+              activeOpacity={0.85}
+              onPress={() => router.push('/auth')}
+              accessibilityRole="button"
+              accessibilityLabel={t('bookings.signIn')}
+            >
+              <Text style={styles.guestPrimaryBtnText}>{t('bookings.signIn')}</Text>
+              <ChevronRight size={16} color={C.white} strokeWidth={2.5} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.guestSecondaryBtn}
+              activeOpacity={0.7}
+              onPress={() => router.push('/search')}
+              accessibilityRole="button"
+              accessibilityLabel={t('bookings.browseTrips')}
+            >
+              <Compass size={15} color={C.blueText} style={{ marginRight: 6 }} />
+              <Text style={styles.guestSecondaryBtnText}>{t('bookings.browseTrips')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       ) : (
-        <FlatList
-          data={filteredBookings}
-          keyExtractor={keyExtractor}
-          renderItem={({ item }) => (
-            <BookingCard booking={item} onOpenChat={openTripChat} onTrackLive={() => router.navigate('/map')} />
-          )}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.listContent}
-          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={C.blue} />}
-          initialNumToRender={3}
-          maxToRenderPerBatch={5}
-          windowSize={7}
-          removeClippedSubviews
-          ListEmptyComponent={
-            <ScreenEmpty
-              title={t('bookings.noBookings')}
-              message={myTrips.length === 0 ? t('bookings.noBookingsAtAll') : t('bookings.noBookingsInCategory')}
+        <>
+          {/* Tabs / Segment Filter */}
+          <View style={styles.tabsRow}>
+            {(['ALL', 'ONGOING', 'UPCOMING', 'COMPLETED'] as BookingFilter[]).map((tab) => {
+              const isActive = filter === tab;
+              return (
+                <TouchableOpacity
+                  key={tab}
+                  activeOpacity={0.8}
+                  onPress={() => setFilter(tab)}
+                  style={styles.tabBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel={t(FILTER_LABEL_KEYS[tab])}
+                  accessibilityState={{ selected: isActive }}
+                >
+                  {isActive ? (
+                    <LinearGradient
+                      colors={['#3B82F6', '#2563EB']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.activeTabGradient}
+                    >
+                      <Text style={[styles.tabText, styles.activeTabText]}>
+                        {t(FILTER_LABEL_KEYS[tab])}
+                      </Text>
+                    </LinearGradient>
+                  ) : (
+                    <View style={styles.inactiveTabBox}>
+                      <Text style={[styles.tabText, styles.inactiveTabText]}>
+                        {t(FILTER_LABEL_KEYS[tab])}
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Bookings List */}
+          {isLoading ? (
+            <ScreenLoading label={t('bookings.loadingBookings')} />
+          ) : isError ? (
+            <ScreenError
+              message={error instanceof Error ? error.message : t('bookings.couldNotLoadBookings')}
+              onRetry={() => refetch()}
             />
-          }
-        />
+          ) : (
+            <FlatList
+              data={filteredBookings}
+              keyExtractor={keyExtractor}
+              renderItem={({ item }) => (
+                <BookingCard booking={item} onOpenChat={openTripChat} onTrackLive={() => router.navigate('/map')} />
+              )}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.listContent}
+              refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={C.blue} />}
+              initialNumToRender={3}
+              maxToRenderPerBatch={5}
+              windowSize={7}
+              removeClippedSubviews
+              ListEmptyComponent={
+                <ScreenEmpty
+                  title={t('bookings.noBookings')}
+                  message={myTrips.length === 0 ? t('bookings.noBookingsAtAll') : t('bookings.noBookingsInCategory')}
+                />
+              }
+            />
+          )}
+        </>
       )}
     </SafeAreaView>
   );
@@ -352,11 +412,16 @@ const styles = StyleSheet.create({
     width: MIN_TOUCH_TARGET,
     height: MIN_TOUCH_TARGET,
     borderRadius: MIN_TOUCH_TARGET / 2,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: C.card,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: C.border,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
   },
   headerTitle: {
     fontSize: 18,
@@ -371,22 +436,32 @@ const styles = StyleSheet.create({
   },
   tabBtn: {
     flex: 1,
-    height: MIN_TOUCH_TARGET,
+    height: 38,
   },
   activeTabGradient: {
     flex: 1,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: C.blue,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 2,
   },
   inactiveTabBox: {
     flex: 1,
     borderRadius: 12,
-    backgroundColor: '#121524',
+    backgroundColor: C.card,
     borderWidth: 1,
-    borderColor: '#1D2138',
+    borderColor: C.border,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 2,
+    elevation: 1,
   },
   tabText: {
     fontSize: 12,
@@ -398,10 +473,11 @@ const styles = StyleSheet.create({
   },
   inactiveTabText: {
     color: C.textSec,
+    fontWeight: '600',
   },
   listContent: {
     paddingHorizontal: 16,
-    paddingTop: 10,
+    paddingTop: 8,
     paddingBottom: 40,
   },
   bookingCard: {
@@ -411,6 +487,11 @@ const styles = StyleSheet.create({
     borderColor: C.border,
     marginBottom: 20,
     overflow: 'hidden',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
   },
   cardImageContainer: {
     height: 170,
@@ -432,10 +513,15 @@ const styles = StyleSheet.create({
   badgeContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
+    paddingHorizontal: 9,
     paddingVertical: 4,
     borderRadius: 8,
     borderWidth: 1,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 1,
   },
   pulseDot: {
     width: 6,
@@ -444,22 +530,29 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   badgeText: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '800',
-    letterSpacing: 0.5,
+    letterSpacing: 0.4,
+  },
+  bookingIdBadge: {
+    backgroundColor: 'rgba(15, 23, 42, 0.7)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
   bookingIdText: {
-    color: C.textSec,
-    fontSize: 12,
-    fontWeight: '600',
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   cardDetails: {
     padding: 16,
   },
   tripName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: C.white,
+    fontSize: 16.5,
+    fontWeight: '800',
+    color: C.text,
     marginBottom: 12,
   },
   detailRow: {
@@ -474,7 +567,7 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: C.border,
     marginVertical: 14,
   },
   cardFooter: {
@@ -497,21 +590,133 @@ const styles = StyleSheet.create({
   footerValue: {
     fontSize: 14,
     fontWeight: '700',
-    color: C.white,
+    color: C.text,
   },
   actionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: C.blue,
     borderRadius: 12,
     height: 44,
     gap: 6,
+    shadowColor: C.blue,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
   },
   actionBtnText: {
     color: C.white,
+    fontSize: 13.5,
+    fontWeight: '700',
+  },
+
+  // ── Guest / Sign-in Gate ────────────────────────────
+  guestContainer: {
+    flex: 1,
+    paddingHorizontal: 20,
+    justifyContent: 'center',
+    paddingBottom: 40,
+  },
+  guestCard: {
+    backgroundColor: C.card,
+    borderRadius: 20,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: C.border,
+    alignItems: 'center',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  guestIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  guestTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: C.text,
+    textAlign: 'center',
+    marginBottom: 8,
+    letterSpacing: -0.2,
+  },
+  guestSubtitle: {
+    fontSize: 13.5,
+    color: C.textSec,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 20,
+    paddingHorizontal: 4,
+  },
+  guestBenefitList: {
+    width: '100%',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    padding: 14,
+    gap: 12,
+    marginBottom: 22,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  guestBenefitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  guestCheckCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#ECFDF5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  guestBenefitText: {
+    flex: 1,
+    fontSize: 12.5,
+    color: C.text,
+    fontWeight: '500',
+    lineHeight: 17,
+  },
+  guestPrimaryBtn: {
+    width: '100%',
+    height: 48,
+    borderRadius: 13,
+    backgroundColor: C.blue,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    shadowColor: C.blue,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.22,
+    shadowRadius: 6,
+    elevation: 3,
+    marginBottom: 10,
+  },
+  guestPrimaryBtnText: {
+    color: C.white,
+    fontSize: 14.5,
+    fontWeight: '700',
+  },
+  guestSecondaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  guestSecondaryBtnText: {
+    color: C.blueText,
     fontSize: 13,
     fontWeight: '600',
   },

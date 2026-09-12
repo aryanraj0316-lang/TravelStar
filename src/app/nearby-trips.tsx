@@ -141,11 +141,11 @@ export default function NearbyTripsScreen() {
       <View style={styles.topNavRow}>
         <TouchableOpacity
           style={styles.backBtn}
-          onPress={() => router.back()}
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
           accessibilityRole="button"
           accessibilityLabel={t('nearbyTrips.goBack')}
         >
-          <ArrowLeft size={18} color={C.white} />
+          <ArrowLeft size={18} color={C.text} />
         </TouchableOpacity>
         <Text style={styles.topNavTitle}>{t('nearbyTrips.title')}</Text>
         <View style={{ width: MIN_TOUCH_TARGET }} />
@@ -241,6 +241,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: C.border,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
   },
   topNavTitle: { fontSize: 16, fontWeight: '800', color: C.text },
   locBanner: {

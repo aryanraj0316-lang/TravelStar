@@ -9,12 +9,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import ArrowLeft from 'lucide-react-native/icons/arrow-left';
 import Car from 'lucide-react-native/icons/car';
 import Check from 'lucide-react-native/icons/check';
+import ChevronRight from 'lucide-react-native/icons/chevron-right';
 import Hotel from 'lucide-react-native/icons/hotel';
 import Plus from 'lucide-react-native/icons/plus';
+import Receipt from 'lucide-react-native/icons/receipt';
 import ShoppingBag from 'lucide-react-native/icons/shopping-bag';
 import Ticket from 'lucide-react-native/icons/ticket';
 import Trash2 from 'lucide-react-native/icons/trash-2';
 import Utensils from 'lucide-react-native/icons/utensils';
+import Wallet from 'lucide-react-native/icons/wallet';
 
 import { apiService } from '@/services/api';
 import { queryKeys } from '@/lib/query-keys';
@@ -198,23 +201,74 @@ export default function BudgetTrackerScreen() {
 
   const canSubmit = desc.trim().length > 0 && Number(amount) > 0 && !addMutation.isPending;
 
+  const handleBack = () => (router.canGoBack() ? router.back() : router.replace('/'));
+
   // ── Not signed in / no trips ──────────────────────────────────────
   if (!isLoggedIn) {
     return (
-      <Shell title={t('budgetTracker.title')} onBack={() => router.back()}>
-        <ScreenEmpty
-          title={t('budgetTracker.signInRequiredTitle')}
-          message={t('budgetTracker.signInRequiredMessage')}
-          actionLabel={t('budgetTracker.signIn')}
-          onAction={() => router.navigate('/auth')}
-        />
+      <Shell title={t('budgetTracker.title')} onBack={handleBack}>
+        <View style={styles.guestContainer}>
+          <View style={styles.guestCard}>
+            <View style={styles.guestIconCircle}>
+              <Wallet size={28} color={C.blue} strokeWidth={2.2} />
+            </View>
+
+            <Text style={styles.guestTitle}>{t('budgetTracker.signInRequiredTitle')}</Text>
+            <Text style={styles.guestSubtitle}>{t('budgetTracker.signInRequiredMessage')}</Text>
+
+            <View style={styles.guestBenefitList}>
+              <View style={styles.guestBenefitRow}>
+                <View style={styles.guestCheckCircle}>
+                  <Check size={11} color={C.greenText} strokeWidth={3} />
+                </View>
+                <Text style={styles.guestBenefitText}>{t('budgetTracker.signInBenefit1')}</Text>
+              </View>
+
+              <View style={styles.guestBenefitRow}>
+                <View style={styles.guestCheckCircle}>
+                  <Check size={11} color={C.greenText} strokeWidth={3} />
+                </View>
+                <Text style={styles.guestBenefitText}>{t('budgetTracker.signInBenefit2')}</Text>
+              </View>
+
+              <View style={styles.guestBenefitRow}>
+                <View style={styles.guestCheckCircle}>
+                  <Check size={11} color={C.greenText} strokeWidth={3} />
+                </View>
+                <Text style={styles.guestBenefitText}>{t('budgetTracker.signInBenefit3')}</Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={styles.guestPrimaryBtn}
+              activeOpacity={0.85}
+              onPress={() => router.push('/auth')}
+              accessibilityRole="button"
+              accessibilityLabel={t('budgetTracker.signIn')}
+            >
+              <Text style={styles.guestPrimaryBtnText}>{t('budgetTracker.signIn')}</Text>
+              <ChevronRight size={16} color={C.white} strokeWidth={2.5} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.guestSecondaryBtn}
+              activeOpacity={0.7}
+              onPress={() => router.push('/nearby-trips')}
+              accessibilityRole="button"
+              accessibilityLabel={t('budgetTracker.browseNearbyTrips')}
+            >
+              <Receipt size={15} color={C.blueText} style={{ marginRight: 6 }} />
+              <Text style={styles.guestSecondaryBtnText}>{t('budgetTracker.browseNearbyTrips')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Shell>
     );
   }
 
   if (tripsLoading) {
     return (
-      <Shell title={t('budgetTracker.title')} onBack={() => router.back()}>
+      <Shell title={t('budgetTracker.title')} onBack={handleBack}>
         <ScreenLoading label={t('budgetTracker.loadingTrips')} />
       </Shell>
     );
@@ -222,7 +276,7 @@ export default function BudgetTrackerScreen() {
 
   if (tripsError || myTrips.length === 0) {
     return (
-      <Shell title={t('budgetTracker.title')} onBack={() => router.back()}>
+      <Shell title={t('budgetTracker.title')} onBack={handleBack}>
         <ScreenEmpty
           title={tripsError ? t('budgetTracker.couldNotLoadTripsTitle') : t('budgetTracker.noTripsYetTitle')}
           message={tripsError ? t('budgetTracker.couldNotLoadTripsMessage') : t('budgetTracker.noTripsYetMessage')}
@@ -234,7 +288,7 @@ export default function BudgetTrackerScreen() {
   }
 
   return (
-    <Shell title={t('budgetTracker.title')} onBack={() => router.back()}>
+    <Shell title={t('budgetTracker.title')} onBack={handleBack}>
       {/* Trip selector */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tripChips}>
         {myTrips.map((t) => (
@@ -407,7 +461,7 @@ function Shell({ title, onBack, children }: { title: string; onBack: () => void;
           accessibilityRole="button"
           accessibilityLabel={t('budgetTracker.goBack')}
         >
-          <ArrowLeft size={18} color={C.white} />
+          <ArrowLeft size={18} color={C.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{title}</Text>
         <View style={{ width: MIN_TOUCH_TARGET }} />
@@ -430,11 +484,16 @@ const styles = StyleSheet.create({
     width: MIN_TOUCH_TARGET,
     height: MIN_TOUCH_TARGET,
     borderRadius: MIN_TOUCH_TARGET / 2,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: C.card,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: C.border,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
   },
   headerTitle: { fontSize: 18, fontWeight: '700', color: C.text },
   tripChips: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingBottom: 12 },
@@ -449,8 +508,8 @@ const styles = StyleSheet.create({
   section: { marginBottom: 20 },
   // The "Expenses" heading sits in the FlatList header rather than inside a
   // `section` card, so it carries the section's spacing itself.
-  expensesTitle: { fontSize: 13, fontWeight: '800', color: C.white, marginTop: 18, marginBottom: 10 },
-  sectionTitle: { fontSize: 14, fontWeight: '800', color: C.white, marginBottom: 10 },
+  expensesTitle: { fontSize: 13, fontWeight: '800', color: C.text, marginTop: 18, marginBottom: 10 },
+  sectionTitle: { fontSize: 14, fontWeight: '800', color: C.text, marginBottom: 10 },
   balanceRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -458,7 +517,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   balanceAvatar: { width: 34, height: 34, borderRadius: 17 },
-  balanceName: { fontSize: 12.5, fontWeight: '700', color: C.white },
+  balanceName: { fontSize: 12.5, fontWeight: '700', color: C.text },
   balanceSub: { fontSize: 12, color: C.textMuted },
   balanceNet: { fontSize: 13, fontWeight: '800' },
   emptyExpenses: { fontSize: 12, color: C.textMuted, fontStyle: 'italic' },
@@ -470,9 +529,9 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   expenseIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  expenseTitle: { fontSize: 13, fontWeight: '700', color: C.white },
+  expenseTitle: { fontSize: 13, fontWeight: '700', color: C.text },
   expenseSub: { fontSize: 12, color: C.textMuted, marginTop: 2 },
-  expenseAmount: { fontSize: 13.5, fontWeight: '800', color: C.white },
+  expenseAmount: { fontSize: 13.5, fontWeight: '800', color: C.text },
   deleteBtn: { padding: 6 },
   fab: {
     position: 'absolute',
@@ -491,4 +550,113 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   catRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+
+  // ── Guest / Sign-in Gate ────────────────────────────
+  guestContainer: {
+    flex: 1,
+    paddingHorizontal: 20,
+    justifyContent: 'center',
+    paddingBottom: 40,
+  },
+  guestCard: {
+    backgroundColor: C.card,
+    borderRadius: 20,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: C.border,
+    alignItems: 'center',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  guestIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  guestTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: C.text,
+    textAlign: 'center',
+    marginBottom: 8,
+    letterSpacing: -0.2,
+  },
+  guestSubtitle: {
+    fontSize: 13.5,
+    color: C.textSec,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 20,
+    paddingHorizontal: 4,
+  },
+  guestBenefitList: {
+    width: '100%',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    padding: 14,
+    gap: 12,
+    marginBottom: 22,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  guestBenefitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  guestCheckCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#ECFDF5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  guestBenefitText: {
+    flex: 1,
+    fontSize: 12.5,
+    color: C.text,
+    fontWeight: '500',
+    lineHeight: 17,
+  },
+  guestPrimaryBtn: {
+    width: '100%',
+    height: 48,
+    borderRadius: 13,
+    backgroundColor: C.blue,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    shadowColor: C.blue,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.22,
+    shadowRadius: 6,
+    elevation: 3,
+    marginBottom: 10,
+  },
+  guestPrimaryBtnText: {
+    color: C.white,
+    fontSize: 14.5,
+    fontWeight: '700',
+  },
+  guestSecondaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  guestSecondaryBtnText: {
+    color: C.blueText,
+    fontSize: 13,
+    fontWeight: '600',
+  },
 });
