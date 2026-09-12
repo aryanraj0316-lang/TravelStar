@@ -79,9 +79,9 @@ const roles: { value: UserRole; labelKey: string; subKey: string; Icon: typeof G
 
 const quickAccessItems: { labelKey: string; Icon: typeof MapPin; isNew: boolean; route: Href }[] = [
   { labelKey: 'home.quickNearby', Icon: MapPin, isNew: false, route: '/nearby-trips' },
-  { labelKey: 'home.quickFindGuide', Icon: Map, isNew: true, route: '/find-guides' },
+  { labelKey: 'home.quickFindGuide', Icon: Map, isNew: false, route: '/find-guides' },
   { labelKey: 'home.quickBookings', Icon: CalendarCheck, isNew: false, route: '/bookings' },
-  { labelKey: 'home.quickBudgetTracker', Icon: Wallet, isNew: true, route: '/budget-tracker' },
+  { labelKey: 'home.quickBudgetTracker', Icon: Wallet, isNew: false, route: '/budget-tracker' },
 ];
 
 /**
@@ -2111,8 +2111,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingHorizontal: 20,
     gap: 10,
-    marginBottom: 20,
-    marginTop: 14,
+    marginBottom: 16,
+    marginTop: -18,
     zIndex: 10,
   },
   roleCard: {
@@ -2168,7 +2168,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    paddingVertical: 14,
+    paddingVertical: 12,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
@@ -2180,15 +2180,15 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   quickIconCircle: {
-    width: 44,
-    height: 44,
+    width: 28,
+    height: 28,
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 6,
   },
   quickLabel: {
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '600',
     color: '#0F172A',
     textAlign: 'center',
