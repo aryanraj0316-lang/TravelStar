@@ -1,16 +1,19 @@
 import { apiService } from '@/services/api';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import Activity from 'lucide-react-native/icons/activity';
 import AlertTriangle from 'lucide-react-native/icons/triangle-alert';
 import ArrowLeft from 'lucide-react-native/icons/arrow-left';
 import Car from 'lucide-react-native/icons/car';
 import Check from 'lucide-react-native/icons/check';
 import Clock from 'lucide-react-native/icons/clock';
 import CloudRain from 'lucide-react-native/icons/cloud-rain';
+import Flame from 'lucide-react-native/icons/flame';
 import MapPin from 'lucide-react-native/icons/map-pin';
 import Mountain from 'lucide-react-native/icons/mountain';
 import Phone from 'lucide-react-native/icons/phone';
 import ShieldAlert from 'lucide-react-native/icons/shield-alert';
+import Tornado from 'lucide-react-native/icons/tornado';
 import Waves from 'lucide-react-native/icons/waves-horizontal';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -40,6 +43,9 @@ const CATEGORY_LABEL_KEYS: Record<string, string> = {
   LANDSLIDE: 'monsoonAdvisory.categoryLandslide',
   CLOUDBURST: 'monsoonAdvisory.categoryCloudburst',
   TRAFFIC_RUSH: 'monsoonAdvisory.categoryTrafficRush',
+  CYCLONE: 'monsoonAdvisory.categoryCyclone',
+  EARTHQUAKE: 'monsoonAdvisory.categoryEarthquake',
+  WILDFIRE: 'monsoonAdvisory.categoryWildfire',
 };
 
 // Reuses notifications.tsx's severity keys — same Alert model, same enum.
@@ -64,6 +70,12 @@ function getAlertIcon(category: string) {
       return <CloudRain size={18} color={C.orange} />;
     case 'TRAFFIC_RUSH':
       return <Car size={18} color={C.orange} />;
+    case 'CYCLONE':
+      return <Tornado size={18} color={C.orange} />;
+    case 'EARTHQUAKE':
+      return <Activity size={18} color={C.red} />;
+    case 'WILDFIRE':
+      return <Flame size={18} color={C.red} />;
     default:
       return <AlertTriangle size={18} color={C.orange} />;
   }

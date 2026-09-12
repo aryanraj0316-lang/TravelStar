@@ -87,11 +87,19 @@ enum AlertSeverity {
 // Values map to the exact strings already live in the database (with spaces
 // and "&") so the migration converting the column doesn't orphan existing
 // rows — see docs/REMEDIATION.md §4.5.
+//
+// CYCLONE, EARTHQUAKE, and WILDFIRE were added alongside broadening
+// src/lib/hazard-feed.ts's live GDACS sync beyond flood/cyclone (which it
+// had previously collapsed into FLOOD_RAIN) to also cover GDACS's EQ and WF
+// event types — see that file's header comment.
 enum AlertCategory {
   FLOOD_RAIN   @map("FLOOD & RAIN")
   LANDSLIDE
   CLOUDBURST
   TRAFFIC_RUSH @map("TRAFFIC RUSH")
+  CYCLONE
+  EARTHQUAKE
+  WILDFIRE
 }
 
 // Deliberately a separate scale from AlertSeverity — MonsoonAdvisory and

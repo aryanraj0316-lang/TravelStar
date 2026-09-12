@@ -70,7 +70,14 @@ export interface NotificationPreferences {
 // ── Hazard alerts ─────────────────────────────────────────────────────
 
 export type AlertSeverity = 'CRITICAL' | 'WARNING' | 'ADVISORY';
-export type AlertCategory = 'FLOOD_RAIN' | 'LANDSLIDE' | 'CLOUDBURST' | 'TRAFFIC_RUSH';
+export type AlertCategory =
+  | 'FLOOD_RAIN'
+  | 'LANDSLIDE'
+  | 'CLOUDBURST'
+  | 'TRAFFIC_RUSH'
+  | 'CYCLONE'
+  | 'EARTHQUAKE'
+  | 'WILDFIRE';
 
 export interface HazardAlert {
   id: string;

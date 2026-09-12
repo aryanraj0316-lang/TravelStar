@@ -15,6 +15,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation, useRouter, type Href } from 'expo-router';
+import Activity from 'lucide-react-native/icons/activity';
 import Bell from 'lucide-react-native/icons/bell';
 import CalendarCheck from 'lucide-react-native/icons/calendar-check';
 import Camera from 'lucide-react-native/icons/camera';
@@ -28,6 +29,7 @@ import CloudLightning from 'lucide-react-native/icons/cloud-lightning';
 import CloudRain from 'lucide-react-native/icons/cloud-rain';
 import CloudSnow from 'lucide-react-native/icons/cloud-snow';
 import CloudSun from 'lucide-react-native/icons/cloud-sun';
+import Flame from 'lucide-react-native/icons/flame';
 import Globe from 'lucide-react-native/icons/globe';
 import Map from 'lucide-react-native/icons/map';
 import MapPin from 'lucide-react-native/icons/map-pin';
@@ -37,6 +39,7 @@ import Plus from 'lucide-react-native/icons/plus';
 import Star from 'lucide-react-native/icons/star';
 import ShieldCheck from 'lucide-react-native/icons/shield-check';
 import Sun from 'lucide-react-native/icons/sun';
+import Tornado from 'lucide-react-native/icons/tornado';
 import AlertTriangle from 'lucide-react-native/icons/triangle-alert';
 import User from 'lucide-react-native/icons/user';
 import Users from 'lucide-react-native/icons/users';
@@ -489,6 +492,9 @@ const ALERT_CATEGORY_ICON = {
   FLOOD_RAIN: Waves,
   CLOUDBURST: CloudRain,
   TRAFFIC_RUSH: Car,
+  CYCLONE: Tornado,
+  EARTHQUAKE: Activity,
+  WILDFIRE: Flame,
 } as const;
 
 function RouteSafetyCardBase({ isFocused }: { isFocused: boolean }) {

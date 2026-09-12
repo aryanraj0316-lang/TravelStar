@@ -38,7 +38,7 @@ router.get('/', async (req, res) => {
 const createAlertSchema = z.object({
   severity: z.enum(['CRITICAL', 'WARNING', 'ADVISORY']),
   title: z.string().trim().min(1).max(200),
-  category: z.enum(['FLOOD_RAIN', 'LANDSLIDE', 'CLOUDBURST', 'TRAFFIC_RUSH']),
+  category: z.enum(['FLOOD_RAIN', 'LANDSLIDE', 'CLOUDBURST', 'TRAFFIC_RUSH', 'CYCLONE', 'EARTHQUAKE', 'WILDFIRE']),
   location: z.string().trim().min(1).max(200),
   time: z.string().trim().min(1).max(100),
   desc: z.string().trim().min(1).max(2000),

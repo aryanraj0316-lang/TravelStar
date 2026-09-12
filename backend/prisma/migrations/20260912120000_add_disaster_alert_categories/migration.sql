@@ -1,0 +1,4 @@
+-- AlterEnum
+ALTER TYPE "AlertCategory" ADD VALUE 'CYCLONE';
+ALTER TYPE "AlertCategory" ADD VALUE 'EARTHQUAKE';
+ALTER TYPE "AlertCategory" ADD VALUE 'WILDFIRE';

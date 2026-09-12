@@ -1,18 +1,36 @@
 import prisma from '../services/db';
 import { logger } from './logger';
-import type { AlertSeverity } from '@prisma/client';
+import type { AlertCategory, AlertSeverity } from '@prisma/client';
 
 const FETCH_TIMEOUT_MS = 10000;
 
 // GDACS (Global Disaster Alert and Coordination System) — free, no API key.
-// It also reports earthquakes, drought and wildfire (EQ/DR/WF) and
-// volcanoes (VO), but AlertCategory only has four India-route-hazard
-// values (prisma/schema.prisma) built for a traveler deciding whether to
-// take a road today, not a general disaster monitor — those event types
-// are deliberately left out rather than forced into a category that would
-// mislead someone reading the hazard card.
-const GDACS_EVENT_TYPES = ['FL', 'TC'] as const; // Flood, Tropical Cyclone
+// Originally scoped to flood/cyclone (a traveler deciding whether to take a
+// road today) and collapsed both into one FLOOD_RAIN category. Broadened to
+// also sync earthquakes and wildfires so the home-screen hazard card has a
+// real chance of showing something on a day with no active flood or
+// cyclone — each GDACS event type now maps to its own real AlertCategory
+// (see GDACS_CATEGORY below) rather than being forced into FLOOD_RAIN or
+// left out. Drought (DR) and volcanic activity (VO) are still left out:
+// GDACS reports them at a country/region granularity too coarse to tell a
+// traveler anything actionable about "today," unlike a discrete flood,
+// cyclone, earthquake, or wildfire event.
+const GDACS_EVENT_TYPES = ['FL', 'TC', 'EQ', 'WF'] as const;
 type GdacsEventType = (typeof GDACS_EVENT_TYPES)[number];
+
+const GDACS_CATEGORY: Record<GdacsEventType, AlertCategory> = {
+  FL: 'FLOOD_RAIN',
+  TC: 'CYCLONE',
+  EQ: 'EARTHQUAKE',
+  WF: 'WILDFIRE',
+};
+
+const GDACS_KIND_LABEL: Record<GdacsEventType, string> = {
+  FL: 'Flood',
+  TC: 'Cyclone',
+  EQ: 'Earthquake',
+  WF: 'Wildfire',
+};
 
 interface GdacsProperties {
   eventtype: string;
@@ -94,12 +112,13 @@ async function fetchGdacsIndia(): Promise<GdacsProperties[]> {
 }
 
 /**
- * Pulls current India flood/cyclone events from GDACS and syncs them into
- * the Alert table, so the home screen's hazard card reflects a real live
- * feed instead of only whatever an admin has typed in by hand. Rows this
- * function created (id prefixed "gdacs-") that no longer appear in GDACS's
- * current window get deactivated, not deleted — same visibility rule as
- * an admin-authored alert going stale, and it keeps history intact.
+ * Pulls current India flood/cyclone/earthquake/wildfire events from GDACS
+ * and syncs them into the Alert table, so the home screen's hazard card
+ * reflects a real live feed instead of only whatever an admin has typed in
+ * by hand. Rows this function created (id prefixed "gdacs-") that no
+ * longer appear in GDACS's current window get deactivated, not deleted —
+ * same visibility rule as an admin-authored alert going stale, and it
+ * keeps history intact.
  */
 export async function syncLiveHazards(): Promise<{ synced: number; deactivated: number }> {
   const events = await fetchGdacsIndia();
@@ -108,12 +127,13 @@ export async function syncLiveHazards(): Promise<{ synced: number; deactivated: 
   for (const p of events) {
     const id = gdacsAlertId(p);
     seenIds.add(id);
-    const kindLabel = p.eventtype === 'TC' ? 'Cyclone' : 'Flood';
+    const eventType = p.eventtype as GdacsEventType;
+    const kindLabel = GDACS_KIND_LABEL[eventType];
     const title = p.name?.trim() || `${kindLabel} — ${p.country}`;
     const desc =
       p.htmldescription?.trim() ||
       p.description?.trim() ||
-      `${kindLabel === 'Cyclone' ? 'Tropical cyclone' : 'Flood'} activity reported in ${p.country}.`;
+      `${kindLabel} activity reported in ${p.country}.`;
     const severity = mapSeverity(p.alertlevel);
 
     await prisma.alert.upsert({
@@ -123,7 +143,7 @@ export async function syncLiveHazards(): Promise<{ synced: number; deactivated: 
         id,
         severity,
         title,
-        category: 'FLOOD_RAIN',
+        category: GDACS_CATEGORY[eventType],
         location: p.country,
         time: new Date(p.fromdate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
         desc,
