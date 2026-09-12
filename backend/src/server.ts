@@ -10,6 +10,7 @@ import { closeCache } from './lib/cache';
 import { startRetentionScheduler, stopRetentionScheduler } from './lib/data-retention';
 import { startHazardFeedScheduler, stopHazardFeedScheduler } from './lib/hazard-feed';
 import { startDestinationTrendsScheduler, stopDestinationTrendsScheduler } from './lib/destination-trends';
+import { seedReferenceDataIfEmpty } from './lib/seed-reference-data';
 
 initObservability();
 
@@ -25,6 +26,12 @@ server.listen(env.PORT, () => {
 startRetentionScheduler();
 startHazardFeedScheduler();
 startDestinationTrendsScheduler();
+
+// Self-heal a freshly provisioned or wiped database: only inserts when
+// Destination is genuinely empty, so this is a no-op on every normal boot.
+// Non-fatal — a seeding failure should never crash a server that would
+// otherwise run fine (docs/REMEDIATION.md §4.9).
+seedReferenceDataIfEmpty(prisma).catch((e) => logger.warn('[seed-reference-data] Startup seeding failed:', e));
 
 // ── Graceful shutdown (docs/REMEDIATION.md Phase 11) ────────────────
 // SIGTERM (orchestrator stop) / SIGINT (Ctrl-C): stop accepting new
