@@ -52,6 +52,7 @@ import {
   PanResponder,
   Platform,
   FlatList,
+  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -2188,24 +2189,6 @@ function ChatScreen() {
         {/* WhatsApp-Style Header */}
         <View style={styles.inboxHeader}>
           <Text style={styles.inboxHeaderTitle}>{t('chat.travelStarChats')}</Text>
-          <View style={styles.inboxHeaderIcons}>
-            <TouchableOpacity
-              style={styles.headerIconTouch}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              accessibilityRole="button"
-              accessibilityLabel={t('chat.contacts')}
-            >
-              <UsersIcon size={18} color="#334155" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.headerIconTouch}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              accessibilityRole="button"
-              accessibilityLabel={t('chat.moreOptions')}
-            >
-              <MoreVertical size={18} color="#334155" />
-            </TouchableOpacity>
-          </View>
         </View>
 
         {/* Search bar */}

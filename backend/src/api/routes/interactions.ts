@@ -398,8 +398,8 @@ const handleStatusChange = async (req: Request, res: Response) => {
           userId: request.userId,
           type: 'TRIP',
           category: 'JOIN_ACCEPTED',
-          title: 'Join Request Accepted 🎉',
-          content: `Your request to join ${request.trip.name} has been accepted!`,
+          title: 'Join Request Accepted',
+          content: `You have been accepted into ${request.trip.name} by the organizer and added to the group chat.`,
           unread: true,
           tripId: request.tripId,
           chatRoomId: targetChatRoomId,
@@ -407,14 +407,14 @@ const handleStatusChange = async (req: Request, res: Response) => {
       }
     }
 
-    // 1. JOIN_ACCEPTED notification
+    // Merged single notification: Trip acceptance + Group chat addition
     await prisma.notification.create({
       data: {
         userId: request.userId,
         type: 'TRIP',
         category: 'JOIN_ACCEPTED',
-        title: 'Join Request Accepted 🎉',
-        content: `Your request to join ${request.trip.name} has been accepted!`,
+        title: 'Join Request Accepted',
+        content: `You have been accepted into ${request.trip.name} by the organizer and added to the group chat.`,
         time: 'Just now',
         unread: true,
         tripId: request.tripId,
@@ -422,30 +422,15 @@ const handleStatusChange = async (req: Request, res: Response) => {
       },
     });
 
-    // 2. CHAT_ADDED notification
-    await prisma.notification.create({
-      data: {
-        userId: request.userId,
-        type: 'TRIP',
-        category: 'CHAT_ADDED',
-        title: 'Added to Group Chat 💬',
-        content: `You've been added to the ${request.trip.name} group chat`,
-        time: 'Just now',
-        unread: true,
-        chatRoomId: targetChatRoomId,
-        tripId: request.tripId,
-      },
-    });
-
-    // Real push on top of the two feed rows above (docs/REMEDIATION.md
+    // Real push on top of the feed row above (docs/REMEDIATION.md
     // §8.18 — these used to be in-app-only, so an approved traveller
     // learned about it whenever they next happened to open the app).
     // Awaited but never throwing: sendPushToUsers swallows its own
     // failures, since a push problem must not fail an approval that has
     // already been committed.
     await sendPushToUsers([request.userId], 'TRIP', {
-      title: 'Join Request Accepted 🎉',
-      body: `Your request to join ${request.trip.name} has been accepted!`,
+      title: 'Join Request Accepted',
+      body: `You have been accepted into ${request.trip.name} by the organizer and added to the group chat.`,
       data: { screen: 'trip', tripId: request.tripId, chatRoomId: targetChatRoomId ?? '' },
       badge: await unreadCountFor(request.userId),
     });

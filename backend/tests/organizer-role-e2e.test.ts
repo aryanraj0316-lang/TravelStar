@@ -133,9 +133,9 @@ describe('join request approval chain', () => {
   it('tells the traveller they were accepted', async () => {
     const res = await request(app).get('/api/v1/notifications').set(auth(joiner.token));
     expect(res.status).toBe(200);
-    const rows = res.body.data as { category: string }[];
+    const rows = res.body.data as { category: string; content: string }[];
     expect(rows.some((n) => n.category === 'JOIN_ACCEPTED')).toBe(true);
-    expect(rows.some((n) => n.category === 'CHAT_ADDED')).toBe(true);
+    expect(rows.find((n) => n.category === 'JOIN_ACCEPTED')?.content).toContain('group chat');
   });
 
   it('will not double-approve the same request', async () => {

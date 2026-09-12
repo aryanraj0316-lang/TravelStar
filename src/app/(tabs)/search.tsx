@@ -216,23 +216,18 @@ function TripResultCard({
       activeOpacity={isMyTrip ? 1 : 0.85}
       disabled={isMyTrip}
       onPress={() => onOpenTrip(trip)}
-      style={[styles.tripCard, { backgroundColor: C.card, borderColor: C.border }, isMyTrip && { opacity: 0.65 }]}
+      style={[
+        styles.tripCard,
+        { backgroundColor: C.card, borderColor: C.border },
+        isMyTrip && { opacity: 0.72 },
+      ]}
       accessibilityRole="button"
       accessibilityLabel={trip.name}
       accessibilityHint={t('search.tripCardHint')}
     >
-      {isMyTrip && (
-        <LinearGradient
-          colors={['#141629', '#101220', '#0A0B14']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[StyleSheet.absoluteFill, { borderRadius: 16 }]}
-        />
-      )}
       {/* Left side: Image */}
       <View style={styles.tripImageContainer}>
         <CoverImage uri={trip.coverImage} name={trip.name} style={styles.tripImage} />
-        {/* Subtle dark vignette overlay to make borders darker and enhance readability */}
         <LinearGradient
           colors={['rgba(0, 0, 0, 0.65)', 'rgba(0, 0, 0, 0.1)', 'rgba(0, 0, 0, 0.75)']}
           locations={[0, 0.45, 1]}
@@ -250,7 +245,7 @@ function TripResultCard({
             </View>
           )
         )}
-        {/* Heart button */}
+        {/* Heart button — only for others' trips */}
         {!isMyTrip && (
           <TouchableOpacity
             style={[styles.heartBtn, { backgroundColor: 'rgba(0,0,0,0.4)' }]}
@@ -267,7 +262,6 @@ function TripResultCard({
 
       {/* Right side: Detailed trip content */}
       <View style={styles.tripContent}>
-        {/* Title and Verified badge */}
         <View style={styles.tripHeaderRow}>
           <Text style={[styles.tripName, { color: C.white }]} numberOfLines={3}>
             {trip.name}
@@ -275,99 +269,63 @@ function TripResultCard({
         </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2, marginBottom: 4 }}>
-          <View
-            style={[
-              styles.verifiedBadge,
-              { backgroundColor: isMyTrip ? C.cardAlt : C.accentLight, marginTop: 0, marginBottom: 0 },
-            ]}
-          >
-            <Check size={9} color={isMyTrip ? C.textSec : C.blueText} strokeWidth={3} />
-            <Text style={[styles.verifiedText, { color: isMyTrip ? C.textSec : C.blueText }]}>{t('search.verifiedRoute')}</Text>
+          <View style={[styles.verifiedBadge, { backgroundColor: C.accentLight, marginTop: 0, marginBottom: 0 }]}>
+            <Check size={9} color={C.blueText} strokeWidth={3} />
+            <Text style={[styles.verifiedText, { color: C.blueText }]}>{t('search.verifiedRoute')}</Text>
           </View>
-          <Text style={{ fontSize: 12, fontWeight: '600', color: isMyTrip ? C.textSec : C.greenText }}>
+          <Text style={{ fontSize: 12, fontWeight: '600', color: C.greenText }}>
             {t('search.seatsLeft', { count: trip.availableSeats ?? 0 })}
           </Text>
         </View>
 
-        {/* Route cities with arrow */}
         <View style={styles.routeCities}>
           {displayCities.map((city: string, i: number) => (
             <React.Fragment key={city}>
-              <Text style={[styles.cityText, { color: isMyTrip ? C.textSec : C.blueText }]}>{city}</Text>
+              <Text style={[styles.cityText, { color: C.blueText }]}>{city}</Text>
               {i < displayCities.length - 1 && <Text style={[styles.routeArrow, { color: C.textSec }]}>→</Text>}
             </React.Fragment>
           ))}
         </View>
 
-        {/* 2x2 grid of pill capsules */}
         <View style={styles.capsulesContainer}>
           <View style={styles.capsulesRow}>
             <View style={[styles.capsule, { backgroundColor: C.cardAlt }]}>
               <MapPin size={9} color={C.textSec} />
-              <Text style={[styles.capsuleText, { color: C.textSec }]} numberOfLines={1}>
-                {displayMeeting}
-              </Text>
+              <Text style={[styles.capsuleText, { color: C.textSec }]} numberOfLines={1}>{displayMeeting}</Text>
             </View>
             <View style={[styles.capsule, { backgroundColor: C.cardAlt }]}>
               <Calendar size={9} color={C.textSec} />
-              <Text style={[styles.capsuleText, { color: C.textSec }]} numberOfLines={1}>
-                {displayDate}
-              </Text>
+              <Text style={[styles.capsuleText, { color: C.textSec }]} numberOfLines={1}>{displayDate}</Text>
             </View>
           </View>
           <View style={styles.capsulesRow}>
             <View style={[styles.capsule, { backgroundColor: C.cardAlt }]}>
               <Clock size={9} color={C.textSec} />
-              <Text style={[styles.capsuleText, { color: C.textSec }]} numberOfLines={1}>
-                {duration}
-              </Text>
+              <Text style={[styles.capsuleText, { color: C.textSec }]} numberOfLines={1}>{duration}</Text>
             </View>
             <View style={[styles.capsule, { backgroundColor: C.cardAlt }]}>
-              {trip.name.toLowerCase().includes('bike') ? (
-                <Bike size={9} color={C.textSec} />
-              ) : (
-                <Bus size={9} color={C.textSec} />
-              )}
-              <Text style={[styles.capsuleText, { color: C.textSec }]} numberOfLines={1}>
-                {transport}
-              </Text>
+              {trip.name.toLowerCase().includes('bike') ? <Bike size={9} color={C.textSec} /> : <Bus size={9} color={C.textSec} />}
+              <Text style={[styles.capsuleText, { color: C.textSec }]} numberOfLines={1}>{transport}</Text>
             </View>
           </View>
         </View>
 
-        {/* Price and Action Button row */}
         <View style={[styles.priceRow, { borderTopColor: C.border }]}>
           <View style={{ flex: 1, marginRight: 4 }}>
-            <Text style={[styles.priceLabel, { color: C.textSec }]} numberOfLines={1}>
-              {t('search.fullTripCost')}
-            </Text>
-            <Text style={[styles.priceAmount, { color: isMyTrip ? C.textSec : C.blueText }]} numberOfLines={1}>
-              ₹{displayPrice}
-            </Text>
-            <Text style={[styles.pricePer, { color: C.textSec, marginTop: -2 }]} numberOfLines={1}>
-              {t('search.perPerson')}
-            </Text>
+            <Text style={[styles.priceLabel, { color: C.textSec }]} numberOfLines={1}>{t('search.fullTripCost')}</Text>
+            <Text style={[styles.priceAmount, { color: C.blueText }]} numberOfLines={1}>₹{displayPrice}</Text>
+            <Text style={[styles.pricePer, { color: C.textSec, marginTop: -2 }]} numberOfLines={1}>{t('search.perPerson')}</Text>
           </View>
           <View style={{ gap: 4, flexShrink: 0, width: 120 }}>
             {isMyTrip ? (
-              <View
-                style={[
-                  styles.myTripBadge,
-                  {
-                    backgroundColor: 'rgba(0, 102, 255, 0.12)',
-                    borderColor: 'rgba(0, 102, 255, 0.35)',
-                  },
-                ]}
-              >
+              <View style={[styles.myTripBadge, { backgroundColor: C.accentLight, borderColor: C.border }]}>
                 <Sparkles size={11} color={C.blueText} style={{ marginRight: 4 }} />
-                <Text style={[styles.myTripBadgeText, { color: C.blueText, fontWeight: '800' }]}>{t('search.yourCreation')}</Text>
+                <Text style={[styles.myTripBadgeText, { color: C.blueText, fontWeight: '700' }]}>{t('search.yourCreation')}</Text>
               </View>
             ) : isRequested ? (
               <View style={[styles.joinBtn, styles.joinBtnRequested]}>
                 <Check size={11} color="#2ECC71" style={{ marginRight: 4 }} />
-                <Text style={[styles.joinBtnText, styles.joinBtnRequestedText]} numberOfLines={1}>
-                  {t('search.requested')}
-                </Text>
+                <Text style={[styles.joinBtnText, styles.joinBtnRequestedText]} numberOfLines={1}>{t('search.requested')}</Text>
               </View>
             ) : (
               <TouchableOpacity
@@ -376,27 +334,19 @@ function TripResultCard({
                 accessibilityRole="button"
                 accessibilityLabel={t('search.requestToJoin')}
               >
-                <Text style={styles.joinBtnText} numberOfLines={1}>
-                  {t('search.requestToJoin')}
-                </Text>
+                <Text style={styles.joinBtnText} numberOfLines={1}>{t('search.requestToJoin')}</Text>
                 <ChevronRight size={11} color="#FFF" style={{ marginLeft: 2 }} />
               </TouchableOpacity>
             )}
           </View>
         </View>
       </View>
-      {isMyTrip && (
-        <BlurView
-          intensity={55}
-          tint="dark"
-          style={[styles.myTripOverlay, { backgroundColor: 'rgba(10, 12, 22, 0.35)' }]}
-        />
-      )}
     </TouchableOpacity>
   );
 }
 
 const keyExtractor = (t: Trip) => t.id;
+
 
 function SearchScreen() {
   const { t } = useTranslation();

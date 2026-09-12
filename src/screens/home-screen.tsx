@@ -102,8 +102,8 @@ const AUTH_REASON_COPY: Record<AuthReason, { titleKey: string; descKey: string; 
 
 // ─── Apple-Style Live Character Formation Greeting Component ────────
 const GREETING_WORD_SEQUENCES = [
-  ['N', 'Na', 'Nam', 'Nama', 'Namas', 'Namast', 'Namaste', 'Namaste 🙏'],
-  ['न', 'नम', 'नमस्', 'नमस्त', 'नमस्ते', 'नमस्ते 🙏'],
+  ['N', 'Na', 'Nam', 'Nama', 'Namas', 'Namast', 'Namaste'],
+  ['न', 'नम', 'नमस्', 'नमस्त', 'नमस्ते'],
 ];
 
 function AppleMultilingualGreetingBase({ isFocused }: { isFocused: boolean }) {
