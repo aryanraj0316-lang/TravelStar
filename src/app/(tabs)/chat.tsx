@@ -268,7 +268,7 @@ interface ChatRoom {
   tripId: string;
   name: string;
   avatar: string;
-  type: 'GROUP' | 'GUIDE' | 'SAFETY';
+  type: 'GROUP' | 'GUIDE' | 'DM' | 'SAFETY';
   latestMessage: string;
   latestTime: string;
   unreadCount: number;
@@ -837,7 +837,11 @@ function ChatScreen() {
           tripId: r.tripId ?? '',
           name: r.name,
           avatar: r.avatar,
-          type: (r.type as ChatRoom['type']) || 'GROUP',
+          // Backend sends 'GUIDE' for all non-group rooms (guide sessions and
+          // peer DMs alike). Map to 'DM' so member DMs appear under the DMs
+          // tab. Actual guide session rooms can be explicitly typed 'GUIDE'
+          // via socket events (key contains 'guide').
+          type: r.type === 'GROUP' ? 'GROUP' : 'DM',
           latestMessage: r.latestMessage,
           latestTime: r.latestTime,
           unreadCount: r.unreadCount || 0,
@@ -1090,7 +1094,7 @@ function ChatScreen() {
           };
           return [updatedRoom, ...otherRooms];
         } else {
-          const roomType = key.includes('guide') || key.includes('dm') ? 'GUIDE' : 'GROUP';
+          const roomType = key.includes('guide') ? 'GUIDE' : key.includes('dm') ? 'DM' : 'GROUP';
           const memberMatch = dbMembers.find(
             (mb) => (latestMsg.senderId && mb.id === latestMsg.senderId) || mb.name === latestMsg.senderName,
           );
@@ -1797,7 +1801,7 @@ function ChatScreen() {
         tripId: selectedTripId,
         name: senderName,
         avatar: avatar,
-        type: 'GUIDE', // treat as GUIDE/DM in inbox rendering
+        type: 'DM', // distinct from GUIDE so Guides filter doesn't catch it
         latestMessage: `Direct chat started with ${senderName}`,
         latestTime: new Date().toISOString(),
         unreadCount: 0,
@@ -2093,7 +2097,7 @@ function ChatScreen() {
         if (inboxFilter === 'ALL') return true;
         if (inboxFilter === 'GROUPS') return room.type === 'GROUP';
         if (inboxFilter === 'GUIDES') return room.type === 'GUIDE';
-        if (inboxFilter === 'DMS') return room.type !== 'GROUP';
+        if (inboxFilter === 'DMS') return room.type === 'DM';
 
         return true;
       })
@@ -3375,34 +3379,20 @@ function ChatScreen() {
                               </Text>
                               {isMe && <Text style={styles.memberYouTag}> ({t('chat.you')})</Text>}
                             </View>
-                            <Text style={styles.memberRoleText}>
-                              {SENDER_ROLE_LABEL_KEYS[member.role] ? t(SENDER_ROLE_LABEL_KEYS[member.role]) : member.role}
-                            </Text>
+                            {member.role === 'Organizer' ? (
+                              <View style={styles.memberRoleOrganizerBadge}>
+                                <Text style={styles.memberRoleOrganizerText}>
+                                  {SENDER_ROLE_LABEL_KEYS[member.role] ? t(SENDER_ROLE_LABEL_KEYS[member.role]) : member.role}
+                                </Text>
+                              </View>
+                            ) : (
+                              <Text style={styles.memberRoleText}>
+                                {SENDER_ROLE_LABEL_KEYS[member.role] ? t(SENDER_ROLE_LABEL_KEYS[member.role]) : member.role}
+                              </Text>
+                            )}
                           </View>
 
-                          <View
-                            style={[
-                              styles.roleBadge,
-                              member.role === 'Organizer'
-                                ? styles.roleBadgeOrganizer
-                                : member.role === 'Guide'
-                                  ? styles.roleBadgeGuide
-                                  : styles.roleBadgeTourist,
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.roleBadgeText,
-                                member.role === 'Organizer'
-                                  ? { color: '#2563EB' }
-                                  : member.role === 'Guide'
-                                    ? { color: '#059669' }
-                                    : { color: '#475569' },
-                              ]}
-                            >
-                              {(SENDER_ROLE_LABEL_KEYS[member.role] ? t(SENDER_ROLE_LABEL_KEYS[member.role]) : member.role).toUpperCase()}
-                            </Text>
-                          </View>
+
 
                           {!isMe && (
                             <TouchableOpacity
@@ -5559,6 +5549,21 @@ const styles = StyleSheet.create({
     color: C.textSec,
     fontSize: 12,
     marginTop: 1,
+  },
+  memberRoleOrganizerBadge: {
+    alignSelf: 'flex-start',
+    marginTop: 3,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 5,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  memberRoleOrganizerText: {
+    color: '#1D4ED8',
+    fontSize: 11,
+    fontWeight: '700',
   },
   roleBadge: {
     paddingHorizontal: 8,
