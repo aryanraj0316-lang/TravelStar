@@ -135,6 +135,30 @@ export interface TripGuideMatches {
   guides: MatchedRouteGuide[];
 }
 
+/** One published review of a guide. */
+export interface GuideReview {
+  id: string;
+  rating: number;
+  comment: string;
+  reviewerName: string;
+  reviewerAvatar: string | null;
+  /** The trip this review is about, when it came from one. */
+  tripName: string | null;
+  createdAt: IsoDateTime;
+}
+
+/**
+ * Something the caller could review this guide for. The client asks before
+ * offering a review action, so nobody composes one only to be refused.
+ */
+export interface ReviewableEngagement {
+  kind: 'BOOKING' | 'TRIP';
+  id: string;
+  label: string;
+  concludedOn: IsoDateTime;
+  alreadyReviewed: boolean;
+}
+
 /** A guide's declared operating area. */
 export interface GuideServiceZone {
   id: string;

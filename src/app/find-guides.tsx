@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FlatList, RefreshControl, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { FlatList, RefreshControl, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import ArrowLeft from 'lucide-react-native/icons/arrow-left';
@@ -22,7 +22,7 @@ import { errorToastMessage, toast } from '@/lib/feedback';
 import { useApp } from '@/store/AppContext';
 import { Avatar, Button, ScreenEmpty, ScreenError, ScreenLoading, Sheet } from '@/components/ui';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
-import type { GuidePackage, PublicGuide } from '@/types/api';
+import type { GuidePackage, GuideReview, PublicGuide, ReviewableEngagement } from '@/types/api';
 
 /**
  * Browsing and booking a guide.
@@ -212,6 +212,52 @@ export default function FindGuidesScreen() {
   });
   const packages = packagesQuery.data ?? [];
 
+  // Reviews are public, so they load for anyone reading a guide's card.
+  const reviewsQuery = useQuery({
+    queryKey: ['guide', selected?.id ?? '', 'reviews'],
+    queryFn: async (): Promise<GuideReview[]> => (await apiService.getGuideReviews(selected!.id)) ?? [],
+    enabled: selected !== null,
+  });
+  const reviews = reviewsQuery.data ?? [];
+
+  // What this user may review the guide for. Empty means they have not
+  // travelled with them, so no review action is offered at all.
+  const eligibilityQuery = useQuery({
+    queryKey: ['guide', selected?.id ?? '', 'review-eligibility'],
+    queryFn: async (): Promise<ReviewableEngagement[]> =>
+      (await apiService.getGuideReviewEligibility(selected!.id)) ?? [],
+    enabled: selected !== null && isLoggedIn,
+  });
+  const reviewableEngagement = (eligibilityQuery.data ?? []).find((e) => !e.alreadyReviewed) ?? null;
+
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState('');
+
+  const submitReview = useMutation({
+    mutationFn: async () => {
+      if (!selected || !reviewableEngagement) throw new Error('No engagement to review');
+      return apiService.submitGuideReview(selected.id, {
+        rating: reviewRating,
+        comment: reviewComment.trim(),
+        ...(reviewableEngagement.kind === 'TRIP'
+          ? { tripId: reviewableEngagement.id }
+          : { bookingId: reviewableEngagement.id }),
+      });
+    },
+    onSuccess: async () => {
+      toast(t('findGuides.reviewSubmitted'), 'success');
+      setReviewComment('');
+      setReviewRating(5);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['guide', selected?.id ?? '', 'reviews'] }),
+        queryClient.invalidateQueries({ queryKey: ['guide', selected?.id ?? '', 'review-eligibility'] }),
+        // The guide's headline rating is recomputed server-side on submit.
+        queryClient.invalidateQueries({ queryKey: queryKeys.guides() }),
+      ]);
+    },
+    onError: (e) => toast(errorToastMessage(e, t('findGuides.reviewFailed')), 'error'),
+  });
+
   const booking = useMutation({
     mutationFn: async (vars: { packageId: string; travelDate: string }) =>
       apiService.createGuideBooking({ packageId: vars.packageId, travelDate: vars.travelDate }),
@@ -379,6 +425,73 @@ export default function FindGuidesScreen() {
             {selected.verifiedStatus !== 'VERIFIED' && (
               <Text style={styles.unverifiedNotice}>{t('findGuides.unverifiedNotice')}</Text>
             )}
+
+            <Text style={styles.sheetSectionTitle}>
+              {t('findGuides.reviewsHeading', { count: reviews.length })}
+            </Text>
+
+            {reviewsQuery.isPending ? (
+              <Text style={styles.sheetMuted}>{t('findGuides.loadingReviews')}</Text>
+            ) : reviews.length === 0 ? (
+              <Text style={styles.sheetMuted}>{t('findGuides.noReviewsYet')}</Text>
+            ) : (
+              reviews.slice(0, 3).map((review) => (
+                <View key={review.id} style={styles.reviewCard}>
+                  <View style={styles.reviewHeaderRow}>
+                    <Text style={styles.reviewAuthor}>{review.reviewerName}</Text>
+                    <View style={styles.ratingRow}>
+                      <Star size={11} color={C.amberText} />
+                      <Text style={styles.ratingText}>{review.rating.toFixed(1)}</Text>
+                    </View>
+                  </View>
+                  {review.tripName ? <Text style={styles.reviewTripName}>{review.tripName}</Text> : null}
+                  {review.comment ? <Text style={styles.reviewComment}>{review.comment}</Text> : null}
+                </View>
+              ))
+            )}
+
+            {/* Offered only when the server says this user actually has a
+                concluded trip or booking with the guide to review. */}
+            {reviewableEngagement ? (
+              <View style={styles.reviewComposer}>
+                <Text style={styles.sheetSectionTitle}>{t('findGuides.writeReview')}</Text>
+                <Text style={styles.sheetMuted}>
+                  {t('findGuides.reviewingEngagement', { label: reviewableEngagement.label })}
+                </Text>
+                <View style={styles.starPickerRow}>
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <TouchableOpacity
+                      key={star}
+                      onPress={() => setReviewRating(star)}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: reviewRating === star }}
+                      accessibilityLabel={t('findGuides.starCount', { count: star })}
+                      hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                    >
+                      <Star
+                        size={26}
+                        color={star <= reviewRating ? C.amberText : C.textMuted}
+                        fill={star <= reviewRating ? C.amberText : 'transparent'}
+                      />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <TextInput
+                  style={styles.reviewInput}
+                  value={reviewComment}
+                  onChangeText={setReviewComment}
+                  placeholder={t('findGuides.reviewPlaceholder')}
+                  placeholderTextColor={C.textMuted}
+                  multiline
+                  maxLength={2000}
+                />
+                <Button
+                  label={t('findGuides.submitReview')}
+                  onPress={() => submitReview.mutate()}
+                  loading={submitReview.isPending}
+                />
+              </View>
+            ) : null}
 
             <Text style={styles.sheetSectionTitle}>{t('findGuides.packages')}</Text>
 
@@ -617,6 +730,31 @@ const styles = StyleSheet.create({
   sheetBody: { gap: 12, paddingBottom: 8 },
   sheetSectionTitle: { fontSize: 13, fontWeight: '800', color: C.text, marginTop: 4 },
   sheetMuted: { fontSize: 12, color: C.textMuted, lineHeight: 17 },
+  reviewCard: {
+    backgroundColor: C.cardAlt,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 10,
+    gap: 4,
+  },
+  reviewHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  reviewAuthor: { fontSize: 12.5, fontWeight: '700', color: C.text },
+  reviewTripName: { fontSize: 11.5, color: C.textMuted },
+  reviewComment: { fontSize: 12.5, color: C.textSec, lineHeight: 18 },
+  reviewComposer: { gap: 8, marginTop: 4 },
+  starPickerRow: { flexDirection: 'row', gap: 8, paddingVertical: 4 },
+  reviewInput: {
+    backgroundColor: C.cardAlt,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 10,
+    minHeight: 72,
+    color: C.text,
+    fontSize: 13,
+    textAlignVertical: 'top',
+  },
   unverifiedNotice: { fontSize: 12, color: C.amberText, lineHeight: 17 },
   pkgCard: {
     flexDirection: 'row',

@@ -213,6 +213,7 @@ model User {
 
   // Safety
   sosAlerts         SOSAlert[]
+  guideReviews      Review[]      @relation("GuideReviewAuthor")
   emergencyContacts EmergencyContact[]
   liveLocations     LiveLocation[]
 
@@ -461,6 +462,7 @@ model Trip {
   timeline  TripTimelineStop[]
   checklist TripChecklistItem[]
   quotes    GuideQuote[]
+  reviews   Review[]
 
   @@index([creatorId])
   @@index([createdAt])
@@ -809,6 +811,7 @@ model Booking {
   updatedAt      DateTime      @updatedAt
 
   payments Payment[]
+  reviews  Review[]
 
   @@index([userId])
   @@index([guideProfileId])
@@ -978,17 +981,43 @@ model LiveLocation {
   @@index([updatedAt])
 }
 
+// A traveller's review of a guide they actually travelled with.
+//
+// `reviewerName` used to be the only thing identifying the author — free
+// text, bound to no account and no engagement, so nothing stopped anyone
+// rating any guide any number of times without ever having met them. A
+// review now points at the reviewer's account AND at the specific
+// engagement it is about (a completed guide booking, or a trip the guide
+// was assigned to), and the endpoint refuses to write one until that
+// engagement has actually concluded.
 model Review {
   id             String       @id @default(uuid())
   guideProfileId String
   guide          GuideProfile @relation(fields: [guideProfileId], references: [id], onDelete: Cascade)
+  /// Null only on rows written before reviews were bound to an account.
+  reviewerId     String?
+  reviewer       User?        @relation("GuideReviewAuthor", fields: [reviewerId], references: [id], onDelete: SetNull)
+  /// Display name captured at write time, so a later profile rename does
+  /// not silently rewrite the attribution on an old review.
   reviewerName   String
+  /// The engagement reviewed. Exactly one of these is set on a new review.
+  tripId         String?
+  trip           Trip?        @relation(fields: [tripId], references: [id], onDelete: SetNull)
+  bookingId      String?
+  booking        Booking?     @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  /// 1-5 stars.
   rating         Float
   comment        String
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
+  // Postgres treats NULLs as distinct, so these only bind once the column
+  // is actually set — which is exactly the intent: one review per reviewer
+  // per engagement, and no constraint at all on the legacy unbound rows.
+  @@unique([guideProfileId, reviewerId, tripId])
+  @@unique([guideProfileId, reviewerId, bookingId])
   @@index([guideProfileId])
+  @@index([reviewerId])
 }
 
 model Blog {

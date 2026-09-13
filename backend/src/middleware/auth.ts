@@ -59,6 +59,13 @@ const PUBLIC_GET_PATTERNS = [
   /^\/trips\/(?!mine$)[^/]+$/,
   /^\/guides\/[^/]+\/packages$/, // /guides/:id/packages
   /^\/guides\/[^/]+\/reels$/, // /guides/:id/reels
+  // /guides/:id/reviews — the ratings and written reviews shown on a guide
+  // selection card, which is exactly what someone browsing guides before
+  // signing in needs in order to choose one. Anchored to the end on
+  // purpose: /guides/:id/reviews/eligibility answers "what may *I* review",
+  // which is caller-specific and stays behind a required token.
+  /^\/guides\/[^/]+\/reviews$/,
+  /^\/guides\/[^/]+\/service-zones$/, // where a guide works — shown on the same card
   // /destinations/:id — but NOT /destinations/saved, which returns the
   // caller's own private bookmark list and must stay behind a required
   // token. Without the exclusion this pattern reads "saved" as a

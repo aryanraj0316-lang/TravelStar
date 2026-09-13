@@ -40,6 +40,8 @@ import type {
   TripHazardReport,
   TripGuideMatches,
   GuideServiceZone,
+  GuideReview,
+  ReviewableEngagement,
   IncomingJoinRequest,
   JoinRequestSummary,
   StoryPayload,
@@ -719,6 +721,29 @@ export const apiService = {
    */
   async getMatchingGuides(tripId: string): Promise<TripGuideMatches | null> {
     return request<TripGuideMatches>(`/trips/${tripId}/matching-guides`);
+  },
+
+  /** Public: the ratings and written reviews shown on a guide's card. */
+  async getGuideReviews(guideProfileId: string): Promise<GuideReview[] | null> {
+    return request<GuideReview[]>(`/guides/${guideProfileId}/reviews`);
+  },
+
+  /**
+   * What the signed-in caller may review this guide for. Empty means no
+   * concluded trip or booking with them — so no review action is offered.
+   */
+  async getGuideReviewEligibility(guideProfileId: string): Promise<ReviewableEngagement[] | null> {
+    return request<ReviewableEngagement[]>(`/guides/${guideProfileId}/reviews/eligibility`);
+  },
+
+  async submitGuideReview(
+    guideProfileId: string,
+    review: { rating: number; comment: string; tripId?: string; bookingId?: string },
+  ): Promise<{ id: string; guideAverageRating: number | null } | null> {
+    return request(`/guides/${guideProfileId}/reviews`, {
+      method: 'POST',
+      body: JSON.stringify(review),
+    });
   },
 
   async getGuideServiceZones(guideProfileId: string): Promise<GuideServiceZone[] | null> {

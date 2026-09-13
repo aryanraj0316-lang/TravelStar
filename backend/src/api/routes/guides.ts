@@ -8,6 +8,12 @@ import { requireRole } from '../../middleware/auth';
 import { createGuideMediaUploadUrl, ObjectStorageNotConfiguredError } from '../../lib/object-storage';
 import { buildPage, cursorFilter, cursorPageQuerySchema, takeWithLookahead } from '../../lib/pagination';
 import { sendPushToUsers } from '../../lib/push';
+import {
+  checkBookingEligibility,
+  checkTripEligibility,
+  listEligibleEngagements,
+  recomputeGuideRating,
+} from '../../services/guide-reviews';
 
 const router = Router();
 
@@ -477,6 +483,148 @@ router.get('/:id/packages', async (req, res) => {
   } catch (err) {
     logger.error('[Guides] Get packages error:', err);
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve packages' } });
+  }
+});
+
+// ──────────────────────────────────────────────────────────
+//  REVIEWS
+//
+//  A review has to be earned: the reviewer must have travelled with this
+//  guide, and that engagement must be over. See services/guide-reviews.ts.
+// ──────────────────────────────────────────────────────────
+
+router.get('/:id/reviews', async (req, res) => {
+  const { id } = req.params;
+  const parsedQuery = cursorPageQuerySchema.safeParse(req.query);
+  if (!parsedQuery.success) {
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid limit or cursor.' } });
+  }
+  const { limit, cursor } = parsedQuery.data;
+
+  try {
+    const rows = await prisma.review.findMany({
+      where: { guideProfileId: id, ...cursorFilter(cursor) },
+      orderBy: { createdAt: 'desc' },
+      take: takeWithLookahead(limit),
+      include: { reviewer: { include: { profile: true } }, trip: { select: { name: true } } },
+    });
+    const { items, nextCursor } = buildPage(rows, limit);
+
+    const mapped = items.map((r) => ({
+      id: r.id,
+      rating: r.rating,
+      comment: r.comment,
+      // The name captured at write time, so renaming a profile later does
+      // not rewrite old attributions.
+      reviewerName: r.reviewerName,
+      reviewerAvatar: r.reviewer?.profile?.avatarUrl ?? null,
+      tripName: r.trip?.name ?? null,
+      createdAt: r.createdAt,
+    }));
+
+    return res.status(200).json({ ok: true, data: mapped, meta: { cursor: nextCursor } });
+  } catch (err) {
+    logger.error('[Guides] Get reviews error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve reviews' } });
+  }
+});
+
+/**
+ * What the caller could review this guide for. The client asks before
+ * offering a "write a review" action, rather than letting someone compose
+ * one and then be refused on submit.
+ */
+router.get('/:id/reviews/eligibility', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const userId = requireUserId(req);
+    const engagements = await listEligibleEngagements(id!, userId);
+    return res.status(200).json({ ok: true, data: engagements });
+  } catch (err) {
+    logger.error('[Guides] Review eligibility error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to check review eligibility' } });
+  }
+});
+
+const reviewSchema = z
+  .object({
+    rating: z.number().min(1).max(5),
+    comment: z.string().trim().max(2000).default(''),
+    tripId: z.string().uuid().optional(),
+    bookingId: z.string().uuid().optional(),
+  })
+  .refine((v) => !!v.tripId !== !!v.bookingId, {
+    // Exactly one: a review is about a specific engagement, and the server
+    // checks that engagement concluded before accepting it.
+    message: 'Provide exactly one of tripId or bookingId.',
+  });
+
+const ELIGIBILITY_MESSAGES: Record<string, { status: number; code: string; message: string }> = {
+  NOT_FOUND: { status: 404, code: 'NOT_FOUND', message: 'That booking or trip was not found for this guide.' },
+  NOT_YOURS: { status: 403, code: 'FORBIDDEN', message: 'You can only review a trip or booking you were part of.' },
+  NOT_CONCLUDED: { status: 400, code: 'NOT_CONCLUDED', message: 'You can review this guide once the trip has finished.' },
+  SELF_REVIEW: { status: 400, code: 'SELF_REVIEW', message: 'You cannot review your own guide profile.' },
+  NO_ENGAGEMENT: { status: 400, code: 'NO_ENGAGEMENT', message: 'This guide was not assigned to that trip.' },
+};
+
+router.post('/:id/reviews', async (req, res) => {
+  const { id } = req.params;
+  const parsed = reviewSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      ok: false,
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'Please check the review details.',
+        details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+      },
+    });
+  }
+
+  try {
+    const userId = requireUserId(req);
+    const { rating, comment, tripId, bookingId } = parsed.data;
+
+    const eligibility = bookingId
+      ? await checkBookingEligibility(id!, userId, bookingId)
+      : await checkTripEligibility(id!, userId, tripId!);
+
+    if (!eligibility.ok) {
+      const mapped = ELIGIBILITY_MESSAGES[eligibility.reason]!;
+      return res.status(mapped.status).json({ ok: false, error: { code: mapped.code, message: mapped.message } });
+    }
+
+    const reviewer = await prisma.user.findUnique({ where: { id: userId }, include: { profile: true } });
+    const reviewerName = reviewer?.profile
+      ? `${reviewer.profile.firstName} ${reviewer.profile.lastName || ''}`.trim()
+      : (reviewer?.email ? reviewer.email.split('@')[0]! : 'Traveller');
+
+    const review = await prisma.review.create({
+      data: {
+        guideProfileId: id!,
+        reviewerId: userId,
+        reviewerName,
+        rating,
+        comment,
+        tripId: eligibility.tripId,
+        bookingId: eligibility.bookingId,
+      },
+    });
+
+    const averageRating = await recomputeGuideRating(id!);
+
+    return res.status(201).json({ ok: true, data: { ...review, guideAverageRating: averageRating } });
+  } catch (err) {
+    // The (guide, reviewer, engagement) unique indexes are what stop the
+    // same trip being reviewed twice, including under a concurrent retry.
+    if ((err as { code?: string }).code === 'P2002') {
+      return res.status(409).json({
+        ok: false,
+        error: { code: 'ALREADY_REVIEWED', message: 'You have already reviewed this guide for that trip.' },
+      });
+    }
+    logger.error('[Guides] Create review error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to submit review' } });
   }
 });
 
