@@ -932,6 +932,17 @@ export const apiService = {
     });
   },
 
+  async deleteStory(storyId: string): Promise<{ deleted: boolean } | null> {
+    try {
+      return await request<{ deleted: boolean }>(`/stories/${storyId}`, {
+        method: 'DELETE',
+      });
+    } catch (err) {
+      logger.warn('[Stories] Delete story failed:', err);
+      return null;
+    }
+  },
+
   async recordStoryView(
     storyId: string,
     viewer?: { userId?: string; name?: string; avatar?: string | null }

@@ -13,11 +13,13 @@ import Camera from 'lucide-react-native/icons/camera';
 import ChevronUp from 'lucide-react-native/icons/chevron-up';
 import Eye from 'lucide-react-native/icons/eye';
 import Heart from 'lucide-react-native/icons/heart';
+import Trash2 from 'lucide-react-native/icons/trash-2';
 import User from 'lucide-react-native/icons/user';
 import X from 'lucide-react-native/icons/x';
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
+  Alert,
   Image,
   StyleSheet,
   Text,
@@ -62,7 +64,7 @@ export default function StoriesScreen() {
   const idParam = (params.id as string) ?? '';
   const insets = useSafeAreaInsets();
 
-  const { storiesList, profile, isLoggedIn } = useApp();
+  const { storiesList, profile, isLoggedIn, deleteStory, deletedStoryIds } = useApp();
 
   const feedQuery = useQuery({
     queryKey: queryKeys.feed(),
@@ -77,16 +79,18 @@ export default function StoriesScreen() {
 
   const activeStoriesList: FeedItem[] = useMemo(() => {
     if (!isLoggedIn) return [];
-    const feedItems: FeedItem[] = (feed ?? []).map((item) => {
-      const local = storiesList.find((s) => s.id === item.id || (s.authorName === item.authorName && s.content === item.content));
-      if (local?.coverImg && (!item.coverImg || item.coverImg.length === 0)) {
-        return { ...item, coverImg: local.coverImg };
-      }
-      return item;
-    });
+    const feedItems: FeedItem[] = (feed ?? [])
+      .filter((item) => !deletedStoryIds?.has(item.id))
+      .map((item) => {
+        const local = storiesList.find((s) => s.id === item.id || (s.authorName === item.authorName && s.content === item.content));
+        if (local?.coverImg && (!item.coverImg || item.coverImg.length === 0)) {
+          return { ...item, coverImg: local.coverImg };
+        }
+        return item;
+      });
 
     for (const local of storiesList) {
-      if (!feedItems.some((r) => r.id === local.id)) {
+      if (!deletedStoryIds?.has(local.id) && !feedItems.some((r) => r.id === local.id)) {
         feedItems.unshift({
           id: local.id,
           sourceType: 'STORY',
@@ -103,7 +107,7 @@ export default function StoriesScreen() {
       }
     }
     return feedItems;
-  }, [feed, storiesList, profile.id]);
+  }, [feed, storiesList, profile.id, deletedStoryIds]);
 
   const initialIdx = useMemo(() => {
     if (!idParam) return 0;
@@ -272,6 +276,72 @@ export default function StoriesScreen() {
     progressAnim.stopAnimation();
     setIsViewerSheetVisible(true);
     void fetchInteractions();
+  };
+
+
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const promptDeleteStory = () => {
+    progressAnim.stopAnimation();
+    Alert.alert(
+      'Delete Story',
+      'Are you sure you want to delete this story? It will be permanently removed.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+          onPress: () => {
+            if (!storyIsVideo) {
+              startStoryTimer(progressValueRef.current);
+            }
+          },
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            if (!activeStory || isDeleting) return;
+            setIsDeleting(true);
+            try {
+              const storyIdToDelete = activeStory.id;
+              setIsViewerSheetVisible(false);
+
+              // 1. Calculate remaining stories excluding this one
+              const remaining = activeStoriesList.filter((s) => s.id !== storyIdToDelete);
+
+              // 2. Perform deletion (updates deletedStoryIds & local storage & query cache)
+              await deleteStory(storyIdToDelete);
+
+              // 3. If no stories remain, immediately close viewer and return home
+              if (remaining.length === 0) {
+                goBackOrHome();
+              } else {
+                if (currentIdx >= remaining.length) {
+                  setCurrentIdx(Math.max(0, remaining.length - 1));
+                }
+                progressAnim.setValue(0);
+                progressValueRef.current = 0;
+                if (!storyIsVideo) {
+                  startStoryTimer(0);
+                }
+              }
+            } catch (err) {
+              logger.warn('[Stories] Delete failed:', err);
+            } finally {
+              setIsDeleting(false);
+            }
+          },
+        },
+      ],
+      {
+        cancelable: true,
+        onDismiss: () => {
+          if (!storyIsVideo) {
+            startStoryTimer(progressValueRef.current);
+          }
+        },
+      }
+    );
   };
 
   const closeViewerSheet = () => {
@@ -465,9 +535,26 @@ export default function StoriesScreen() {
             {storyLocation ? <Text style={styles.locationText}>{storyLocation}</Text> : null}
           </View>
         </View>
-        <TouchableOpacity style={styles.closeBtn} onPress={goBackOrHome} accessibilityRole="button" accessibilityLabel={t('stories.closeStories')}>
-          <X size={20} color="#FFF" />
-        </TouchableOpacity>
+        <View style={styles.headerRightActions}>
+          {isMyStory && (
+            <TouchableOpacity
+              style={styles.headerDeleteBtn}
+              onPress={promptDeleteStory}
+              accessibilityRole="button"
+              accessibilityLabel="Delete this story"
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <ActivityIndicator size="small" color="#EF4444" />
+              ) : (
+                <Trash2 size={18} color="#EF4444" strokeWidth={2.2} />
+              )}
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity style={styles.closeBtn} onPress={goBackOrHome} accessibilityRole="button" accessibilityLabel={t('stories.closeStories')}>
+            <X size={20} color="#FFF" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Tap zones */}
@@ -557,14 +644,28 @@ export default function StoriesScreen() {
                 </View>
               </View>
 
-              <TouchableOpacity
-                style={styles.sheetCloseBtn}
-                onPress={closeViewerSheet}
-                accessibilityRole="button"
-                accessibilityLabel="Close sheet"
-              >
-                <X size={20} color="#FFF" />
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                {isMyStory && (
+                  <TouchableOpacity
+                    style={styles.sheetDeleteBtn}
+                    onPress={promptDeleteStory}
+                    accessibilityRole="button"
+                    accessibilityLabel="Delete this story"
+                    disabled={isDeleting}
+                  >
+                    <Trash2 size={15} color="#EF4444" />
+                    <Text style={styles.sheetDeleteText}>Delete</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={styles.sheetCloseBtn}
+                  onPress={closeViewerSheet}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close sheet"
+                >
+                  <X size={20} color="#FFF" />
+                </TouchableOpacity>
+              </View>
             </View>
 
             {/* Content */}
@@ -719,6 +820,38 @@ const styles = StyleSheet.create({
     borderRadius: 19,
     borderWidth: 1.5,
     borderColor: C.blueGlow,
+  },
+
+  headerRightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerDeleteBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetDeleteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.35)',
+  },
+  sheetDeleteText: {
+    color: '#EF4444',
+    fontSize: 12.5,
+    fontWeight: '700',
   },
   creatorAvatarFallback: {
     backgroundColor: 'rgba(255,255,255,0.14)',

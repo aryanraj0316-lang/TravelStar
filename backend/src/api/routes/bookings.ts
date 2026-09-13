@@ -33,12 +33,23 @@ function toClientBooking(b: {
   amount: { toString(): string };
   status: string;
   paymentStatus: string;
+  endDate?: Date | null;
+  scope?: string | null;
+  tripId?: string | null;
+  tripTimelineStopId?: string | null;
+  note?: string | null;
 }) {
   return {
     id: b.id,
     userId: b.userId,
     guideProfileId: b.guideProfileId,
     travelDate: b.travelDate.toISOString().split('T')[0],
+    // Null on a single-day booking; callers read endDate ?? travelDate.
+    endDate: b.endDate ? b.endDate.toISOString().split('T')[0] : null,
+    scope: b.scope ?? null,
+    tripId: b.tripId ?? null,
+    tripTimelineStopId: b.tripTimelineStopId ?? null,
+    note: b.note ?? null,
     bookingDate: b.bookingDate.toISOString(),
     // Money crosses the wire as a string (docs/CONVENTIONS.md §3).
     amount: b.amount.toString(),
@@ -127,6 +138,170 @@ router.post('/', async (req, res) => {
     return res
       .status(500)
       .json({ ok: false, error: { code: 'INTERNAL', message: 'Could not request this booking.' } });
+  }
+});
+
+/**
+ * Hire a guide directly, outside the package flow.
+ *
+ * The package route above answers "book this listed offering on this day".
+ * This one answers the organizer's actual question: "come with us for these
+ * dates / for this checkpoint / for the whole journey", which has no
+ * package behind it and may span days.
+ *
+ * A hire never touches Trip.availableSeats. Seats are the travelling party's
+ * capacity (services/trip-membership.ts owns that count); a hired guide is
+ * staff, not a member taking someone's place — hiring one must not shrink
+ * the group. There is deliberately no seat claim anywhere in this handler.
+ */
+const hireGuideSchema = z
+  .object({
+    guideProfileId: z.string().uuid(),
+    tripId: z.string().uuid().optional(),
+    tripTimelineStopId: z.string().uuid().optional(),
+    scope: z.enum(['WHOLE_TRIP', 'CHECKPOINT', 'CUSTOM_DATES']),
+    startDate: z.coerce.date(),
+    endDate: z.coerce.date().optional(),
+    /// Agreed fee for the hire. Unlike a package booking (where the price is
+    /// the package's own), a direct hire is negotiated, so the organizer
+    /// states it and the guide accepts or declines that number.
+    amount: z.number().nonnegative(),
+    note: z.string().trim().max(1000).optional(),
+  })
+  .refine((v) => !v.endDate || v.endDate.getTime() >= v.startDate.getTime(), {
+    message: 'endDate cannot be before startDate.',
+  })
+  .refine((v) => v.scope !== 'CHECKPOINT' || !!v.tripTimelineStopId, {
+    message: 'A checkpoint hire needs the checkpoint it is for.',
+  })
+  .refine((v) => v.scope !== 'WHOLE_TRIP' || !!v.tripId, {
+    message: 'A whole-trip hire needs the trip it is for.',
+  });
+
+router.post('/hire', async (req, res) => {
+  const parsed = hireGuideSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      ok: false,
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'Please check the hire details.',
+        details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+      },
+    });
+  }
+
+  const userId = requireUserId(req);
+  const { guideProfileId, tripId, tripTimelineStopId, scope, startDate, endDate, amount, note } = parsed.data;
+  const lastDay = endDate ?? startDate;
+
+  try {
+    const guide = await prisma.guideProfile.findUnique({
+      where: { id: guideProfileId },
+      select: { id: true, userId: true },
+    });
+    if (!guide) {
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Guide not found.' } });
+    }
+    if (guide.userId === userId) {
+      return res
+        .status(400)
+        .json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'You cannot hire yourself.' } });
+    }
+
+    // Only the organizer can hire for their own trip — a member cannot
+    // commit the group to a guide.
+    if (tripId) {
+      const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { creatorId: true } });
+      if (!trip) {
+        return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found.' } });
+      }
+      if (trip.creatorId !== userId) {
+        return res.status(403).json({
+          ok: false,
+          error: { code: 'FORBIDDEN', message: "Only this trip's organizer can hire a guide for it." },
+        });
+      }
+    }
+
+    if (tripTimelineStopId) {
+      const stop = await prisma.tripTimelineStop.findUnique({
+        where: { id: tripTimelineStopId },
+        select: { tripId: true },
+      });
+      if (!stop || (tripId && stop.tripId !== tripId)) {
+        return res
+          .status(400)
+          .json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'That checkpoint is not on this trip.' } });
+      }
+    }
+
+    // A guide already committed to overlapping dates cannot be hired again
+    // for them — two organizers would each believe they had the same person.
+    const clash = await prisma.booking.findFirst({
+      where: {
+        guideProfileId,
+        status: { in: ['PENDING', 'CONFIRMED'] },
+        travelDate: { lte: lastDay },
+        OR: [{ endDate: { gte: startDate } }, { endDate: null, travelDate: { gte: startDate } }],
+      },
+      select: { id: true, travelDate: true, endDate: true, status: true },
+    });
+    if (clash && clash.status === 'CONFIRMED') {
+      return res.status(409).json({
+        ok: false,
+        error: { code: 'GUIDE_UNAVAILABLE', message: 'This guide is already booked for those dates.' },
+      });
+    }
+
+    const booking = await prisma.booking.create({
+      data: {
+        userId,
+        type: 'GUIDE',
+        guideProfileId,
+        tripId: tripId ?? null,
+        tripTimelineStopId: tripTimelineStopId ?? null,
+        scope,
+        travelDate: startDate,
+        endDate: endDate ?? null,
+        amount,
+        note: note ?? null,
+        status: 'PENDING',
+        paymentStatus: 'PENDING',
+      },
+    });
+
+    const organizer = await prisma.user.findUnique({ where: { id: userId }, include: { profile: true } });
+    const organizerName = organizer?.profile
+      ? `${organizer.profile.firstName} ${organizer.profile.lastName || ''}`.trim()
+      : (organizer?.email?.split('@')[0] ?? 'An organizer');
+
+    const title = 'New hire request';
+    const content = `${organizerName} wants to hire you from ${startDate.toISOString().split('T')[0]} to ${lastDay.toISOString().split('T')[0]}.`;
+    await prisma.notification.create({
+      data: { userId: guide.userId, type: 'TRIP', title, content, time: 'Just now' },
+    });
+    await sendPushToUsers([guide.userId], 'TRIP', {
+      title,
+      body: content,
+      data: { screen: 'bookings', bookingId: booking.id },
+    });
+
+    // Live, so the guide's dashboard shows it without a refetch.
+    const io = req.app.get('socketio');
+    io?.to(guide.userId).emit('bookingReceived', {
+      bookingId: booking.id,
+      guideProfileId,
+      status: booking.status,
+      tripId: booking.tripId,
+      startDate: booking.travelDate.toISOString(),
+      endDate: booking.endDate?.toISOString() ?? null,
+    });
+
+    return res.status(201).json({ ok: true, data: toClientBooking(booking) });
+  } catch (err) {
+    logger.error('[Bookings] Hire error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not request this hire.' } });
   }
 });
 
@@ -294,6 +469,20 @@ router.post('/:id/status', async (req, res) => {
         body: content,
         data: { screen: 'bookings', bookingId: updated.id },
       });
+    }
+
+    // Both dashboards move together: whoever did not make the change sees
+    // pending flip to confirmed without refetching.
+    const io = req.app.get('socketio');
+    if (io) {
+      const payload = {
+        bookingId: updated.id,
+        status: updated.status,
+        guideProfileId: updated.guideProfileId,
+        tripId: updated.tripId,
+      };
+      io.to(booking.userId).emit('bookingStatusChanged', payload);
+      if (booking.guide?.userId) io.to(booking.guide.userId).emit('bookingStatusChanged', payload);
     }
 
     return res.status(200).json({ ok: true, data: toClientBooking(updated) });

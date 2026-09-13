@@ -48,6 +48,14 @@ enum BookingType {
   ADVENTURE_ACTIVITY
 }
 
+/// What a guide hire covers. A hire is scoped to the whole journey, to one
+/// checkpoint on it, or to a bare date range with no trip attached.
+enum BookingScope {
+  WHOLE_TRIP
+  CHECKPOINT
+  CUSTOM_DATES
+}
+
 enum BookingStatus {
   PENDING
   CONFIRMED
@@ -729,6 +737,7 @@ model TripTimelineStop {
   updatedAt          DateTime     @updatedAt
 
   fromStopRequests JoinRequest[] @relation("JoinRequestFromStop")
+  guideBookings    Booking[]
   toStopRequests   JoinRequest[] @relation("JoinRequestToStop")
   assignedGuides   TripTimelineStopGuide[]
 
@@ -802,7 +811,18 @@ model Booking {
   tripId         String?
   trip           Trip?         @relation(fields: [tripId], references: [id])
   bookingDate    DateTime      @default(now())
+  /// The first day of the hire. Kept as the single source for "when" on
+  /// legacy single-day package bookings, where endDate equals it.
   travelDate     DateTime
+  /// Last day of a multi-day hire. Null means a single-day booking, so
+  /// callers read "endDate ?? travelDate" rather than assuming a range.
+  endDate        DateTime?
+  scope          BookingScope?
+  /// Set when the hire is for one checkpoint rather than the whole route.
+  tripTimelineStopId String?
+  tripTimelineStop   TripTimelineStop? @relation(fields: [tripTimelineStopId], references: [id], onDelete: SetNull)
+  /// What the organizer asked for, in their own words.
+  note           String?
   amount         Decimal       @db.Decimal(12, 2)
   status         BookingStatus @default(PENDING)
   paymentStatus  PaymentStatus @default(PENDING)

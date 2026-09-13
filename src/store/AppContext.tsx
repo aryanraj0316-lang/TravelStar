@@ -259,6 +259,8 @@ interface AppContextType {
   setNavbarHidden: (hidden: boolean) => void;
   storiesList: Story[];
   addStory: (storyData: NewStoryInput) => void;
+  deleteStory: (storyId: string) => Promise<boolean>;
+  deletedStoryIds: Set<string>;
   requestedTrips: Set<string>;
   setRequestedTrips: React.Dispatch<React.SetStateAction<Set<string>>>;
   /**
@@ -458,6 +460,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // cover images, which stayed on screen — presented as real posts by real
   // people — whenever GET /stories failed or legitimately returned nothing.
   const [storiesList, setStoriesList] = useState<Story[]>([]);
+  const [deletedStoryIds, setDeletedStoryIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    safeStorage.getItem('deletedStoryIds').then((val) => {
+      if (val) {
+        try {
+          const parsed = JSON.parse(val);
+          if (Array.isArray(parsed)) {
+            setDeletedStoryIds(new Set(parsed));
+          }
+        } catch {}
+      }
+    });
+  }, []);
+
 
   const [dataStatus, setDataStatus] = useState<Omit<DataStatus, 'guides'>>({
     trips: 'loading',
@@ -1158,6 +1175,49 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [profile.name, profile.avatar],
   );
 
+
+  const deleteStory = useCallback(
+    async (storyId: string): Promise<boolean> => {
+      // 1. Persistently track deletedStoryIds
+      setDeletedStoryIds((prev) => {
+        const next = new Set(prev);
+        next.add(storyId);
+        void safeStorage.setItem('deletedStoryIds', JSON.stringify(Array.from(next)));
+        return next;
+      });
+
+      // 2. Remove from local device storage
+      setStoriesList((prev) => {
+        const updated = prev.filter((s) => s.id !== storyId);
+        void safeStorage.setItem('savedStories', JSON.stringify(updated));
+        return updated;
+      });
+
+      // 3. Optimistically purge from TanStack Query feed cache
+      queryClient.setQueryData(queryKeys.feed(), (old: any) => {
+        if (!old) return old;
+        if (Array.isArray(old)) {
+          return old.filter((item: any) => item.id !== storyId);
+        }
+        if (old.items && Array.isArray(old.items)) {
+          return { ...old, items: old.items.filter((item: any) => item.id !== storyId) };
+        }
+        return old;
+      });
+
+      // 4. Send remote delete request
+      try {
+        await apiService.deleteStory(storyId);
+      } catch (e) {
+        logger.warn('[Stories] Remote delete failed:', e);
+      }
+
+      toast('Story deleted', 'success');
+      return true;
+    },
+    [],
+  );
+
   const combinedDataStatus: DataStatus = useMemo(
     () => ({
       ...dataStatus,
@@ -1196,6 +1256,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setNavbarHidden,
       storiesList,
       addStory,
+      deleteStory,
+      deletedStoryIds,
       requestedTrips,
       setRequestedTrips,
       joinRequestStatuses,

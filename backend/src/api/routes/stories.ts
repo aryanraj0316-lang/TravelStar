@@ -491,4 +491,61 @@ router.post('/upload-direct', async (req, res) => {
   }
 });
 
+
+// Delete story
+router.delete('/:id', async (req, res) => {
+  const parsed = z.object({ id: z.string().min(1) }).safeParse(req.params);
+  if (!parsed.success) {
+    return res.status(400).json({
+      ok: false,
+      error: { code: 'VALIDATION_FAILED', message: 'Invalid story id.' },
+    });
+  }
+  const storyId = parsed.data.id;
+
+  try {
+    let userId: string | null = null;
+    try {
+      userId = requireUserId(req);
+    } catch {
+      userId = (req.headers['x-user-id'] as string) || null;
+    }
+
+    const story = await prisma.travelStory.findUnique({
+      where: { id: storyId },
+    });
+
+    if (!story) {
+      return res.status(200).json({
+        ok: true,
+        data: { deleted: true, id: storyId },
+      });
+    }
+
+    if (story.userId && userId && story.userId !== userId) {
+      return res.status(403).json({
+        ok: false,
+        error: { code: 'FORBIDDEN', message: 'You can only delete your own stories.' },
+      });
+    }
+
+    await prisma.travelStory.delete({
+      where: { id: storyId },
+    });
+
+    logger.info(`[Stories] Story ${storyId} deleted by user ${userId || 'anonymous'}`);
+    return res.status(200).json({
+      ok: true,
+      data: { deleted: true, id: storyId },
+    });
+  } catch (err) {
+    logger.error('[Stories] Delete error:', err);
+    return res.status(500).json({
+      ok: false,
+      error: { code: 'INTERNAL', message: 'Failed to delete story' },
+    });
+  }
+});
+
 export default router;
+

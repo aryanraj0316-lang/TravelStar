@@ -1354,7 +1354,7 @@ function StoriesRailBase({
 }) {
   const { t } = useTranslation();
   const router = useRouter();
-  const { profile, storiesList, isLoggedIn } = useApp();
+  const { profile, storiesList, isLoggedIn, deletedStoryIds } = useApp();
 
   // Do not show or fetch stories if user is not signed in
   const feedQuery = useQuery({
@@ -1369,16 +1369,18 @@ function StoriesRailBase({
   const feedState = sectionState(feedQuery, feed != null);
 
   const mergedFeed = React.useMemo(() => {
-    const feedItems: FeedItem[] = (feed ?? []).map((item) => {
-      const local = storiesList.find((s) => s.id === item.id || (s.authorName === item.authorName && s.content === item.content));
-      if (local?.coverImg && (!item.coverImg || item.coverImg.length === 0)) {
-        return { ...item, coverImg: local.coverImg };
-      }
-      return item;
-    });
+    const feedItems: FeedItem[] = (feed ?? [])
+      .filter((item) => !deletedStoryIds?.has(item.id))
+      .map((item) => {
+        const local = storiesList.find((s) => s.id === item.id || (s.authorName === item.authorName && s.content === item.content));
+        if (local?.coverImg && (!item.coverImg || item.coverImg.length === 0)) {
+          return { ...item, coverImg: local.coverImg };
+        }
+        return item;
+      });
 
     for (const local of storiesList) {
-      if (!feedItems.some((r) => r.id === local.id)) {
+      if (!deletedStoryIds?.has(local.id) && !feedItems.some((r) => r.id === local.id)) {
         feedItems.unshift({
           id: local.id,
           sourceType: 'STORY',
@@ -1395,7 +1397,7 @@ function StoriesRailBase({
       }
     }
     return feedItems;
-  }, [feed, storiesList, profile.id]);
+  }, [feed, storiesList, profile.id, deletedStoryIds]);
 
   const isUserStory = React.useCallback((item: FeedItem) => {
     if (item.userId && profile.id && item.userId === profile.id) return true;
