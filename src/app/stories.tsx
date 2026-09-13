@@ -3,15 +3,18 @@ import { apiService } from '@/services/api';
 import { logger } from '@/lib/logger';
 import { queryKeys } from '@/lib/query-keys';
 import { sectionState } from '@/lib/query-state';
-import type { FeedItem } from '@/types/api';
+import type { FeedItem, StoryInteractionsResponse } from '@/types/api';
 import { useQuery } from '@tanstack/react-query';
+import { useApp } from '@/store/AppContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Camera from 'lucide-react-native/icons/camera';
+import ChevronUp from 'lucide-react-native/icons/chevron-up';
+import Eye from 'lucide-react-native/icons/eye';
 import Heart from 'lucide-react-native/icons/heart';
 import User from 'lucide-react-native/icons/user';
 import X from 'lucide-react-native/icons/x';
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Image,
@@ -21,21 +24,35 @@ import {
   View,
   StatusBar,
   Animated,
+  Modal,
+  ScrollView,
+  ActivityIndicator,
+  Pressable,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 
-// docs/REMEDIATION.md §8.16: this screen previously fell back to a
-// hardcoded STORIES_DATABASE of fabricated creators/captions whenever the
-// real feed had nothing for a location, and shipped a reply box that
-// silently discarded whatever the user typed (there is no story-comment
-// API). Both are gone — it now renders only real TravelStory rows with an
-// honest empty state, and keeps only the real like action. It also read
-// the private `progressAnim._value` and carried a `timerRef` that was
-// never assigned a timeout (so every `clearTimeout` on it was a no-op);
-// progress is now tracked through a proper Animated listener.
+// docs/REMEDIATION.md §8.16: this screen renders real TravelStory rows with
+// like actions, automatic view recording, and a viewer list for story owners.
 
 const STORY_DURATION = 5000; // 5 seconds per story slide
+
+function formatTimeAgo(isoString: string): string {
+  try {
+    const date = new Date(isoString);
+    const now = new Date();
+    const diffSecs = Math.floor((now.getTime() - date.getTime()) / 1000);
+    if (diffSecs < 60) return 'Just now';
+    const diffMins = Math.floor(diffSecs / 60);
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays}d ago`;
+  } catch {
+    return 'Recently';
+  }
+}
 
 export default function StoriesScreen() {
   const { t } = useTranslation();
@@ -44,42 +61,69 @@ export default function StoriesScreen() {
   const idParam = (params.id as string) ?? '';
   const insets = useSafeAreaInsets();
 
-  // The same merged feed the home rail shows (stories + guide reels), on the
-  // same query key so opening a rail item is a cache hit rather than a
-  // refetch. This used to read AppContext.storiesList — stories only — and
-  // filter it by a `location` string, so tapping a guide reel on the home
-  // screen always landed on an empty "no stories from here" screen.
+  const { storiesList, profile, isLoggedIn } = useApp();
+
   const feedQuery = useQuery({
     queryKey: queryKeys.feed(),
     queryFn: async () => {
       const page = await apiService.getFeed(20);
       return page.items;
     },
+    enabled: isLoggedIn,
   });
   const { data: feed, refetch } = feedQuery;
   const feedState = sectionState(feedQuery, feed != null);
 
-  const activeStoriesList: FeedItem[] = React.useMemo(() => feed ?? [], [feed]);
-  const initialIdx = React.useMemo(() => {
+  const activeStoriesList: FeedItem[] = useMemo(() => {
+    if (!isLoggedIn) return [];
+    const feedItems: FeedItem[] = (feed ?? []).map((item) => {
+      const local = storiesList.find((s) => s.id === item.id || (s.authorName === item.authorName && s.content === item.content));
+      if (local?.coverImg && (!item.coverImg || item.coverImg.length === 0)) {
+        return { ...item, coverImg: local.coverImg };
+      }
+      return item;
+    });
+
+    for (const local of storiesList) {
+      if (!feedItems.some((r) => r.id === local.id)) {
+        feedItems.unshift({
+          id: local.id,
+          sourceType: 'STORY',
+          userId: profile.id,
+          title: local.title,
+          content: local.content,
+          coverImg: local.coverImg,
+          authorName: local.authorName,
+          authorAvatar: local.authorAvatar,
+          location: local.location,
+          likesCount: local.likesCount,
+          createdAt: local.createdAt,
+        });
+      }
+    }
+    return feedItems;
+  }, [feed, storiesList, profile.id]);
+
+  const initialIdx = useMemo(() => {
     if (!idParam) return 0;
     const found = activeStoriesList.findIndex((s) => s.id === idParam);
     return found === -1 ? 0 : found;
   }, [idParam, activeStoriesList]);
 
-  const [currentIdx, setCurrentIdx] = useState(0);
+  const [currentIdx, setCurrentIdx] = useState(initialIdx);
 
-  // Jump to the tapped item once the feed resolves. Adjusted during render
-  // rather than in an effect (react-hooks/set-state-in-effect); it runs at
-  // most once per new starting index.
-  const [prevInitialIdx, setPrevInitialIdx] = useState(initialIdx);
-  if (initialIdx !== prevInitialIdx) {
-    setPrevInitialIdx(initialIdx);
-    setCurrentIdx(initialIdx);
-  }
+  useEffect(() => {
+    if (initialIdx >= 0) {
+      setCurrentIdx(initialIdx);
+    }
+  }, [initialIdx]);
+
   const [isLiked, setIsLiked] = useState<Record<string, boolean>>({});
+  const [interactions, setInteractions] = useState<StoryInteractionsResponse | null>(null);
+  const [isViewerSheetVisible, setIsViewerSheetVisible] = useState(false);
+  const [loadingInteractions, setLoadingInteractions] = useState(false);
 
-  // Progress bar. progressValueRef mirrors the animated value via a
-  // listener so we never have to reach for the private `._value`.
+  // Progress bar
   const progressAnim = useState(() => new Animated.Value(0))[0];
   const progressValueRef = useRef(0);
 
@@ -90,25 +134,25 @@ export default function StoriesScreen() {
     return () => progressAnim.removeListener(id);
   }, [progressAnim]);
 
-  const goBackOrHome = () => {
+  const goBackOrHome = useCallback(() => {
     if (router.canGoBack()) router.back();
     else router.replace('/');
-  };
+  }, [router]);
 
-  const handleNextStory = () => {
-    setCurrentIdx((prev) => {
-      if (prev < activeStoriesList.length - 1) return prev + 1;
+  const handleNextStory = useCallback(() => {
+    if (currentIdx < activeStoriesList.length - 1) {
+      setCurrentIdx((prev) => prev + 1);
+    } else {
       goBackOrHome();
-      return prev;
-    });
-  };
+    }
+  }, [currentIdx, activeStoriesList.length, goBackOrHome]);
 
-  const handlePrevStory = () => {
+  const handlePrevStory = useCallback(() => {
     setCurrentIdx((prev) => (prev > 0 ? prev - 1 : prev));
-  };
+  }, []);
 
   const startStoryTimer = (startFrom = 0) => {
-    if (activeStoriesList.length === 0) return;
+    if (activeStoriesList.length === 0 || isViewerSheetVisible) return;
     progressAnim.setValue(startFrom);
     Animated.timing(progressAnim, {
       toValue: 1,
@@ -119,14 +163,146 @@ export default function StoriesScreen() {
     });
   };
 
-  // Restart the slide timer whenever the story changes.
   useEffect(() => {
-    if (activeStoriesList.length > 0) startStoryTimer(0);
+    if (activeStoriesList.length > 0 && !isViewerSheetVisible) {
+      startStoryTimer(0);
+    }
     return () => {
       progressAnim.stopAnimation();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentIdx, activeStoriesList]);
+  }, [currentIdx, activeStoriesList, isViewerSheetVisible]);
+
+  const activeStory = activeStoriesList[Math.min(currentIdx, Math.max(0, activeStoriesList.length - 1))];
+
+  // Determine if active story is created by the current user
+  const isMyStory = useMemo(() => {
+    if (!activeStory) return false;
+    if (activeStory.userId && profile.id && activeStory.userId === profile.id) return true;
+    if (
+      activeStory.authorName &&
+      profile.name &&
+      profile.name !== 'Guest Traveler' &&
+      activeStory.authorName.trim().toLowerCase() === profile.name.trim().toLowerCase()
+    ) {
+      return true;
+    }
+    return false;
+  }, [activeStory, profile.id, profile.name]);
+
+  // Fetch viewer and like interactions
+  const fetchInteractions = useCallback(async () => {
+    if (!activeStory?.id) return;
+    setLoadingInteractions(true);
+    try {
+      const res = await apiService.getStoryInteractions(activeStory.id);
+      if (res) {
+        setInteractions(res);
+        const currentUserId = profile.id;
+        const currentUserName = profile.name?.trim().toLowerCase();
+        const meLiked = res.viewers.some(
+          (v) =>
+            v.hasLiked &&
+            ((currentUserId && v.userId === currentUserId) ||
+              (currentUserName && v.name?.trim().toLowerCase() === currentUserName))
+        );
+        if (meLiked) {
+          setIsLiked((prev) => ({ ...prev, [activeStory.id]: true }));
+        }
+      }
+    } catch (e) {
+      logger.warn('[Stories] Failed to load interactions:', e);
+    } finally {
+      setLoadingInteractions(false);
+    }
+  }, [activeStory?.id, profile.id, profile.name]);
+
+  // Record view on story change (only when logged in)
+  useEffect(() => {
+    if (isLoggedIn && activeStory?.id) {
+      void apiService.recordStoryView(activeStory.id, {
+        userId: profile.id,
+        name: profile.name,
+        avatar: profile.avatar,
+      }).then(() => {
+        if (isMyStory) {
+          void fetchInteractions();
+        }
+      });
+    }
+  }, [isLoggedIn, activeStory?.id, profile.id, profile.name, profile.avatar, isMyStory, fetchInteractions]);
+
+  useEffect(() => {
+    if (isMyStory && activeStory?.id) {
+      void fetchInteractions();
+    } else {
+      setInteractions(null);
+      setIsViewerSheetVisible(false);
+    }
+  }, [isMyStory, activeStory?.id, fetchInteractions]);
+
+  const openViewerSheet = () => {
+    progressAnim.stopAnimation();
+    setIsViewerSheetVisible(true);
+    void fetchInteractions();
+  };
+
+  const closeViewerSheet = () => {
+    setIsViewerSheetVisible(false);
+    startStoryTimer(progressValueRef.current);
+  };
+
+  const handleToggleLike = async () => {
+    if (!activeStory) return;
+    const wasLiked = !!isLiked[activeStory.id];
+    setIsLiked((prev) => ({ ...prev, [activeStory.id]: !wasLiked }));
+    try {
+      const res = await apiService.likeStory(activeStory.id, {
+        userId: profile.id,
+        name: profile.name,
+        avatar: profile.avatar,
+      });
+      if (res && typeof res.liked === 'boolean') {
+        setIsLiked((prev) => ({ ...prev, [activeStory.id]: res.liked }));
+      }
+      if (isMyStory) {
+        void fetchInteractions();
+      }
+    } catch (e) {
+      logger.warn('[Stories] Like failed:', e);
+      setIsLiked((prev) => ({ ...prev, [activeStory.id]: wasLiked }));
+    }
+  };
+
+  if (!isLoggedIn) {
+    return (
+      <SafeAreaView style={styles.emptyContainer}>
+        <StatusBar barStyle="light-content" backgroundColor="#000" />
+        <Text style={styles.emptyTitle}>Sign In to View Stories</Text>
+        <Text style={styles.emptyText}>
+          Sign in to your account to browse, view, and share travel stories.
+        </Text>
+        <View style={{ flexDirection: 'row', gap: 12, marginTop: 12 }}>
+          <TouchableOpacity
+            style={[styles.emptyBtn, { backgroundColor: '#38BDF8', paddingHorizontal: 24 }]}
+            onPress={() => router.push('/auth')}
+            accessibilityRole="button"
+            accessibilityLabel="Sign In"
+          >
+            <Text style={[styles.emptyBtnText, { color: '#0F172A', fontWeight: '800' }]}>Sign In</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.emptyBtn}
+            onPress={goBackOrHome}
+            accessibilityRole="button"
+            accessibilityLabel="Go Back"
+          >
+            <Text style={styles.emptyBtnText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (feedState.kind === 'loading') {
     return (
@@ -154,7 +330,7 @@ export default function StoriesScreen() {
     );
   }
 
-  if (activeStoriesList.length === 0) {
+  if (activeStoriesList.length === 0 || !activeStory) {
     return (
       <SafeAreaView style={styles.emptyContainer}>
         <StatusBar barStyle="light-content" backgroundColor="#000" />
@@ -172,29 +348,14 @@ export default function StoriesScreen() {
     );
   }
 
-  const activeStory = activeStoriesList[Math.min(currentIdx, activeStoriesList.length - 1)];
-  // Missing media stays missing and renders a neutral placeholder below.
-  // These used to fall back to two fixed Unsplash URLs — a stock landscape
-  // for the post and a stock face for its author — so a real person's story
-  // was shown under a stranger's photo (docs/REMEDIATION.md §0.2 rule 4).
-  // `stories.defaultLocation` was likewise the literal string "India", which
-  // labelled an unlocated post as being from somewhere it may not be.
   const storyImage = activeStory.coverImg || null;
   const storyCaption = activeStory.content || '';
   const storyCreator = activeStory.authorName || t('stories.defaultCreatorName');
   const storyCreatorAvatar = activeStory.authorAvatar || null;
-  const storyLocation = activeStory.location?.trim() || null;
+  const storyLocation = activeStory.location?.trim() && activeStory.location.trim().toLowerCase() !== 'india' ? activeStory.location.trim() : null;
 
-  const handleToggleLike = async () => {
-    const wasLiked = !!isLiked[activeStory.id];
-    setIsLiked((prev) => ({ ...prev, [activeStory.id]: !wasLiked }));
-    try {
-      await apiService.likeStory(activeStory.id);
-    } catch (e) {
-      logger.warn('[Stories] Like failed:', e);
-      setIsLiked((prev) => ({ ...prev, [activeStory.id]: wasLiked }));
-    }
-  };
+  const totalViewsDisplay = interactions?.totalViews ?? (interactions?.viewers ? interactions.viewers.length : 0);
+  const totalLikesDisplay = interactions?.totalLikes ?? activeStory.likesCount ?? 0;
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.container}>
@@ -204,9 +365,15 @@ export default function StoriesScreen() {
         {storyImage ? (
           <Image source={{ uri: storyImage }} style={styles.storyImg} resizeMode="cover" />
         ) : (
-          <View style={[styles.storyImg, styles.storyImgFallback]}>
-            <Camera size={40} color="rgba(255,255,255,0.35)" strokeWidth={1.5} />
-          </View>
+          <LinearGradient
+            colors={['#1E293B', '#0F172A', '#020617']}
+            style={[styles.storyImg, styles.storyImgFallback]}
+          >
+            <Camera size={48} color="rgba(255,255,255,0.4)" strokeWidth={1.5} />
+            <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 16, marginTop: 12, fontWeight: '600' }}>
+              {activeStory.title || 'Travel Story'}
+            </Text>
+          </LinearGradient>
         )}
         <LinearGradient
           colors={['rgba(0,0,0,0.6)', 'transparent', 'rgba(0,0,0,0.75)']}
@@ -253,7 +420,14 @@ export default function StoriesScreen() {
             </View>
           )}
           <View>
-            <Text style={styles.creatorName}>{storyCreator}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={styles.creatorName}>{storyCreator}</Text>
+              {isMyStory && (
+                <View style={styles.youBadge}>
+                  <Text style={styles.youBadgeText}>You</Text>
+                </View>
+              )}
+            </View>
             {storyLocation ? <Text style={styles.locationText}>{storyLocation}</Text> : null}
           </View>
         </View>
@@ -268,7 +442,7 @@ export default function StoriesScreen() {
         <TouchableOpacity style={styles.rightTouchBlock} activeOpacity={1} onPress={handleNextStory} />
       </View>
 
-      {/* Bottom: caption + like */}
+      {/* Bottom: caption + activity button + like */}
       <View style={[styles.bottomController, { bottom: Math.max(insets.bottom, 16) }]}>
         {storyCaption.length > 0 && (
           <View style={styles.captionPanel}>
@@ -276,6 +450,31 @@ export default function StoriesScreen() {
           </View>
         )}
         <View style={styles.actionRow}>
+          {isMyStory ? (
+            <TouchableOpacity
+              style={styles.viewersPill}
+              onPress={openViewerSheet}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel="View story interactions"
+            >
+              <Eye size={15} color="#FFF" strokeWidth={2.2} />
+              <Text style={styles.viewersPillText}>
+                {totalViewsDisplay} {totalViewsDisplay === 1 ? 'view' : 'views'}
+              </Text>
+              {totalLikesDisplay > 0 && (
+                <>
+                  <View style={styles.pillDivider} />
+                  <Heart size={13} color="#EF4444" fill="#EF4444" />
+                  <Text style={styles.viewersPillText}>{totalLikesDisplay}</Text>
+                </>
+              )}
+              <ChevronUp size={15} color="rgba(255,255,255,0.7)" style={{ marginLeft: 2 }} />
+            </TouchableOpacity>
+          ) : (
+            <View style={{ flex: 1 }} />
+          )}
+
           <TouchableOpacity
             style={styles.controlIconCircle}
             onPress={handleToggleLike}
@@ -290,6 +489,107 @@ export default function StoriesScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Viewer & Likes Bottom Sheet */}
+      <Modal
+        visible={isViewerSheetVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={closeViewerSheet}
+      >
+        <View style={styles.modalOverlay}>
+          <Pressable style={styles.modalBackdrop} onPress={closeViewerSheet} />
+          <View style={[styles.sheetContainer, { paddingBottom: Math.max(insets.bottom, 20) }]}>
+            {/* Handle bar */}
+            <View style={styles.sheetHandleBar} />
+
+            {/* Header */}
+            <View style={styles.sheetHeader}>
+              <View>
+                <Text style={styles.sheetTitle}>Story Activity</Text>
+                <View style={styles.sheetStatsRow}>
+                  <View style={styles.sheetStatBadge}>
+                    <Eye size={13} color="rgba(255,255,255,0.8)" />
+                    <Text style={styles.sheetStatText}>
+                      {totalViewsDisplay} {totalViewsDisplay === 1 ? 'View' : 'Views'}
+                    </Text>
+                  </View>
+                  <View style={[styles.sheetStatBadge, { backgroundColor: 'rgba(239, 68, 68, 0.15)' }]}>
+                    <Heart size={13} color="#EF4444" fill="#EF4444" />
+                    <Text style={[styles.sheetStatText, { color: '#FCA5A5' }]}>
+                      {totalLikesDisplay} {totalLikesDisplay === 1 ? 'Like' : 'Likes'}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={styles.sheetCloseBtn}
+                onPress={closeViewerSheet}
+                accessibilityRole="button"
+                accessibilityLabel="Close sheet"
+              >
+                <X size={20} color="#FFF" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Content */}
+            {loadingInteractions ? (
+              <View style={styles.sheetLoadingContainer}>
+                <ActivityIndicator size="small" color="#38BDF8" />
+                <Text style={styles.sheetLoadingText}>Loading story viewers...</Text>
+              </View>
+            ) : !interactions || interactions.viewers.length === 0 ? (
+              <View style={styles.sheetEmptyContainer}>
+                <View style={styles.emptyIconCircle}>
+                  <Eye size={28} color="rgba(255,255,255,0.4)" />
+                </View>
+                <Text style={styles.sheetEmptyTitle}>No views yet</Text>
+                <Text style={styles.sheetEmptySub}>
+                  When travelers view or like your story, they will show up here in real time.
+                </Text>
+              </View>
+            ) : (
+              <ScrollView
+                style={styles.viewersScrollView}
+                contentContainerStyle={styles.viewersListContent}
+                showsVerticalScrollIndicator={false}
+              >
+                <Text style={styles.viewersSectionHeader}>
+                  SEEN BY ({interactions.viewers.length})
+                </Text>
+                {interactions.viewers.map((viewer) => (
+                  <View key={viewer.userId} style={styles.viewerItemRow}>
+                    <View style={styles.viewerInfo}>
+                      {viewer.avatar ? (
+                        <Image source={{ uri: viewer.avatar }} style={styles.viewerAvatar} />
+                      ) : (
+                        <View style={styles.viewerAvatarFallback}>
+                          <User size={18} color="rgba(255,255,255,0.7)" />
+                        </View>
+                      )}
+                      <View style={styles.viewerNameBlock}>
+                        <Text style={styles.viewerName} numberOfLines={1}>
+                          {viewer.name}
+                        </Text>
+                        <Text style={styles.viewedTime}>
+                          {formatTimeAgo(viewer.viewedAt)}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {viewer.hasLiked ? (
+                      <View style={styles.likedIndicator}>
+                        <Heart size={18} color="#EF4444" fill="#EF4444" />
+                      </View>
+                    ) : null}
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -396,6 +696,19 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     fontWeight: '800',
   },
+  youBadge: {
+    backgroundColor: 'rgba(56, 189, 248, 0.25)',
+    borderColor: '#38BDF8',
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 10,
+  },
+  youBadgeText: {
+    color: '#38BDF8',
+    fontSize: 10,
+    fontWeight: '700',
+  },
   locationText: {
     color: 'rgba(255,255,255,0.7)',
     fontSize: 12,
@@ -441,8 +754,31 @@ const styles = StyleSheet.create({
   actionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
     gap: 10,
+  },
+  viewersPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    gap: 7,
+  },
+  viewersPillText: {
+    color: '#FFF',
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  pillDivider: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: 'rgba(255,255,255,0.5)',
+    marginHorizontal: 1,
   },
   controlIconCircle: {
     width: 44,
@@ -453,5 +789,167 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFill,
+  },
+  sheetContainer: {
+    backgroundColor: '#0F172A',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '65%',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    overflow: 'hidden',
+  },
+  sheetHandleBar: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    alignSelf: 'center',
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  sheetTitle: {
+    color: '#FFF',
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  sheetStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 6,
+  },
+  sheetStatBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    gap: 5,
+  },
+  sheetStatText: {
+    color: 'rgba(255, 255, 255, 0.85)',
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  sheetCloseBtn: {
+    padding: 6,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  sheetLoadingContainer: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  sheetLoadingText: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  sheetEmptyContainer: {
+    paddingVertical: 45,
+    paddingHorizontal: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  emptyIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  sheetEmptyTitle: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  sheetEmptySub: {
+    color: 'rgba(255, 255, 255, 0.55)',
+    fontSize: 12.5,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  viewersScrollView: {
+    flexGrow: 0,
+  },
+  viewersListContent: {
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    gap: 14,
+  },
+  viewersSectionHeader: {
+    color: 'rgba(255, 255, 255, 0.45)',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    marginBottom: 2,
+  },
+  viewerItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  viewerInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  viewerAvatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#1E293B',
+  },
+  viewerAvatarFallback: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(56, 189, 248, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.4)',
+  },
+  viewerNameBlock: {
+    flex: 1,
+  },
+  viewerName: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  viewedTime: {
+    color: 'rgba(255, 255, 255, 0.5)',
+    fontSize: 11.5,
+    marginTop: 2,
+  },
+  likedIndicator: {
+    padding: 6,
   },
 });

@@ -20,6 +20,8 @@ const PUBLIC_PATHS = new Set([
   '/auth/forgot-password',
   '/auth/reset-password',
   '/auth/refresh',
+  // Razorpay webhook: authenticates itself via HMAC-SHA256, not JWT.
+  '/trip-payments/webhook',
 ]);
 
 // GET-only routes that show content anyone can browse without an account
@@ -74,6 +76,8 @@ const PUBLIC_GET_PATTERNS = [
 ];
 
 function isPublicRoute(req: Request): boolean {
+  if (req.method === 'POST' && (/^\/stories\/[^/]+\/view$/.test(req.path) || /^\/stories\/[^/]+\/like$/.test(req.path))) return true;
+  if (req.method === 'GET' && /^\/stories\/[^/]+\/interactions$/.test(req.path)) return true;
   if (PUBLIC_PATHS.has(req.path)) return true;
   if (req.method !== 'GET') return false;
   if (PUBLIC_GET_EXACT.has(req.path)) return true;

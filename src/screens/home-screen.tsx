@@ -547,6 +547,9 @@ function RouteSafetyCardBase({ isFocused }: { isFocused: boolean }) {
   }, [alertCount, isFocused, fadeAnim]);
 
   const openAdvisory = useCallback(() => router.push('/monsoon-advisory'), [router]);
+  // "All Clear"'s own View Details goes to the trip-wise hazard report, not
+  // the generic monsoon advisory feed the active-alert card below still uses.
+  const openTripSafetyAnalysis = useCallback(() => router.push('/trip-safety-analysis'), [router]);
 
   if (alertsState.kind === 'loading') {
     return (
@@ -622,7 +625,7 @@ function RouteSafetyCardBase({ isFocused }: { isFocused: boolean }) {
   // hourly from GDACS), not an absence of data — so it gets a deliberate
   // "all clear" card rather than a generic empty state.
   if (alerts.length === 0) {
-    return <AllClearCard onViewDetails={openAdvisory} />;
+    return <AllClearCard onViewDetails={openTripSafetyAnalysis} />;
   }
 
   const activeAlert: HazardAlert = alerts[alertIndex % alerts.length];
@@ -1324,7 +1327,16 @@ function TrendingDestinationsBase({ isFocused }: { isFocused: boolean }) {
  * somewhere it was not. Falls back to the author, then to a plain label.
  */
 function feedItemLabel(item: FeedItem, t: (key: string) => string): string {
-  return item.location || item.title || item.authorName || t('home.untitledFeedItem');
+  if (item.authorName && item.authorName.trim()) {
+    return item.authorName.trim();
+  }
+  if (item.title && item.title.trim()) {
+    return item.title.trim();
+  }
+  if (item.location && item.location.trim() && item.location.trim().toLowerCase() !== 'india') {
+    return item.location.trim();
+  }
+  return t('home.untitledFeedItem');
 }
 
 function StoriesRailBase({
@@ -1336,22 +1348,94 @@ function StoriesRailBase({
 }) {
   const { t } = useTranslation();
   const router = useRouter();
+  const { profile, storiesList, isLoggedIn } = useApp();
 
-  // The merged feed (stories + guide reels). There is deliberately no
-  // stories-only fallback: GET /feed already degrades to whichever of the
-  // two sources has rows, and swapping endpoints on failure hid real
-  // outages behind a partial list.
+  // Do not show or fetch stories if user is not signed in
   const feedQuery = useQuery({
     queryKey: queryKeys.feed(),
     queryFn: async () => {
       const page = await apiService.getFeed(20);
       return page.items;
     },
+    enabled: isLoggedIn,
   });
   const { data: feed, refetch } = feedQuery;
   const feedState = sectionState(feedQuery, feed != null);
 
-  const addStoryTile = (
+  const mergedFeed = React.useMemo(() => {
+    const feedItems: FeedItem[] = (feed ?? []).map((item) => {
+      const local = storiesList.find((s) => s.id === item.id || (s.authorName === item.authorName && s.content === item.content));
+      if (local?.coverImg && (!item.coverImg || item.coverImg.length === 0)) {
+        return { ...item, coverImg: local.coverImg };
+      }
+      return item;
+    });
+
+    for (const local of storiesList) {
+      if (!feedItems.some((r) => r.id === local.id)) {
+        feedItems.unshift({
+          id: local.id,
+          sourceType: 'STORY',
+          userId: profile.id,
+          title: local.title,
+          content: local.content,
+          coverImg: local.coverImg,
+          authorName: local.authorName,
+          authorAvatar: local.authorAvatar,
+          location: local.location,
+          likesCount: local.likesCount,
+          createdAt: local.createdAt,
+        });
+      }
+    }
+    return feedItems;
+  }, [feed, storiesList, profile.id]);
+
+  const isUserStory = React.useCallback((item: FeedItem) => {
+    if (item.userId && profile.id && item.userId === profile.id) return true;
+    if (
+      item.authorName &&
+      profile.name &&
+      profile.name !== 'Guest Traveler' &&
+      item.authorName.trim().toLowerCase() === profile.name.trim().toLowerCase()
+    ) {
+      return true;
+    }
+    return false;
+  }, [profile.id, profile.name]);
+
+  const myStory = React.useMemo(() => mergedFeed.find(isUserStory) ?? null, [mergedFeed, isUserStory]);
+  const otherStories = React.useMemo(() => mergedFeed.filter((item) => !isUserStory(item)), [mergedFeed, isUserStory]);
+
+  if (!isLoggedIn) {
+    return null;
+  }
+
+  const myStoryCover = myStory?.coverImg || avatarUri;
+
+  const addStoryTile = myStory ? (
+    <TouchableOpacity
+      style={styles.storyItem}
+      activeOpacity={0.8}
+      onPress={() => router.push({ pathname: '/stories', params: { id: myStory.id } })}
+      onLongPress={onAddStory}
+      accessibilityRole="button"
+      accessibilityLabel="View your story"
+    >
+      <View style={styles.storyRingActive}>
+        {myStoryCover ? (
+          <Image source={{ uri: myStoryCover }} style={styles.storyImage} />
+        ) : (
+          <View style={styles.addStoryAvatarFallback}>
+            <Camera size={24} color={C.blueText} strokeWidth={1.8} />
+          </View>
+        )}
+      </View>
+      <Text style={styles.storyName} numberOfLines={1}>
+        {t('home.yourStory')}
+      </Text>
+    </TouchableOpacity>
+  ) : (
     <TouchableOpacity
       style={styles.storyItem}
       activeOpacity={0.8}
@@ -1442,15 +1526,12 @@ function StoriesRailBase({
       contentContainerStyle={styles.storiesRow}
     >
       {addStoryTile}
-      {feed.map((item: FeedItem) => (
+      {otherStories.map((item: FeedItem) => (
         <TouchableOpacity
           key={item.id}
           style={styles.storyItem}
           activeOpacity={0.8}
           onPress={() => {
-            // By id, not by location text: the rail shows merged feed items
-            // and a REEL has no matching TravelStory row, so the old
-            // `?location=` filter opened an empty screen for half the rail.
             router.push({ pathname: '/stories', params: { id: item.id } });
           }}
           accessibilityRole="button"
@@ -1465,7 +1546,7 @@ function StoriesRailBase({
               </View>
             )}
           </View>
-          <Text style={styles.storyName} numberOfLines={2}>
+          <Text style={styles.storyName} numberOfLines={1}>
             {feedItemLabel(item, t)}
           </Text>
         </TouchableOpacity>
@@ -1754,7 +1835,7 @@ function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        <StoriesRail avatarUri={avatarUri} onAddStory={handleAddStoryPress} />
+        {isLoggedIn && <StoriesRail avatarUri={avatarUri} onAddStory={handleAddStoryPress} />}
 
         {/* ════════════════════════════════════════════════
             QUICK ACCESS ROW — 3 White Cards
@@ -2892,6 +2973,33 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 4,
     elevation: 3,
+  },
+  storyRingActive: {
+    width: 66,
+    height: 66,
+    borderRadius: 33,
+    borderWidth: 2.5,
+    borderColor: '#2563EB',
+    padding: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  storyItemTouchable: {
+    alignItems: 'center',
+  },
+  addStoryPlusBadgeTouchable: {
+    position: 'absolute',
+    bottom: 20,
+    right: 2,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#2563EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    zIndex: 3,
   },
   storyRing: {
     width: 72,

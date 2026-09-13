@@ -26,7 +26,7 @@ import { useApp, type Trip } from '@/store/AppContext';
 import { eventBus } from '@/services/event-bus';
 import { useRouter } from 'expo-router';
 import { toast } from '@/lib/feedback';
-import { formatDate } from '@/lib/datetime';
+import { formatDate, formatDateShort, toDate } from '@/lib/datetime';
 import { formatTransitTime } from '@/lib/transit-time';
 import { queryKeys } from '@/lib/query-keys';
 import { sectionState } from '@/lib/query-state';
@@ -56,12 +56,22 @@ export default function TripDetailModal({
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { joinTrip, cancelJoinRequest, profile, isLoggedIn, requestedTrips } = useApp();
+  const { joinTrip, cancelJoinRequest, profile, isLoggedIn, requestedTrips, joinRequestStatuses } = useApp();
 
   const [midwayJoin, setMidwayJoin] = useState(false);
   const [startCity, setStartCity] = useState('');
   const [endCity, setEndCity] = useState('');
   const [joinedMsg, setJoinedMsg] = useState(false);
+  // Family Connect Midway: how many family members join alongside the
+  // requester, which checkpoint they join at, and which day. fromStopId/
+  // toStopId are TripTimelineStop ids (the app's real "checkpoint" entity —
+  // see docs/plan "Nearby, Family Connect, Guide-per-checkpoint, Chat &
+  // Seat fixes"); they ride alongside startCity/endCity above rather than
+  // replacing them, since the price-preview math still works off city names.
+  const [familyMemberCount, setFamilyMemberCount] = useState(0);
+  const [fromStopId, setFromStopId] = useState<string | null>(null);
+  const [toStopId, setToStopId] = useState<string | null>(null);
+  const [joiningDayIndex, setJoiningDayIndex] = useState<number | null>(null);
 
   // The list payload this modal is opened with is deliberately lean — it
   // has no description, route timeline or packing checklist. Those live on
@@ -88,15 +98,46 @@ export default function TripDetailModal({
       ? t('tripDetailModal.requestSegmentJoin')
       : t('tripDetailModal.requestToJoin');
 
+  // TripTimelineStop rows are the app's real "checkpoint" entity (see the
+  // plan doc) — organizer-authored, geolocated, and already returned by the
+  // detail endpoint. A trip predating the Timeline tab has none, so the
+  // segment picker falls back to the plain cities[] array in that case.
+  const timelineStops = detail?.timeline ?? [];
+  const hasCheckpoints = timelineStops.length > 1;
+
   const handleMidwayJoinSelect = () => {
-    if (trip.cities && trip.cities.length > 2) {
+    if (hasCheckpoints) {
+      const first = timelineStops[1] ?? timelineStops[0];
+      const last = timelineStops[timelineStops.length - 1];
+      setStartCity(first.city);
+      setEndCity(last.city);
+      setFromStopId(first.id);
+      setToStopId(last.id);
+      setMidwayJoin(true);
+    } else if (trip.cities && trip.cities.length > 2) {
       setStartCity(trip.cities[1]);
       setEndCity(trip.cities[trip.cities.length - 1]);
+      setFromStopId(null);
+      setToStopId(null);
       setMidwayJoin(true);
     } else {
       toast(t('tripDetailModal.midwayOnlyFor3Plus'), 'info');
     }
   };
+
+  const tripStartDate = toDate(trip.startDate);
+  const tripEndDate = toDate(trip.endDate);
+  const tripDurationDays =
+    tripStartDate && tripEndDate
+      ? Math.max(1, Math.round((tripEndDate.getTime() - tripStartDate.getTime()) / 86400000) + 1)
+      : 1;
+  const joiningDayOptions = Array.from({ length: tripDurationDays }, (_, i) => i);
+  const joiningDateIso = (() => {
+    if (joiningDayIndex === null || !tripStartDate) return undefined;
+    const d = new Date(tripStartDate.getTime());
+    d.setDate(d.getDate() + joiningDayIndex);
+    return d.toISOString();
+  })();
 
   const calculateMidwayPrice = () => {
     const defaultPrice = Number(trip.budget);
@@ -125,13 +166,30 @@ export default function TripDetailModal({
     // it from the trip's route (docs/REMEDIATION.md §8.6). The preview
     // shown on the success screen below uses the identical formula
     // (calculateMidwayPrice above), so it always matches what gets stored.
-    joinTrip(trip.id, midwayJoin ? { midway: true, fromCity: startCity, toCity: endCity } : undefined);
+    joinTrip(
+      trip.id,
+      midwayJoin
+        ? {
+            midway: true,
+            fromCity: startCity,
+            toCity: endCity,
+            familyMemberCount: familyMemberCount || undefined,
+            fromStopId: fromStopId ?? undefined,
+            toStopId: toStopId ?? undefined,
+            joiningDate: joiningDateIso,
+          }
+        : undefined,
+    );
 
     setJoinedMsg(true);
     setTimeout(() => {
       setJoinedMsg(false);
       onClose();
       setMidwayJoin(false);
+      setFamilyMemberCount(0);
+      setFromStopId(null);
+      setToStopId(null);
+      setJoiningDayIndex(null);
     }, 2200);
   };
 
@@ -332,6 +390,24 @@ export default function TripDetailModal({
                   </View>
                 )}
 
+                {/* Per-checkpoint guide selection + scoped join request —
+                    find-guides.tsx reads this trip's real timeline stops
+                    and their assignedGuides when opened with ?tripId=. */}
+                {hasCheckpoints && !isMyTrip ? (
+                  <TouchableOpacity
+                    style={styles.findGuideLink}
+                    onPress={() => {
+                      onClose();
+                      router.push({ pathname: '/find-guides', params: { tripId: trip.id } });
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('tripDetailModal.findGuideForCheckpoint')}
+                  >
+                    <UserCheck size={14} color={C.blueText} />
+                    <Text style={styles.findGuideLinkText}>{t('tripDetailModal.findGuideForCheckpoint')}</Text>
+                  </TouchableOpacity>
+                ) : null}
+
                 {/* What the organizer expects travellers to bring. */}
                 {detail && detail.checklist.length > 0 ? (
                   <>
@@ -429,7 +505,38 @@ export default function TripDetailModal({
                     <View style={{ marginBottom: 12 }}>
                       <Text style={[styles.fieldLabel, { color: C.textSecondary, marginBottom: 6 }]}>{t('tripDetailModal.startJoiningFrom')}</Text>
                       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.citySelectScroll}>
-                        {trip.cities.slice(0, trip.cities.length - 1).map((city: string) => {
+                        {hasCheckpoints
+                          ? timelineStops.slice(0, timelineStops.length - 1).map((stop) => {
+                              const isSelected = fromStopId === stop.id;
+                              return (
+                                <TouchableOpacity
+                                  key={stop.id}
+                                  style={[
+                                    styles.citySelectChip,
+                                    isSelected && styles.citySelectChipActive,
+                                    { borderColor: isSelected ? C.accent : C.cardBorder }
+                                  ]}
+                                  onPress={() => {
+                                    setStartCity(stop.city);
+                                    setFromStopId(stop.id);
+                                    const toStop = timelineStops.find((s) => s.id === toStopId);
+                                    if (!toStop || toStop.order <= stop.order) {
+                                      const next = timelineStops.find((s) => s.order > stop.order);
+                                      if (next) {
+                                        setEndCity(next.city);
+                                        setToStopId(next.id);
+                                      }
+                                    }
+                                  }}
+                                  accessibilityRole="button"
+                                  accessibilityLabel={stop.city}
+                                  accessibilityState={{ selected: isSelected }}
+                                >
+                                  <Text style={[styles.citySelectChipText, { color: isSelected ? '#FFF' : C.text }, isSelected && { fontWeight: '700' }]}>{stop.city}</Text>
+                                </TouchableOpacity>
+                              );
+                            })
+                          : trip.cities.slice(0, trip.cities.length - 1).map((city: string) => {
                           const isSelected = startCity === city;
                           return (
                             <TouchableOpacity
@@ -465,7 +572,35 @@ export default function TripDetailModal({
                           could never actually choose where they get off. */}
                       <Text style={[styles.fieldLabel, { color: C.textSecondary, marginBottom: 6 }]}>{t('tripDetailModal.travellingUntil')}</Text>
                       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.citySelectScroll}>
-                        {trip.cities
+                        {hasCheckpoints
+                          ? timelineStops
+                              .filter((stop) => {
+                                const startStop = timelineStops.find((s) => s.id === fromStopId);
+                                return !startStop || stop.order > startStop.order;
+                              })
+                              .map((stop) => {
+                                const isSelected = toStopId === stop.id;
+                                return (
+                                  <TouchableOpacity
+                                    key={stop.id}
+                                    style={[
+                                      styles.citySelectChip,
+                                      isSelected && styles.citySelectChipActive,
+                                      { borderColor: isSelected ? C.accent : C.cardBorder }
+                                    ]}
+                                    onPress={() => {
+                                      setEndCity(stop.city);
+                                      setToStopId(stop.id);
+                                    }}
+                                    accessibilityRole="button"
+                                    accessibilityLabel={stop.city}
+                                    accessibilityState={{ selected: isSelected }}
+                                  >
+                                    <Text style={[styles.citySelectChipText, { color: isSelected ? '#FFF' : C.text }, isSelected && { fontWeight: '700' }]}>{stop.city}</Text>
+                                  </TouchableOpacity>
+                                );
+                              })
+                          : trip.cities
                           .filter((city: string) => trip.cities.indexOf(city) > trip.cities.indexOf(startCity))
                           .map((city: string) => {
                             const isSelected = endCity === city;
@@ -488,10 +623,69 @@ export default function TripDetailModal({
                           })}
                       </ScrollView>
                     </View>
+
+                    {/* Family Connect: how many family members, and which day
+                        they join. Backend validates familyMemberCount (0-8)
+                        and computes partySize = 1 + familyMemberCount, which
+                        is what actually gets claimed/released as seats. */}
+                    <View style={{ marginBottom: 12 }}>
+                      <Text style={[styles.fieldLabel, { color: C.textSecondary, marginBottom: 6 }]}>{t('tripDetailModal.familyMembersJoining')}</Text>
+                      <View style={styles.familyStepperRow}>
+                        <TouchableOpacity
+                          style={styles.familyStepperBtn}
+                          onPress={() => setFamilyMemberCount((c) => Math.max(0, c - 1))}
+                          accessibilityRole="button"
+                          accessibilityLabel={t('tripDetailModal.decreaseFamilyMembers')}
+                        >
+                          <Text style={styles.familyStepperBtnText}>−</Text>
+                        </TouchableOpacity>
+                        <Text style={styles.familyStepperCount}>{familyMemberCount}</Text>
+                        <TouchableOpacity
+                          style={styles.familyStepperBtn}
+                          onPress={() => setFamilyMemberCount((c) => Math.min(8, c + 1))}
+                          accessibilityRole="button"
+                          accessibilityLabel={t('tripDetailModal.increaseFamilyMembers')}
+                        >
+                          <Text style={styles.familyStepperBtnText}>+</Text>
+                        </TouchableOpacity>
+                        <Text style={[styles.familyStepperHint, { color: C.textSecondary }]}>
+                          {t('tripDetailModal.partySizeHint', { count: 1 + familyMemberCount })}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={{ marginBottom: 12 }}>
+                      <Text style={[styles.fieldLabel, { color: C.textSecondary, marginBottom: 6 }]}>{t('tripDetailModal.whenJoining')}</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.citySelectScroll}>
+                        {joiningDayOptions.map((dayIdx) => {
+                          const isSelected = joiningDayIndex === dayIdx;
+                          const dayDate = tripStartDate ? new Date(tripStartDate.getTime() + dayIdx * 86400000) : null;
+                          return (
+                            <TouchableOpacity
+                              key={dayIdx}
+                              style={[
+                                styles.citySelectChip,
+                                isSelected && styles.citySelectChipActive,
+                                { borderColor: isSelected ? C.accent : C.cardBorder }
+                              ]}
+                              onPress={() => setJoiningDayIndex(dayIdx)}
+                              accessibilityRole="button"
+                              accessibilityLabel={t('tripDetailModal.dayN', { day: dayIdx + 1 })}
+                              accessibilityState={{ selected: isSelected }}
+                            >
+                              <Text style={[styles.citySelectChipText, { color: isSelected ? '#FFF' : C.text }, isSelected && { fontWeight: '700' }]}>
+                                {t('tripDetailModal.dayN', { day: dayIdx + 1 })}{dayDate ? ` · ${formatDateShort(dayDate)}` : ''}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </ScrollView>
+                    </View>
+
                     <View style={styles.priceCalcRow}>
                       <Text style={{ fontSize: 12, color: C.textSecondary }}>{t('tripDetailModal.automaticPriceAdjustment')}</Text>
                       <Text style={{ fontSize: 16, fontWeight: '700', color: C.greenText }}>
-                        ₹{calculateMidwayPrice()}{' '}
+                        ₹{calculateMidwayPrice() * (1 + familyMemberCount)}{' '}
                         <Text style={{ fontSize: 12, color: C.textSecondary }}>{t('tripDetailModal.vsPrice', { price })}</Text>
                       </Text>
                     </View>
@@ -524,41 +718,131 @@ export default function TripDetailModal({
                   </View>
                 </View>
 
-                {/* Action Area */}
-                {isMyTrip ? null : requestedTrips.has(trip.id) ? (
-                  <View style={styles.requestedActionArea}>
-                    <View style={styles.requestedStatusRow}>
-                      <View style={styles.requestedStatusIcon}>
-                        <CheckCircle size={18} color={C.greenText} />
+                {/* Action Area — branches on the join request's REAL status
+                    (joinRequestStatuses), not just membership in
+                    requestedTrips. Before this fix, requestedTrips folded
+                    PENDING/APPROVED/AWAITING_PAYMENT into one Set and every
+                    branch here rendered the same "awaiting confirmation"
+                    text even after the organizer had already approved. */}
+                {isMyTrip ? null : (() => {
+                  const myRequest = joinRequestStatuses.get(trip.id);
+                  const status = myRequest?.status;
+
+                  if (!requestedTrips.has(trip.id) || !status) {
+                    return (
+                      <TouchableOpacity
+                        style={styles.modalSubmitBtn}
+                        onPress={handleRequestJoin}
+                        activeOpacity={0.88}
+                        accessibilityRole="button"
+                        accessibilityLabel={joinCtaLabel}
+                      >
+                        <Text style={styles.modalSubmitBtnText}>{joinCtaLabel}</Text>
+                      </TouchableOpacity>
+                    );
+                  }
+
+                  if (status === 'APPROVED') {
+                    return (
+                      <View style={styles.requestedActionArea}>
+                        <View style={styles.requestedStatusRow}>
+                          <View style={styles.requestedStatusIcon}>
+                            <CheckCircle size={18} color={C.greenText} />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.requestedStatusTitle}>{t('tripDetailModal.requestApprovedTitle')}</Text>
+                            <Text style={[styles.requestedStatusSub, { color: C.textSecondary }]}>
+                              {t('tripDetailModal.requestApprovedSub', { count: myRequest.partySize })}
+                            </Text>
+                          </View>
+                        </View>
                       </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.requestedStatusTitle}>{t('tripDetailModal.requestSubmittedTitle')}</Text>
-                        <Text style={[styles.requestedStatusSub, { color: C.textSecondary }]}>
-                          {t('tripDetailModal.awaitingConfirmation')}
-                        </Text>
+                    );
+                  }
+
+                  if (status === 'AWAITING_PAYMENT') {
+                    return (
+                      <View style={styles.requestedActionArea}>
+                        <View style={styles.requestedStatusRow}>
+                          <View style={styles.requestedStatusIcon}>
+                            <CheckCircle size={18} color={C.blueText} />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.requestedStatusTitle}>{t('tripDetailModal.paymentRequiredTitle')}</Text>
+                            <Text style={[styles.requestedStatusSub, { color: C.textSecondary }]}>
+                              {t('tripDetailModal.paymentRequiredSub')}
+                            </Text>
+                          </View>
+                        </View>
+                        <TouchableOpacity
+                          style={styles.modalSubmitBtn}
+                          onPress={() => {
+                            onClose();
+                            router.push({ pathname: '/trip-payment', params: { joinRequestId: myRequest.id } });
+                          }}
+                          activeOpacity={0.88}
+                          accessibilityRole="button"
+                          accessibilityLabel={t('tripDetailModal.completePayment')}
+                        >
+                          <Text style={styles.modalSubmitBtnText}>{t('tripDetailModal.completePayment')}</Text>
+                        </TouchableOpacity>
                       </View>
+                    );
+                  }
+
+                  if (status === 'REJECTED') {
+                    return (
+                      <View style={styles.requestedActionArea}>
+                        <View style={styles.requestedStatusRow}>
+                          <View style={styles.requestedStatusIcon}>
+                            <X size={18} color={C.redText} />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.requestedStatusTitle}>{t('tripDetailModal.requestRejectedTitle')}</Text>
+                            <Text style={[styles.requestedStatusSub, { color: C.textSecondary }]}>
+                              {t('tripDetailModal.requestRejectedSub')}
+                            </Text>
+                          </View>
+                        </View>
+                        <TouchableOpacity
+                          style={styles.modalSubmitBtn}
+                          onPress={handleRequestJoin}
+                          activeOpacity={0.88}
+                          accessibilityRole="button"
+                          accessibilityLabel={t('tripDetailModal.requestAgain')}
+                        >
+                          <Text style={styles.modalSubmitBtnText}>{t('tripDetailModal.requestAgain')}</Text>
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  }
+
+                  // PENDING — the original "awaiting confirmation" state.
+                  return (
+                    <View style={styles.requestedActionArea}>
+                      <View style={styles.requestedStatusRow}>
+                        <View style={styles.requestedStatusIcon}>
+                          <CheckCircle size={18} color={C.greenText} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.requestedStatusTitle}>{t('tripDetailModal.requestSubmittedTitle')}</Text>
+                          <Text style={[styles.requestedStatusSub, { color: C.textSecondary }]}>
+                            {t('tripDetailModal.awaitingConfirmation')}
+                          </Text>
+                        </View>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.cancelRequestBtn}
+                        onPress={handleCancelRequest}
+                        activeOpacity={0.8}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('tripDetailModal.withdrawRequest')}
+                      >
+                        <Text style={styles.cancelRequestBtnText}>{t('tripDetailModal.withdrawRequest')}</Text>
+                      </TouchableOpacity>
                     </View>
-                    <TouchableOpacity
-                      style={styles.cancelRequestBtn}
-                      onPress={handleCancelRequest}
-                      activeOpacity={0.8}
-                      accessibilityRole="button"
-                      accessibilityLabel={t('tripDetailModal.withdrawRequest')}
-                    >
-                      <Text style={styles.cancelRequestBtnText}>{t('tripDetailModal.withdrawRequest')}</Text>
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <TouchableOpacity
-                    style={styles.modalSubmitBtn}
-                    onPress={handleRequestJoin}
-                    activeOpacity={0.88}
-                    accessibilityRole="button"
-                    accessibilityLabel={joinCtaLabel}
-                  >
-                    <Text style={styles.modalSubmitBtnText}>{joinCtaLabel}</Text>
-                  </TouchableOpacity>
-                )}
+                  );
+                })()}
               </ScrollView>
             </>
           )}
@@ -957,6 +1241,50 @@ const styles = StyleSheet.create({
     borderTopWidth: 0.5,
     borderColor: C.border,
     paddingTop: 10,
+  },
+  familyStepperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  familyStepperBtn: {
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
+    borderRadius: MIN_TOUCH_TARGET / 2,
+    borderWidth: 1,
+    borderColor: C.cardBorder,
+    backgroundColor: C.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  familyStepperBtnText: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: C.blueText,
+  },
+  familyStepperCount: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: C.text,
+    minWidth: 20,
+    textAlign: 'center',
+  },
+  familyStepperHint: {
+    fontSize: 12,
+    marginLeft: 4,
+  },
+  findGuideLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  findGuideLinkText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: C.blueText,
   },
   pricingBar: {
     flexDirection: 'row',

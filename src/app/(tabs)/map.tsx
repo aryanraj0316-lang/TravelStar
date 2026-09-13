@@ -708,6 +708,13 @@ function buildMapHTML(tileKey: string, routeCoords: MapRoutePoint[], strings: Le
               map.flyTo([27.5650, 77.7008], 7, { animate: true, duration: 0.85 });
             }
           }
+          if (data.type === 'FLY_TO') {
+            if (window.__focusMarker) { map.removeLayer(window.__focusMarker); window.__focusMarker = null; }
+            var focusLatLng = [data.lat, data.lng];
+            window.__focusMarker = L.marker(focusLatLng).addTo(map);
+            if (data.label) window.__focusMarker.bindPopup(data.label).openPopup();
+            map.flyTo(focusLatLng, 15, { animate: true, duration: 0.85 });
+          }
           if (data.type === 'SELECT_LEG') {
             var idx = data.index;
             highlightLeg(idx);
@@ -791,7 +798,12 @@ function MapScreen() {
     return unsub;
   }, []);
   const { triggerSOS, trips, joinTrip, profile, isLoggedIn, requestedTrips, reloadJoinRequests, setNavbarHidden } = useApp();
-  const { tripId } = useLocalSearchParams<{ tripId: string }>();
+  const { tripId, focusLat, focusLng, focusLabel } = useLocalSearchParams<{
+    tripId: string;
+    focusLat?: string;
+    focusLng?: string;
+    focusLabel?: string;
+  }>();
 
   useEffect(() => {
     if (tripId) {
@@ -1021,6 +1033,20 @@ function MapScreen() {
     if (!mapHazards) return;
     webViewRef.current?.postMessage(JSON.stringify({ type: 'SET_HAZARDS', hazards: mapHazards }));
   }, [mapHazards]);
+
+  // Opened from a chat "shared location" card or the SOS "Show on Map"
+  // button — center on that point once the map is ready, rather than just
+  // opening the generic tab with no context (docs/plan "Nearby, Family
+  // Connect, Guide-per-checkpoint, Chat & Seat fixes").
+  useEffect(() => {
+    const lat = focusLat ? Number(focusLat) : NaN;
+    const lng = focusLng ? Number(focusLng) : NaN;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    const timer = setTimeout(() => {
+      webViewRef.current?.postMessage(JSON.stringify({ type: 'FLY_TO', lat, lng, label: focusLabel ?? null }));
+    }, 600); // Leaflet needs a beat to finish mounting after the WebView loads.
+    return () => clearTimeout(timer);
+  }, [focusLat, focusLng, focusLabel]);
 
   // Post filter updates to Leaflet
   useEffect(() => {

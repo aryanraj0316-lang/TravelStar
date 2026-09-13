@@ -14,7 +14,7 @@ import {
   Dimensions,
   Linking,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { errorToastMessage, toast, useConfirm } from '@/lib/feedback';
 import { uploadFileToUrl } from '@/lib/upload';
 import { recordConsent } from '@/lib/consent';
@@ -156,6 +156,7 @@ interface WeatherData {
 export default function TravelGuideScreen() {
   const { t } = useTranslation();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { isLoggedIn, setCurrentRole } = useApp();
 
   useEffect(() => {
@@ -1046,10 +1047,16 @@ export default function TravelGuideScreen() {
       )}
 
       {guideStatus === 'notApplied' && (
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[
+            styles.applyScrollContent,
+            { paddingBottom: Math.max(insets.bottom, 24) + 80 },
+          ]}
+        >
           <View style={styles.applyCard}>
             <View style={styles.applyIconWrap}>
-              <Compass size={28} color={C.blue} />
+              <Compass size={24} color={C.blue} />
             </View>
             <Text style={styles.applyTitle}>{t('travelGuide.applyTitle')}</Text>
             <Text style={styles.applyBody}>{t('travelGuide.applyBody')}</Text>
@@ -1099,14 +1106,14 @@ export default function TravelGuideScreen() {
               onPress={() => void handleApplyToBeGuide()}
               loading={applying}
               fullWidth
-              style={{ marginTop: 8 }}
+              style={{ marginTop: 10, marginBottom: 12 }}
             />
           </View>
         </ScrollView>
       )}
 
       {guideStatus === 'ready' && (
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom, 24) + 60 }]}>
         {/* ========================================================
             TAB 1: LEADS & EARNINGS DASHBOARD
             ======================================================== */}
@@ -2298,7 +2305,13 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 16,
-    paddingTop: 14,
+    paddingTop: 10,
+    paddingBottom: 60,
+  },
+  applyScrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 90,
   },
 
   // ── Apply-to-become-a-guide (no profile yet) ─────────
@@ -2307,30 +2320,32 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: C.border,
-    padding: 20,
-    marginTop: 8,
-    gap: 12,
+    padding: 16,
+    marginTop: 2,
+    gap: 10,
   },
   applyIconWrap: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: C.blueGlow,
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'center',
+    marginBottom: 2,
   },
   applyTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '800',
     color: C.text,
     textAlign: 'center',
   },
   applyBody: {
-    fontSize: 13,
+    fontSize: 12.5,
     color: C.textSec,
     textAlign: 'center',
-    marginBottom: 4,
+    marginBottom: 2,
+    lineHeight: 17,
   },
 
   // ── Header Executive Box ─────────────────────────────

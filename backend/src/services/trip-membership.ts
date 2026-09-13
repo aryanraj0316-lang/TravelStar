@@ -37,6 +37,13 @@ interface ClaimSeatOptions {
   fromCity?: string | null;
   toCity?: string | null;
   adjustedPrice?: number | null;
+  /**
+   * Seats to claim for this one join — the requester plus any family
+   * members travelling under the same request (docs/plan "Nearby, Family
+   * Connect, Guide-per-checkpoint, Chat & Seat fixes"). Defaults to 1 for
+   * every caller that predates Family Connect party sizing.
+   */
+  partySize?: number;
 }
 
 class SeatUnavailableError extends Error {}
@@ -132,6 +139,8 @@ export async function claimSeatAndJoin(
   userId: string,
   opts: ClaimSeatOptions = {}
 ): Promise<ClaimSeatResult> {
+  const partySize = opts.partySize && opts.partySize > 0 ? Math.floor(opts.partySize) : 1;
+
   // Fast path: a single cheap read, outside any transaction, to turn away
   // callers for a trip that is already full.
   //
@@ -155,7 +164,7 @@ export async function claimSeatAndJoin(
   if (!seatCheck) {
     return { ok: false, reason: 'TRIP_NOT_FOUND' };
   }
-  if (seatCheck.availableSeats <= 0) {
+  if (seatCheck.availableSeats < partySize) {
     // An existing member must still fall through: re-joining is idempotent
     // and consumes no seat, so a full trip must not lock its own members out
     // of the path that returns their existing membership.
@@ -210,15 +219,18 @@ export async function claimSeatAndJoin(
         };
       }
 
-      // Conditional decrement. The WHERE clause is what makes this safe:
-      // only a row that still has a seat is matched, so two concurrent
-      // callers cannot both succeed. An empty result means either the trip
-      // is full or it does not exist — distinguished below.
+      // Conditional decrement, by the full party size (requester + any
+      // family members on the same request). The WHERE clause is what makes
+      // this safe: only a row with enough seats left for the whole party is
+      // matched, so two concurrent callers cannot both succeed, and a party
+      // of 4 can never leave the count negative. An empty result means
+      // either the trip lacks that many seats or it does not exist —
+      // distinguished below.
       const claimed = await tx.$queryRaw<{ id: string; name: string; creatorId: string }[]>`
         UPDATE "Trip"
-           SET "availableSeats" = "availableSeats" - 1
+           SET "availableSeats" = "availableSeats" - ${partySize}
          WHERE "id" = ${tripId}
-           AND "availableSeats" > 0
+           AND "availableSeats" >= ${partySize}
         RETURNING "id", "name", "creatorId"
       `;
 
@@ -230,7 +242,7 @@ export async function claimSeatAndJoin(
       }
 
       const tripMember = await tx.tripMember.create({
-        data: { tripId, userId, role: 'MEMBER' },
+        data: { tripId, userId, role: 'MEMBER', partySize },
         select: { id: true },
       });
 
@@ -249,8 +261,9 @@ export async function claimSeatAndJoin(
               fromCity: opts.fromCity ?? null,
               toCity: opts.toCity ?? null,
               adjustedPrice: opts.adjustedPrice ?? null,
+              partySize,
             },
-            update: { status: 'APPROVED' },
+            update: { status: 'APPROVED', partySize },
             select: { id: true },
           });
 
@@ -370,12 +383,16 @@ export async function releaseSeatAndLeave(
     // Seat count only ever increases back toward totalSeats here, and only
     // for a trip that unambiguously had this member counted against it, so
     // this cannot push availableSeats past totalSeats in normal operation.
+    // Released by the request's own stored partySize (member.partySize is
+    // the same value, copied at claim time) — a family of 4 that leaves
+    // must return all 4 seats, not just 1.
+    const releasedSeats = member?.partySize ?? request.partySize;
     await tx.trip.update({
       where: { id: request.tripId },
-      data: { availableSeats: { increment: 1 } },
+      data: { availableSeats: { increment: releasedSeats } },
     });
 
-    logger.log(`[trip-membership] Released seat for user ${request.userId} on trip ${request.tripId}`);
+    logger.log(`[trip-membership] Released ${releasedSeats} seat(s) for user ${request.userId} on trip ${request.tripId}`);
     return { ok: true as const, released: true };
   });
 }

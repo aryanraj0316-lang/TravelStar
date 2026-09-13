@@ -6,12 +6,11 @@ import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 import { requireUserId } from '../../lib/auth-context';
 import { buildPage, cursorFilter, cursorPageQuerySchema, takeWithLookahead } from '../../lib/pagination';
+import path from 'path';
 
 const router = Router();
 
-// Get all stories. Reference data is seeded once via `npm run seed:reference`
-// (prisma/seed-reference-data.ts), not implicitly on read — see
-// docs/REMEDIATION.md §4.9.
+// Get all stories. Reference data is seeded once via npm run seed:reference
 router.get('/', async (req, res) => {
   const parsed = cursorPageQuerySchema.safeParse(req.query);
   if (!parsed.success) {
@@ -38,18 +37,23 @@ router.get('/', async (req, res) => {
 const createStorySchema = z.object({
   title: z.string().trim().min(1).max(200).default('My Travel Story'),
   content: z.string().trim().max(5000).default(''),
-  coverImg: remoteMediaUrl.optional(),
-  location: z.string().trim().min(1).max(200).default('India'),
+  coverImg: z.string().max(2000).optional().nullable(),
+  location: z.string().trim().max(200).default(''),
   hasReel: z.boolean().default(false),
 });
 
-// Create new story (customer post — visible to all users). Author identity
-// comes from the token, never the request body — a caller cannot post as
-// someone else.
+// Create new story
 router.post('/', async (req, res) => {
   const parsed = createStorySchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Please check the story details.', details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })) } });
+    return res.status(400).json({
+      ok: false,
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'Please check the story details.',
+        details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+      },
+    });
   }
 
   const userId = requireUserId(req);
@@ -64,11 +68,9 @@ router.post('/', async (req, res) => {
     const { title, content, coverImg, location, hasReel } = parsed.data;
     const story = await prisma.travelStory.create({
       data: {
+        userId,
         title,
         content,
-        // A story with no cover photo has no cover photo. This used to
-        // persist a stock Taj Mahal shot into the row as if the author
-        // had taken it.
         coverImg: coverImg ?? null,
         authorName,
         authorAvatar,
@@ -84,24 +86,333 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Like a story
-router.post('/:id/like', async (req, res) => {
-  const parsedParams = z.object({ id: z.string().uuid() }).safeParse(req.params);
+// Helper to resolve viewer/liker identity from req & body
+async function resolveUserIdentity(req: any) {
+  let userId: string | null = req.user?.id || req.body?.userId || null;
+  let userName: string = req.body?.name || req.body?.userName || '';
+  let userAvatar: string | null = req.body?.avatar || req.body?.userAvatar || null;
+
+  if (req.user?.id) {
+    try {
+      const u = await prisma.user.findUnique({ where: { id: req.user.id }, include: { profile: true } });
+      if (u) {
+        if (!userName) {
+          if (u.profile?.firstName) {
+            userName = `${u.profile.firstName} ${u.profile.lastName || ''}`.trim();
+          } else if (u.email) {
+            userName = u.email.split('@')[0] ?? 'Traveler';
+          }
+        }
+        if (!userAvatar && u.profile?.avatarUrl) {
+          userAvatar = u.profile.avatarUrl;
+        }
+      }
+    } catch {
+      // Ignore DB lookup error
+    }
+  }
+
+  if (!userName || userName.trim().toLowerCase() === 'guest traveler') {
+    userName = 'Traveler';
+  }
+
+  return { userId, userName, userAvatar };
+}
+
+// Record a view on a story
+router.post('/:id/view', async (req, res) => {
+  const parsedParams = z.object({ id: z.string() }).safeParse(req.params);
   if (!parsedParams.success) {
     return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid story id.' } });
   }
+  const storyId = parsedParams.data.id;
+
   try {
-    const story = await prisma.travelStory.update({
-      where: { id: parsedParams.data.id },
-      data: { likesCount: { increment: 1 } },
+    const { userId, userName, userAvatar } = await resolveUserIdentity(req);
+
+    // Auto-upsert story if not yet in database
+    let story = await prisma.travelStory.findUnique({
+      where: { id: storyId },
+      select: { id: true, userId: true },
     });
-    res.status(200).json({ ok: true, data: story });
+
+    if (!story) {
+      try {
+        story = await prisma.travelStory.create({
+          data: {
+            id: storyId,
+            userId: userId ?? null,
+            authorName: userName,
+            authorAvatar: userAvatar,
+            title: 'Travel Story',
+            content: '',
+            location: '',
+            likesCount: 0,
+            hasReel: false,
+          },
+        });
+      } catch {
+        story = await prisma.travelStory.findUnique({ where: { id: storyId }, select: { id: true, userId: true } });
+      }
+    }
+
+    // Check if this viewer already recorded a view on this story
+    const orConditions: any[] = [];
+    if (userId) orConditions.push({ userId });
+    if (userName && userName !== 'Traveler') orConditions.push({ userName });
+
+    let existingView = null;
+    if (orConditions.length > 0) {
+      existingView = await prisma.storyView.findFirst({
+        where: {
+          storyId,
+          OR: orConditions,
+        },
+      });
+    }
+
+    if (existingView) {
+      await prisma.storyView.update({
+        where: { id: existingView.id },
+        data: {
+          createdAt: new Date(),
+          userName: userName || existingView.userName,
+          userAvatar: userAvatar || existingView.userAvatar,
+          userId: userId || existingView.userId,
+        },
+      });
+    } else {
+      await prisma.storyView.create({
+        data: {
+          storyId,
+          userId,
+          userName,
+          userAvatar,
+        },
+      });
+    }
+
+    return res.status(200).json({ ok: true });
   } catch (err) {
-    logger.warn('[Stories] Like error:', err);
-    res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Story not found' } });
+    logger.warn('[Stories] View error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to record view' } });
   }
 });
 
+// Like or unlike a story with user tracking
+router.post('/:id/like', async (req, res) => {
+  const parsedParams = z.object({ id: z.string() }).safeParse(req.params);
+  if (!parsedParams.success) {
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid story id.' } });
+  }
+  const storyId = parsedParams.data.id;
+
+  try {
+    const { userId, userName, userAvatar } = await resolveUserIdentity(req);
+
+    let story = await prisma.travelStory.findUnique({
+      where: { id: storyId },
+    });
+
+    if (!story) {
+      try {
+        story = await prisma.travelStory.create({
+          data: {
+            id: storyId,
+            userId: userId ?? null,
+            authorName: userName,
+            authorAvatar: userAvatar,
+            title: 'Travel Story',
+            content: '',
+            location: '',
+            likesCount: 0,
+            hasReel: false,
+          },
+        });
+      } catch {
+        story = await prisma.travelStory.findUnique({ where: { id: storyId } });
+      }
+    }
+
+    if (!story) {
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Story not found' } });
+    }
+
+    // Check if user already liked
+    const orConditions: any[] = [];
+    if (userId) orConditions.push({ userId });
+    if (userName && userName !== 'Traveler') orConditions.push({ userName });
+
+    let existingLike = null;
+    if (orConditions.length > 0) {
+      existingLike = await prisma.storyLike.findFirst({
+        where: {
+          storyId,
+          OR: orConditions,
+        },
+      });
+    }
+
+    if (existingLike) {
+      // Toggle off / Unlike
+      const [, updatedStory] = await prisma.$transaction([
+        prisma.storyLike.delete({ where: { id: existingLike.id } }),
+        prisma.travelStory.update({
+          where: { id: storyId },
+          data: { likesCount: { decrement: 1 } },
+        }),
+      ]);
+      return res.status(200).json({
+        ok: true,
+        data: { liked: false, likesCount: Math.max(0, updatedStory.likesCount) },
+      });
+    } else {
+      // Toggle on / Like
+      const [, updatedStory] = await prisma.$transaction([
+        prisma.storyLike.create({
+          data: {
+            storyId,
+            userId,
+            userName,
+            userAvatar,
+          },
+        }),
+        prisma.travelStory.update({
+          where: { id: storyId },
+          data: { likesCount: { increment: 1 } },
+        }),
+      ]);
+
+      // Ensure liker is also recorded as a viewer
+      let existingView = null;
+      if (orConditions.length > 0) {
+        existingView = await prisma.storyView.findFirst({
+          where: {
+            storyId,
+            OR: orConditions,
+          },
+        });
+      }
+      if (!existingView) {
+        await prisma.storyView.create({
+          data: {
+            storyId,
+            userId,
+            userName,
+            userAvatar,
+          },
+        }).catch(() => {});
+      }
+
+      return res.status(200).json({
+        ok: true,
+        data: { liked: true, likesCount: updatedStory.likesCount },
+      });
+    }
+  } catch (err) {
+    logger.warn('[Stories] Like error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to like story' } });
+  }
+});
+
+// Get interactions (viewer list & like status) for a story
+router.get('/:id/interactions', async (req, res) => {
+  const parsedParams = z.object({ id: z.string() }).safeParse(req.params);
+  if (!parsedParams.success) {
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid story id.' } });
+  }
+  const storyId = parsedParams.data.id;
+
+  try {
+    const story = await prisma.travelStory.findUnique({
+      where: { id: storyId },
+      select: { id: true, userId: true, likesCount: true },
+    });
+
+    if (!story) {
+      return res.status(200).json({
+        ok: true,
+        data: {
+          totalViews: 0,
+          totalLikes: 0,
+          viewers: [],
+        },
+      });
+    }
+
+    const [views, likes] = await Promise.all([
+      prisma.storyView.findMany({
+        where: { storyId },
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.storyLike.findMany({
+        where: { storyId },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+
+    const likedIds = new Set<string>();
+    const likedNames = new Set<string>();
+    for (const l of likes) {
+      if (l.userId) likedIds.add(l.userId);
+      if (l.userName) likedNames.add(l.userName.toLowerCase().trim());
+    }
+
+    const viewerMap = new Map<string, {
+      userId: string;
+      name: string;
+      avatar: string | null;
+      hasLiked: boolean;
+      viewedAt: string;
+    }>();
+
+    for (const v of views) {
+      const name = v.userName?.trim() || 'Traveler';
+      const key = v.userId ? `id:${v.userId}` : (name !== 'Traveler' ? `name:${name.toLowerCase()}` : `view:${v.id}`);
+      const hasLiked = (v.userId ? likedIds.has(v.userId) : false) || (name !== 'Traveler' && likedNames.has(name.toLowerCase()));
+      viewerMap.set(key, {
+        userId: v.userId || v.id,
+        name,
+        avatar: v.userAvatar,
+        hasLiked,
+        viewedAt: v.createdAt.toISOString(),
+      });
+    }
+
+    for (const l of likes) {
+      const name = l.userName?.trim() || 'Traveler';
+      const key = l.userId ? `id:${l.userId}` : (name !== 'Traveler' ? `name:${name.toLowerCase()}` : `like:${l.id}`);
+      if (!viewerMap.has(key)) {
+        viewerMap.set(key, {
+          userId: l.userId || l.id,
+          name,
+          avatar: l.userAvatar,
+          hasLiked: true,
+          viewedAt: l.createdAt.toISOString(),
+        });
+      } else {
+        const existing = viewerMap.get(key)!;
+        existing.hasLiked = true;
+      }
+    }
+
+    const viewersList = Array.from(viewerMap.values()).sort(
+      (a, b) => new Date(b.viewedAt).getTime() - new Date(a.viewedAt).getTime()
+    );
+
+    return res.status(200).json({
+      ok: true,
+      data: {
+        totalViews: Math.max(views.length, viewerMap.size),
+        totalLikes: Math.max(story.likesCount, likes.length),
+        viewers: viewersList,
+      },
+    });
+  } catch (err) {
+    logger.warn('[Stories] Interactions error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve interactions' } });
+  }
+});
 
 const storyMediaUploadUrlSchema = z.object({
   contentType: z.enum(['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/quicktime']),
@@ -132,6 +443,42 @@ router.post('/media-upload-url', async (req, res) => {
     }
     logger.error('[Stories] Media upload URL failed:', err);
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not start the upload.' } });
+  }
+});
+
+import fs from 'fs';
+
+const directUploadSchema = z.object({
+  base64: z.string().min(1),
+  contentType: z.string().default('image/jpeg'),
+});
+
+router.post('/upload-direct', async (req, res) => {
+  const parsed = directUploadSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid payload' } });
+  }
+
+  try {
+    const { base64, contentType } = parsed.data;
+    const ext = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg';
+    const filename = `story-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const uploadDir = path.join(process.cwd(), 'uploads');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    const filePath = path.join(uploadDir, filename);
+    const buffer = Buffer.from(base64, 'base64');
+    fs.writeFileSync(filePath, buffer);
+
+    const host = req.get('host') || 'localhost:3000';
+    const protocol = req.protocol || 'http';
+    const publicUrl = `${protocol}://${host}/uploads/${filename}`;
+
+    return res.status(200).json({ ok: true, data: { publicUrl } });
+  } catch (err) {
+    logger.error('[Stories] Direct upload failed:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Upload failed' } });
   }
 });
 

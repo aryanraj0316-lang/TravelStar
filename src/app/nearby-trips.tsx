@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { apiService } from '@/services/api';
 import { queryKeys } from '@/lib/query-keys';
@@ -6,18 +6,78 @@ import { getCurrentDeviceLocation } from '@/lib/device-location';
 import { formatDateRange } from '@/lib/datetime';
 import TripDetailModal from '@/components/TripDetailModal';
 import { useQuery } from '@tanstack/react-query';
-import { FlatList, RefreshControl, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { FlatList, RefreshControl, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import ArrowLeft from 'lucide-react-native/icons/arrow-left';
+import Check from 'lucide-react-native/icons/check';
+import ChevronDown from 'lucide-react-native/icons/chevron-down';
 import MapPin from 'lucide-react-native/icons/map-pin';
 import Navigation from 'lucide-react-native/icons/navigation';
 import Users from 'lucide-react-native/icons/users';
+import X from 'lucide-react-native/icons/x';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
-import { ScreenEmpty, ScreenError, ScreenLoading } from '@/components/ui';
+import { Chip, Input, ScreenEmpty, ScreenError, ScreenLoading, Sheet } from '@/components/ui';
 import type { NearbyTrip } from '@/types/api';
+
+// The 28 states + 8 union territories, spelled exactly as
+// backend/src/lib/india-city-coords.ts's INDIA_CITY_COORDS table does (the
+// server matches this case-insensitively, but the canonical spelling still
+// has to agree — e.g. "Odisha" not "Orissa"). This is real, stable, public
+// reference data, not a fabricated business fact, so hardcoding it here
+// (rather than a picker built from whatever cities happen to be loaded) is
+// fine.
+const INDIAN_STATES = [
+  'Andhra Pradesh',
+  'Arunachal Pradesh',
+  'Assam',
+  'Bihar',
+  'Chhattisgarh',
+  'Goa',
+  'Gujarat',
+  'Haryana',
+  'Himachal Pradesh',
+  'Jharkhand',
+  'Karnataka',
+  'Kerala',
+  'Madhya Pradesh',
+  'Maharashtra',
+  'Manipur',
+  'Meghalaya',
+  'Mizoram',
+  'Nagaland',
+  'Odisha',
+  'Punjab',
+  'Rajasthan',
+  'Sikkim',
+  'Tamil Nadu',
+  'Telangana',
+  'Tripura',
+  'Uttar Pradesh',
+  'Uttarakhand',
+  'West Bengal',
+  'Andaman and Nicobar Islands',
+  'Chandigarh',
+  'Dadra and Nagar Haveli and Daman and Diu',
+  'Delhi',
+  'Jammu and Kashmir',
+  'Ladakh',
+  'Lakshadweep',
+  'Puducherry',
+] as const;
+
+const RADIUS_PRESETS_KM = [5, 10, 25, 50, 100, 250] as const;
+
+type FilterMode = 'ALL' | 'RADIUS' | 'CITY' | 'STATE';
+const FILTER_MODES: FilterMode[] = ['ALL', 'RADIUS', 'CITY', 'STATE'];
+const FILTER_MODE_LABEL_KEYS: Record<FilterMode, string> = {
+  ALL: 'nearbyTrips.filterAll',
+  RADIUS: 'nearbyTrips.filterByRadius',
+  CITY: 'nearbyTrips.filterByCity',
+  STATE: 'nearbyTrips.filterByState',
+};
 
 // docs/REMEDIATION.md §8.13: this screen previously rendered a hardcoded
 // list of Delhi-area "places" with a fake "CURRENT GPS LOCATION" banner and
@@ -95,6 +155,27 @@ export default function NearbyTripsScreen() {
   const [selectedTrip, setSelectedTrip] = useState<NearbyTrip | null>(null);
   const [showJoinModal, setShowJoinModal] = useState(false);
 
+  const [filterMode, setFilterMode] = useState<FilterMode>('ALL');
+  const [radiusKm, setRadiusKm] = useState<number | null>(null);
+  const [cityInput, setCityInput] = useState('');
+  const [cityQuery, setCityQuery] = useState('');
+  const [selectedState, setSelectedState] = useState<string | null>(null);
+  const [stateSheetOpen, setStateSheetOpen] = useState(false);
+
+  // Debounced so every keystroke doesn't trigger its own GET /trips/nearby.
+  useEffect(() => {
+    const handle = setTimeout(() => setCityQuery(cityInput.trim()), 400);
+    return () => clearTimeout(handle);
+  }, [cityInput]);
+
+  const clearFilter = () => {
+    setFilterMode('ALL');
+    setRadiusKm(null);
+    setCityInput('');
+    setCityQuery('');
+    setSelectedState(null);
+  };
+
   const requestLocation = async () => {
     setLocation({ status: 'loading' });
     const res = await getCurrentDeviceLocation();
@@ -113,6 +194,13 @@ export default function NearbyTripsScreen() {
 
   const coords = location.status === 'granted' ? { lat: location.latitude, lng: location.longitude } : null;
 
+  // radiusKm requires an origin, same as the backend requires — the chips
+  // that set it are disabled until coords exist, but guard here too in case
+  // location is lost (denied mid-session) while RADIUS is still selected.
+  const activeRadiusKm = filterMode === 'RADIUS' && coords ? radiusKm : null;
+  const activeCity = filterMode === 'CITY' ? cityQuery : '';
+  const activeState = filterMode === 'STATE' ? selectedState : null;
+
   const {
     data: trips = [],
     isLoading,
@@ -121,10 +209,18 @@ export default function NearbyTripsScreen() {
     refetch,
     isRefetching,
   } = useQuery({
-    queryKey: [...queryKeys.nearbyPlaces(), coords?.lat ?? null, coords?.lng ?? null],
+    queryKey: [...queryKeys.nearbyPlaces(), coords?.lat ?? null, coords?.lng ?? null, activeRadiusKm, activeCity, activeState],
     queryFn: async (): Promise<NearbyTrip[]> => {
-      const qs = coords ? `?lat=${coords.lat}&lng=${coords.lng}` : '';
-      const res = await apiService.getNearbyTrips(qs);
+      const params = new URLSearchParams();
+      if (coords) {
+        params.set('lat', String(coords.lat));
+        params.set('lng', String(coords.lng));
+      }
+      if (activeRadiusKm) params.set('radiusKm', String(activeRadiusKm));
+      if (activeCity) params.set('city', activeCity);
+      if (activeState) params.set('state', activeState);
+      const qsString = params.toString();
+      const res = await apiService.getNearbyTrips(qsString ? `?${qsString}` : '');
       return res ?? [];
     },
   });
@@ -192,6 +288,101 @@ export default function NearbyTripsScreen() {
           </TouchableOpacity>
         )}
       </View>
+
+      {/* Filters: radius / city / state — independently combinable on the
+          backend, but the UI exposes one at a time via a segmented mode
+          picker for simplicity. */}
+      <View style={styles.filterModeRow}>
+        {FILTER_MODES.map((mode) => (
+          <Chip
+            key={mode}
+            label={t(FILTER_MODE_LABEL_KEYS[mode])}
+            selected={filterMode === mode}
+            onPress={() => setFilterMode(mode)}
+            style={styles.filterModeChip}
+          />
+        ))}
+        {filterMode !== 'ALL' && (
+          <TouchableOpacity
+            style={styles.clearFilterBtn}
+            onPress={clearFilter}
+            accessibilityRole="button"
+            accessibilityLabel={t('nearbyTrips.clearFilter')}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <X size={14} color={C.textMuted} />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {filterMode === 'RADIUS' && (
+        <View style={styles.filterPanel}>
+          {coords ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+              {RADIUS_PRESETS_KM.map((km) => (
+                <Chip
+                  key={km}
+                  label={t('nearbyTrips.radiusKmLabel', { km })}
+                  selected={radiusKm === km}
+                  onPress={() => setRadiusKm(km)}
+                />
+              ))}
+            </ScrollView>
+          ) : (
+            <Text style={styles.filterHintText}>{t('nearbyTrips.radiusRequiresLocation')}</Text>
+          )}
+        </View>
+      )}
+
+      {filterMode === 'CITY' && (
+        <View style={styles.filterPanel}>
+          <Input
+            value={cityInput}
+            onChangeText={setCityInput}
+            placeholder={t('nearbyTrips.cityPlaceholder')}
+            accessibilityLabel={t('nearbyTrips.cityFilterLabel')}
+            containerStyle={styles.filterInputWrap}
+          />
+        </View>
+      )}
+
+      {filterMode === 'STATE' && (
+        <View style={styles.filterPanel}>
+          <TouchableOpacity
+            style={styles.stateTrigger}
+            onPress={() => setStateSheetOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel={selectedState ?? t('nearbyTrips.statePlaceholder')}
+            accessibilityHint={t('common.opensChoiceListHint')}
+          >
+            <Text style={[styles.stateTriggerText, !selectedState && styles.stateTriggerPlaceholder]}>
+              {selectedState ?? t('nearbyTrips.statePlaceholder')}
+            </Text>
+            <ChevronDown size={16} color={C.textMuted} />
+          </TouchableOpacity>
+          <Sheet visible={stateSheetOpen} onClose={() => setStateSheetOpen(false)} title={t('nearbyTrips.stateFilterLabel')}>
+            {INDIAN_STATES.map((s) => {
+              const isSelected = selectedState === s;
+              return (
+                <TouchableOpacity
+                  key={s}
+                  style={styles.stateOption}
+                  onPress={() => {
+                    setSelectedState(s);
+                    setStateSheetOpen(false);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={s}
+                  accessibilityState={{ selected: isSelected }}
+                >
+                  <Text style={[styles.stateOptionText, isSelected && styles.stateOptionTextSelected]}>{s}</Text>
+                  {isSelected ? <Check size={16} color={C.blueText} /> : null}
+                </TouchableOpacity>
+              );
+            })}
+          </Sheet>
+        </View>
+      )}
 
       {isLoading ? (
         <ScreenLoading label={t('nearbyTrips.findingTrips')} />
@@ -284,6 +475,51 @@ const styles = StyleSheet.create({
     minHeight: MIN_TOUCH_TARGET,
   },
   locBtnText: { fontSize: 12, fontWeight: '700', color: C.blue },
+  filterModeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: 16,
+    marginBottom: 8,
+  },
+  filterModeChip: { flex: 1 },
+  clearFilterBtn: {
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: MIN_TOUCH_TARGET / 2,
+    backgroundColor: C.cardAlt,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  filterPanel: { marginHorizontal: 16, marginBottom: 8 },
+  chipRow: { flexDirection: 'row', gap: 8, paddingVertical: 2 },
+  filterHintText: { fontSize: 12, color: C.textMuted, fontStyle: 'italic' },
+  filterInputWrap: { gap: 0 },
+  stateTrigger: {
+    minHeight: MIN_TOUCH_TARGET,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: C.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.border,
+    paddingHorizontal: 14,
+  },
+  stateTriggerText: { fontSize: 14, fontWeight: '600', color: C.text },
+  stateTriggerPlaceholder: { color: C.textMuted, fontWeight: '400' },
+  stateOption: {
+    minHeight: MIN_TOUCH_TARGET,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+  },
+  stateOptionText: { fontSize: 14, color: C.text },
+  stateOptionTextSelected: { color: C.blueText, fontWeight: '700' },
   scrollContent: { paddingHorizontal: 16, paddingTop: 8 },
   tripCard: {
     backgroundColor: C.card,

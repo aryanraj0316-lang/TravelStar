@@ -1,3 +1,4 @@
+import * as FileSystem from 'expo-file-system';
 import { uploadFileToUrl } from '@/lib/upload';
 import { queryClient } from '@/lib/query-client';
 import { safeStorage } from '@/services/storage';
@@ -12,7 +13,18 @@ import { queryKeys } from '@/lib/query-keys';
 import { apiService, clearTokens, ApiError, type CreateTripInput } from '../services/api';
 import { socketService } from '../services/socket';
 import { eventBus } from '../services/event-bus';
-import type { JoinRequestSummary, IncomingJoinRequest, AppNotification, ChatRoomSummary } from '@/types/api';
+import type { JoinRequestSummary, JoinRequestStatus, IncomingJoinRequest, AppNotification, ChatRoomSummary, StoryPayload } from '@/types/api';
+
+export interface JoinTripOpts {
+  midway?: boolean;
+  fromCity?: string;
+  toCity?: string;
+  /** Family Connect Midway / day-range join. */
+  familyMemberCount?: number;
+  fromStopId?: string;
+  toStopId?: string;
+  joiningDate?: string;
+}
 
 // Registered once at module scope — apiService is a stable singleton, and
 // these are the two REST writes queued for offline retry (see
@@ -144,8 +156,13 @@ export interface Message {
   content: string;
   timestamp: string;
   createdAt?: string;
-  mediaType?: 'NONE' | 'IMAGE' | 'VOICE';
+  mediaType?: 'NONE' | 'IMAGE' | 'VOICE' | 'LOCATION';
   mediaUrl?: string;
+  /** Set only when mediaType is 'LOCATION' — the socket payload always
+   *  carries these for a location message even before this field existed
+   *  on this type, since it's a spread of the raw server payload. */
+  latitude?: number | null;
+  longitude?: number | null;
   roomId?: string;
   senderId?: string;
 }
@@ -203,11 +220,16 @@ interface AppContextType {
   logout: () => void;
   trips: Trip[];
   addTrip: (trip: CreateTripInput) => Promise<Trip | null>;
-  joinTrip: (tripId: string, opts?: { midway?: boolean; fromCity?: string; toCity?: string }) => void;
+  joinTrip: (tripId: string, opts?: JoinTripOpts) => void;
   cancelJoinRequest: (tripId: string) => void;
   guides: Guide[];
   messages: Message[];
-  sendMessage: (content: string, mediaType?: 'NONE' | 'IMAGE' | 'VOICE', mediaUrl?: string) => void;
+  sendMessage: (
+    content: string,
+    mediaType?: 'NONE' | 'IMAGE' | 'VOICE' | 'LOCATION',
+    mediaUrl?: string,
+    coords?: { latitude: number; longitude: number } | null,
+  ) => void;
   setTyping: (isTyping: boolean) => void;
   typingUser: { roomId: string; userId: string; userName: string; userAvatar?: string | null; isTyping: boolean } | null;
   sosAlerts: SOSAlert[];
@@ -221,12 +243,21 @@ interface AppContextType {
   addStory: (storyData: NewStoryInput) => void;
   requestedTrips: Set<string>;
   setRequestedTrips: React.Dispatch<React.SetStateAction<Set<string>>>;
+  /**
+   * The requester's own join request for each trip they have requested to
+   * join, keyed by tripId — the real status (PENDING/AWAITING_PAYMENT/
+   * APPROVED/REJECTED), not just membership in `requestedTrips`. Added
+   * because `requestedTrips` alone cannot distinguish "still waiting" from
+   * "the organizer already approved this" — see TripDetailModal.tsx.
+   */
+  joinRequestStatuses: Map<string, JoinRequestSummary>;
   reloadJoinRequests: () => void;
   refreshTrips: () => void;
   pendingRequestsCount: number;
   reloadIncomingRequestsCount: () => void;
   hasUnreadChat: boolean;
   clearChatUnread: () => void;
+  checkUnreadChats: () => void;
   checkUnreadNotifications: () => void;
   hasUnreadNotification: boolean;
   dataStatus: DataStatus;
@@ -250,6 +281,7 @@ const GUEST_PROFILE: UserProfile = {
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentRole, setCurrentRole] = useState<UserRole>('TOURIST');
   const [requestedTrips, setRequestedTrips] = useState<Set<string>>(new Set());
+  const [joinRequestStatuses, setJoinRequestStatuses] = useState<Map<string, JoinRequestSummary>>(new Map());
   const [pendingRequestsCount, setPendingRequestsCount] = useState<number>(0);
   const [hasUnreadChat, setHasUnreadChat] = useState<boolean>(false);
   // docs/REMEDIATION.md §8.7 — the last 'userTyping' event received, for
@@ -430,11 +462,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .then((reqs) => {
         if (reqs && reqs.length > 0) {
           const tripIds = reqs
-            .filter((r: JoinRequestSummary) => r.status === 'PENDING' || r.status === 'APPROVED')
+            .filter((r: JoinRequestSummary) => r.status === 'PENDING' || r.status === 'APPROVED' || r.status === 'AWAITING_PAYMENT')
             .map((r: JoinRequestSummary) => r.tripId);
           setRequestedTrips(new Set(tripIds));
+          // Keyed by tripId, carrying the real status — see joinRequestStatuses'
+          // doc comment. This is what fixed the "still shows 'awaiting
+          // organizer' after approval" bug: TripDetailModal now reads the
+          // actual status here instead of only checking requestedTrips.has().
+          setJoinRequestStatuses(new Map(reqs.map((r: JoinRequestSummary) => [r.tripId, r])));
         } else {
           setRequestedTrips(new Set());
+          setJoinRequestStatuses(new Map());
         }
       })
       .catch((e) => logger.warn('[Trips] Reload join requests failed:', e));
@@ -545,6 +583,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       safeStorage.getItem('isLoggedIn').then((val) => {
         if (val === 'true') {
           setIsLoggedIn(true);
+        }
+      }),
+      safeStorage.getItem('savedStories').then((val) => {
+        if (val) {
+          try {
+            const parsed = JSON.parse(val);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setStoriesList(parsed);
+            }
+          } catch {}
         }
       }),
       safeStorage.getItem('savedProfile').then((val) => {
@@ -686,6 +734,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         chatRoomId: data.chatRoomId ?? undefined,
         tripId: data.tripId ?? undefined,
         category: data.category ?? undefined,
+        joinRequestId: (data as any).joinRequestId ?? undefined,
       });
     });
 
@@ -771,7 +820,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [refreshTrips],
   );
 
-  const joinTrip = useCallback((tripId: string, opts?: { midway?: boolean; fromCity?: string; toCity?: string }) => {
+  const joinTrip = useCallback((tripId: string, opts?: JoinTripOpts) => {
     // Optimistic UI: mark as "requested", but do NOT touch availableSeats/membersCount here.
     // Seats are only decremented on the backend once the organizer approves the JoinRequest
     // (see /interactions/join-request/:id/status). Decrementing locally here caused seats
@@ -781,12 +830,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       next.add(tripId);
       return next;
     });
+    setJoinRequestStatuses((prev) => {
+      const next = new Map(prev);
+      next.set(tripId, {
+        // Replaced with the real id by the reloadJoinRequests() call once
+        // the request lands — nothing reads this placeholder before then.
+        id: '',
+        tripId,
+        status: 'PENDING',
+        fromCity: opts?.fromCity ?? null,
+        toCity: opts?.toCity ?? null,
+        adjustedPrice: null,
+        familyMemberCount: opts?.familyMemberCount ?? 0,
+        partySize: 1 + (opts?.familyMemberCount ?? 0),
+        joiningDate: opts?.joiningDate ?? null,
+        fromStopId: opts?.fromStopId ?? null,
+        toStopId: opts?.toStopId ?? null,
+      });
+      return next;
+    });
     // adjustedPrice is never sent — the server computes and owns it
     // (docs/REMEDIATION.md §8.6); the client only proposes a segment.
     apiService
       .createJoinRequest(tripId, opts)
       .then(() => {
         toast('Join request sent', 'success');
+        // Replaces the optimistic entry above with the server's real row
+        // (real id, real computed adjustedPrice) rather than leaving the
+        // client-guessed placeholder in place indefinitely.
+        reloadJoinRequests();
       })
       .catch((e) => {
         if (isOfflineFailure(e)) {
@@ -803,13 +875,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           next.delete(tripId);
           return next;
         });
+        setJoinRequestStatuses((prev) => {
+          const next = new Map(prev);
+          next.delete(tripId);
+          return next;
+        });
         toast(errorToastMessage(e, 'Could not send the join request.'), 'error');
       });
-  }, []);
+  }, [reloadJoinRequests]);
 
   const cancelJoinRequest = useCallback((tripId: string) => {
+    const previousStatus = joinRequestStatuses.get(tripId);
     setRequestedTrips((prev) => {
       const next = new Set(prev);
+      next.delete(tripId);
+      return next;
+    });
+    setJoinRequestStatuses((prev) => {
+      const next = new Map(prev);
       next.delete(tripId);
       return next;
     });
@@ -825,13 +908,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           next.add(tripId);
           return next;
         });
+        if (previousStatus) {
+          setJoinRequestStatuses((prev) => {
+            const next = new Map(prev);
+            next.set(tripId, previousStatus);
+            return next;
+          });
+        }
         toast(errorToastMessage(e, 'Could not withdraw the request.'), 'error');
       });
-  }, []);
+  }, [joinRequestStatuses]);
 
   const sendMessage = useCallback(
-    (content: string, mediaType: 'NONE' | 'IMAGE' | 'VOICE' = 'NONE', mediaUrl?: string) => {
-      socketService.sendMessage(activeRoomId || 'trip-1', content, mediaType, mediaUrl);
+    (
+      content: string,
+      mediaType: 'NONE' | 'IMAGE' | 'VOICE' | 'LOCATION' = 'NONE',
+      mediaUrl?: string,
+      coords?: { latitude: number; longitude: number } | null,
+    ) => {
+      socketService.sendMessage(activeRoomId || 'trip-1', content, mediaType, mediaUrl, coords);
     },
     [activeRoomId],
   );
@@ -896,56 +991,76 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const addStory = useCallback(
-    (storyData: NewStoryInput) => {
-      const isRemoteUrl = typeof storyData.coverImg === 'string' && /^https?:\/\//i.test(storyData.coverImg);
-      const newStory = {
-        id: `story-${Date.now()}`,
+    async (storyData: NewStoryInput) => {
+      const localStoryId = `story-${Date.now()}`;
+      const localStory: Story = {
+        id: localStoryId,
         authorName: profile.name,
         authorAvatar: profile.avatar,
         title: storyData.title,
         content: storyData.content,
-        coverImg: storyData.coverImg || 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1000&q=80',
+        coverImg: storyData.coverImg || '',
         likesCount: 0,
-        location: storyData.location || 'India',
+        location: storyData.location || '',
         createdAt: new Date().toISOString(),
       };
-      setStoriesList((prev) => [newStory, ...prev]);
 
-      (async () => {
-        let remoteCoverUrl: string | undefined = isRemoteUrl ? storyData.coverImg : undefined;
+      setStoriesList((prev) => {
+        const updated = [localStory, ...prev];
+        void safeStorage.setItem('savedStories', JSON.stringify(updated));
+        return updated;
+      });
 
-        if (!remoteCoverUrl && storyData.coverImg && /^file:|^content:/i.test(storyData.coverImg)) {
+      try {
+        let remoteCoverUrl: string | undefined = undefined;
+
+        if (storyData.coverImg && /^https?:\/\//i.test(storyData.coverImg)) {
+          remoteCoverUrl = storyData.coverImg;
+        } else if (storyData.coverImg && /^file:|^content:/i.test(storyData.coverImg)) {
           try {
-            const ext = storyData.coverImg.split('.').pop()?.toLowerCase();
+            const ext = storyData.coverImg.split('.').pop()?.toLowerCase() || 'jpg';
             const contentType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
-            const { uploadUrl, publicUrl } = await apiService.getStoryMediaUploadUrl(contentType);
-            await uploadFileToUrl(storyData.coverImg, uploadUrl, contentType);
-            remoteCoverUrl = publicUrl;
-          } catch {
-            // Object storage is unconfigured or upload was unavailable; omit device-local path so remoteMediaUrl doesn't fail
-            logger.warn('[Stories] Cloud storage not available for story media; saving story record');
+            const base64 = await FileSystem.readAsStringAsync(storyData.coverImg, {
+              encoding: 'base64' as any,
+            });
+            const direct = await apiService.uploadStoryDirect(base64, contentType);
+            if (direct?.publicUrl) {
+              remoteCoverUrl = direct.publicUrl;
+            }
+          } catch (uploadErr) {
+            logger.warn('[Stories] Direct upload failed, attempting cloud storage:', uploadErr);
+            try {
+              const ext = storyData.coverImg.split('.').pop()?.toLowerCase() || 'jpg';
+              const contentType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+              const { uploadUrl, publicUrl } = await apiService.getStoryMediaUploadUrl(contentType);
+              await uploadFileToUrl(storyData.coverImg, uploadUrl, contentType);
+              remoteCoverUrl = publicUrl;
+            } catch {}
           }
         }
 
-        const payload = {
+        const payload: StoryPayload = {
           title: storyData.title || 'My Travel Story',
           content: storyData.content || '',
-          location: storyData.location || 'India',
+          location: storyData.location || '',
           hasReel: false,
-          ...(remoteCoverUrl ? { coverImg: remoteCoverUrl } : {}),
+          coverImg: remoteCoverUrl || (storyData.coverImg ? storyData.coverImg : undefined),
         };
 
-        return apiService.createStory(payload);
-      })()
-        .then(() => {
-          queryClient.invalidateQueries({ queryKey: queryKeys.feed() });
-          toast('Story shared', 'success');
-        })
-        .catch((e) => {
-          logger.warn('[Stories] Create story failed, rolling back:', e);
-          setStoriesList((prev) => prev.filter((s) => s !== newStory));
-          toast(errorToastMessage(e, 'Could not share your story.'), 'error');
-        });
+        const created = await apiService.createStory(payload);
+        if (created?.id) {
+          setStoriesList((prev) => {
+            const updated = prev.map((s) => (s.id === localStoryId ? { ...s, id: created.id, coverImg: created.coverImg || s.coverImg } : s));
+            void safeStorage.setItem('savedStories', JSON.stringify(updated));
+            return updated;
+          });
+        }
+        queryClient.invalidateQueries({ queryKey: queryKeys.feed() });
+        toast('Story shared', 'success');
+      } catch (e) {
+        logger.warn('[Stories] Remote create story failed, keeping local story:', e);
+        toast('Story saved to your device', 'info');
+      }
     },
     [profile.name, profile.avatar],
   );
@@ -990,12 +1105,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addStory,
       requestedTrips,
       setRequestedTrips,
+      joinRequestStatuses,
       reloadJoinRequests,
       refreshTrips,
       pendingRequestsCount,
       reloadIncomingRequestsCount,
       hasUnreadChat,
       clearChatUnread,
+      checkUnreadChats,
       checkUnreadNotifications,
       hasUnreadNotification,
       dataStatus: combinedDataStatus,
@@ -1027,12 +1144,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       storiesList,
       addStory,
       requestedTrips,
+      joinRequestStatuses,
       reloadJoinRequests,
       refreshTrips,
       pendingRequestsCount,
       reloadIncomingRequestsCount,
       hasUnreadChat,
       clearChatUnread,
+      checkUnreadChats,
       checkUnreadNotifications,
       hasUnreadNotification,
       combinedDataStatus,

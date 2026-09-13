@@ -6,6 +6,7 @@ import { cursorPageQuerySchema } from '../../lib/pagination';
 import { sendPushToUsers, unreadCountFor } from '../../lib/push';
 import { requireUserId } from '../../lib/auth-context';
 import { claimSeatAndJoin, releaseSeatAndLeave } from '../../services/trip-membership';
+import { isRazorpayConfigured, refundToWallet } from '../../services/trip-payments';
 import { calculateMidwayPrice } from '../../services/midway-pricing';
 
 const router = Router();
@@ -83,16 +84,25 @@ const joinRequestSchema = z.object({
   toCity: z.string().trim().min(1).max(200).optional(),
   // No adjustedPrice field: a client-computed price is never trusted
   // (docs/REMEDIATION.md §8.6) — see calculateMidwayPrice below.
+
+  // Family Connect Midway / day-range join. familyMemberCount is bounded at
+  // 8 (a generous real-world family size cap, not a hard business rule) so
+  // one request can't silently ask for the whole trip's seats.
+  familyMemberCount: z.number().int().min(0).max(8).default(0),
+  fromStopId: z.string().uuid().optional(),
+  toStopId: z.string().uuid().optional(),
+  joiningDate: z.coerce.date().optional(),
 });
 
 // Create a join request
 router.post('/join-request', async (req, res) => {
   const parsed = joinRequestSchema.safeParse(req.body);
   if (!parsed.success) return validationError(res, parsed.error.issues);
-  const { tripId, midway, fromCity, toCity } = parsed.data;
+  const { tripId, midway, fromCity, toCity, familyMemberCount, fromStopId, toStopId, joiningDate } = parsed.data;
   // Identity always comes from the token — a caller cannot file a request as
   // someone else by putting a userId in the body.
   const userId = requireUserId(req);
+  const partySize = 1 + familyMemberCount;
 
   try {
     const trip = await prisma.trip.findUnique({ where: { id: tripId } });
@@ -109,8 +119,36 @@ router.post('/join-request', async (req, res) => {
       },
     });
 
-    if (existing) {
+    // A REJECTED request is not a live duplicate — the user is allowed to
+    // ask again (the "Request Again" button in TripDetailModal depends on
+    // this). Any other existing status (PENDING/AWAITING_PAYMENT/APPROVED)
+    // is a real in-flight or settled request, so it is returned unchanged.
+    if (existing && existing.status !== 'REJECTED') {
       return res.status(200).json({ ok: true, data: { ...existing, message: 'Join request already exists' } });
+    }
+
+    // A party that could never fit is rejected up front with an honest
+    // reason — the authoritative, race-safe check still happens again at
+    // approval time in claimSeatAndJoin, this is just an early, friendlier
+    // no.
+    if (trip.availableSeats < partySize) {
+      return res.status(409).json({
+        ok: false,
+        error: { code: 'TRIP_FULL', message: `Only ${trip.availableSeats} seat(s) left — not enough for a party of ${partySize}.` },
+      });
+    }
+
+    // fromStopId/toStopId must belong to this trip's own timeline — a stop
+    // id for a different trip would silently mis-anchor the request.
+    if (fromStopId || toStopId) {
+      const stopIds = [fromStopId, toStopId].filter((v): v is string => !!v);
+      const stops = await prisma.tripTimelineStop.findMany({
+        where: { id: { in: stopIds }, tripId },
+        select: { id: true },
+      });
+      if (stops.length !== stopIds.length) {
+        return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'The selected checkpoint does not belong to this trip.' } });
+      }
     }
 
     // Server-authoritative price for a midway join — the client only ever
@@ -127,15 +165,24 @@ router.post('/join-request', async (req, res) => {
       adjustedPrice = priced.adjustedPrice;
     }
 
-    const joinReq = await prisma.joinRequest.create({
-      data: {
-        tripId,
-        userId,
-        status: 'PENDING',
-        fromCity: midway ? fromCity! : null,
-        toCity: midway ? toCity! : null,
-        adjustedPrice,
-      },
+    // upsert, not create: a previously REJECTED row for this (tripId,
+    // userId) pair still exists and must be reused — the @@unique
+    // constraint means a plain create() would 500 on a P2002 conflict.
+    const requestData = {
+      status: 'PENDING' as const,
+      fromCity: midway ? fromCity! : null,
+      toCity: midway ? toCity! : null,
+      adjustedPrice,
+      familyMemberCount,
+      partySize,
+      fromStopId: fromStopId ?? null,
+      toStopId: toStopId ?? null,
+      joiningDate: joiningDate ?? null,
+    };
+    const joinReq = await prisma.joinRequest.upsert({
+      where: { tripId_userId: { tripId, userId } },
+      create: { tripId, userId, ...requestData },
+      update: requestData,
     });
 
     return res.status(201).json({ ok: true, data: joinReq });
@@ -158,7 +205,19 @@ router.get('/join-requests', async (req, res) => {
 
     const requests = await prisma.joinRequest.findMany({
       where: { userId },
-      select: { tripId: true, status: true, fromCity: true, toCity: true, adjustedPrice: true },
+      select: {
+        id: true,
+        tripId: true,
+        status: true,
+        fromCity: true,
+        toCity: true,
+        adjustedPrice: true,
+        familyMemberCount: true,
+        partySize: true,
+        joiningDate: true,
+        fromStopId: true,
+        toStopId: true,
+      },
       orderBy: { createdAt: 'desc' },
       take: limit,
     });
@@ -269,6 +328,11 @@ router.get('/incoming-requests', async (req, res) => {
         toCity: r.toCity,
         adjustedPrice: r.adjustedPrice,
         createdAt: r.createdAt,
+        familyMemberCount: r.familyMemberCount,
+        partySize: r.partySize,
+        joiningDate: r.joiningDate,
+        fromStopId: r.fromStopId,
+        toStopId: r.toStopId,
       };
     });
 
@@ -315,6 +379,12 @@ const handleStatusChange = async (req: Request, res: Response) => {
     }
 
     if (status === 'REJECTED') {
+      const paymentOrder = await prisma.tripPaymentOrder.findUnique({
+        where: { joinRequestId: request.id },
+      });
+      if (paymentOrder && paymentOrder.status === 'CAPTURED') {
+        await refundToWallet(paymentOrder.id);
+      }
       const released = await releaseSeatAndLeave(request.id, 'REJECTED');
       if (!released.ok) {
         return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Join request not found' } });
@@ -323,11 +393,61 @@ const handleStatusChange = async (req: Request, res: Response) => {
       return res.status(200).json({ ok: true, data: { ...updated, chatRoomId: null } });
     }
 
+    // adjustedPrice/budget are per-person; a Family Connect request owes for
+    // the whole party, not just the requester — see trip-payments.ts's
+    // /initiate for the same rule applied to the actual charge.
+    const perPersonFee = request.adjustedPrice ? Number(request.adjustedPrice) : Number(request.trip.budget);
+    const fee = perPersonFee * request.partySize;
+    if (fee > 0 && isRazorpayConfigured()) {
+      await prisma.joinRequest.update({
+        where: { id: request.id },
+        data: { status: 'AWAITING_PAYMENT' },
+      });
+
+      const io = req.app.get('socketio');
+      if (io) {
+        io.to(request.userId).emit('notificationReceived', {
+          id: `notif-${Date.now()}`,
+          userId: request.userId,
+          type: 'TRIP',
+          category: 'PAYMENT_REQUIRED',
+          title: 'Payment Required — ' + request.trip.name,
+          content: `Your request to join ${request.trip.name} was approved! Please complete payment to secure your seat.`,
+          unread: true,
+          tripId: request.tripId,
+        });
+      }
+
+      await prisma.notification.create({
+        data: {
+          userId: request.userId,
+          type: 'TRIP',
+          category: 'PAYMENT_REQUIRED',
+          title: 'Payment Required — ' + request.trip.name,
+          content: `Your request to join ${request.trip.name} was approved! Please complete payment to secure your seat.`,
+          time: 'Just now',
+          unread: true,
+          tripId: request.tripId,
+        },
+      });
+
+      await sendPushToUsers([request.userId], 'TRIP', {
+        title: 'Payment Required — ' + request.trip.name,
+        body: `Please complete payment of ₹${fee} to join ${request.trip.name}`,
+        data: { screen: 'trip-payment', joinRequestId: request.id, tripId: request.tripId },
+        badge: await unreadCountFor(request.userId),
+      });
+
+      const updated = await prisma.joinRequest.findUnique({ where: { id: request.id } });
+      return res.status(200).json({ ok: true, data: { ...updated, status: 'AWAITING_PAYMENT', chatRoomId: null } });
+    }
+
     const claim = await claimSeatAndJoin(request.tripId, request.userId, {
       existingJoinRequestId: request.id,
       fromCity: request.fromCity,
       toCity: request.toCity,
       adjustedPrice: request.adjustedPrice ? Number(request.adjustedPrice) : null,
+      partySize: request.partySize,
     });
 
     if (!claim.ok) {

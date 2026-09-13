@@ -56,6 +56,18 @@ const envSchema = z.object({
   // public URL, or a CDN in front of it). Required alongside the above.
   OBJECT_STORAGE_PUBLIC_URL_BASE: z.string().url().optional(),
 
+  // Razorpay payment gateway (docs/REMEDIATION.md §5.5 option A).
+  // All three must be set together for payments to work; any subset left unset
+  // means trips with budget > 0 return SERVICE_UNAVAILABLE on the payment
+  // initiation endpoint, while all free-trip flows continue to work normally.
+  // RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET are your API credentials from
+  // the Razorpay dashboard. RAZORPAY_WEBHOOK_SECRET is the secret you set
+  // when configuring the webhook in the Razorpay dashboard — it is used to
+  // verify that incoming webhook events actually came from Razorpay.
+  RAZORPAY_KEY_ID: z.string().min(1).optional(),
+  RAZORPAY_KEY_SECRET: z.string().min(1).optional(),
+  RAZORPAY_WEBHOOK_SECRET: z.string().min(1).optional(),
+
   // Push notifications (docs/REMEDIATION.md §8.18). The Expo push service
   // needs no server credential by default — this is only required once a
   // project enables push security in its Expo dashboard, so it stays

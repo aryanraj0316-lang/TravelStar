@@ -4,11 +4,11 @@ import { formatINR, parseMoney, type Money } from '@/lib/money';
 import { tripCoverImage } from '@/lib/trip-display';
 import { showPrompt, toast, useConfirm } from '@/lib/feedback';
 import { logger } from '@/lib/logger';
-import { apiService } from '@/services/api';
+import { apiService, type TripTimelineStop } from '@/services/api';
 import { safeStorage } from '@/services/storage';
 import { useApp, type Trip } from '@/store/AppContext';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
-import type { IncomingJoinRequest, ReceivedGuideQuote, TripMemberRow } from '@/types/api';
+import type { IncomingJoinRequest, PublicGuide, ReceivedGuideQuote, TripMemberRow } from '@/types/api';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Activity from 'lucide-react-native/icons/activity';
@@ -141,7 +141,7 @@ const STATUS_LABEL_KEYS: Record<ActiveTour['status'], string> = {
 };
 
 export type GroupOrganizerTab = 'console' | 'chat';
-export type CreationSubTab = 'dashboard' | 'requests' | 'itinerary' | 'roster' | 'overview';
+export type CreationSubTab = 'dashboard' | 'requests' | 'itinerary' | 'roster' | 'overview' | 'checkpoints';
 
 
 // ─── Live Map Geocoding & Road Routing Engine (OpenStreetMap & OSRM) ───
@@ -379,7 +379,7 @@ export default function GroupOrganizerScreen() {
     (params.tab as GroupOrganizerTab) === 'chat' ? 'chat' : 'console',
   );
   const [creationSubTab, setCreationSubTab] = useState<CreationSubTab>('dashboard');
-  const [requestFilter, setRequestFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL');
+  const [requestFilter, setRequestFilter] = useState<'ALL' | 'PENDING' | 'AWAITING_PAYMENT' | 'APPROVED' | 'REJECTED'>('ALL');
 
 
 
@@ -422,6 +422,17 @@ export default function GroupOrganizerScreen() {
   // Live routing status for driving leg
   const [isCalculatingRoute, setIsCalculatingRoute] = useState(false);
   const [liveRouteStatus, setLiveRouteStatus] = useState<string | null>(null);
+
+  // ── Checkpoint Guide Assignment (organizer-side) State ──
+  // TripTimelineStop is the app's real, server-synced "checkpoint" entity —
+  // distinct from the ItineraryCheckpoint/AsyncStorage system above.
+  const [timelineStops, setTimelineStops] = useState<TripTimelineStop[]>([]);
+  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [timelineError, setTimelineError] = useState<string | null>(null);
+  const [publicGuides, setPublicGuides] = useState<PublicGuide[]>([]);
+  const [guidesLoading, setGuidesLoading] = useState(false);
+  const [guidePickerStopId, setGuidePickerStopId] = useState<string | null>(null);
+  const [assigningGuideKey, setAssigningGuideKey] = useState<string | null>(null);
 
   // Load checkpoints & driving legs whenever a trip is selected
   useEffect(() => {
@@ -572,75 +583,16 @@ export default function GroupOrganizerScreen() {
 
     const loadRequestsFlow = async () => {
       try {
-        const savedReqs = await safeStorage.getItem(`@trip_requests_${selectedCreation.id}`);
-        if (savedReqs) {
-          const parsed = JSON.parse(savedReqs);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setRawJoinRequests((prev) => {
-              const others = prev.filter((r) => r.tripId !== selectedCreation.id);
-              return [...others, ...parsed];
-            });
-            return;
-          }
-        }
-      } catch (err) {
-        logger.warn('Failed to load saved join requests:', err);
-      }
-
-      try {
         const remoteReqs = await apiService.getIncomingRequests();
-        if (remoteReqs && remoteReqs.length > 0) {
-          const forThisTrip = remoteReqs.filter((r) => r.tripId === selectedCreation.id);
-          if (forThisTrip.length > 0) {
-            setRawJoinRequests((prev) => {
-              const others = prev.filter((r) => r.tripId !== selectedCreation.id);
-              return [...others, ...forThisTrip];
-            });
-            void safeStorage.setItem(`@trip_requests_${selectedCreation.id}`, JSON.stringify(forThisTrip));
-            return;
-          }
-        }
+        const forThisTrip = (remoteReqs || []).filter((r) => r.tripId === selectedCreation.id);
+        setRawJoinRequests((prev) => {
+          const others = prev.filter((r) => r.tripId !== selectedCreation.id);
+          return [...others, ...forThisTrip];
+        });
+        void safeStorage.setItem(`@trip_requests_${selectedCreation.id}`, JSON.stringify(forThisTrip));
       } catch (e) {
         logger.warn('Failed to fetch api incoming requests:', e);
       }
-
-      // Default sample pending requests with messages to ensure out-of-the-box red dot & notification testability
-      const defaultRequests: IncomingJoinRequest[] = [
-        {
-          id: `req_${selectedCreation.id}_1`,
-          tripId: selectedCreation.id,
-          tripName: selectedCreation.name,
-          userId: 'user_priya_sharma',
-          applicantName: 'Priya Sharma',
-          applicantAvatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120&auto=format&fit=crop',
-          status: 'PENDING',
-          fromCity: selectedCreation.cities?.[0] || 'Departure City',
-          toCity: selectedCreation.cities?.[selectedCreation.cities.length - 1] || 'Destination',
-          adjustedPrice: selectedCreation.budget,
-          createdAt: new Date(Date.now() - 15 * 60000).toISOString(),
-          message: "Hi organizer! We are 2 travelers interested in joining your group. We carry our own gear and are ready to confirm!",
-        } as any,
-        {
-          id: `req_${selectedCreation.id}_2`,
-          tripId: selectedCreation.id,
-          tripName: selectedCreation.name,
-          userId: 'user_rohit_verma',
-          applicantName: 'Rohit Verma',
-          applicantAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&auto=format&fit=crop',
-          status: 'PENDING',
-          fromCity: selectedCreation.cities?.[0] || 'Departure City',
-          toCity: selectedCreation.cities?.[1] || 'Checkpoint 1',
-          adjustedPrice: Math.round((Number(selectedCreation.budget) || 12000) * 0.45),
-          createdAt: new Date(Date.now() - 45 * 60000).toISOString(),
-          message: "Requesting midway segment join up to checkpoint 1. Let me know if space is available!",
-        } as any,
-      ];
-
-      setRawJoinRequests((prev) => {
-        const others = prev.filter((r) => r.tripId !== selectedCreation.id);
-        return [...others, ...defaultRequests];
-      });
-      void safeStorage.setItem(`@trip_requests_${selectedCreation.id}`, JSON.stringify(defaultRequests));
     };
 
     void loadItineraryFlow();
@@ -1086,6 +1038,81 @@ export default function GroupOrganizerScreen() {
     }
   };
 
+  // Organizer-authored route timeline (TripTimelineStop) plus whichever
+  // guide(s) are already assigned to each stop — the real "checkpoint"
+  // concept, from GET /trips/:id.
+  const fetchTripTimeline = useCallback(
+    (tripId: string) => {
+      return Promise.resolve()
+        .then(() => {
+          setTimelineLoading(true);
+          setTimelineError(null);
+          return apiService.getTripDetail(tripId);
+        })
+        .then((data) => {
+          setTimelineStops(data?.timeline ?? []);
+        })
+        .catch((e) => {
+          logger.warn('Failed to fetch trip timeline:', e);
+          setTimelineStops([]);
+          setTimelineError(t('groupOrganizer.couldNotLoadCheckpoints'));
+        })
+        .finally(() => {
+          setTimelineLoading(false);
+        });
+    },
+    [t],
+  );
+
+  const fetchPublicGuides = useCallback(() => {
+    setGuidesLoading(true);
+    apiService
+      .getPublicGuides()
+      .then((data) => {
+        setPublicGuides(data ?? []);
+      })
+      .catch((e) => logger.warn('Failed to fetch public guides:', e))
+      .finally(() => setGuidesLoading(false));
+  }, []);
+
+  const openGuidePicker = (stopId: string) => {
+    setGuidePickerStopId(stopId);
+    fetchPublicGuides();
+  };
+
+  const handleAssignGuide = async (stopId: string, guide: PublicGuide) => {
+    if (!selectedCreation) return;
+    const key = `${stopId}:${guide.id}`;
+    setAssigningGuideKey(key);
+    try {
+      await apiService.assignCheckpointGuide(selectedCreation.id, stopId, guide.id);
+      toast(t('groupOrganizer.guideAssigned', { name: guide.name || t('groupOrganizer.unnamedGuide') }), 'success');
+      setGuidePickerStopId(null);
+      void fetchTripTimeline(selectedCreation.id);
+    } catch (e) {
+      logger.warn('Failed to assign checkpoint guide:', e);
+      toast(t('groupOrganizer.guideAssignFailed'), 'error');
+    } finally {
+      setAssigningGuideKey(null);
+    }
+  };
+
+  const handleUnassignGuide = async (stopId: string, guideProfileId: string) => {
+    if (!selectedCreation) return;
+    const key = `${stopId}:${guideProfileId}`;
+    setAssigningGuideKey(key);
+    try {
+      await apiService.unassignCheckpointGuide(selectedCreation.id, stopId, guideProfileId);
+      toast(t('groupOrganizer.guideUnassigned'), 'info');
+      void fetchTripTimeline(selectedCreation.id);
+    } catch (e) {
+      logger.warn('Failed to unassign checkpoint guide:', e);
+      toast(t('groupOrganizer.guideUnassignFailed'), 'error');
+    } finally {
+      setAssigningGuideKey(null);
+    }
+  };
+
   const fetchTourMembers = useCallback((tripId: string) => {
     apiService
       .getTripMembers(tripId)
@@ -1170,6 +1197,15 @@ export default function GroupOrganizerScreen() {
     }
   }, [selectedTourIdx, tours, currentTour, fetchTourMembers, fetchTripQuotes, fetchItinerary]);
 
+  // Fetch the route timeline (for per-checkpoint guide assignment) only
+  // once the organizer actually opens that tab, matching the trip currently
+  // selected in the console inspector.
+  useEffect(() => {
+    if (creationSubTab === 'checkpoints' && selectedCreation) {
+      void fetchTripTimeline(selectedCreation.id);
+    }
+  }, [creationSubTab, selectedCreation, fetchTripTimeline]);
+
   // Create new Tour form
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
@@ -1228,22 +1264,30 @@ export default function GroupOrganizerScreen() {
   };
 
   const handleApproveRequest = async (reqId: string, userName: string, avatar?: string) => {
+    let nextStatus: 'APPROVED' | 'AWAITING_PAYMENT' = 'APPROVED';
     try {
-      await apiService.updateJoinRequestStatus(reqId, 'APPROVED');
+      const res: any = await apiService.updateJoinRequestStatus(reqId, 'APPROVED');
+      if (res?.status === 'AWAITING_PAYMENT') {
+        nextStatus = 'AWAITING_PAYMENT';
+      }
     } catch (e) {
       logger.warn('Approve request api failed, updating local state:', e);
     }
     setRawJoinRequests((prev) => {
-      const updated = prev.map((r) => (r.id === reqId ? { ...r, status: 'APPROVED' as const } : r));
+      const updated = prev.map((r) => (r.id === reqId ? { ...r, status: nextStatus } : r));
       if (selectedCreation) {
         const forTrip = updated.filter((r) => r.tripId === selectedCreation.id);
         void safeStorage.setItem(`@trip_requests_${selectedCreation.id}`, JSON.stringify(forTrip));
       }
       return updated;
     });
-    toast(t('groupOrganizer.requestApproved', { name: userName, tour: selectedCreation?.name || currentTour.groupName }), 'success');
-    if (selectedCreation) {
-      fetchTourMembers(selectedCreation.id);
+    if (nextStatus === 'AWAITING_PAYMENT') {
+      toast(`Approved! Awaiting payment from ${userName}`, 'info');
+    } else {
+      toast(t('groupOrganizer.requestApproved', { name: userName, tour: selectedCreation?.name || currentTour.groupName }), 'success');
+      if (selectedCreation) {
+        fetchTourMembers(selectedCreation.id);
+      }
     }
   };
 
@@ -1797,6 +1841,7 @@ export default function GroupOrganizerScreen() {
                           badge: rawJoinRequests.filter((r) => r.tripId === selectedCreation.id && r.status === 'PENDING').length,
                         },
                         { key: 'itinerary', label: 'Itinerary', Icon: Calendar },
+                        { key: 'checkpoints', label: t('groupOrganizer.tabCheckpointGuides'), Icon: MapPin },
                         { key: 'overview', label: 'Overview', Icon: Compass },
                       ] as const
                     ).map((item) => {
@@ -2154,6 +2199,7 @@ export default function GroupOrganizerScreen() {
                     {[
                       { key: 'ALL', label: 'All' },
                       { key: 'PENDING', label: 'Pending' },
+                      { key: 'AWAITING_PAYMENT', label: 'Awaiting Pay' },
                       { key: 'APPROVED', label: 'Accepted' },
                       { key: 'REJECTED', label: 'Declined' },
                     ].map((filter) => {
@@ -2195,6 +2241,8 @@ export default function GroupOrganizerScreen() {
                           <Text style={styles.emptyRequestsBoxTitle}>
                             {requestFilter === 'PENDING'
                               ? 'No pending join requests'
+                              : requestFilter === 'AWAITING_PAYMENT'
+                              ? 'No requests awaiting payment'
                               : requestFilter === 'APPROVED'
                               ? 'No accepted travelers yet'
                               : requestFilter === 'REJECTED'
@@ -2224,6 +2272,8 @@ export default function GroupOrganizerScreen() {
                                         ? styles.requestStatusApproved
                                         : req.status === 'REJECTED'
                                         ? styles.requestStatusRejected
+                                        : req.status === 'AWAITING_PAYMENT'
+                                        ? styles.requestStatusAwaiting
                                         : styles.requestStatusPending,
                                     ]}
                                   >
@@ -2234,10 +2284,12 @@ export default function GroupOrganizerScreen() {
                                           ? styles.requestStatusApprovedText
                                           : req.status === 'REJECTED'
                                           ? styles.requestStatusRejectedText
+                                          : req.status === 'AWAITING_PAYMENT'
+                                          ? styles.requestStatusAwaitingText
                                           : styles.requestStatusPendingText,
                                       ]}
                                     >
-                                      {req.status === 'APPROVED' ? 'ACCEPTED' : req.status === 'REJECTED' ? 'DECLINED' : 'PENDING'}
+                                      {req.status === 'APPROVED' ? 'ACCEPTED' : req.status === 'REJECTED' ? 'DECLINED' : req.status === 'AWAITING_PAYMENT' ? 'AWAITING PAY' : 'PENDING'}
                                     </Text>
                                   </View>
                                 </View>
@@ -2265,17 +2317,19 @@ export default function GroupOrganizerScreen() {
                               </View>
                             ) : null}
 
-                            {req.status === 'PENDING' && (
+                            {(req.status === 'PENDING' || req.status === 'AWAITING_PAYMENT') && (
                               <View style={styles.requestActionRow}>
-                                <TouchableOpacity
-                                  style={styles.requestAcceptBtn}
-                                  onPress={() => handleApproveRequest(req.id, req.applicantName || 'Traveler', req.applicantAvatar || '')}
-                                  activeOpacity={0.8}
-                                  accessibilityRole="button"
-                                >
-                                  <Check size={14} color={C.white} />
-                                  <Text style={styles.requestAcceptBtnText}>Accept Request</Text>
-                                </TouchableOpacity>
+                                {req.status === 'PENDING' && (
+                                  <TouchableOpacity
+                                    style={styles.requestAcceptBtn}
+                                    onPress={() => handleApproveRequest(req.id, req.applicantName || 'Traveler', req.applicantAvatar || '')}
+                                    activeOpacity={0.8}
+                                    accessibilityRole="button"
+                                  >
+                                    <Check size={14} color={C.white} />
+                                    <Text style={styles.requestAcceptBtnText}>Accept Request</Text>
+                                  </TouchableOpacity>
+                                )}
                                 <TouchableOpacity
                                   style={styles.requestRejectBtn}
                                   onPress={() => handleRejectRequest(req.id, req.applicantName || 'Traveler')}
@@ -2902,7 +2956,170 @@ export default function GroupOrganizerScreen() {
                     </View>
                   </Modal>
                 </View>
-              )}{/* ========================================================
+              )}
+
+              {/* ========================================================
+              CREATION OPTION: CHECKPOINT GUIDES
+              ======================================================== */}
+              {creationSubTab === 'checkpoints' && (
+                <View style={{ gap: 10 }}>
+                  <View style={styles.membersHeaderRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.membersTitle}>{t('groupOrganizer.checkpointGuidesTitle')}</Text>
+                      <Text style={styles.membersSub}>{t('groupOrganizer.checkpointGuidesSub')}</Text>
+                    </View>
+                  </View>
+
+                  {timelineLoading ? (
+                    <View style={styles.emptyMembersState}>
+                      <ActivityIndicator color={C.blue} />
+                      <Text style={styles.emptyMembersSub}>{t('groupOrganizer.loadingCheckpoints')}</Text>
+                    </View>
+                  ) : timelineError ? (
+                    <View style={styles.emptyMembersState}>
+                      <MapPin size={32} color={C.textMuted} />
+                      <Text style={styles.emptyMembersTitle}>{timelineError}</Text>
+                      <TouchableOpacity
+                        onPress={() => selectedCreation && fetchTripTimeline(selectedCreation.id)}
+                        accessibilityRole="button"
+                      >
+                        <Text style={[styles.emptyMembersSub, { color: C.blueText, marginTop: 6 }]}>
+                          {t('groupOrganizer.retry')}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : timelineStops.length === 0 ? (
+                    <View style={styles.emptyMembersState}>
+                      <MapPin size={32} color={C.textMuted} />
+                      <Text style={styles.emptyMembersTitle}>{t('groupOrganizer.noCheckpointsTitle')}</Text>
+                      <Text style={styles.emptyMembersSub}>{t('groupOrganizer.noCheckpointsDesc')}</Text>
+                    </View>
+                  ) : (
+                    <View style={{ gap: 8 }}>
+                      {[...timelineStops]
+                        .sort((a, b) => a.order - b.order)
+                        .map((stop) => (
+                          <View key={stop.id} style={styles.stopGuideCard}>
+                            <View style={styles.stopGuideHeaderRow}>
+                              <View style={{ flex: 1 }}>
+                                <Text style={styles.stopGuideStopLabel}>
+                                  {t('groupOrganizer.checkpointStopNumber', { number: stop.order })}
+                                </Text>
+                                <Text style={styles.stopGuideCityText}>{stop.city}</Text>
+                                {stop.stayDays != null && (
+                                  <Text style={styles.memberNoMetaText}>
+                                    {t('groupOrganizer.daysCount', { count: stop.stayDays })}
+                                  </Text>
+                                )}
+                              </View>
+                              <TouchableOpacity
+                                style={styles.assignGuideBtn}
+                                onPress={() => openGuidePicker(stop.id)}
+                                activeOpacity={0.8}
+                                accessibilityRole="button"
+                              >
+                                <Plus size={12} color={C.white} />
+                                <Text style={styles.assignGuideBtnText}>{t('groupOrganizer.assignGuide')}</Text>
+                              </TouchableOpacity>
+                            </View>
+
+                            {stop.assignedGuides.length === 0 ? (
+                              <Text style={styles.memberNoMetaText}>{t('groupOrganizer.noGuidesAssigned')}</Text>
+                            ) : (
+                              <View style={{ gap: 6, marginTop: 8 }}>
+                                {stop.assignedGuides.map((g) => {
+                                  const removeKey = `${stop.id}:${g.guideProfileId}`;
+                                  return (
+                                    <View key={g.guideProfileId} style={styles.assignedGuideChip}>
+                                      <View style={{ flex: 1 }}>
+                                        <Text style={styles.assignedGuideName}>{g.name}</Text>
+                                        {g.note ? (
+                                          <Text style={styles.memberNoMetaText}>{g.note}</Text>
+                                        ) : null}
+                                      </View>
+                                      <TouchableOpacity
+                                        onPress={() => handleUnassignGuide(stop.id, g.guideProfileId)}
+                                        disabled={assigningGuideKey === removeKey}
+                                        style={styles.removeGuideBtn}
+                                        accessibilityRole="button"
+                                        accessibilityLabel={t('groupOrganizer.removeGuide')}
+                                      >
+                                        {assigningGuideKey === removeKey ? (
+                                          <ActivityIndicator size="small" color={C.textSec} />
+                                        ) : (
+                                          <X size={13} color={C.textSec} />
+                                        )}
+                                      </TouchableOpacity>
+                                    </View>
+                                  );
+                                })}
+                              </View>
+                            )}
+                          </View>
+                        ))}
+                    </View>
+                  )}
+
+                  <Sheet
+                    visible={!!guidePickerStopId}
+                    onClose={() => setGuidePickerStopId(null)}
+                    title={t('groupOrganizer.pickAGuide')}
+                  >
+                    {guidesLoading ? (
+                      <ActivityIndicator color={C.blue} style={{ marginVertical: 20 }} />
+                    ) : publicGuides.length === 0 ? (
+                      <Text style={styles.emptyMembersSub}>{t('groupOrganizer.noGuidesAvailable')}</Text>
+                    ) : (
+                      <View style={{ gap: 8 }}>
+                        {publicGuides.map((guide) => {
+                          const pickKey = `${guidePickerStopId}:${guide.id}`;
+                          const alreadyAssigned = timelineStops
+                            .find((s) => s.id === guidePickerStopId)
+                            ?.assignedGuides.some((g) => g.guideProfileId === guide.id);
+                          return (
+                            <TouchableOpacity
+                              key={guide.id}
+                              style={styles.guidePickerRow}
+                              onPress={() => guidePickerStopId && handleAssignGuide(guidePickerStopId, guide)}
+                              disabled={assigningGuideKey === pickKey || !!alreadyAssigned}
+                              activeOpacity={0.8}
+                            >
+                              {guide.avatar ? (
+                                <Image source={{ uri: guide.avatar }} style={styles.memberCardAvatar} />
+                              ) : (
+                                <View style={styles.memberAvatarFallback}>
+                                  <Text style={styles.memberAvatarText}>
+                                    {(guide.name || t('groupOrganizer.unnamedGuide')).charAt(0).toUpperCase()}
+                                  </Text>
+                                </View>
+                              )}
+                              <View style={{ flex: 1, marginLeft: 10 }}>
+                                <Text style={styles.memberCardName}>{guide.name || t('groupOrganizer.unnamedGuide')}</Text>
+                                <Text style={styles.memberNoMetaText}>
+                                  {guide.rating != null
+                                    ? t('groupOrganizer.guideRating', { count: guide.reviewCount, rating: guide.rating })
+                                    : t('groupOrganizer.guideNoRating')}
+                                  {'  •  '}
+                                  {guide.verifiedStatus === 'VERIFIED'
+                                    ? t('groupOrganizer.guideVerified')
+                                    : t('groupOrganizer.guideNotVerified')}
+                                </Text>
+                              </View>
+                              {assigningGuideKey === pickKey ? (
+                                <ActivityIndicator size="small" color={C.blue} />
+                              ) : alreadyAssigned ? (
+                                <Check size={16} color={C.blueText} />
+                              ) : null}
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    )}
+                  </Sheet>
+                </View>
+              )}
+
+              {/* ========================================================
                       CREATION OPTION 5: OVERVIEW & TRIP DETAILS
                       ======================================================== */}
                   {creationSubTab === 'overview' && (() => {
@@ -3484,6 +3701,12 @@ const styles = StyleSheet.create({
   },
   requestStatusPending: {
     backgroundColor: '#FEF3C7',
+  },
+  requestStatusAwaiting: {
+    backgroundColor: '#FEF3C7',
+  },
+  requestStatusAwaitingText: {
+    color: '#D97706',
   },
   requestStatusPendingText: {
     color: '#D97706',
@@ -6106,6 +6329,78 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: C.white,
+  },
+  // ── Checkpoint Guide Assignment Styles ──
+  stopGuideCard: {
+    backgroundColor: C.card,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 12,
+  },
+  stopGuideHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  stopGuideStopLabel: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: C.blueText,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  stopGuideCityText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: C.text,
+    marginTop: 2,
+  },
+  assignGuideBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: C.blue,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  assignGuideBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: C.white,
+  },
+  assignedGuideChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: C.cardAlt,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 8,
+  },
+  assignedGuideName: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: C.text,
+  },
+  removeGuideBtn: {
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  guidePickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: C.card,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 12,
+    padding: 10,
   },
   // ── Checkpoints & Inter-Checkpoint Driving Styles ──
   itineraryFlowHeader: {

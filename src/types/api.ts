@@ -41,6 +41,8 @@ export type NotificationCategory =
   | 'JOIN_REQUEST'
   | 'JOIN_ACCEPTED'
   | 'CHAT_ADDED'
+  | 'PAYMENT_REQUIRED'
+  | 'PAYMENT_SUCCESS'
   | 'HAZARD'
   | 'ANNOUNCEMENT'
   | 'SYSTEM';
@@ -94,6 +96,29 @@ export interface HazardAlert {
   createdAt: IsoDateTime;
 }
 
+/** A hazard found near a specific trip's own route — GET /map/trips/:id/hazards. */
+export interface TripRouteHazard {
+  id: string;
+  title: string;
+  severity: AlertSeverity;
+  category: AlertCategory;
+  location: string;
+  affectedRoute: string;
+  desc: string;
+  precautions: string[];
+  distanceFromRouteKm: number;
+}
+
+/** "All Clear" → Trip-wise Analysis, for one trip. */
+export interface TripHazardReport {
+  tripId: string;
+  tripName: string;
+  clear: boolean;
+  routeResolved: boolean;
+  proximityThresholdKm: number;
+  hazards: TripRouteHazard[];
+}
+
 // ── Destinations and weather ──────────────────────────────────────────
 
 export interface Destination {
@@ -121,6 +146,20 @@ export interface WeatherLocation {
 }
 
 // ── Stories and feed ──────────────────────────────────────────────────
+
+export interface StoryViewerItem {
+  userId: string;
+  name: string;
+  avatar: string | null;
+  hasLiked: boolean;
+  viewedAt: IsoDateTime;
+}
+
+export interface StoryInteractionsResponse {
+  totalViews: number;
+  totalLikes: number;
+  viewers: StoryViewerItem[];
+}
 
 export interface StoryPayload {
   title: string;
@@ -178,14 +217,22 @@ export interface TripExpenses {
   balances: TripExpenseBalance[];
 }
 
-export type JoinRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+export type JoinRequestStatus = 'PENDING' | 'AWAITING_PAYMENT' | 'APPROVED' | 'REJECTED';
 
 export interface JoinRequestSummary {
+  id: string;
   tripId: string;
   status: JoinRequestStatus;
   fromCity: string | null;
   toCity: string | null;
   adjustedPrice: Money | null;
+  /** Family Connect Midway / day-range join — see docs/plan "Nearby, Family
+   *  Connect, Guide-per-checkpoint, Chat & Seat fixes". */
+  familyMemberCount: number;
+  partySize: number;
+  joiningDate: IsoDateTime | null;
+  fromStopId: string | null;
+  toStopId: string | null;
 }
 
 /** Flattened by GET /interactions/incoming-requests — not the raw row. */
@@ -201,6 +248,11 @@ export interface IncomingJoinRequest {
   toCity: string | null;
   adjustedPrice: Money | null;
   createdAt: IsoDateTime;
+  familyMemberCount: number;
+  partySize: number;
+  joiningDate: IsoDateTime | null;
+  fromStopId: string | null;
+  toStopId: string | null;
 }
 
 export interface TripItineraryDay {
@@ -224,6 +276,8 @@ export interface ChatRoomSummary {
   unreadCount: number;
   badge: string;
   lastMessageAt: IsoDateTime;
+  /** This user's own per-room notification mute — see POST /chats/:id/mute. */
+  muted: boolean;
 }
 
 export interface ChatMessage {
@@ -235,8 +289,11 @@ export interface ChatMessage {
   avatar?: string | null;
   content: string;
   timestamp: string;
-  mediaType: 'NONE' | 'IMAGE' | 'VOICE';
+  mediaType: 'NONE' | 'IMAGE' | 'VOICE' | 'LOCATION';
   mediaUrl?: string | null;
+  /** Set only when mediaType is 'LOCATION' — a shared pin's coordinates. */
+  latitude?: number | null;
+  longitude?: number | null;
   createdAt: IsoDateTime;
 }
 
@@ -506,6 +563,7 @@ export interface EmergencyContact {
 export interface FeedItem {
   id: string;
   sourceType: 'STORY' | 'REEL';
+  userId?: string | null;
   /** A reel with no caption has no title. */
   title: string | null;
   content: string;
@@ -569,4 +627,35 @@ export interface TrendingWeatherDestination {
 /** Endpoints whose only job is to succeed; the body carries a message. */
 export interface MessageResponse {
   message: string;
+}
+
+// ── Trip Payments ─────────────────────────────────────────────────────────
+
+export type TripPaymentOrderStatus = 'CREATED' | 'PENDING' | 'CAPTURED' | 'FAILED' | 'REFUNDED';
+
+export interface TripPaymentOrder {
+  id: string;
+  joinRequestId: string;
+  userId: string;
+  amount: Money;
+  status: TripPaymentOrderStatus;
+  gateway: string;
+  razorpayOrderId: string | null;
+  walletDebit: Money | null;
+  gatewayDebit: Money | null;
+  tripName?: string;
+  joinRequestStatus?: JoinRequestStatus;
+  walletBalance?: Money;
+}
+
+export interface InitiatePaymentResult {
+  orderId: string;
+  amount: Money;
+  currency: string;
+  keyId?: string;
+}
+
+export interface VerifyPaymentResult {
+  joinRequestId: string;
+  chatRoomId: string | null;
 }

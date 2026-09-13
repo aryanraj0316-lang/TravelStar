@@ -3,7 +3,7 @@ import { z } from 'zod';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 import { requireUserId } from '../../lib/auth-context';
-import { coordsForCity } from '../../lib/india-city-coords';
+import { coordsForCity, haversineKm } from '../../lib/india-city-coords';
 
 const router = Router();
 
@@ -295,6 +295,98 @@ router.get('/trips/:tripId/route', async (req, res) => {
   } catch (err) {
     logger.error('[Map] Trip route error:', err);
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to load the trip route' } });
+  }
+});
+
+// Trips further from a hazard than this are not "along the route" — the
+// same straight-line honesty caveat as /trips/:tripId/route applies: this is
+// a distance from the nearest route point, not a check against any real
+// road or affected-area polygon (Alert carries no geometry).
+const HAZARD_PROXIMITY_KM = 150;
+
+/**
+ * "All Clear" → Trip-wise Analysis. Cross-references a trip's own route
+ * (same coordinate resolution as GET /trips/:tripId/route, reusing the
+ * timeline-first-then-cities-array fallback and the honest "no invented
+ * coordinates" rule) against every currently active Alert, using the same
+ * coordinate lookup table /map/hazards uses for its pins. This combination
+ * did not exist before — /route and /hazards were previously two unrelated
+ * endpoints with nothing joining them for a specific trip.
+ */
+router.get('/trips/:tripId/hazards', async (req, res) => {
+  const parsed = tripIdParamSchema.safeParse(req.params);
+  if (!parsed.success) {
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid trip id.' } });
+  }
+  try {
+    const trip = await prisma.trip.findUnique({
+      where: { id: parsed.data.tripId },
+      select: {
+        id: true,
+        name: true,
+        cities: true,
+        timeline: { orderBy: { order: 'asc' } },
+      },
+    });
+    if (!trip) {
+      return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found' } });
+    }
+
+    const stopCoords: { lat: number; lng: number }[] =
+      trip.timeline.length > 0
+        ? trip.timeline
+            .map((s) => (s.latitude !== null && s.longitude !== null ? { lat: s.latitude, lng: s.longitude } : coordsForCity(s.city)))
+            .filter((c): c is { lat: number; lng: number; state: string } => c !== null)
+        : trip.cities.map((c) => coordsForCity(c)).filter((c): c is { lat: number; lng: number; state: string } => c !== null);
+
+    const alerts = await prisma.alert.findMany({
+      where: { active: true },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+      select: { id: true, title: true, severity: true, category: true, location: true, affectedRoute: true, desc: true, precautions: true },
+    });
+
+    const hazardsOnRoute = alerts
+      .map((a) => {
+        const alertCoords = coordsForCity(a.location);
+        if (!alertCoords || stopCoords.length === 0) return null;
+        let nearestKm: number | null = null;
+        for (const stop of stopCoords) {
+          const d = haversineKm(alertCoords, stop);
+          if (nearestKm === null || d < nearestKm) nearestKm = d;
+        }
+        if (nearestKm === null || nearestKm > HAZARD_PROXIMITY_KM) return null;
+        return {
+          id: a.id,
+          title: a.title,
+          severity: a.severity,
+          category: a.category,
+          location: a.location,
+          affectedRoute: a.affectedRoute,
+          desc: a.desc,
+          precautions: a.precautions,
+          distanceFromRouteKm: Math.round(nearestKm),
+        };
+      })
+      .filter((h): h is NonNullable<typeof h> => h !== null)
+      .sort((a, b) => a.distanceFromRouteKm - b.distanceFromRouteKm);
+
+    return res.status(200).json({
+      ok: true,
+      data: {
+        tripId: trip.id,
+        tripName: trip.name,
+        // False (not "clear") whenever the route could not be resolved at
+        // all — an unresolved route can't honestly be called hazard-free.
+        clear: stopCoords.length > 0 && hazardsOnRoute.length === 0,
+        routeResolved: stopCoords.length > 0,
+        proximityThresholdKm: HAZARD_PROXIMITY_KM,
+        hazards: hazardsOnRoute,
+      },
+    });
+  } catch (err) {
+    logger.error('[Map] Trip hazards error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to load hazards for this trip' } });
   }
 });
 

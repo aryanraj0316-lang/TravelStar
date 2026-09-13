@@ -272,7 +272,7 @@ router.get('/trending', async (req, res) => {
 
     const withCoords = destinations
       .map((d) => ({ destination: d, coords: coordsForCity(d.name) }))
-      .filter((d): d is { destination: (typeof destinations)[number]; coords: { lat: number; lng: number } } => {
+      .filter((d): d is { destination: (typeof destinations)[number]; coords: { lat: number; lng: number; state: string } } => {
         if (!d.coords) logger.warn(`[Weather] No coordinates for trending destination "${d.destination.name}"`);
         return d.coords !== null;
       });

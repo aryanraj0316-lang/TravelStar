@@ -7,7 +7,7 @@ import { logger } from '../../lib/logger';
 import { requireUserId } from '../../lib/auth-context';
 import { claimSeatAndJoin } from '../../services/trip-membership';
 import { calculateMidwayPrice } from '../../services/midway-pricing';
-import { coordsForCity, haversineKm } from '../../lib/india-city-coords';
+import { coordsForCity, haversineKm, stateForCity } from '../../lib/india-city-coords';
 import { createTripCoverUploadUrl, ObjectStorageNotConfiguredError } from '../../lib/object-storage';
 import { sendPushToUsers } from '../../lib/push';
 
@@ -216,10 +216,21 @@ router.get('/', async (req, res) => {
 // project), and the list is sorted nearest-first. Trips with no
 // recognisable city sort last with distanceKm: null. A real
 // routing/geocoding integration would replace the straight-line math.
+//
+// radiusKm/city/state are three independent, combinable filters — not one
+// mode the caller picks between. radiusKm requires an origin (lat/lng) and
+// excludes trips with no computable distance, since "within N km" is
+// meaningless without a distance. city/state match against ANY city on the
+// trip's route (t.cities), not just the nearest one, so a trip is not
+// hidden from a state filter just because its nearest-to-user city happens
+// to be in a different state than one further along its own route.
 const nearbyQuerySchema = z.object({
   lat: z.coerce.number().min(-90).max(90).optional(),
   lng: z.coerce.number().min(-180).max(180).optional(),
   limit: z.coerce.number().int().min(1).max(MAX_PAGE_SIZE).optional(),
+  radiusKm: z.coerce.number().positive().max(5000).optional(),
+  city: z.string().trim().min(1).max(200).optional(),
+  state: z.string().trim().min(1).max(200).optional(),
 });
 
 router.get('/nearby', async (req, res) => {
@@ -234,9 +245,11 @@ router.get('/nearby', async (req, res) => {
       },
     });
   }
-  const { lat, lng, limit } = parsed.data;
+  const { lat, lng, limit, radiusKm, city, state } = parsed.data;
   const origin = lat !== undefined && lng !== undefined ? { lat, lng } : null;
   const tokenUserId = req.user?.id ?? null;
+  const cityFilter = city?.trim().toLowerCase();
+  const stateFilter = state?.trim().toLowerCase();
 
   try {
     const dbTrips = await prisma.trip.findMany({
@@ -247,40 +260,55 @@ router.get('/nearby', async (req, res) => {
       },
       include: TRIP_INCLUDE,
       orderBy: { startDate: 'asc' },
-      take: limit ?? DEFAULT_PAGE_SIZE,
+      // City/state/radius filtering happens in application code below (it
+      // needs the coordinate lookup table), so this over-fetches a bounded
+      // page rather than the final `limit` when any filter is active —
+      // otherwise a radius/city/state filter could legitimately empty an
+      // already-limited page even though matching trips exist further down.
+      take: cityFilter || stateFilter || radiusKm ? MAX_PAGE_SIZE : (limit ?? DEFAULT_PAGE_SIZE),
     });
 
-    const annotated = dbTrips.map((t) => {
-      const base = mapTrip(t, tokenUserId);
-      let distanceKm: number | null = null;
-      let nearestCity: string | null = null;
-      if (origin) {
-        for (const city of t.cities) {
-          const c = coordsForCity(city);
-          if (!c) continue;
-          const d = haversineKm(origin, c);
-          if (distanceKm === null || d < distanceKm) {
-            distanceKm = d;
-            nearestCity = city;
+    const filtered = dbTrips
+      .map((t) => {
+        const base = mapTrip(t, tokenUserId);
+        let distanceKm: number | null = null;
+        let nearestCity: string | null = null;
+        if (origin) {
+          for (const c of t.cities) {
+            const coords = coordsForCity(c);
+            if (!coords) continue;
+            const d = haversineKm(origin, coords);
+            if (distanceKm === null || d < distanceKm) {
+              distanceKm = d;
+              nearestCity = c;
+            }
           }
         }
-      }
-      return {
-        ...base,
-        distanceKm: distanceKm === null ? null : Math.round(distanceKm),
-        distanceIsApproximate: distanceKm !== null,
-        nearestCity,
-      };
-    });
+        return {
+          ...base,
+          distanceKm: distanceKm === null ? null : Math.round(distanceKm),
+          distanceIsApproximate: distanceKm !== null,
+          nearestCity,
+          _cities: t.cities,
+        };
+      })
+      .filter((trip) => {
+        if (radiusKm !== undefined && (trip.distanceKm === null || trip.distanceKm > radiusKm)) return false;
+        if (cityFilter && !trip._cities.some((c) => c.trim().toLowerCase() === cityFilter)) return false;
+        if (stateFilter && !trip._cities.some((c) => stateForCity(c)?.toLowerCase() === stateFilter)) return false;
+        return true;
+      });
 
     if (origin) {
-      annotated.sort((a, b) => {
+      filtered.sort((a, b) => {
         if (a.distanceKm === null && b.distanceKm === null) return 0;
         if (a.distanceKm === null) return 1;
         if (b.distanceKm === null) return -1;
         return a.distanceKm - b.distanceKm;
       });
     }
+
+    const annotated = filtered.slice(0, limit ?? DEFAULT_PAGE_SIZE).map(({ _cities, ...trip }) => trip);
 
     return res.status(200).json({ ok: true, data: annotated });
   } catch (err) {
@@ -352,7 +380,10 @@ router.get('/:id', async (req, res) => {
       where: { id },
       include: {
         ...TRIP_INCLUDE,
-        timeline: { orderBy: { order: 'asc' } },
+        timeline: {
+          orderBy: { order: 'asc' },
+          include: { assignedGuides: { include: { guideProfile: { include: { user: { include: { profile: true } } } } } } },
+        },
         checklist: { orderBy: { order: 'asc' } },
       },
     });
@@ -364,7 +395,12 @@ router.get('/:id', async (req, res) => {
       data: {
         ...mapTrip(t, tokenUserId),
         description: t.description,
+        // `id` is required by every checkpoint picker downstream (Family
+        // Connect Midway's stop selector, the join-request fromStopId/
+        // toStopId pair, the per-checkpoint guide picker) — it was omitted
+        // here before those features existed because nothing read it yet.
         timeline: t.timeline.map((s) => ({
+          id: s.id,
           order: s.order,
           city: s.city,
           stayDays: s.stayDays,
@@ -373,6 +409,13 @@ router.get('/:id', async (req, res) => {
           activities: s.activities,
           latitude: s.latitude,
           longitude: s.longitude,
+          assignedGuides: s.assignedGuides.map((g) => ({
+            guideProfileId: g.guideProfileId,
+            name: g.guideProfile.user.profile
+              ? `${g.guideProfile.user.profile.firstName} ${g.guideProfile.user.profile.lastName}`.trim()
+              : 'Guide',
+            note: g.note,
+          })),
         })),
         checklist: t.checklist.map((c) => ({ id: c.id, order: c.order, label: c.label })),
       },
@@ -380,6 +423,99 @@ router.get('/:id', async (req, res) => {
   } catch (err) {
     logger.error('[Trips] Get by id error:', err);
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve trip' } });
+  }
+});
+
+// ──────────────────────────────────────────────────────────
+//  PER-CHECKPOINT GUIDE ASSIGNMENT
+//
+// Organizer-initiated: there is no guide-facing "my availability" console
+// in this app, so a guide cannot offer themselves at a stop — only the
+// trip's own organizer, who already owns the Timeline tab, can. "Find a
+// Guide" and the join-request checkpoint pickers read this back via the
+// `assignedGuides` array GET /trips/:id already returns per stop.
+// ──────────────────────────────────────────────────────────
+
+const assignGuideSchema = z.object({
+  guideProfileId: z.string().uuid(),
+  note: z.string().trim().max(500).optional(),
+});
+
+router.post('/:id/timeline/:stopId/guide', async (req, res) => {
+  const paramsParsed = z.object({ id: z.string().uuid(), stopId: z.string().uuid() }).safeParse(req.params);
+  if (!paramsParsed.success) {
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid trip or checkpoint id.' } });
+  }
+  const bodyParsed = assignGuideSchema.safeParse(req.body);
+  if (!bodyParsed.success) {
+    return res.status(400).json({
+      ok: false,
+      error: { code: 'VALIDATION_FAILED', message: 'Invalid guide.', details: bodyParsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })) },
+    });
+  }
+  const { id: tripId, stopId } = paramsParsed.data;
+  const { guideProfileId, note } = bodyParsed.data;
+  const userId = requireUserId(req);
+
+  try {
+    const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { creatorId: true } });
+    if (!trip) {
+      return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found.' } });
+    }
+    if (trip.creatorId !== userId) {
+      return res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'Only this trip\'s organizer can assign a checkpoint guide.' } });
+    }
+
+    const stop = await prisma.tripTimelineStop.findUnique({ where: { id: stopId }, select: { id: true, tripId: true } });
+    if (!stop || stop.tripId !== tripId) {
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Checkpoint not found on this trip.' } });
+    }
+
+    const guide = await prisma.guideProfile.findUnique({ where: { id: guideProfileId }, select: { id: true } });
+    if (!guide) {
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Guide not found.' } });
+    }
+
+    const assignment = await prisma.tripTimelineStopGuide.upsert({
+      where: { tripTimelineStopId_guideProfileId: { tripTimelineStopId: stopId, guideProfileId } },
+      create: { tripTimelineStopId: stopId, guideProfileId, note: note ?? null },
+      update: { note: note ?? null },
+    });
+
+    return res.status(201).json({ ok: true, data: assignment });
+  } catch (err) {
+    logger.error('[Trips] Assign checkpoint guide error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to assign guide.' } });
+  }
+});
+
+router.delete('/:id/timeline/:stopId/guide/:guideProfileId', async (req, res) => {
+  const parsedParams = z
+    .object({ id: z.string().uuid(), stopId: z.string().uuid(), guideProfileId: z.string().uuid() })
+    .safeParse(req.params);
+  if (!parsedParams.success) {
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid ids.' } });
+  }
+  const { id: tripId, stopId, guideProfileId } = parsedParams.data;
+  const userId = requireUserId(req);
+
+  try {
+    const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { creatorId: true } });
+    if (!trip) {
+      return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found.' } });
+    }
+    if (trip.creatorId !== userId) {
+      return res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'Only this trip\'s organizer can remove a checkpoint guide.' } });
+    }
+
+    await prisma.tripTimelineStopGuide.deleteMany({
+      where: { tripTimelineStopId: stopId, guideProfileId },
+    });
+
+    return res.status(200).json({ ok: true, data: { message: 'Guide unassigned from checkpoint.' } });
+  } catch (err) {
+    logger.error('[Trips] Unassign checkpoint guide error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to unassign guide.' } });
   }
 });
 

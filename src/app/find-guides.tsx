@@ -3,13 +3,17 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FlatList, RefreshControl, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import ArrowLeft from 'lucide-react-native/icons/arrow-left';
 import BadgeCheck from 'lucide-react-native/icons/badge-check';
+import ChevronDown from 'lucide-react-native/icons/chevron-down';
+import ChevronRight from 'lucide-react-native/icons/chevron-right';
+import ChevronUp from 'lucide-react-native/icons/chevron-up';
 import Clock from 'lucide-react-native/icons/clock';
 import MapPin from 'lucide-react-native/icons/map-pin';
 import Star from 'lucide-react-native/icons/star';
 import { apiService } from '@/services/api';
+import type { TripTimelineStop } from '@/services/api';
 import { queryKeys } from '@/lib/query-keys';
 import { sectionState } from '@/lib/query-state';
 import { formatINR } from '@/lib/money';
@@ -120,6 +124,51 @@ function GuideCard({ guide, onPress }: { guide: PublicGuide; onPress: (g: Public
   );
 }
 
+function CheckpointRow({
+  stop,
+  position,
+  onPress,
+}: {
+  stop: TripTimelineStop;
+  position: number;
+  onPress: (s: TripTimelineStop) => void;
+}) {
+  const { t } = useTranslation();
+  const hasGuides = stop.assignedGuides.length > 0;
+
+  return (
+    <TouchableOpacity
+      style={styles.checkpointRow}
+      activeOpacity={hasGuides ? 0.85 : 1}
+      disabled={!hasGuides}
+      onPress={() => onPress(stop)}
+      accessibilityRole={hasGuides ? 'button' : undefined}
+      accessibilityLabel={stop.city}
+    >
+      <View style={styles.checkpointOrderBadge}>
+        <Text style={styles.checkpointOrderText}>{position}</Text>
+      </View>
+      <View style={styles.checkpointBody}>
+        <Text style={styles.checkpointCity}>{stop.city}</Text>
+        {hasGuides ? (
+          <View style={styles.guideChipRow}>
+            {stop.assignedGuides.map((g) => (
+              <View key={g.guideProfileId} style={styles.guideChip}>
+                <Text style={styles.guideChipText} numberOfLines={1}>
+                  {g.name}
+                </Text>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <Text style={styles.noGuideText}>{t('findGuides.noGuideAssigned')}</Text>
+        )}
+      </View>
+      {hasGuides && <ChevronRight size={16} color={C.textMuted} />}
+    </TouchableOpacity>
+  );
+}
+
 const keyExtractor = (g: PublicGuide) => g.id;
 const listFooter = <View style={{ height: 90 }} />;
 
@@ -127,11 +176,16 @@ export default function FindGuidesScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { isLoggedIn } = useApp();
+  const { tripId } = useLocalSearchParams<{ tripId?: string }>();
+  const { isLoggedIn, joinTrip, requestedTrips, joinRequestStatuses } = useApp();
 
   const [selected, setSelected] = useState<PublicGuide | null>(null);
   const [selectedPackageId, setSelectedPackageId] = useState<string | null>(null);
   const [travelDate, setTravelDate] = useState<Date | null>(null);
+  const [checkpointsExpanded, setCheckpointsExpanded] = useState(true);
+  const [joinStop, setJoinStop] = useState<TripTimelineStop | null>(null);
+  const [joinFromStopId, setJoinFromStopId] = useState<string | null>(null);
+  const [joinToStopId, setJoinToStopId] = useState<string | null>(null);
 
   const guidesQuery = useQuery({
     queryKey: queryKeys.guides(),
@@ -139,6 +193,17 @@ export default function FindGuidesScreen() {
   });
   const guides = guidesQuery.data ?? [];
   const listState = sectionState(guidesQuery, guides.length > 0);
+
+  const tripDetailQuery = useQuery({
+    queryKey: queryKeys.trip(tripId ?? ''),
+    queryFn: () => apiService.getTripDetail(tripId!),
+    enabled: !!tripId,
+  });
+  const trip = tripDetailQuery.data ?? null;
+  const timelineStops = [...(trip?.timeline ?? [])].sort((a, b) => a.order - b.order);
+
+  const tripAlreadyRequested = tripId ? requestedTrips.has(tripId) : false;
+  const tripRequestStatus = tripId ? joinRequestStatuses.get(tripId)?.status : undefined;
 
   const packagesQuery = useQuery({
     queryKey: queryKeys.guidePackages(selected?.id ?? ''),
@@ -183,6 +248,40 @@ export default function FindGuidesScreen() {
 
   const canBook = selectedPackageId !== null && travelDate !== null && !booking.isPending;
 
+  const openJoinStop = (stop: TripTimelineStop) => {
+    setJoinStop(stop);
+    setJoinFromStopId(stop.id);
+    setJoinToStopId(stop.id);
+  };
+
+  const closeJoinSheet = () => {
+    setJoinStop(null);
+    setJoinFromStopId(null);
+    setJoinToStopId(null);
+  };
+
+  const confirmJoinCheckpoint = () => {
+    if (!isLoggedIn) {
+      closeJoinSheet();
+      router.push('/auth');
+      return;
+    }
+    if (!tripId || !joinFromStopId || !joinToStopId) return;
+    const fromStop = timelineStops.find((s) => s.id === joinFromStopId);
+    const toStop = timelineStops.find((s) => s.id === joinToStopId);
+    if (!fromStop || !toStop) return;
+    // The server owns price math from fromStopId/toStopId; fromCity/toCity
+    // ride alongside only because its price-preview formula still keys off them.
+    joinTrip(tripId, {
+      midway: true,
+      fromCity: fromStop.city,
+      toCity: toStop.city,
+      fromStopId: fromStop.id,
+      toStopId: toStop.id,
+    });
+    closeJoinSheet();
+  };
+
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor={C.bg} />
@@ -196,9 +295,46 @@ export default function FindGuidesScreen() {
         >
           <ArrowLeft size={18} color={C.text} />
         </TouchableOpacity>
-        <Text style={styles.topNavTitle}>{t('findGuides.title')}</Text>
+        <Text style={styles.topNavTitle}>
+          {trip ? t('findGuides.titleForTrip', { name: trip.name }) : t('findGuides.title')}
+        </Text>
         <View style={{ width: MIN_TOUCH_TARGET }} />
       </View>
+
+      {tripId && (
+        <View style={styles.checkpointsSection}>
+          <TouchableOpacity
+            style={styles.checkpointsHeader}
+            onPress={() => setCheckpointsExpanded((e) => !e)}
+            accessibilityRole="button"
+            accessibilityLabel={t('findGuides.checkpointsOnThisTrip')}
+            accessibilityState={{ expanded: checkpointsExpanded }}
+          >
+            <Text style={styles.checkpointsTitle}>{t('findGuides.checkpointsOnThisTrip')}</Text>
+            {checkpointsExpanded ? (
+              <ChevronUp size={18} color={C.textMuted} />
+            ) : (
+              <ChevronDown size={18} color={C.textMuted} />
+            )}
+          </TouchableOpacity>
+
+          {checkpointsExpanded && (
+            <View style={styles.checkpointsList}>
+              {tripDetailQuery.isPending ? (
+                <Text style={styles.sheetMuted}>{t('findGuides.loadingCheckpoints')}</Text>
+              ) : tripDetailQuery.isError ? (
+                <Text style={styles.sheetMuted}>{t('findGuides.checkpointsLoadFailed')}</Text>
+              ) : timelineStops.length === 0 ? (
+                <Text style={styles.sheetMuted}>{t('findGuides.noCheckpoints')}</Text>
+              ) : (
+                timelineStops.map((stop, idx) => (
+                  <CheckpointRow key={stop.id} stop={stop} position={idx + 1} onPress={openJoinStop} />
+                ))
+              )}
+            </View>
+          )}
+        </View>
+      )}
 
       {listState.kind === 'loading' ? (
         <ScreenLoading label={t('findGuides.loading')} />
@@ -325,6 +461,96 @@ export default function FindGuidesScreen() {
           </View>
         )}
       </Sheet>
+
+      <Sheet
+        visible={joinStop !== null}
+        onClose={closeJoinSheet}
+        title={joinStop ? t('findGuides.requestJoinForCheckpoint', { city: joinStop.city }) : ''}
+      >
+        {joinStop && (
+          <View style={styles.sheetBody}>
+            <Text style={styles.sheetSectionTitle}>{t('findGuides.assignedGuides')}</Text>
+            <View style={styles.guideChipRow}>
+              {joinStop.assignedGuides.map((g) => (
+                <View key={g.guideProfileId} style={styles.guideChip}>
+                  <Text style={styles.guideChipText}>{g.name}</Text>
+                </View>
+              ))}
+            </View>
+
+            <Text style={styles.sheetSectionTitle}>{t('findGuides.joinFromCheckpoint')}</Text>
+            <FlatList
+              horizontal
+              data={timelineStops}
+              keyExtractor={(s) => s.id}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.dateStrip}
+              renderItem={({ item }) => {
+                const isSelected = joinFromStopId === item.id;
+                return (
+                  <TouchableOpacity
+                    style={[styles.dateChip, isSelected && styles.dateChipSelected]}
+                    onPress={() => {
+                      setJoinFromStopId(item.id);
+                      const currentTo = timelineStops.find((s) => s.id === joinToStopId);
+                      if (!currentTo || currentTo.order < item.order) setJoinToStopId(item.id);
+                    }}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: isSelected }}
+                    accessibilityLabel={item.city}
+                  >
+                    <Text style={[styles.dateChipText, isSelected && styles.dateChipTextSelected]}>{item.city}</Text>
+                  </TouchableOpacity>
+                );
+              }}
+            />
+
+            <Text style={styles.sheetSectionTitle}>{t('findGuides.joinToCheckpoint')}</Text>
+            <FlatList
+              horizontal
+              data={timelineStops.filter((s) => {
+                const fromStop = timelineStops.find((f) => f.id === joinFromStopId);
+                return !fromStop || s.order >= fromStop.order;
+              })}
+              keyExtractor={(s) => s.id}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.dateStrip}
+              renderItem={({ item }) => {
+                const isSelected = joinToStopId === item.id;
+                return (
+                  <TouchableOpacity
+                    style={[styles.dateChip, isSelected && styles.dateChipSelected]}
+                    onPress={() => setJoinToStopId(item.id)}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: isSelected }}
+                    accessibilityLabel={item.city}
+                  >
+                    <Text style={[styles.dateChipText, isSelected && styles.dateChipTextSelected]}>{item.city}</Text>
+                  </TouchableOpacity>
+                );
+              }}
+            />
+
+            <Text style={styles.sheetMuted}>{t('findGuides.checkpointRequestExplainer')}</Text>
+
+            {tripAlreadyRequested ? (
+              <Text style={styles.requestSentText}>
+                {tripRequestStatus === 'APPROVED'
+                  ? t('findGuides.requestApproved')
+                  : tripRequestStatus === 'AWAITING_PAYMENT'
+                    ? t('findGuides.requestAwaitingPayment')
+                    : t('findGuides.requestSent')}
+              </Text>
+            ) : (
+              <Button
+                label={isLoggedIn ? t('findGuides.requestJoin') : t('findGuides.signInToJoin')}
+                onPress={confirmJoinCheckpoint}
+                disabled={isLoggedIn && (!joinFromStopId || !joinToStopId)}
+              />
+            )}
+          </View>
+        )}
+      </Sheet>
     </SafeAreaView>
   );
 }
@@ -420,4 +646,56 @@ const styles = StyleSheet.create({
   dateChipSelected: { borderColor: C.blue, backgroundColor: 'rgba(59,130,246,0.12)' },
   dateChipText: { fontSize: 12, fontWeight: '600', color: C.textSec },
   dateChipTextSelected: { color: C.blue, fontWeight: '800' },
+  checkpointsSection: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+    backgroundColor: C.card,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  checkpointsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 14,
+    minHeight: MIN_TOUCH_TARGET,
+  },
+  checkpointsTitle: { fontSize: 13.5, fontWeight: '800', color: C.text },
+  checkpointsList: { paddingHorizontal: 12, paddingBottom: 12, gap: 8 },
+  checkpointRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: C.cardAlt,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 10,
+  },
+  checkpointOrderBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: C.card,
+    borderWidth: 1,
+    borderColor: C.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkpointOrderText: { fontSize: 11, fontWeight: '800', color: C.textSec },
+  checkpointBody: { flex: 1, gap: 4 },
+  checkpointCity: { fontSize: 13.5, fontWeight: '700', color: C.text },
+  guideChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  guideChip: {
+    backgroundColor: 'rgba(16,185,129,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(16,185,129,0.3)',
+    borderRadius: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  guideChipText: { fontSize: 11, fontWeight: '700', color: C.greenText },
+  noGuideText: { fontSize: 11.5, color: C.textMuted, fontStyle: 'italic' },
+  requestSentText: { fontSize: 12.5, fontWeight: '700', color: C.greenText, textAlign: 'center' },
 });

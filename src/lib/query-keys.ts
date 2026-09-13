@@ -20,6 +20,8 @@ export const queryKeys = {
   likedTrips: () => ['trips', 'liked'] as const,
   myTrips: () => ['trips', 'mine'] as const,
   tripExpenses: (tripId: string) => ['trips', tripId, 'expenses'] as const,
+  /** "All Clear" → Trip-wise Analysis: GET /map/trips/:id/hazards. */
+  tripHazards: (tripId: string) => ['trips', tripId, 'hazards'] as const,
 
   joinRequests: () => ['join-requests'] as const,
   incomingRequests: () => ['join-requests', 'incoming'] as const,

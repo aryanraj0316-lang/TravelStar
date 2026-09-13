@@ -5,6 +5,7 @@ export interface InAppNotif {
   chatRoomId?: string;
   tripId?: string;
   category?: string;
+  joinRequestId?: string;
 }
 
 interface EventMap {

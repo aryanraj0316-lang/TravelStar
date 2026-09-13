@@ -78,14 +78,22 @@ export function createSocketServer(httpServer: HttpServer): Server {
     const sendMessageSchema = z.object({
       chatRoomId: z.string().min(1),
       content: z.string().max(4000).default(''),
-      mediaType: z.enum(['NONE', 'IMAGE', 'VOICE']).optional(),
+      mediaType: z.enum(['NONE', 'IMAGE', 'VOICE', 'LOCATION']).optional(),
       mediaUrl: z.string().nullable().optional(),
+      // Set only for mediaType: 'LOCATION' — a shared meeting-point/live pin.
+      latitude: z.number().min(-90).max(90).nullable().optional(),
+      longitude: z.number().min(-180).max(180).nullable().optional(),
     });
 
     socket.on('sendMessage', async (raw: unknown) => {
       const parsed = sendMessageSchema.safeParse(raw);
       if (!parsed.success) return;
-      const { chatRoomId, content, mediaType, mediaUrl } = parsed.data;
+      const { chatRoomId, content, mediaType, mediaUrl, latitude, longitude } = parsed.data;
+      const isLocation = mediaType === 'LOCATION';
+      if (isLocation && (latitude == null || longitude == null)) {
+        socket.emit('sendMessageError', { message: 'Location messages require latitude and longitude.' });
+        return;
+      }
 
       try {
         // Never accept sender identity from the payload — the socket's own
@@ -106,6 +114,8 @@ export function createSocketServer(httpServer: HttpServer): Server {
               content: content || '',
               mediaType: mediaType || 'NONE',
               mediaUrl: mediaUrl || null,
+              latitude: isLocation ? (latitude ?? null) : null,
+              longitude: isLocation ? (longitude ?? null) : null,
             },
           }),
           prisma.user.findUnique({ where: { id: userId }, include: { profile: true } }),
@@ -130,6 +140,8 @@ export function createSocketServer(httpServer: HttpServer): Server {
           timestamp: savedMsg.createdAt.toISOString(),
           createdAt: savedMsg.createdAt.toISOString(),
           mediaType: savedMsg.mediaType || 'NONE',
+          latitude: savedMsg.latitude,
+          longitude: savedMsg.longitude,
         };
 
         io.to(chatRoomId).emit('messageReceived', { roomId: chatRoomId, message: newMsg });

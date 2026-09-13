@@ -48,6 +48,7 @@ router.get('/', async (req, res) => {
     const normalizedStories = stories.map((s) => ({
       id: s.id,
       sourceType: 'STORY' as const,
+      userId: s.userId ?? null,
       title: s.title,
       coverImg: s.coverImg,
       authorName: s.authorName,

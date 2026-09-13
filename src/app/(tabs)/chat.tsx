@@ -12,6 +12,8 @@ import AlertCircle from 'lucide-react-native/icons/circle-alert';
 import AlertTriangle from 'lucide-react-native/icons/triangle-alert';
 import ArrowLeft from 'lucide-react-native/icons/arrow-left';
 import BarChart2 from 'lucide-react-native/icons/chart-no-axes-column';
+import Bell from 'lucide-react-native/icons/bell';
+import BellOff from 'lucide-react-native/icons/bell-off';
 import Calendar from 'lucide-react-native/icons/calendar';
 import Check from 'lucide-react-native/icons/check';
 import CheckCircle from 'lucide-react-native/icons/circle-check-big';
@@ -49,12 +51,15 @@ import {
   Image,
   Keyboard,
   LayoutAnimation,
+  Modal,
   PanResponder,
   Platform,
+  Pressable,
   FlatList,
   Alert,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -277,6 +282,8 @@ interface ChatRoom {
   myRole?: string; // 'Organizer' | 'Member' – current user's role in this room
   tripName?: string; // for DMs – the shared trip name
   lastMessageAt?: string;
+  /** This user's own per-room notification mute — see POST /chats/:id/mute. */
+  muted?: boolean;
 }
 
 const SENDER_ROLE_LABEL_KEYS: Record<string, string> = {
@@ -366,6 +373,7 @@ function MessageBubble({
   onToggleTranslate,
   onPollVote,
   onOpenMap,
+  onOpenImage,
   canResolveSOS,
   onResolveSOS,
   members,
@@ -377,7 +385,8 @@ function MessageBubble({
   onShowOptions: (msg: CustomMessage) => void;
   onToggleTranslate: (id: string) => void;
   onPollVote: (msgId: string, optionIdx: number) => void;
-  onOpenMap: () => void;
+  onOpenMap: (msg: CustomMessage) => void;
+  onOpenImage: (uri: string) => void;
   // Resolving an SOS is an organizer/guide action, and it clears the trip's
   // *active* alert rather than this message — hence no message argument.
   canResolveSOS: boolean;
@@ -533,7 +542,7 @@ function MessageBubble({
               </View>
               <TouchableOpacity
                 style={styles.locationActionTouch}
-                onPress={onOpenMap}
+                onPress={() => onOpenMap(msg)}
                 hitSlop={{ top: 9, bottom: 9, left: 9, right: 9 }}
                 accessibilityRole="button"
                 accessibilityLabel={t('chat.openLiveNavigation')}
@@ -565,7 +574,15 @@ function MessageBubble({
             </View>
           ) : msg.type === 'image' ? (
             <View style={[styles.imageCard, msg.isMe ? styles.imageCardMe : styles.imageCardOther]}>
-              <View style={styles.imageMediaWrapper}>
+              <Pressable
+                style={styles.imageMediaWrapper}
+                onPress={() => {
+                  const uri = msg.mediaUrl || (msg.content && !msg.content.includes('📷') ? msg.content : undefined);
+                  if (uri) onOpenImage(uri);
+                }}
+                accessibilityRole="imagebutton"
+                accessibilityLabel={t('chat.viewImageLabel')}
+              >
                 <Image
                   source={{ uri: msg.mediaUrl || (msg.content && !msg.content.includes('📷') ? msg.content : undefined) }}
                   style={styles.imageMedia}
@@ -574,7 +591,7 @@ function MessageBubble({
                 <View style={styles.imageTimeBadge}>
                   <Text style={styles.imageTimeText}>{formatChatTime(msg.createdAt || msg.timestamp)}</Text>
                 </View>
-              </View>
+              </Pressable>
               {msg.content &&
               msg.content !== '📷 Photo' &&
               !msg.content.includes('📷') &&
@@ -603,7 +620,7 @@ function MessageBubble({
               <View style={styles.sosAlertBtnRow}>
                 <TouchableOpacity
                   style={[styles.sosAlertBtn, { backgroundColor: 'rgba(255,255,255,0.15)' }]}
-                  onPress={onOpenMap}
+                  onPress={() => onOpenMap(msg)}
                   accessibilityRole="button"
                   accessibilityLabel={t('chat.showOnMap')}
                 >
@@ -804,6 +821,7 @@ function ChatScreen() {
     setTyping,
     typingUser,
     clearChatUnread,
+    checkUnreadChats,
     refreshTrips,
     isLoggedIn,
   } = useApp();
@@ -849,6 +867,7 @@ function ChatScreen() {
           badge: r.badge || 'Member',
           myRole: r.badge === 'Organizer' || r.badge === 'Organizer Trip' ? 'Organizer' : 'Member',
           lastMessageAt: r.lastMessageAt || '1970-01-01T00:00:00.000Z',
+          muted: !!r.muted,
         }));
 
         setInboxRooms((prevRooms) => {
@@ -916,6 +935,9 @@ function ChatScreen() {
           setInboxRooms((prevRooms) =>
             prevRooms.map((room) => (room.id === selectedRoomId ? { ...room, unreadCount: 0 } : room)),
           );
+          // Re-sync the tab-bar unread dot against every room's real
+          // unreadCount, not just the one just opened.
+          checkUnreadChats();
         })
         .catch((e) => logger.warn('[Chat] Mark-read failed:', e));
 
@@ -926,6 +948,9 @@ function ChatScreen() {
             const mappedHistory: CustomMessage[] = history.map((m) => {
               const isMe = m.senderId === profile.id || !!(profile.name && m.senderName === profile.name);
               const messageAvatar = m.senderAvatar || m.avatar || findMemberAvatar(m.senderId, m.senderName, m.senderRole, dbMembers);
+              const hasCoords = m.latitude != null && m.longitude != null;
+              const type: CustomMessage['type'] =
+                m.mediaType === 'IMAGE' ? 'image' : m.mediaType === 'VOICE' ? 'voice' : m.mediaType === 'LOCATION' && hasCoords ? 'location' : 'text';
               return {
                 id: m.id,
                 senderId: m.senderId,
@@ -936,8 +961,9 @@ function ChatScreen() {
                 timestamp: m.createdAt || m.timestamp,
                 createdAt: m.createdAt || m.timestamp,
                 isMe: isMe,
-                type: m.mediaType === 'IMAGE' ? 'image' : m.mediaType === 'VOICE' ? 'voice' : 'text',
+                type,
                 mediaUrl: m.mediaUrl || undefined,
+                ...(type === 'location' ? { locationCoords: { latitude: m.latitude as number, longitude: m.longitude as number } } : {}),
               };
             });
 
@@ -975,7 +1001,7 @@ function ChatScreen() {
           logger.warn('Failed to load chat messages:', e);
         });
     }
-  }, [selectedRoomId, profile.avatar, profile.id, profile.name]);
+  }, [selectedRoomId, profile.avatar, profile.id, profile.name, checkUnreadChats]);
 
   // Reset tab to chat when activeRoomId/selectedRoomId changes. react.dev's
   // documented pattern for this (compare against a ref during render, adjust
@@ -998,6 +1024,15 @@ function ChatScreen() {
     if (messages.length > 0) {
       const latestMsg = messages[messages.length - 1];
       const key = latestMsg.roomId || activeRoomId || 'unknown-room';
+      // AppContext's Message type predates LOCATION messages; the real-time
+      // socket payload carries mediaType 'LOCATION' plus latitude/longitude
+      // when the backend sends one, so read those through a narrow cast.
+      const latestMsgLoc = latestMsg as unknown as {
+        mediaType?: 'NONE' | 'IMAGE' | 'VOICE' | 'LOCATION';
+        latitude?: number | null;
+        longitude?: number | null;
+      };
+      const latestMsgHasCoords = latestMsgLoc.latitude != null && latestMsgLoc.longitude != null;
 
       // Check if this is a system message about a new user joining
       const isSystemMsg = latestMsg.senderRole === 'SYSTEM' || latestMsg.senderName === 'System';
@@ -1053,6 +1088,15 @@ function ChatScreen() {
         );
         const incomingAvatar = latestMsg.senderAvatar || latestMsg.avatar || memberMatch?.avatar || '';
 
+        const newMsgType: CustomMessage['type'] =
+          latestMsg.mediaType === 'IMAGE'
+            ? 'image'
+            : latestMsg.mediaType === 'VOICE'
+              ? 'voice'
+              : latestMsgLoc.mediaType === 'LOCATION' && latestMsgHasCoords
+                ? 'location'
+                : 'text';
+
         const newMsg: CustomMessage = {
           id: latestMsg.id,
           senderId: latestMsg.senderId,
@@ -1063,8 +1107,11 @@ function ChatScreen() {
           timestamp: latestMsg.createdAt || latestMsg.timestamp || new Date().toISOString(),
           createdAt: latestMsg.createdAt || latestMsg.timestamp || new Date().toISOString(),
           isMe: isMe,
-          type: latestMsg.mediaType === 'IMAGE' ? 'image' : latestMsg.mediaType === 'VOICE' ? 'voice' : 'text',
+          type: newMsgType,
           mediaUrl: latestMsg.mediaUrl,
+          ...(newMsgType === 'location'
+            ? { locationCoords: { latitude: latestMsgLoc.latitude as number, longitude: latestMsgLoc.longitude as number } }
+            : {}),
         };
 
         return {
@@ -1318,6 +1365,7 @@ function ChatScreen() {
   const [replyingToMessage, setReplyingToMessage] = useState<CustomMessage | null>(null);
   const [selectedMessageForOptions, setSelectedMessageForOptions] = useState<CustomMessage | null>(null);
   const [selectedRoomForOptions, setSelectedRoomForOptions] = useState<ChatRoom | null>(null);
+  const [viewerImageUri, setViewerImageUri] = useState<string | null>(null);
   const [pinnedRoomIds, setPinnedRoomIds] = useState<Set<string>>(new Set());
   const [translatedMsgs, setTranslatedMsgs] = useState<Set<string>>(new Set());
 
@@ -1462,6 +1510,11 @@ function ChatScreen() {
 
     return Array.from(membersMap.values());
   }, [currentMessages, dbMembers, profile.id, profile.name, profile.avatar]);
+
+  // The other side of a DM/guide room — for the non-group Settings panel's
+  // contact card. Reuses groupMembers (already populated from the room's
+  // real member data) rather than refetching anything.
+  const otherParticipant = useMemo(() => groupMembers.find((m) => !m.isMe) ?? null, [groupMembers]);
 
   // Click a member to direct message
   const handleMemberClick = (member: { name: string; avatar: string }) => {
@@ -1653,13 +1706,35 @@ function ChatScreen() {
     });
   };
 
+  // Focuses the live map on a message's real coordinates (shared location or
+  // SOS pin) instead of just opening the map with nothing centered.
+  const handleOpenMapForMessage = (msg: CustomMessage) => {
+    const coords = msg.locationCoords;
+    if (coords) {
+      router.push({
+        pathname: '/map',
+        params: { focusLat: String(coords.latitude), focusLng: String(coords.longitude), focusLabel: msg.content },
+      });
+    } else {
+      router.navigate('/map');
+    }
+  };
+
   // Core send message handler
   const sendNewMessage = (msgData: Partial<CustomMessage>) => {
     const key = selectedRoomId || selectedTripId;
-    const mediaType = msgData.type === 'image' ? 'IMAGE' : msgData.type === 'voice' ? 'VOICE' : 'NONE';
+    const mediaType =
+      msgData.type === 'image'
+        ? 'IMAGE'
+        : msgData.type === 'voice'
+          ? 'VOICE'
+          : msgData.type === 'location'
+            ? 'LOCATION'
+            : 'NONE';
+    const coords = msgData.type === 'location' && msgData.locationCoords ? msgData.locationCoords : null;
 
-    // Call global websocket sender with mediaUrl
-    sendMessage(msgData.content || '', mediaType, msgData.mediaUrl);
+    // Call global websocket sender with mediaUrl (and coords for LOCATION messages)
+    sendMessage(msgData.content || '', mediaType, msgData.mediaUrl, coords);
 
     const nowIso = new Date().toISOString();
     const newMsg: CustomMessage = {
@@ -1721,6 +1796,18 @@ function ChatScreen() {
       logger.warn('[Chat] Leave room failed:', e);
       toast(errorToastMessage(e, 'Could not leave the group. Please try again.'), 'error');
     }
+  };
+
+  // Per-user, per-room notification mute (POST /chats/:id/mute). Optimistic
+  // toggle with rollback on failure, matching this file's other API-backed
+  // toggles (e.g. markChatRead above).
+  const handleToggleRoomMuted = (roomId: string, nextMuted: boolean) => {
+    setInboxRooms((prev) => prev.map((r) => (r.id === roomId ? { ...r, muted: nextMuted } : r)));
+    apiService.setChatRoomMuted(roomId, nextMuted).catch((e) => {
+      logger.warn('[Chat] Set muted failed:', e);
+      setInboxRooms((prev) => prev.map((r) => (r.id === roomId ? { ...r, muted: !nextMuted } : r)));
+      toast(errorToastMessage(e, 'Could not update notification settings. Please try again.'), 'error');
+    });
   };
 
   const handleSendText = () => {
@@ -2144,6 +2231,10 @@ function ChatScreen() {
     }
   }
 
+  // Fixed alias so the Settings overlay JSX/closures below narrow on a
+  // `const` rather than the reassignable `activeRoom` above.
+  const settingsRoom = activeRoom;
+
   const isDM = !!activeRoom && activeRoom.type !== 'GROUP';
   const dmTrip =
     isDM
@@ -2457,29 +2548,37 @@ function ChatScreen() {
                 </Text>
               </TouchableOpacity>
 
-              {/* MARK AS READ / UNREAD */}
-              <TouchableOpacity
-                style={styles.optionsRowBtn}
-                onPress={() => {
-                  const roomId = selectedRoomForOptions.id;
-                  setInboxRooms((prev) =>
-                    prev.map((r) => {
-                      if (r.id === roomId) {
-                        return { ...r, unreadCount: r.unreadCount > 0 ? 0 : 3 };
-                      }
-                      return r;
-                    }),
-                  );
-                  setSelectedRoomForOptions(null);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel={selectedRoomForOptions.unreadCount > 0 ? t('chat.markAsRead') : t('chat.markAsUnread')}
-              >
-                <CheckCircle size={16} color="#64748B" style={styles.optionsRowIcon} />
-                <Text style={styles.optionsRowText}>
-                  {selectedRoomForOptions.unreadCount > 0 ? t('chat.markAsRead') : t('chat.markAsUnread')}
-                </Text>
-              </TouchableOpacity>
+              {/* MARK AS READ — there is no real backend "mark as unread"
+              endpoint, so unlike before this row no longer offers a fake
+              toggle (hardcoded unreadCount: 3, no server call) when a room
+              is already read. It only appears, and only does something
+              real, when the room actually has unread messages. */}
+              {selectedRoomForOptions.unreadCount > 0 && (
+                <TouchableOpacity
+                  style={styles.optionsRowBtn}
+                  onPress={() => {
+                    const roomId = selectedRoomForOptions.id;
+                    apiService
+                      .markChatRead(roomId)
+                      .then(() => {
+                        setInboxRooms((prev) =>
+                          prev.map((r) => (r.id === roomId ? { ...r, unreadCount: 0 } : r)),
+                        );
+                        checkUnreadChats();
+                      })
+                      .catch((e) => {
+                        logger.warn('[Chat] Mark-read failed:', e);
+                        toast(errorToastMessage(e, 'Could not mark as read. Please try again.'), 'error');
+                      });
+                    setSelectedRoomForOptions(null);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('chat.markAsRead')}
+                >
+                  <CheckCircle size={16} color="#64748B" style={styles.optionsRowIcon} />
+                  <Text style={styles.optionsRowText}>{t('chat.markAsRead')}</Text>
+                </TouchableOpacity>
+              )}
 
               {/* CLEAR CHAT HISTORY */}
               <TouchableOpacity
@@ -2702,7 +2801,8 @@ function ChatScreen() {
                 onShowOptions={setSelectedMessageForOptions}
                 onToggleTranslate={toggleTranslate}
                 onPollVote={handlePollVote}
-                onOpenMap={() => router.navigate('/map')}
+                onOpenMap={handleOpenMapForMessage}
+                onOpenImage={setViewerImageUri}
                 canResolveSOS={profile.role === 'ORGANIZER' || profile.role === 'GUIDE'}
                 onResolveSOS={handleResolveSOSEvent}
                 members={dbMembers}
@@ -3133,7 +3233,7 @@ function ChatScreen() {
               )}
 
               {/* CONSOLIDATED TAB 1: ITINERARY & TRIP DETAILS */}
-              {overlayTab === 'itinerary' && (
+              {overlayTab === 'itinerary' && settingsRoom?.type === 'GROUP' && (
                 <>
                   {/* TRIP OVERVIEW & METRICS CARD */}
                   <LinearGradient
@@ -3326,6 +3426,63 @@ function ChatScreen() {
                     </View>
                   </View>
                 </>
+              )}
+
+              {/* NON-GROUP SETTINGS: real contact info + a real mute toggle,
+              replacing the group itinerary/budget content that used to
+              render here unconditionally regardless of room type. */}
+              {overlayTab === 'itinerary' && settingsRoom && settingsRoom.type !== 'GROUP' && (
+                <View style={{ marginBottom: 14 }}>
+                  <View style={styles.sectionHeader}>
+                    <UsersIcon size={16} color={C.blue} style={{ marginRight: 6 }} />
+                    <Text style={styles.sectionHeaderTitle}>{t('chat.contactDetails')}</Text>
+                  </View>
+                  <View style={styles.membersListContainer}>
+                    <View style={styles.memberItemRow}>
+                      <Avatar
+                        uri={otherParticipant?.avatar || settingsRoom.avatar}
+                        name={otherParticipant?.name || settingsRoom.name}
+                        size={40}
+                        style={styles.memberAvatar}
+                      />
+                      <View style={styles.memberMeta}>
+                        <Text style={styles.memberName}>{otherParticipant?.name || settingsRoom.name}</Text>
+                        <Text style={styles.memberRoleText}>
+                          {otherParticipant?.role
+                            ? (SENDER_ROLE_LABEL_KEYS[otherParticipant.role]
+                                ? t(SENDER_ROLE_LABEL_KEYS[otherParticipant.role])
+                                : otherParticipant.role)
+                            : (settingsRoom.type === 'GUIDE' ? t('chat.roleGuide') : t('chat.contact'))}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  <View style={[styles.sectionHeader, { marginTop: 18 }]}>
+                    {settingsRoom.muted ? (
+                      <BellOff size={16} color={C.blue} style={{ marginRight: 6 }} />
+                    ) : (
+                      <Bell size={16} color={C.blue} style={{ marginRight: 6 }} />
+                    )}
+                    <Text style={styles.sectionHeaderTitle}>{t('chat.notifications')}</Text>
+                  </View>
+                  <View style={styles.membersListContainer}>
+                    <View style={styles.muteRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.memberName}>{t('chat.muteNotifications')}</Text>
+                        <Text style={styles.muteRowDesc}>{t('chat.muteNotificationsDesc')}</Text>
+                      </View>
+                      <Switch
+                        value={!!settingsRoom.muted}
+                        onValueChange={(val) => handleToggleRoomMuted(settingsRoom.id, val)}
+                        trackColor={{ false: '#E2E8F0', true: C.blue }}
+                        thumbColor="#FFFFFF"
+                        accessibilityLabel={t('chat.muteNotifications')}
+                        accessibilityState={{ checked: !!settingsRoom.muted }}
+                      />
+                    </View>
+                  </View>
+                </View>
               )}
 
               {/* TAB 2: MEMBERS */}
@@ -3591,6 +3748,29 @@ function ChatScreen() {
           </View>
         </View>
       )}
+
+      {/* Full-screen Image Viewer */}
+      <Modal
+        visible={!!viewerImageUri}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setViewerImageUri(null)}
+      >
+        <Pressable style={styles.imageViewerBackdrop} onPress={() => setViewerImageUri(null)}>
+          {viewerImageUri ? (
+            <Image source={{ uri: viewerImageUri }} style={styles.imageViewerImage} resizeMode="contain" />
+          ) : null}
+          <TouchableOpacity
+            style={styles.imageViewerCloseBtn}
+            onPress={() => setViewerImageUri(null)}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            accessibilityRole="button"
+            accessibilityLabel={t('chat.imageViewerCloseLabel')}
+          >
+            <X size={22} color="#FFF" />
+          </TouchableOpacity>
+        </Pressable>
+      </Modal>
 
     </SafeAreaView>
   );
@@ -4883,6 +5063,29 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
+  // Full-screen Image Viewer
+  imageViewerBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.92)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  imageViewerImage: {
+    width: '100%',
+    height: '85%',
+  },
+  imageViewerCloseBtn: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
   // SOS Card Alert
   sosCardAlert: {
     backgroundColor: '#8B0000',
@@ -5532,6 +5735,17 @@ const styles = StyleSheet.create({
     color: C.textSec,
     fontSize: 12,
     marginTop: 1,
+  },
+  muteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    gap: 12,
+  },
+  muteRowDesc: {
+    color: C.textMuted,
+    fontSize: 12,
+    marginTop: 2,
   },
   memberRoleOrganizerBadge: {
     alignSelf: 'flex-start',

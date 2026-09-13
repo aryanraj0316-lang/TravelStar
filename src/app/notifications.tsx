@@ -12,6 +12,8 @@ import Bell from 'lucide-react-native/icons/bell';
 import CheckCheck from 'lucide-react-native/icons/check-check';
 import ChevronRight from 'lucide-react-native/icons/chevron-right';
 import Compass from 'lucide-react-native/icons/compass';
+import CreditCard from 'lucide-react-native/icons/credit-card';
+import CheckCircle2 from 'lucide-react-native/icons/circle-check';
 import MessageSquare from 'lucide-react-native/icons/message-square';
 import Plane from 'lucide-react-native/icons/plane';
 import ShieldAlert from 'lucide-react-native/icons/shield-alert';
@@ -361,6 +363,17 @@ export default function NotificationsScreen() {
         void syncBadgeCount();
       } catch (e) {
         logger.warn('[Notifications] Mark-read failed:', e);
+      }
+    }
+
+    if (n.category === 'PAYMENT_REQUIRED') {
+      const joinReqId = (n as any).joinRequestId || (n as any).metadata?.joinRequestId || '';
+      if (joinReqId) {
+        router.push({
+          pathname: '/trip-payment',
+          params: { joinRequestId: joinReqId },
+        });
+        return;
       }
     }
 

@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import 'express-async-errors';
 import compression from 'compression';
 import cors from 'cors';
@@ -23,6 +25,7 @@ import weatherRoutes from './api/routes/weather';
 import alertRoutes from './api/routes/alerts';
 import mapRoutes from './api/routes/map';
 import interactionRoutes from './api/routes/interactions';
+import tripPaymentRoutes from './api/routes/trip-payments';
 import chatRoutes from './api/routes/chats';
 import feedRoutes from './api/routes/feed';
 import consentRoutes from './api/routes/consent';
@@ -85,8 +88,12 @@ app.use(
 // the original.
 app.use(compression({ threshold: 1024 }));
 
-app.use(express.json({ limit: '256kb' }));
+app.use(express.json({ limit: '256kb', verify: (req: any, _res: any, buf: Buffer) => { req.rawBody = buf.toString(); } }));
 app.use(express.urlencoded({ extended: true, limit: '256kb' }));
+
+const uploadDir = path.join(process.cwd(), 'uploads');
+if (!fs.existsSync(uploadDir)) { fs.mkdirSync(uploadDir, { recursive: true }); }
+app.use('/uploads', express.static(uploadDir));
 
 // ── Rate limits ─────────────────────────────────────────────────────────────
 
@@ -174,6 +181,7 @@ app.use('/api/v1/weather', weatherRoutes);
 app.use('/api/v1/alerts', alertRoutes);
 app.use('/api/v1/map', mapRoutes);
 app.use('/api/v1/interactions', interactionRoutes);
+app.use('/api/v1/trip-payments', tripPaymentRoutes);
 app.use('/api/v1/chats', chatRoutes);
 app.use('/api/v1/feed', feedRoutes);
 app.use('/api/v1/consent', consentRoutes);

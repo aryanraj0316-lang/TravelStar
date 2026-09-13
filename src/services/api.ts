@@ -37,15 +37,20 @@ import type {
   ChatRoomSummary,
   Destination,
   HazardAlert,
+  TripHazardReport,
   IncomingJoinRequest,
   JoinRequestSummary,
   StoryPayload,
+  StoryInteractionsResponse,
   TrendingWeatherDestination,
   TripExpenses,
   TripMemberRow,
   UploadImageContentType,
   UploadUrlResponse,
   WeatherLocation,
+  TripPaymentOrder,
+  InitiatePaymentResult,
+  VerifyPaymentResult,
 } from '@/types/api';
 
 // Request-ID / idempotency-key generation only needs uniqueness, not
@@ -214,7 +219,17 @@ export type TransitMode = 'CAB' | 'TRAIN' | 'FLIGHT' | 'BUS';
  * trip predates the Timeline tab being wired to the backend — the UI shows
  * the stop without stay/transit detail rather than inventing any.
  */
+export interface TripTimelineStopGuide {
+  guideProfileId: string;
+  name: string;
+  note: string | null;
+}
+
 export interface TripTimelineStop {
+  /** Checkpoint id — anchors Family Connect Midway's stop picker, the
+   *  join-request fromStopId/toStopId pair, and per-checkpoint guide
+   *  assignment. This stop IS the "checkpoint" throughout the app. */
+  id: string;
   order: number;
   city: string;
   stayDays: number | null;
@@ -223,6 +238,7 @@ export interface TripTimelineStop {
   activities: string;
   latitude: number | null;
   longitude: number | null;
+  assignedGuides: TripTimelineStopGuide[];
 }
 
 export interface TripChecklistItem {
@@ -689,6 +705,26 @@ export const apiService = {
     return request<TripDetail>(`/trips/${tripId}`);
   },
 
+  /** "All Clear" → Trip-wise Analysis: active hazards near this trip's own route. */
+  async getTripHazards(tripId: string): Promise<TripHazardReport | null> {
+    return request<TripHazardReport>(`/map/trips/${tripId}/hazards`);
+  },
+
+  // Organizer-only: offer a specific guide at a specific checkpoint
+  // (TripTimelineStop). See backend/src/api/routes/trips.ts.
+  async assignCheckpointGuide(tripId: string, stopId: string, guideProfileId: string, note?: string): Promise<unknown> {
+    return request(`/trips/${tripId}/timeline/${stopId}/guide`, {
+      method: 'POST',
+      body: JSON.stringify({ guideProfileId, note }),
+    });
+  },
+
+  async unassignCheckpointGuide(tripId: string, stopId: string, guideProfileId: string): Promise<unknown> {
+    return request(`/trips/${tripId}/timeline/${stopId}/guide/${guideProfileId}`, {
+      method: 'DELETE',
+    });
+  },
+
   async createTrip(tripData: CreateTripInput): Promise<Trip | null> {
     return request<Trip>('/trips', {
       method: 'POST',
@@ -821,6 +857,13 @@ export const apiService = {
     return request<Story[]>('/stories');
   },
 
+  async uploadStoryDirect(base64: string, contentType: string): Promise<{ publicUrl: string } | null> {
+    return request<{ publicUrl: string }>('/stories/upload-direct', {
+      method: 'POST',
+      body: JSON.stringify({ base64, contentType }),
+    });
+  },
+
   async getStoryMediaUploadUrl(contentType: UploadImageContentType | 'video/mp4' | 'video/quicktime') {
     return request<UploadUrlResponse>('/stories/media-upload-url', {
       method: 'POST',
@@ -828,16 +871,42 @@ export const apiService = {
     });
   },
 
-  async createStory(storyData: StoryPayload) {
-    return request('/stories', {
+  async createStory(storyData: StoryPayload): Promise<{ id: string; coverImg?: string | null } | null> {
+    return request<{ id: string; coverImg?: string | null }>('/stories', {
       method: 'POST',
       body: JSON.stringify(storyData),
     });
   },
 
-  async likeStory(storyId: string) {
+  async recordStoryView(
+    storyId: string,
+    viewer?: { userId?: string; name?: string; avatar?: string | null }
+  ): Promise<void> {
+    try {
+      await request(`/stories/${storyId}/view`, {
+        method: 'POST',
+        body: JSON.stringify(viewer || {}),
+      });
+    } catch {
+      // Quiet fail on network/offline
+    }
+  },
+
+  async getStoryInteractions(storyId: string): Promise<StoryInteractionsResponse | null> {
+    try {
+      return await request<StoryInteractionsResponse>(`/stories/${storyId}/interactions`);
+    } catch {
+      return null;
+    }
+  },
+
+  async likeStory(
+    storyId: string,
+    liker?: { userId?: string; name?: string; avatar?: string | null }
+  ): Promise<{ liked: boolean; likesCount: number } | null> {
     return request(`/stories/${storyId}/like`, {
       method: 'POST',
+      body: JSON.stringify(liker || {}),
     });
   },
 
@@ -1015,7 +1084,16 @@ export const apiService = {
   // authoritatively from the trip's route (docs/REMEDIATION.md §8.6).
   async createJoinRequest(
     tripId: string,
-    opts?: { midway?: boolean; fromCity?: string; toCity?: string },
+    opts?: {
+      midway?: boolean;
+      fromCity?: string;
+      toCity?: string;
+      /** Family Connect Midway / day-range join. */
+      familyMemberCount?: number;
+      fromStopId?: string;
+      toStopId?: string;
+      joiningDate?: string;
+    },
   ): Promise<JoinRequestSummary> {
     return request<JoinRequestSummary>('/interactions/join-request', {
       method: 'POST',
@@ -1155,6 +1233,15 @@ export const apiService = {
     });
   },
 
+  // Real per-room notification mute — the chat "Settings" panel's actual
+  // setting, backed by ChatRoomMember.muted.
+  async setChatRoomMuted(id: string, muted: boolean): Promise<{ muted: boolean } | null> {
+    return request(`/chats/${id}/mute`, {
+      method: 'POST',
+      body: JSON.stringify({ muted }),
+    });
+  },
+
   // ── Unified Feed (Stories + Guide Reels merged) ──────
   // GET /feed returns { data: FeedItem[], meta: { cursor } } — a plain
   // `request<FeedPage>()` call returned just the item array with `.items`/
@@ -1265,6 +1352,35 @@ export const apiService = {
   async deleteEmergencyContact(id: string): Promise<MessageResponse | null> {
     return request(`/safety/contacts/${id}`, {
       method: 'DELETE',
+    });
+  },
+  // ── Trip Payments ──────────────────────────────
+  async getTripPaymentOrder(joinRequestId: string): Promise<TripPaymentOrder | null> {
+    return request<TripPaymentOrder>(`/trip-payments/order/${joinRequestId}`);
+  },
+
+  async initiateTripPayment(input: { joinRequestId: string; idempotencyKey: string }): Promise<InitiatePaymentResult | null> {
+    return request<InitiatePaymentResult>('/trip-payments/initiate', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+
+  async verifyTripPayment(input: {
+    razorpayOrderId: string;
+    razorpayPaymentId: string;
+    razorpaySignature: string;
+  }): Promise<VerifyPaymentResult | null> {
+    return request<VerifyPaymentResult>('/trip-payments/verify', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+
+  async payTripFromWallet(input: { joinRequestId: string }): Promise<VerifyPaymentResult | null> {
+    return request<VerifyPaymentResult>('/trip-payments/wallet-pay', {
+      method: 'POST',
+      body: JSON.stringify(input),
     });
   },
 };

@@ -132,6 +132,9 @@ router.get('/', async (req, res) => {
           ? (trip?.creatorId === tokenUserId ? 'Organizer' : 'Member')
           : 'Direct',
         lastMessageAt: sortDate.toISOString(),
+        // This user's own membership row — `m` is always their own, since
+        // `memberships` was fetched by `userId: tokenUserId` above.
+        muted: m.muted,
       };
     });
 
@@ -196,6 +199,8 @@ router.get('/:id', async (req, res) => {
       ? otherMember.user.profile.avatarUrl
       : (room.trip?.coverImage ?? otherMember?.user?.profile?.avatarUrl ?? null);
 
+    const selfMembership = room.members.find((m) => m.user.id === tokenUserId);
+
     return res.status(200).json({
       ok: true,
       data: {
@@ -203,7 +208,9 @@ router.get('/:id', async (req, res) => {
         tripId: room.trip?.id || null,
         name: roomName,
         avatar: roomAvatar,
+        type: room.isGroup ? 'GROUP' : 'GUIDE',
         members: membersList,
+        muted: selfMembership?.muted ?? false,
       },
     });
   } catch (err) {
@@ -276,6 +283,9 @@ router.get('/:id/messages', async (req, res) => {
           createdAt: m.createdAt.toISOString(),
           mediaType: m.mediaType || 'NONE',
           mediaUrl: m.mediaUrl || null,
+          // Set only on LOCATION messages — a shared pin's coordinates.
+          latitude: m.latitude,
+          longitude: m.longitude,
         };
       })
       .reverse(); // chronological order for display
@@ -340,6 +350,39 @@ router.post('/:id/read', async (req, res) => {
   } catch (err) {
     logger.warn('[Chats] Mark messages read error:', err);
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to mark messages as read' } });
+  }
+});
+
+const muteBodySchema = z.object({ muted: z.boolean() });
+
+// Real per-room notification mute, backed by ChatRoomMember.muted — the
+// chat "Settings" panel's only actual setting today. Each user mutes only
+// their own membership row; it has no effect on anyone else in the room.
+router.post('/:id/mute', async (req, res) => {
+  const parsedParams = roomIdParamSchema.safeParse(req.params);
+  if (!parsedParams.success) {
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid chat room id.' } });
+  }
+  const parsedBody = muteBodySchema.safeParse(req.body);
+  if (!parsedBody.success) {
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid mute value.' } });
+  }
+  const { id } = parsedParams.data;
+  const { muted } = parsedBody.data;
+  const tokenUserId = requireUserId(req);
+
+  try {
+    if (!(await assertChatRoomMember(res, id, tokenUserId))) return;
+
+    await prisma.chatRoomMember.update({
+      where: { chatRoomId_userId: { chatRoomId: id, userId: tokenUserId } },
+      data: { muted },
+    });
+
+    return res.status(200).json({ ok: true, data: { muted } });
+  } catch (err) {
+    logger.warn('[Chats] Mute chat room error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to update mute setting' } });
   }
 });
 

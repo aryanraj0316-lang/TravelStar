@@ -53,7 +53,12 @@ export const InAppNotificationBanner: React.FC = () => {
   }, [dismiss, translateY, opacity]);
 
   const handleTap = () => {
-    if (notif?.chatRoomId) {
+    if (notif?.category === 'PAYMENT_REQUIRED' && notif?.joinRequestId) {
+      router.push({
+        pathname: '/trip-payment',
+        params: { joinRequestId: notif.joinRequestId },
+      });
+    } else if (notif?.chatRoomId) {
       setActiveRoomId(notif.chatRoomId);
       router.navigate('/chat');
     }
