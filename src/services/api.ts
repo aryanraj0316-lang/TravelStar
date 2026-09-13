@@ -1227,6 +1227,16 @@ export const apiService = {
 
   // docs/REMEDIATION.md §8.7 — real leave-group, replacing chat.tsx's
   // client-side-only list filter.
+  async deleteChatRoom(id: string): Promise<{ message: string }> {
+    try {
+      return await request<{ message: string }>(`/chats/${id}`, {
+        method: 'DELETE',
+      });
+    } catch {
+      return await this.leaveChatRoom(id);
+    }
+  },
+
   async leaveChatRoom(id: string): Promise<{ message: string }> {
     return request<{ message: string }>(`/chats/${id}/members/me`, {
       method: 'DELETE',

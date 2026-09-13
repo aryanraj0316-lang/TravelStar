@@ -398,7 +398,7 @@ function CreateTripScreen() {
   const [coverUploading, setCoverUploading] = useState(false);
 
   // Custom Trip Studio Tab Switcher
-  const [activeTab, setActiveTab] = useState<'PLANNER' | 'TIMELINE' | 'TRAVELERS' | 'CHECKLIST'>('PLANNER');
+  const [activeTab, setActiveTab] = useState<'PLANNER' | 'TIMELINE' | 'CHECKLIST'>('PLANNER');
 
   // Keyboard avoidance height offset state
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -860,17 +860,7 @@ function CreateTripScreen() {
               <Text style={[styles.tabText, activeTab === 'TIMELINE' && styles.tabTextActive]}>{t('createTrip.tabTimeline')}</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.tabItem, activeTab === 'TRAVELERS' && styles.tabItemActive]}
-              onPress={() => setActiveTab('TRAVELERS')}
-              activeOpacity={0.8}
-              accessibilityRole="tab"
-              accessibilityLabel={t('createTrip.tabTravelers')}
-              accessibilityState={{ selected: activeTab === 'TRAVELERS' }}
-            >
-              <Users size={14} color={activeTab === 'TRAVELERS' ? '#FFFFFF' : '#64748B'} />
-              <Text style={[styles.tabText, activeTab === 'TRAVELERS' && styles.tabTextActive]}>{t('createTrip.tabTravelers')}</Text>
-            </TouchableOpacity>
+
 
             <TouchableOpacity
               style={[styles.tabItem, activeTab === 'CHECKLIST' && styles.tabItemActive]}
@@ -1694,79 +1684,6 @@ function CreateTripScreen() {
               </View>
             );
           })()}
-
-          {/* ─── TAB 3: TRAVELERS & JOIN REQUESTS ────────────── */}
-          {activeTab === 'TRAVELERS' && (
-            <View style={styles.travelersContainer}>
-              {/* CAPACITY SELECTOR */}
-              <View style={styles.capacityBox}>
-                <Text style={styles.boxTitle}>{t('createTrip.groupCapacityLabel')}</Text>
-                <View style={styles.capacityCounterRow}>
-                  <TouchableOpacity
-                    style={styles.counterBtn}
-                    onPress={() => {
-                      const curr = parseInt(totalSeats) || 0;
-                      setTotalSeats(String(Math.max(1, curr - 1)));
-                    }}
-                    activeOpacity={0.8}
-                    accessibilityRole="button"
-                    accessibilityLabel="Decrease seats"
-                  >
-                    <Text style={styles.counterBtnText}>-</Text>
-                  </TouchableOpacity>
-
-                  <View style={styles.counterDisplay}>
-                    <Text style={styles.counterValueText}>{totalSeats || '0'}</Text>
-                    <Text style={styles.counterSubText}>{t('createTrip.totalSlots')}</Text>
-                  </View>
-
-                  <TouchableOpacity
-                    style={styles.counterBtn}
-                    onPress={() => {
-                      const curr = parseInt(totalSeats) || 0;
-                      setTotalSeats(String(curr + 1));
-                    }}
-                    activeOpacity={0.8}
-                    accessibilityRole="button"
-                    accessibilityLabel="Increase seats"
-                  >
-                    <Text style={styles.counterBtnText}>+</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* TRIP TYPE SELECTION */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>{t('createTrip.tripTypeLabel')}</Text>
-                <View style={styles.pillsRow}>
-                  {(
-                    [
-                      { value: 'Solo', labelKey: 'createTrip.tripTypeSolo' },
-                      { value: 'Couple', labelKey: 'createTrip.tripTypeCouple' },
-                      { value: 'Family', labelKey: 'createTrip.tripTypeFamily' },
-                      { value: 'Friends', labelKey: 'createTrip.tripTypeFriends' },
-                      { value: 'Group', labelKey: 'createTrip.tripTypeGroup' },
-                      { value: 'Business', labelKey: 'createTrip.tripTypeBusiness' },
-                    ] as const
-                  ).map((type) => (
-                    <TouchableOpacity
-                      key={type.value}
-                      style={[styles.categoryPill, selectedTripType === type.value && styles.categoryPillActive]}
-                      onPress={() => setSelectedTripType(type.value)}
-                      activeOpacity={0.8}
-                      accessibilityRole="button"
-                      accessibilityLabel={t(type.labelKey)}
-                      accessibilityState={{ selected: selectedTripType === type.value }}
-                    >
-                      <Text style={[styles.categoryPillText, selectedTripType === type.value && styles.categoryPillTextActive]}>
-                        {t(type.labelKey)}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-            </View>
-          )}
 
           {/* ─── TAB 4: ESSENTIAL CHECKLIST ──────────────────── */}
           {activeTab === 'CHECKLIST' && (

@@ -85,6 +85,7 @@ export interface Trip {
   name: string;
   creator: string;
   creatorId?: string;
+  creatorAvatar?: string | null;
   isMyTrip?: boolean;
   cities: string[];
   startDate: string;

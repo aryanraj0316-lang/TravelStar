@@ -43,7 +43,7 @@ type TripWithCreator = {
   id: string;
   name: string;
   creatorId: string;
-  creator: { role: string; profile: { firstName: string; lastName: string } | null } | null;
+  creator: { role: string; profile: { firstName: string; lastName: string; avatarUrl?: string | null } | null } | null;
   chatRoom: { id: string } | null;
   cities: string[];
   durationDays: number;
@@ -67,6 +67,7 @@ function mapTrip(t: TripWithCreator, tokenUserId: string | null) {
   const creatorName = t.creator?.profile
     ? `${t.creator.profile.firstName} ${t.creator.profile.lastName} (${t.creator.role === 'GUIDE' ? 'Guide' : 'Organizer'})`
     : 'Unknown Organizer';
+  const creatorAvatar = t.creator?.profile?.avatarUrl ?? null;
   const { travelStyle, category } = deriveCategory(t.name);
 
   return {
@@ -74,6 +75,7 @@ function mapTrip(t: TripWithCreator, tokenUserId: string | null) {
     name: t.name,
     creator: creatorName,
     creatorId: t.creatorId,
+    creatorAvatar,
     isMyTrip: tokenUserId ? t.creatorId === tokenUserId : false,
     chatRoomId: t.chatRoom?.id || null,
     cities: t.cities,

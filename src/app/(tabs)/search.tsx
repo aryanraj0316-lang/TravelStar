@@ -73,11 +73,15 @@ const DURATION_LABEL_KEYS: Record<string, string> = {
   SHORT: 'search.duration1to3',
   MEDIUM: 'search.duration4to7',
   LONG: 'search.duration8plus',
+  CUSTOM: 'Custom',
 };
 const TRANSPORT_LABEL_KEYS: Record<string, string> = {
   ALL: 'search.transportAllModes',
   BUS: 'search.transportBus',
   BIKE: 'search.transportBike',
+  CAB: 'Car / Cab',
+  TRAIN: 'Train',
+  FLIGHT: 'Flight',
 };
 
 // Quick access grid items with vector icons
@@ -141,10 +145,15 @@ const computeDuration = (startDate: string | undefined, endDate: string | undefi
 // Kept separate from the translated label below for the same reason as
 // computeDurationDays: matching substrings of translated display text is
 // exactly the kind of thing that silently breaks in a second language.
-const deriveTransportCode = (trip: Trip): 'BIKE' | 'BUS' | 'AC' => {
+const deriveTransportCode = (trip: Trip): 'BIKE' | 'BUS' | 'CAB' | 'TRAIN' | 'FLIGHT' | 'AC' => {
   const name = (trip.name || '').toLowerCase();
-  if (name.includes('bike') || name.includes('expedition')) return 'BIKE';
-  if (name.includes('houseboat') || name.includes('backwaters')) return 'BUS';
+  const cat = (trip.category || '').toLowerCase();
+  const meeting = (trip.meetingPoint || '').toLowerCase();
+  if (name.includes('bike') || name.includes('motorcycle') || name.includes('bullet') || name.includes('expedition')) return 'BIKE';
+  if (name.includes('flight') || name.includes('fly') || name.includes('air') || cat.includes('flight')) return 'FLIGHT';
+  if (name.includes('train') || name.includes('rail') || meeting.includes('station') || meeting.includes('railway')) return 'TRAIN';
+  if (name.includes('cab') || name.includes('car') || name.includes('taxi') || name.includes('suv') || trip.cabIncluded) return 'CAB';
+  if (name.includes('bus') || name.includes('coach') || name.includes('houseboat') || name.includes('backwaters') || meeting.includes('bus')) return 'BUS';
   return 'AC';
 };
 
@@ -155,6 +164,12 @@ const deriveTransport = (trip: Trip): string => {
       return i18n.t('search.transportBikeFuelStay');
     case 'BUS':
       return i18n.t('search.transportBusHouseboat');
+    case 'CAB':
+      return 'Car / Cab Included';
+    case 'TRAIN':
+      return 'Train Journey';
+    case 'FLIGHT':
+      return 'Flight Included';
     default:
       return i18n.t('search.transportAC');
   }
@@ -437,17 +452,22 @@ function SearchScreen() {
 
   // Filter & Preference Modal State
   const [showFilterModal, setShowFilterModal] = useState(false);
-  const [sortOption, setSortOption] = useState<'popularity' | 'price_low' | 'price_high' | 'rating'>('popularity');
+  const [rankingSort, setRankingSort] = useState<'popularity' | 'rating' | 'none'>('popularity');
+  const [priceSort, setPriceSort] = useState<'price_low' | 'price_high' | 'none'>('none');
   const [maxBudget, setMaxBudget] = useState<number>(50000);
-  const [selectedDuration, setSelectedDuration] = useState<'ALL' | 'SHORT' | 'MEDIUM' | 'LONG'>('ALL');
+  const [customBudgetText, setCustomBudgetText] = useState<string>('');
+  const [selectedDuration, setSelectedDuration] = useState<'ALL' | 'SHORT' | 'MEDIUM' | 'LONG' | 'CUSTOM'>('ALL');
+  const [customDurationDays, setCustomDurationDays] = useState<number | null>(null);
+  const [customDurationText, setCustomDurationText] = useState<string>('');
   const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [guideRequired, setGuideRequired] = useState(false);
-  const [selectedTransport, setSelectedTransport] = useState<'ALL' | 'BUS' | 'BIKE'>('ALL');
+  const [selectedTransport, setSelectedTransport] = useState<'ALL' | 'BUS' | 'BIKE' | 'CAB' | 'TRAIN' | 'FLIGHT'>('ALL');
   const [midwayOnly, setMidwayOnly] = useState(false);
 
   // Active filter count
   const activeFilterCount =
-    (sortOption !== 'popularity' ? 1 : 0) +
+    (rankingSort !== 'popularity' ? 1 : 0) +
+    (priceSort !== 'none' ? 1 : 0) +
     (maxBudget < 50000 ? 1 : 0) +
     (selectedDuration !== 'ALL' ? 1 : 0) +
     (verifiedOnly ? 1 : 0) +
@@ -456,9 +476,13 @@ function SearchScreen() {
     (midwayOnly ? 1 : 0);
 
   const resetFilters = () => {
-    setSortOption('popularity');
+    setRankingSort('popularity');
+    setPriceSort('none');
     setMaxBudget(50000);
+    setCustomBudgetText('');
     setSelectedDuration('ALL');
+    setCustomDurationDays(null);
+    setCustomDurationText('');
     setVerifiedOnly(false);
     setGuideRequired(false);
     setSelectedTransport('ALL');
@@ -569,19 +593,19 @@ function SearchScreen() {
       const priceA = parseMoney(a.budget) ?? 0;
       const priceB = parseMoney(b.budget) ?? 0;
 
-      if (sortOption === 'price_low') {
+      if (priceSort === 'price_low' && priceA !== priceB) {
         return priceA - priceB;
-      } else if (sortOption === 'price_high') {
+      } else if (priceSort === 'price_high' && priceA !== priceB) {
         return priceB - priceA;
-      } else if (sortOption === 'rating') {
-        return (b.membersCount || 0) - (a.membersCount || 0);
       }
 
-      const scoreA = getPopularityScore(a);
-      const scoreB = getPopularityScore(b);
-
-      if (scoreA !== scoreB) {
-        return scoreA - scoreB;
+      if (rankingSort === 'rating') {
+        const diff = (b.membersCount || 0) - (a.membersCount || 0);
+        if (diff !== 0) return diff;
+      } else if (rankingSort === 'popularity') {
+        const scoreA = getPopularityScore(a);
+        const scoreB = getPopularityScore(b);
+        if (scoreA !== scoreB) return scoreA - scoreB;
       }
 
       return (a.membersCount || 0) - (b.membersCount || 0);
@@ -597,7 +621,7 @@ function SearchScreen() {
             <TextInput
               placeholder={t('search.searchPlaceholder')}
               placeholderTextColor={C.textSecondary}
-              style={[styles.searchInput, { color: C.white }]}
+              style={[styles.searchInput, { color: '#000000' }]}
               value={searchQuery}
               onChangeText={setSearchQuery}
               accessibilityLabel={t('search.searchPlaceholder')}
@@ -687,10 +711,18 @@ function SearchScreen() {
           <View style={styles.activeFilterTagsRow}>
             <Text style={[styles.activeFilterLabel, { color: C.textSecondary }]}>{t('search.filtersColon')}</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-              {sortOption !== 'popularity' && (
+              {rankingSort !== 'popularity' && (
                 <View style={[styles.filterTagPill, { backgroundColor: C.accentLight, borderColor: C.accent }]}>
-                  <Text style={[styles.filterTagText, { color: C.accent }]}>{t('search.sortLabel', { value: sortOption.replace('_', ' ') })}</Text>
-                  <TouchableOpacity onPress={() => setSortOption('popularity')} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }} accessibilityRole="button" accessibilityLabel={t('search.removeFilterHint')}>
+                  <Text style={[styles.filterTagText, { color: C.accent }]}>{rankingSort === 'rating' ? 'Highest Rated' : 'No Ranking'}</Text>
+                  <TouchableOpacity onPress={() => setRankingSort('popularity')} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }} accessibilityRole="button" accessibilityLabel={t('search.removeFilterHint')}>
+                    <X size={12} color={C.accent} style={{ marginLeft: 4 }} />
+                  </TouchableOpacity>
+                </View>
+              )}
+              {priceSort !== 'none' && (
+                <View style={[styles.filterTagPill, { backgroundColor: C.accentLight, borderColor: C.accent }]}>
+                  <Text style={[styles.filterTagText, { color: C.accent }]}>{priceSort === 'price_low' ? 'Price: Low-High' : 'Price: High-Low'}</Text>
+                  <TouchableOpacity onPress={() => setPriceSort('none')} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }} accessibilityRole="button" accessibilityLabel={t('search.removeFilterHint')}>
                     <X size={12} color={C.accent} style={{ marginLeft: 4 }} />
                   </TouchableOpacity>
                 </View>
@@ -700,15 +732,15 @@ function SearchScreen() {
                   <Text style={[styles.filterTagText, { color: C.accent }]}>
                     {t('search.maxBudget', { value: maxBudget.toLocaleString('en-IN') })}
                   </Text>
-                  <TouchableOpacity onPress={() => setMaxBudget(50000)} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }} accessibilityRole="button" accessibilityLabel={t('search.removeFilterHint')}>
+                  <TouchableOpacity onPress={() => { setMaxBudget(50000); setCustomBudgetText(''); }} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }} accessibilityRole="button" accessibilityLabel={t('search.removeFilterHint')}>
                     <X size={12} color={C.accent} style={{ marginLeft: 4 }} />
                   </TouchableOpacity>
                 </View>
               )}
               {selectedDuration !== 'ALL' && (
                 <View style={[styles.filterTagPill, { backgroundColor: C.accentLight, borderColor: C.accent }]}>
-                  <Text style={[styles.filterTagText, { color: C.accent }]}>{t('search.durationLabel', { value: t(DURATION_LABEL_KEYS[selectedDuration]) })}</Text>
-                  <TouchableOpacity onPress={() => setSelectedDuration('ALL')} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }} accessibilityRole="button" accessibilityLabel={t('search.removeFilterHint')}>
+                  <Text style={[styles.filterTagText, { color: C.accent }]}>{selectedDuration === 'CUSTOM' ? `${customDurationDays} Days` : t('search.durationLabel', { value: t(DURATION_LABEL_KEYS[selectedDuration]) })}</Text>
+                  <TouchableOpacity onPress={() => { setSelectedDuration('ALL'); setCustomDurationDays(null); setCustomDurationText(''); }} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }} accessibilityRole="button" accessibilityLabel={t('search.removeFilterHint')}>
                     <X size={12} color={C.accent} style={{ marginLeft: 4 }} />
                   </TouchableOpacity>
                 </View>
@@ -983,23 +1015,20 @@ function SearchScreen() {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.filterScrollContent}>
-              {/* Section 1: SORT BY */}
+              {/* Section 1A: RANKING / POPULARITY */}
               <View style={styles.filterSection}>
-                <Text style={[styles.filterSectionTitle, { color: C.textSecondary }]}>{t('search.sortResultsBy')}</Text>
+                <Text style={[styles.filterSectionTitle, { color: C.textSecondary }]}>Rank & Popularity</Text>
                 <View style={styles.filterChipsWrap}>
-                  {(
-                    [
-                      { key: 'popularity', labelKey: 'search.sortPopularity' },
-                      { key: 'price_low', labelKey: 'search.sortPriceLow' },
-                      { key: 'price_high', labelKey: 'search.sortPriceHigh' },
-                      { key: 'rating', labelKey: 'search.sortHighestRated' },
-                    ] as const
-                  ).map((opt) => {
-                    const isSelected = sortOption === opt.key;
+                  {[
+                    { key: 'popularity' as const, label: 'Most Popular' },
+                    { key: 'rating' as const, label: 'Highest Rated' },
+                    { key: 'none' as const, label: 'Default' },
+                  ].map((opt) => {
+                    const isSelected = rankingSort === opt.key;
                     return (
                       <TouchableOpacity
                         key={opt.key}
-                        onPress={() => setSortOption(opt.key)}
+                        onPress={() => setRankingSort(opt.key)}
                         style={[
                           styles.filterSelectChip,
                           {
@@ -1008,11 +1037,45 @@ function SearchScreen() {
                           },
                         ]}
                         accessibilityRole="button"
-                        accessibilityLabel={t(opt.labelKey)}
+                        accessibilityLabel={opt.label}
                         accessibilityState={{ selected: isSelected }}
                       >
                         <Text style={[styles.filterSelectChipText, { color: isSelected ? '#FFF' : C.text }]}>
-                          {t(opt.labelKey)}
+                          {opt.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              {/* Section 1B: PRICE ORDER */}
+              <View style={styles.filterSection}>
+                <Text style={[styles.filterSectionTitle, { color: C.textSecondary }]}>Price Order</Text>
+                <View style={styles.filterChipsWrap}>
+                  {[
+                    { key: 'none' as const, label: 'Any Price' },
+                    { key: 'price_low' as const, label: 'Price: Low to High' },
+                    { key: 'price_high' as const, label: 'Price: High to Low' },
+                  ].map((opt) => {
+                    const isSelected = priceSort === opt.key;
+                    return (
+                      <TouchableOpacity
+                        key={opt.key}
+                        onPress={() => setPriceSort(opt.key)}
+                        style={[
+                          styles.filterSelectChip,
+                          {
+                            backgroundColor: isSelected ? C.blue : C.border,
+                            borderColor: isSelected ? C.accent : C.cardBorder,
+                          },
+                        ]}
+                        accessibilityRole="button"
+                        accessibilityLabel={opt.label}
+                        accessibilityState={{ selected: isSelected }}
+                      >
+                        <Text style={[styles.filterSelectChipText, { color: isSelected ? '#FFF' : C.text }]}>
+                          {opt.label}
                         </Text>
                       </TouchableOpacity>
                     );
@@ -1036,11 +1099,11 @@ function SearchScreen() {
                     { val: 20000, labelKey: 'search.budgetUnder20k' },
                     { val: 30000, labelKey: 'search.budgetUnder30k' },
                   ].map((b) => {
-                    const isSelected = maxBudget === b.val;
+                    const isSelected = maxBudget === b.val && !customBudgetText;
                     return (
                       <TouchableOpacity
                         key={b.val}
-                        onPress={() => setMaxBudget(b.val)}
+                        onPress={() => { setMaxBudget(b.val); setCustomBudgetText(''); }}
                         style={[
                           styles.filterSelectChip,
                           {
@@ -1059,6 +1122,31 @@ function SearchScreen() {
                     );
                   })}
                 </View>
+                {/* Custom Budget Input */}
+                <View style={styles.customInputRow}>
+                  <Text style={styles.customInputPrefix}>₹</Text>
+                  <TextInput
+                    style={styles.customFilterInput}
+                    placeholder="Enter custom budget (e.g. 25000)"
+                    placeholderTextColor="#94A3B8"
+                    keyboardType="numeric"
+                    value={customBudgetText}
+                    onChangeText={(val) => {
+                      setCustomBudgetText(val);
+                      const parsed = parseInt(val.replace(/[^0-9]/g, ''), 10);
+                      if (!isNaN(parsed) && parsed > 0) {
+                        setMaxBudget(parsed);
+                      } else if (val === '') {
+                        setMaxBudget(50000);
+                      }
+                    }}
+                  />
+                  {customBudgetText ? (
+                    <TouchableOpacity onPress={() => { setCustomBudgetText(''); setMaxBudget(50000); }}>
+                      <X size={16} color="#64748B" />
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
               </View>
 
               {/* Section 3: TRIP DURATION */}
@@ -1073,11 +1161,11 @@ function SearchScreen() {
                       { key: 'LONG', labelKey: 'search.duration8plus' },
                     ] as const
                   ).map((dur) => {
-                    const isSelected = selectedDuration === dur.key;
+                    const isSelected = selectedDuration === dur.key && !customDurationText;
                     return (
                       <TouchableOpacity
                         key={dur.key}
-                        onPress={() => setSelectedDuration(dur.key)}
+                        onPress={() => { setSelectedDuration(dur.key); setCustomDurationDays(null); setCustomDurationText(''); }}
                         style={[
                           styles.filterSelectChip,
                           {
@@ -1096,19 +1184,47 @@ function SearchScreen() {
                     );
                   })}
                 </View>
+                {/* Custom Duration Input */}
+                <View style={styles.customInputRow}>
+                  <TextInput
+                    style={styles.customFilterInput}
+                    placeholder="Enter exact days (e.g. 5)"
+                    placeholderTextColor="#94A3B8"
+                    keyboardType="numeric"
+                    value={customDurationText}
+                    onChangeText={(val) => {
+                      setCustomDurationText(val);
+                      const parsed = parseInt(val.replace(/[^0-9]/g, ''), 10);
+                      if (!isNaN(parsed) && parsed > 0) {
+                        setCustomDurationDays(parsed);
+                        setSelectedDuration('CUSTOM');
+                      } else {
+                        setCustomDurationDays(null);
+                        setSelectedDuration('ALL');
+                      }
+                    }}
+                  />
+                  <Text style={styles.customInputSuffix}>Days</Text>
+                  {customDurationText ? (
+                    <TouchableOpacity onPress={() => { setCustomDurationText(''); setCustomDurationDays(null); setSelectedDuration('ALL'); }}>
+                      <X size={16} color="#64748B" />
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
               </View>
 
               {/* Section 4: TRANSPORT MODE */}
               <View style={styles.filterSection}>
                 <Text style={[styles.filterSectionTitle, { color: C.textSecondary }]}>{t('search.transportMode')}</Text>
                 <View style={styles.filterChipsWrap}>
-                  {(
-                    [
-                      { key: 'ALL', labelKey: 'search.transportAllModes' },
-                      { key: 'BUS', labelKey: 'search.transportBus' },
-                      { key: 'BIKE', labelKey: 'search.transportBike' },
-                    ] as const
-                  ).map((tr) => {
+                  {[
+                    { key: 'ALL' as const, label: t('search.transportAllModes') },
+                    { key: 'BUS' as const, label: t('search.transportBus') },
+                    { key: 'BIKE' as const, label: t('search.transportBike') },
+                    { key: 'CAB' as const, label: 'Car / Cab' },
+                    { key: 'TRAIN' as const, label: 'Train' },
+                    { key: 'FLIGHT' as const, label: 'Flight' },
+                  ].map((tr) => {
                     const isSelected = selectedTransport === tr.key;
                     return (
                       <TouchableOpacity
@@ -1122,11 +1238,11 @@ function SearchScreen() {
                           },
                         ]}
                         accessibilityRole="button"
-                        accessibilityLabel={t(tr.labelKey)}
+                        accessibilityLabel={tr.label}
                         accessibilityState={{ selected: isSelected }}
                       >
                         <Text style={[styles.filterSelectChipText, { color: isSelected ? '#FFF' : C.text }]}>
-                          {t(tr.labelKey)}
+                          {tr.label}
                         </Text>
                       </TouchableOpacity>
                     );
@@ -1913,6 +2029,35 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+  },
+  customInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 42,
+    marginTop: 10,
+    gap: 8,
+  },
+  customInputPrefix: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  customInputSuffix: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  customFilterInput: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#0F172A',
+    padding: 0,
   },
   filterSelectChip: {
     paddingVertical: 8,

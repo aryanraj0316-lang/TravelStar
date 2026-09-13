@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
+  Image,
   Modal,
   View,
   Text,
@@ -265,11 +266,15 @@ export default function TripDetailModal({
               <ScrollView style={styles.modalForm} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
                 {/* Organizer Profile Card */}
                 <View style={styles.modalOrganizerCard}>
-                  <View style={styles.organizerAvatarWrap}>
-                    <Text style={{ fontSize: 16, fontWeight: 'bold', color: C.accent }}>
-                      {organizerName.charAt(0)}
-                    </Text>
-                  </View>
+                  {'creatorAvatar' in trip && (trip as any).creatorAvatar ? (
+                    <Image source={{ uri: (trip as any).creatorAvatar }} style={styles.organizerAvatarImg} />
+                  ) : (
+                    <View style={styles.organizerAvatarWrap}>
+                      <Text style={{ fontSize: 16, fontWeight: 'bold', color: C.accent }}>
+                        {organizerName.charAt(0)}
+                      </Text>
+                    </View>
+                  )}
                   <View style={{ flex: 1 }}>
                     <Text style={styles.modalOrganizerName}>{organizerName}</Text>
                     {/* No "Background-Verified Organizer" badge: this product
@@ -942,12 +947,18 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   organizerAvatarWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: C.accentLight,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  organizerAvatarImg: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: C.border,
   },
   modalOrganizerName: {
     fontSize: 13,

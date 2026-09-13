@@ -395,6 +395,44 @@ router.post('/:id/mute', async (req, res) => {
 // non-organizers — a trip's organizer can leave its group chat like
 // anyone else (they keep organizing the trip itself; TripMember is a
 // separate model from ChatRoomMember).
+// Delete a chat room (direct chat deletion or leave group chat)
+router.delete('/:id', async (req, res) => {
+  const parsedParams = roomIdParamSchema.safeParse(req.params);
+  if (!parsedParams.success) {
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid chat room id.' } });
+  }
+  const { id } = parsedParams.data;
+  const tokenUserId = requireUserId(req);
+
+  try {
+    const membership = await prisma.chatRoomMember.findUnique({
+      where: { chatRoomId_userId: { chatRoomId: id, userId: tokenUserId } },
+      include: { chatRoom: true },
+    });
+
+    if (!membership) {
+      const room = await prisma.chatRoom.findUnique({ where: { id } });
+      if (!room) {
+        return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Chat room not found' } });
+      }
+      return res.status(200).json({ ok: true, data: { message: 'Chat removed.' } });
+    }
+
+    if (!membership.chatRoom.isGroup) {
+      await prisma.chatRoom.delete({ where: { id } });
+    } else {
+      await prisma.chatRoomMember.delete({
+        where: { chatRoomId_userId: { chatRoomId: id, userId: tokenUserId } },
+      });
+    }
+
+    return res.status(200).json({ ok: true, data: { message: 'Chat deleted.' } });
+  } catch (err) {
+    logger.error('[Chats] Delete chat error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not delete chat.' } });
+  }
+});
+
 router.delete('/:id/members/me', async (req, res) => {
   const parsedParams = roomIdParamSchema.safeParse(req.params);
   if (!parsedParams.success) {

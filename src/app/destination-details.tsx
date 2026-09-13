@@ -145,7 +145,7 @@ export default function DestinationDetailsScreen() {
         accessibilityRole="button"
         accessibilityLabel={t('destinationDetails.goBack')}
       >
-        <ArrowLeft size={18} color={C.white} />
+        <ArrowLeft size={18} color={C.text} />
       </TouchableOpacity>
       <Text style={styles.headerTitleText} numberOfLines={1}>
         {title}
@@ -161,7 +161,7 @@ export default function DestinationDetailsScreen() {
         }
         accessibilityState={{ selected: isSaved, disabled: !destination || toggleSaved.isPending }}
       >
-        <Heart size={18} color={isSaved ? C.red : C.white} fill={isSaved ? C.red : 'transparent'} />
+        <Heart size={18} color={isSaved ? C.red : C.text} fill={isSaved ? C.red : 'transparent'} />
       </TouchableOpacity>
     </View>
   );
@@ -299,7 +299,7 @@ export default function DestinationDetailsScreen() {
 
       {/* Sticky CTA */}
       <View style={styles.stickyCtaWrap}>
-        <LinearGradient colors={['#0C1020', C.bg]} style={styles.ctaBackgroundGlow} />
+        
         <Button
           label={t('destinationDetails.planTripHere')}
           onPress={() => router.navigate('/create')}

@@ -1463,6 +1463,7 @@ function ChatScreen() {
     // Add database/real-time members
     if (dbMembers && dbMembers.length > 0) {
       dbMembers.forEach((m) => {
+        if (m.role === "SYSTEM" || m.name?.trim().toLowerCase() === "system" || m.id === "system") return;
         // Normalize role name
         let roleName = m.role || 'Tourist';
         if (roleName === 'TOURIST' || roleName === 'MEMBER') roleName = 'Tourist';
@@ -1486,8 +1487,11 @@ function ChatScreen() {
 
     // Add other senders from the current active messages
     currentMessages.forEach((msg) => {
+      const isSystem = msg.senderRole === "SYSTEM" || msg.senderName === "System" || msg.senderId === "system";
+      if (isSystem) return;
       if (msg.senderName && !msg.isMe) {
         const cleanSender = (msg.senderName || '').replace(/\s*\((Creator|Organizer)\)\s*$/i, '').trim();
+        if (cleanSender.toLowerCase() === "system") return;
         // Only add if not already present to avoid overriding database entries
         if (!membersMap.has(cleanSender)) {
           membersMap.set(cleanSender, {
@@ -1508,7 +1512,7 @@ function ChatScreen() {
     // Singh, Suman Gupta, Aditya Sen) that used to appear in every empty
     // group regardless of who was actually in it.
 
-    return Array.from(membersMap.values());
+    return Array.from(membersMap.values()).filter((m) => m.role !== "SYSTEM" && m.name.toLowerCase() !== "system" && m.id !== "system");
   }, [currentMessages, dbMembers, profile.id, profile.name, profile.avatar]);
 
   // The other side of a DM/guide room — for the non-group Settings panel's
@@ -1792,9 +1796,43 @@ function ChatScreen() {
     try {
       await apiService.leaveChatRoom(roomId);
       setInboxRooms((prev) => prev.filter((r) => r.id !== roomId));
+      setTripMessages((prev) => {
+        const next = { ...prev };
+        delete next[roomId];
+        return next;
+      });
+      if (activeRoomId === roomId || selectedRoomId === roomId) {
+        setActiveRoomId(null);
+        setSelectedRoomId(null);
+        setSelectedTripId('');
+      }
+      toast(t("chat.leftGroupSuccess", "Left the group successfully"), "success");
     } catch (e) {
-      logger.warn('[Chat] Leave room failed:', e);
-      toast(errorToastMessage(e, 'Could not leave the group. Please try again.'), 'error');
+      logger.warn("[Chat] Leave room failed:", e);
+      setInboxRooms((prev) => prev.filter((r) => r.id !== roomId));
+      toast(errorToastMessage(e, "Could not leave the group. Please try again."), "error");
+    }
+  };
+
+  const handleDeleteChatRoom = async (roomId: string) => {
+    try {
+      await apiService.deleteChatRoom(roomId);
+      setInboxRooms((prev) => prev.filter((r) => r.id !== roomId));
+      setTripMessages((prev) => {
+        const next = { ...prev };
+        delete next[roomId];
+        return next;
+      });
+      if (activeRoomId === roomId || selectedRoomId === roomId) {
+        setActiveRoomId(null);
+        setSelectedRoomId(null);
+        setSelectedTripId('');
+      }
+      toast(t("chat.chatDeletedSuccess", "Chat deleted successfully"), "success");
+    } catch (e) {
+      logger.warn("[Chat] Delete chat failed:", e);
+      setInboxRooms((prev) => prev.filter((r) => r.id !== roomId));
+      toast(errorToastMessage(e, "Could not delete chat. Please try again."), "error");
     }
   };
 
@@ -2584,65 +2622,69 @@ function ChatScreen() {
               <TouchableOpacity
                 style={styles.optionsRowBtn}
                 onPress={() => {
-                  const roomId = selectedRoomForOptions.id;
-                  void (async () => {
+                  const targetRoom = selectedRoomForOptions;
+                  setSelectedRoomForOptions(null);
+                  if (!targetRoom) return;
+                  setTimeout(async () => {
                     const ok = await confirm({
-                      title: t('chat.clearChatTitle'),
-                      message: t('chat.clearChatMessage'),
-                      confirmLabel: t('chat.clear'),
+                      title: t("chat.clearChatTitle"),
+                      message: t("chat.clearChatMessage"),
+                      confirmLabel: t("chat.clear"),
                       destructive: true,
                     });
                     if (ok) {
-                          setTripMessages((prev) => ({
-                            ...prev,
-                            [roomId]: [],
-                          }));
-                          // Reset the room's latest message snippet
-                          setInboxRooms((prev) =>
-                            prev.map((r) => {
-                              if (r.id === roomId) {
-                                return { ...r, latestMessage: t('chat.noMessagesInChat') };
-                              }
-                              return r;
-                            }),
-                          );
+                      setTripMessages((prev) => ({ ...prev, [targetRoom.id]: [] }));
+                      toast(t("chat.conversationCleared"));
+                      setInboxRooms((prev) =>
+                        prev.map((r) => {
+                          if (r.id === targetRoom.id) {
+                            return { ...r, latestMessage: t("chat.noMessagesInChat") };
+                          }
+                          return r;
+                        }),
+                      );
                     }
-                  })();
-                  setSelectedRoomForOptions(null);
+                  }, 200);
                 }}
                 accessibilityRole="button"
-                accessibilityLabel={t('chat.clearConversation')}
+                accessibilityLabel={t("chat.clearConversation")}
               >
                 <Trash2 size={16} color="#EF4444" style={styles.optionsRowIcon} />
-                <Text style={[styles.optionsRowText, { color: '#EF4444' }]}>{t('chat.clearConversation')}</Text>
+                <Text style={[styles.optionsRowText, { color: "#EF4444" }]}>{t("chat.clearConversation")}</Text>
               </TouchableOpacity>
 
               {/* LEAVE GROUP / DELETE CHAT */}
               <TouchableOpacity
                 style={styles.optionsRowBtn}
                 onPress={() => {
-                  const roomId = selectedRoomForOptions.id;
-                  const roomName = selectedRoomForOptions.name;
-                  const isGroup = selectedRoomForOptions.type === 'GROUP';
-                  void (async () => {
+                  const targetRoom = selectedRoomForOptions;
+                  setSelectedRoomForOptions(null);
+                  if (!targetRoom) return;
+                  const isGroup = targetRoom.type === "GROUP";
+                  setTimeout(async () => {
                     const ok = await confirm({
-                      title: isGroup ? t('chat.leaveGroupTitle') : t('chat.deleteChatTitle'),
+                      title: isGroup ? t("chat.leaveGroupTitle") : t("chat.deleteChatTitle"),
                       message: isGroup
-                        ? t('chat.leaveGroupMessage', { name: roomName })
-                        : t('chat.deleteChatMessage', { name: roomName }),
-                      confirmLabel: isGroup ? t('chat.leave') : t('chat.delete'),
+                        ? t("chat.leaveGroupMessage", { name: targetRoom.name })
+                        : t("chat.deleteChatMessage", { name: targetRoom.name }),
+                      confirmLabel: isGroup ? t("chat.leave") : t("chat.delete"),
                       destructive: true,
                     });
-                    if (ok) await handleLeaveRoom(roomId);
-                  })();
-                  setSelectedRoomForOptions(null);
+                    if (ok) {
+                      if (isGroup) {
+                        await handleLeaveRoom(targetRoom.id);
+                      } else {
+                        await handleDeleteChatRoom(targetRoom.id);
+                      }
+                    }
+                  }, 200);
                 }}
                 accessibilityRole="button"
-                accessibilityLabel={selectedRoomForOptions.type === 'GROUP' ? t('chat.leaveGroupTitle') : t('chat.deleteChatTitle')}
+                accessibilityLabel={selectedRoomForOptions?.type === "GROUP" ? t("chat.leaveGroupTitle") : t("chat.deleteChatTitle")}
               >
                 <X size={16} color="#EF4444" style={styles.optionsRowIcon} />
-                <Text style={[styles.optionsRowText, { color: '#EF4444' }]}>
-                  {selectedRoomForOptions.type === 'GROUP' ? t('chat.leaveGroupTitle') : t('chat.deleteChatTitle')}
+                <Text style={[styles.optionsRowText, { color: "#EF4444" }]}>
+                  {selectedRoomForOptions?.type === "GROUP" ? t("chat.leaveGroupTitle") : t("chat.deleteChatTitle")}
                 </Text>
               </TouchableOpacity>
 
@@ -3019,7 +3061,6 @@ function ChatScreen() {
                           accessibilityRole="button"
                           accessibilityLabel={cat.name}
                         >
-                          <Text style={styles.emojiCategoryIcon}>{cat.icon}</Text>
                           <Text style={[styles.emojiCategoryPillText, isActive && styles.emojiCategoryPillTextActive]}>
                             {cat.name}
                           </Text>

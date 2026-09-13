@@ -1902,7 +1902,7 @@ function HomeScreen() {
         <TrendingDestinations isFocused={isFocused} />
 
         {/* Bottom spacer for tab bar */}
-        <View style={{ height: 160 }} />
+        <View style={{ height: 32 }} />
       </ScrollView>
 
       {/* Real trip detail + the real join flow (POST /interactions/join-request),
@@ -2036,7 +2036,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.bg,
   },
   scrollContent: {
-    paddingBottom: 20,
+    paddingBottom: 12,
   },
   carouselContainer: {
     marginBottom: 24,
