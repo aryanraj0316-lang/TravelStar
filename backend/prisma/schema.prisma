@@ -412,6 +412,16 @@ model Trip {
   coverImage     String?
   category       String?
   languages      String[]
+  // Representative coordinates for this trip's route, resolved once at
+  // creation from the organizer's own timeline stops (the create screen
+  // geocodes them) and falling back to the static city table. Stored so
+  // "trips near me" can filter on the trip's real destination rather than
+  // re-deriving a position from its city *names* on every request — a
+  // lookup that silently dropped any trip whose city wasn't in that table.
+  // Null only when nothing on the route could be placed; those trips are
+  // excluded from radius results rather than given invented coordinates.
+  latitude       Float?
+  longitude      Float?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   chatRoom       ChatRoom?
@@ -428,6 +438,9 @@ model Trip {
 
   @@index([creatorId])
   @@index([createdAt])
+  // Serves the bounding-box prefilter GET /trips/nearby runs before the
+  // exact haversine pass.
+  @@index([latitude, longitude])
 }
 
 model TripMember {

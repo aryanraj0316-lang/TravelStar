@@ -54,7 +54,12 @@ describe('GET /api/v1/trips/nearby', () => {
     createdTripIds.push(near.body.data.id, far.body.data.id);
 
     // From Delhi (28.61, 77.21): Jaipur (~240 km) is much closer than Chennai (~1750 km).
-    const res = await request(app).get('/api/v1/trips/nearby?lat=28.6139&lng=77.209');
+    //
+    // An explicit high limit, because this runs against the shared database:
+    // with the default page size the two trips this test just created can be
+    // pushed off the page by whatever else is already in there, which has
+    // nothing to do with the distance annotation being asserted here.
+    const res = await request(app).get('/api/v1/trips/nearby?lat=28.6139&lng=77.209&limit=50');
     expect(res.status).toBe(200);
     const list: { id: string; distanceKm: number | null; distanceIsApproximate: boolean }[] = res.body.data;
 

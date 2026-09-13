@@ -8,6 +8,7 @@ import { requireUserId } from '../../lib/auth-context';
 import { claimSeatAndJoin } from '../../services/trip-membership';
 import { calculateMidwayPrice } from '../../services/midway-pricing';
 import { coordsForCity, haversineKm, stateForCity } from '../../lib/india-city-coords';
+import { boundingBox, resolveTripCoordinates } from '../../lib/trip-coordinates';
 import { createTripCoverUploadUrl, ObjectStorageNotConfiguredError } from '../../lib/object-storage';
 import { sendPushToUsers } from '../../lib/push';
 
@@ -254,19 +255,38 @@ router.get('/nearby', async (req, res) => {
   const stateFilter = state?.trim().toLowerCase();
 
   try {
+    // A radius search is bounded in the database first: the box always
+    // contains the circle, so this narrows the scan on the
+    // (latitude, longitude) index without ever excluding a trip the exact
+    // haversine pass below would have kept. Trips whose coordinates were
+    // never resolved are still admitted here so the per-stop/city fallback
+    // can place them — rows created before Trip carried coordinates.
+    const box = origin && radiusKm !== undefined ? boundingBox(origin, radiusKm) : null;
+
     const dbTrips = await prisma.trip.findMany({
       where: {
         privacy: 'PUBLIC',
         status: 'ACTIVE',
         endDate: { gte: new Date() },
+        ...(box
+          ? {
+              OR: [
+                {
+                  latitude: { gte: box.minLat, lte: box.maxLat },
+                  longitude: { gte: box.minLng, lte: box.maxLng },
+                },
+                { latitude: null },
+              ],
+            }
+          : {}),
       },
-      include: TRIP_INCLUDE,
+      include: { ...TRIP_INCLUDE, timeline: { select: { city: true, latitude: true, longitude: true }, orderBy: { order: 'asc' } } },
       orderBy: { startDate: 'asc' },
-      // City/state/radius filtering happens in application code below (it
-      // needs the coordinate lookup table), so this over-fetches a bounded
-      // page rather than the final `limit` when any filter is active —
-      // otherwise a radius/city/state filter could legitimately empty an
-      // already-limited page even though matching trips exist further down.
+      // City/state filtering and the exact distance pass happen in
+      // application code below, so this over-fetches a bounded page rather
+      // than the final `limit` when any filter is active — otherwise a
+      // filter could legitimately empty an already-limited page even though
+      // matching trips exist further down.
       take: cityFilter || stateFilter || radiusKm ? MAX_PAGE_SIZE : (limit ?? DEFAULT_PAGE_SIZE),
     });
 
@@ -275,17 +295,37 @@ router.get('/nearby', async (req, res) => {
         const base = mapTrip(t, tokenUserId);
         let distanceKm: number | null = null;
         let nearestCity: string | null = null;
+
         if (origin) {
-          for (const c of t.cities) {
-            const coords = coordsForCity(c);
-            if (!coords) continue;
-            const d = haversineKm(origin, coords);
+          // Every point we can honestly place on this route, nearest wins:
+          // the trip's own stored coordinates first, then each timeline
+          // stop, then the city table for routes that carry neither.
+          const candidates: { coords: { lat: number; lng: number }; city: string | null }[] = [];
+
+          if (t.latitude !== null && t.longitude !== null) {
+            candidates.push({ coords: { lat: t.latitude, lng: t.longitude }, city: t.cities[0] ?? null });
+          }
+          for (const stop of t.timeline) {
+            if (stop.latitude !== null && stop.longitude !== null) {
+              candidates.push({ coords: { lat: stop.latitude, lng: stop.longitude }, city: stop.city });
+            }
+          }
+          if (candidates.length === 0) {
+            for (const c of t.cities) {
+              const coords = coordsForCity(c);
+              if (coords) candidates.push({ coords, city: c });
+            }
+          }
+
+          for (const candidate of candidates) {
+            const d = haversineKm(origin, candidate.coords);
             if (distanceKm === null || d < distanceKm) {
               distanceKm = d;
-              nearestCity = c;
+              nearestCity = candidate.city;
             }
           }
         }
+
         return {
           ...base,
           distanceKm: distanceKm === null ? null : Math.round(distanceKm),
@@ -597,6 +637,10 @@ router.post('/', async (req, res) => {
       Math.round((data.endDate.getTime() - data.startDate.getTime()) / (24 * 60 * 60 * 1000)),
     );
 
+    // Resolved once, here, rather than re-derived from city names on every
+    // nearby request — see lib/trip-coordinates.ts.
+    const tripCoords = resolveTripCoordinates(data.cities, data.timeline);
+
     const { newTrip, chatRoom } = await prisma.$transaction(async (tx) => {
       const trip = await tx.trip.create({
         data: {
@@ -627,6 +671,8 @@ router.post('/', async (req, res) => {
           languages: ['Hindi', 'English'],
           coverImage: data.coverImage ?? null,
           category: data.category ?? null,
+          latitude: tripCoords?.lat ?? null,
+          longitude: tripCoords?.lng ?? null,
         },
       });
 
