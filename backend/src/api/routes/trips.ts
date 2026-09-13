@@ -9,6 +9,7 @@ import { claimSeatAndJoin } from '../../services/trip-membership';
 import { calculateMidwayPrice } from '../../services/midway-pricing';
 import { coordsForCity, haversineKm, stateForCity } from '../../lib/india-city-coords';
 import { boundingBox, resolveTripCoordinates } from '../../lib/trip-coordinates';
+import { extractRouteWaypoints, findGuidesForRoute } from '../../services/guide-route-matching';
 import { createTripCoverUploadUrl, ObjectStorageNotConfiguredError } from '../../lib/object-storage';
 import { sendPushToUsers } from '../../lib/push';
 
@@ -477,6 +478,55 @@ router.get('/:id', async (req, res) => {
 // Guide" and the join-request checkpoint pickers read this back via the
 // `assignedGuides` array GET /trips/:id already returns per stop.
 // ──────────────────────────────────────────────────────────
+
+/**
+ * The guides who actually work this trip's route.
+ *
+ * Cross-references the organizer's own itinerary (its geocoded timeline
+ * stops, falling back to the plain cities array) against every guide's
+ * declared service zones, and reports which stops each guide covers plus
+ * whether they cover the whole journey. This is what the organizer's
+ * checkpoint view lists, instead of offering every guide in the app
+ * regardless of whether they have ever worked anywhere near the route.
+ *
+ * Readable by any signed-in user: it is guide discovery, and the traveller-
+ * facing "find a guide for this checkpoint" view needs the same answer.
+ */
+router.get('/:id/matching-guides', async (req, res) => {
+  const parsedParams = z.object({ id: z.string().uuid() }).safeParse(req.params);
+  if (!parsedParams.success) {
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid trip id.' } });
+  }
+
+  try {
+    const route = await extractRouteWaypoints(parsedParams.data.id);
+    if (!route) {
+      return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found.' } });
+    }
+
+    const guides = await findGuidesForRoute(route.waypoints);
+
+    return res.status(200).json({
+      ok: true,
+      data: {
+        waypoints: route.waypoints.map((w) => ({
+          stopId: w.stopId,
+          order: w.order,
+          city: w.city,
+          latitude: w.coords.lat,
+          longitude: w.coords.lng,
+        })),
+        // Named so the UI can say which stops it could not match on,
+        // rather than implying no guide covers them.
+        unplacedCities: route.unplacedCities,
+        guides,
+      },
+    });
+  } catch (err) {
+    logger.error('[Trips] Matching guides error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to match guides to this route' } });
+  }
+});
 
 const assignGuideSchema = z.object({
   guideProfileId: z.string().uuid(),

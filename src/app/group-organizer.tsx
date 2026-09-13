@@ -8,7 +8,7 @@ import { apiService, type TripTimelineStop } from '@/services/api';
 import { safeStorage } from '@/services/storage';
 import { useApp, type Trip } from '@/store/AppContext';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
-import type { IncomingJoinRequest, PublicGuide, ReceivedGuideQuote, TripMemberRow } from '@/types/api';
+import type { IncomingJoinRequest, PublicGuide, ReceivedGuideQuote, TripGuideMatches, TripMemberRow } from '@/types/api';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Activity from 'lucide-react-native/icons/activity';
@@ -430,6 +430,8 @@ export default function GroupOrganizerScreen() {
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [timelineError, setTimelineError] = useState<string | null>(null);
   const [publicGuides, setPublicGuides] = useState<PublicGuide[]>([]);
+  // Which guides' declared service zones actually cover this trip's route.
+  const [routeMatches, setRouteMatches] = useState<TripGuideMatches | null>(null);
   const [guidesLoading, setGuidesLoading] = useState(false);
   const [guidePickerStopId, setGuidePickerStopId] = useState<string | null>(null);
   const [assigningGuideKey, setAssigningGuideKey] = useState<string | null>(null);
@@ -1078,6 +1080,17 @@ export default function GroupOrganizerScreen() {
   const openGuidePicker = (stopId: string) => {
     setGuidePickerStopId(stopId);
     fetchPublicGuides();
+    // Guides who actually work this route are surfaced first; the full list
+    // stays available underneath so the organizer is never boxed in by it.
+    if (selectedCreation) {
+      apiService
+        .getMatchingGuides(selectedCreation.id)
+        .then((data) => setRouteMatches(data))
+        .catch((e) => {
+          logger.warn('Failed to fetch route-matching guides:', e);
+          setRouteMatches(null);
+        });
+    }
   };
 
   const handleAssignGuide = async (stopId: string, guide: PublicGuide) => {
@@ -3071,11 +3084,26 @@ export default function GroupOrganizerScreen() {
                       <Text style={styles.emptyMembersSub}>{t('groupOrganizer.noGuidesAvailable')}</Text>
                     ) : (
                       <View style={{ gap: 8 }}>
-                        {publicGuides.map((guide) => {
+                        {(() => {
+                          const matchForGuide = (guideId: string) =>
+                            routeMatches?.guides.find((m) => m.guideProfileId === guideId) ?? null;
+                          const coversThisStop = (guideId: string) =>
+                            !!guidePickerStopId && !!matchForGuide(guideId)?.coveredStopIds.includes(guidePickerStopId);
+
+                          // Guides whose zones cover this checkpoint first,
+                          // then whole-route guides, then everyone else.
+                          return [...publicGuides].sort((a, b) => {
+                            const aCovers = coversThisStop(a.id) ? 2 : matchForGuide(a.id) ? 1 : 0;
+                            const bCovers = coversThisStop(b.id) ? 2 : matchForGuide(b.id) ? 1 : 0;
+                            return bCovers - aCovers;
+                          });
+                        })().map((guide) => {
                           const pickKey = `${guidePickerStopId}:${guide.id}`;
                           const alreadyAssigned = timelineStops
                             .find((s) => s.id === guidePickerStopId)
                             ?.assignedGuides.some((g) => g.guideProfileId === guide.id);
+                          const match = routeMatches?.guides.find((m) => m.guideProfileId === guide.id) ?? null;
+                          const coversThisStop = !!guidePickerStopId && !!match?.coveredStopIds.includes(guidePickerStopId);
                           return (
                             <TouchableOpacity
                               key={guide.id}
@@ -3104,6 +3132,17 @@ export default function GroupOrganizerScreen() {
                                     ? t('groupOrganizer.guideVerified')
                                     : t('groupOrganizer.guideNotVerified')}
                                 </Text>
+                                {coversThisStop ? (
+                                  <Text style={styles.guideCoverageText}>
+                                    {match?.coversEntireRoute
+                                      ? t('groupOrganizer.guideCoversWholeRoute')
+                                      : t('groupOrganizer.guideCoversThisCheckpoint')}
+                                  </Text>
+                                ) : match ? (
+                                  <Text style={styles.guideCoverageMutedText}>
+                                    {t('groupOrganizer.guideCoversOtherStops', { count: match.coveredOrders.length })}
+                                  </Text>
+                                ) : null}
                               </View>
                               {assigningGuideKey === pickKey ? (
                                 <ActivityIndicator size="small" color={C.blue} />
@@ -6401,6 +6440,17 @@ const styles = StyleSheet.create({
     borderColor: C.border,
     borderRadius: 12,
     padding: 10,
+  },
+  guideCoverageText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: C.greenText,
+    marginTop: 2,
+  },
+  guideCoverageMutedText: {
+    fontSize: 11,
+    color: C.textSec,
+    marginTop: 2,
   },
   // ── Checkpoints & Inter-Checkpoint Driving Styles ──
   itineraryFlowHeader: {

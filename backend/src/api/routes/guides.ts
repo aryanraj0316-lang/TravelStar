@@ -480,6 +480,84 @@ router.get('/:id/packages', async (req, res) => {
   }
 });
 
+// ──────────────────────────────────────────────────────────
+//  SERVICE ZONES
+//
+//  Where a guide will actually work, as a circle they define. This is what
+//  route matching queries against — `expertisePlaces` is free text and
+//  cannot answer whether a guide covers a stop 40km outside a named city.
+// ──────────────────────────────────────────────────────────
+
+const serviceZoneSchema = z.object({
+  label: z.string().trim().min(1).max(120),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  // Capped so one guide cannot declare a zone covering the subcontinent and
+  // appear as a match for every route in the app.
+  radiusKm: z.number().int().min(1).max(500),
+});
+
+router.get('/:id/service-zones', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const zones = await prisma.guideServiceZone.findMany({
+      where: { guideProfileId: id },
+      orderBy: { createdAt: 'asc' },
+    });
+    return res.status(200).json({ ok: true, data: zones });
+  } catch (err) {
+    logger.error('[Guides] Get service zones error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve service zones' } });
+  }
+});
+
+router.post('/:id/service-zones', async (req, res) => {
+  const { id } = req.params;
+  const parsed = serviceZoneSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      ok: false,
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'Please check the service area details.',
+        details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+      },
+    });
+  }
+  try {
+    if (!(await assertOwnsGuideProfile(req, res, id!))) return;
+
+    const zone = await prisma.guideServiceZone.create({
+      data: { guideProfileId: id!, ...parsed.data },
+    });
+    return res.status(201).json({ ok: true, data: zone });
+  } catch (err) {
+    logger.error('[Guides] Create service zone error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to create service zone' } });
+  }
+});
+
+router.delete('/:id/service-zones/:zoneId', async (req, res) => {
+  const { id, zoneId } = req.params;
+  try {
+    if (!(await assertOwnsGuideProfile(req, res, id!))) return;
+
+    // Scoped to this guide's own zones: the :id segment only proves the
+    // caller owns *a* profile, so deleting by zoneId alone would let one
+    // guide remove another's zone.
+    const deleted = await prisma.guideServiceZone.deleteMany({
+      where: { id: zoneId, guideProfileId: id! },
+    });
+    if (deleted.count === 0) {
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Service zone not found.' } });
+    }
+    return res.status(200).json({ ok: true, data: { message: 'Service zone removed.' } });
+  } catch (err) {
+    logger.error('[Guides] Delete service zone error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to delete service zone' } });
+  }
+});
+
 const packageSchema = z.object({
   title: z.string().trim().min(1).max(200),
   description: z.string().trim().max(2000).default(''),

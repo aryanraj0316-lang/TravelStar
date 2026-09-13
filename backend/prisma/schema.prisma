@@ -351,6 +351,32 @@ model GuideProfile {
   reviews  Review[]
   reels    GuideReel[]
   timelineStopAssignments TripTimelineStopGuide[]
+  serviceZones            GuideServiceZone[]
+}
+
+// Where a guide actually operates, as a circle they define themselves.
+//
+// `expertisePlaces` on GuideProfile is free text — useful to read, useless
+// to query: "Jaipur" there cannot tell you whether the guide covers a stop
+// 40km outside it. A zone is a real centre and radius, so matching a trip's
+// route against the guides who can work it is a distance comparison rather
+// than string matching on place names.
+model GuideServiceZone {
+  id             String       @id @default(uuid())
+  guideProfileId String
+  guide          GuideProfile @relation(fields: [guideProfileId], references: [id], onDelete: Cascade)
+  /// What the guide calls this area, e.g. "Jaipur & Shekhawati".
+  label          String
+  latitude       Float
+  longitude      Float
+  /// How far from the centre the guide will travel to work.
+  radiusKm       Int
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([guideProfileId])
+  // Serves the bounding-box prefilter in the route-matching query.
+  @@index([latitude, longitude])
 }
 
 model GuidePackage {

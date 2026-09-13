@@ -109,6 +109,42 @@ export interface TripRouteHazard {
   distanceFromRouteKm: number;
 }
 
+/** One guide whose declared service zones cover part of a trip's route. */
+export interface MatchedRouteGuide {
+  guideProfileId: string;
+  name: string;
+  avatar: string | null;
+  verifiedStatus: string;
+  rating: number | null;
+  reviewCount: number;
+  languages: string[];
+  dailyRate: Money;
+  /** Timeline stop ids this guide's zones cover. */
+  coveredStopIds: string[];
+  coveredOrders: number[];
+  coversEntireRoute: boolean;
+  matchedZones: { zoneId: string; label: string; radiusKm: number; distanceKm: number }[];
+}
+
+/** GET /trips/:id/matching-guides — guides who actually work this route. */
+export interface TripGuideMatches {
+  waypoints: { stopId: string | null; order: number; city: string; latitude: number; longitude: number }[];
+  /** Route cities that could not be placed, so the UI can say so rather
+   *  than implying no guide covers them. */
+  unplacedCities: string[];
+  guides: MatchedRouteGuide[];
+}
+
+/** A guide's declared operating area. */
+export interface GuideServiceZone {
+  id: string;
+  guideProfileId: string;
+  label: string;
+  latitude: number;
+  longitude: number;
+  radiusKm: number;
+}
+
 /** "All Clear" → Trip-wise Analysis, for one trip. */
 export interface TripHazardReport {
   tripId: string;

@@ -38,6 +38,8 @@ import type {
   Destination,
   HazardAlert,
   TripHazardReport,
+  TripGuideMatches,
+  GuideServiceZone,
   IncomingJoinRequest,
   JoinRequestSummary,
   StoryPayload,
@@ -708,6 +710,33 @@ export const apiService = {
   /** "All Clear" → Trip-wise Analysis: active hazards near this trip's own route. */
   async getTripHazards(tripId: string): Promise<TripHazardReport | null> {
     return request<TripHazardReport>(`/map/trips/${tripId}/hazards`);
+  },
+
+  /**
+   * The guides whose declared service zones actually cover this trip's
+   * route, with which stops each one covers. Replaces offering every guide
+   * in the app regardless of where they work.
+   */
+  async getMatchingGuides(tripId: string): Promise<TripGuideMatches | null> {
+    return request<TripGuideMatches>(`/trips/${tripId}/matching-guides`);
+  },
+
+  async getGuideServiceZones(guideProfileId: string): Promise<GuideServiceZone[] | null> {
+    return request<GuideServiceZone[]>(`/guides/${guideProfileId}/service-zones`);
+  },
+
+  async createGuideServiceZone(
+    guideProfileId: string,
+    zone: { label: string; latitude: number; longitude: number; radiusKm: number },
+  ): Promise<GuideServiceZone | null> {
+    return request<GuideServiceZone>(`/guides/${guideProfileId}/service-zones`, {
+      method: 'POST',
+      body: JSON.stringify(zone),
+    });
+  },
+
+  async deleteGuideServiceZone(guideProfileId: string, zoneId: string): Promise<MessageResponse | null> {
+    return request(`/guides/${guideProfileId}/service-zones/${zoneId}`, { method: 'DELETE' });
   },
 
   // Organizer-only: offer a specific guide at a specific checkpoint
