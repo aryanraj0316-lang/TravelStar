@@ -841,6 +841,7 @@
     "locationPermissionDenied": "Permission Denied — Location permission is required to show your current position on the map. Please enable it in your device settings.",
     "sosPermissionRequired": "Location permission is required to send an accurate SOS. Please enable it and try again, or call 112 directly.",
     "couldNotGetLocation": "Could not get your current location. Please try again, or call 112 directly.",
+    "sosSentWithLastKnown": "Sent using your last known location — it may not be where you are now.",
     "couldNotReadLocation": "Could not read your location.",
     "organizerLabel": "Organizer: {{name}}",
     "goBack": "Go back",
@@ -1703,7 +1704,8 @@
     "contactDetails": "Contact",
     "notifications": "Notifications",
     "muteNotifications": "Mute Notifications",
-    "muteNotificationsDesc": "You won't receive alerts for new messages in this chat."
+    "muteNotificationsDesc": "You won't receive alerts for new messages in this chat.",
+    "sosSentWithLastKnown": "Sent using your last known location — it may not be where you are now."
   },
   "findGuides": {
     "title": "Find a guide",

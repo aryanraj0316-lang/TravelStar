@@ -251,7 +251,7 @@ interface AppContextType {
   setTyping: (isTyping: boolean) => void;
   typingUser: { roomId: string; userId: string; userName: string; userAvatar?: string | null; isTyping: boolean } | null;
   sosAlerts: SOSAlert[];
-  triggerSOS: (lat: number, lng: number) => void;
+  triggerSOS: (lat: number, lng: number, fix?: { accuracyMeters?: number | null; capturedAt?: string; isStale?: boolean; message?: string }) => void;
   resolveSOS: (id: string) => void;
   activeRoomId: string | null;
   setActiveRoomId: (id: string | null) => void;
@@ -1028,7 +1028,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   );
 
   const triggerSOS = useCallback(
-    (lat: number, lng: number) => {
+    (lat: number, lng: number, fix?: { accuracyMeters?: number | null; capturedAt?: string; isStale?: boolean; message?: string }) => {
       const newAlert: SOSAlert = {
         id: `sos-${Date.now()}`,
         userName: profile.name,
@@ -1041,7 +1041,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // Fire over both transports: the socket delta reaches connected devices
       // immediately, the REST call is the durable, retried-by-nothing-else
       // write to SOSAlert. A user in distress must see a failure, not silence.
-      apiService.triggerSOS(profile.name, lat, lng).catch((e) => {
+      apiService.triggerSOS(profile.name, lat, lng, fix).catch((e) => {
         if (isOfflineFailure(e)) {
           logger.error('[Safety] SOS trigger offline, queued for retry the moment connectivity returns:', e);
           enqueueMutation('sos', { userName: profile.name, lat, lng }).catch((qe) =>

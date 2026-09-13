@@ -2,7 +2,7 @@ import { RouteErrorFallback } from '@/components/route-error-fallback';
 import { Avatar, Button, Input, ScreenEmpty } from '@/components/ui';
 import { recordConsent } from '@/lib/consent';
 import { formatDateRange, formatMessageTimestamp, formatTime } from '@/lib/datetime';
-import { getCurrentDeviceLocation } from '@/lib/device-location';
+import { getCurrentDeviceLocation, getEmergencyDeviceLocation } from '@/lib/device-location';
 import { errorToastMessage, showAlert, toast, useConfirm } from '@/lib/feedback';
 import { logger } from '@/lib/logger';
 import { formatINR } from '@/lib/money';
@@ -2380,7 +2380,7 @@ function ChatScreen() {
   // device can't produce a real fix, the alert is not sent with a wrong
   // location; the user is told to try again or call 112 directly instead.
   const triggerSOSEvent = async () => {
-    const location = await getCurrentDeviceLocation();
+    const location = await getEmergencyDeviceLocation();
     if (!location.ok) {
       const message =
         location.reason === 'PERMISSION_DENIED'
@@ -2391,7 +2391,14 @@ function ChatScreen() {
     }
     const { latitude: lat, longitude: lng } = location;
 
-    triggerSOS(lat, lng);
+    triggerSOS(lat, lng, {
+      accuracyMeters: location.accuracyMeters ?? null,
+      capturedAt: location.capturedAt,
+      isStale: location.isStale ?? false,
+    });
+    if (location.isStale) {
+      toast(t('chat.sosSentWithLastKnown'), 'info');
+    }
 
     const sosMessage: CustomMessage = {
       id: `sos-gen-${Date.now()}`,

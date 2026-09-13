@@ -971,10 +971,26 @@ export const apiService = {
     return request<SOSAlert[]>('/safety/sos');
   },
 
-  async triggerSOS(userName: string, latitude: number, longitude: number) {
+  async triggerSOS(
+    userName: string,
+    latitude: number,
+    longitude: number,
+    fix?: { accuracyMeters?: number | null; capturedAt?: string; isStale?: boolean; message?: string },
+  ) {
     return request('/safety/sos', {
       method: 'POST',
-      body: JSON.stringify({ userName, latitude, longitude }),
+      // Provenance travels with the coordinates so the alert can say how
+      // much to trust them, rather than presenting a remembered position as
+      // a live one.
+      body: JSON.stringify({
+        userName,
+        latitude,
+        longitude,
+        accuracyMeters: fix?.accuracyMeters ?? undefined,
+        capturedAt: fix?.capturedAt,
+        isStale: fix?.isStale ?? false,
+        message: fix?.message,
+      }),
     });
   },
 

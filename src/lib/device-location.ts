@@ -9,7 +9,17 @@ import * as Location from 'expo-location';
 import { logger } from '@/lib/logger';
 
 export type DeviceLocationResult =
-  | { ok: true; latitude: number; longitude: number }
+  | {
+      ok: true;
+      latitude: number;
+      longitude: number;
+      /** Radius of uncertainty in metres, when the platform reports one. */
+      accuracyMeters?: number | null;
+      /** When the fix was taken. */
+      capturedAt?: string;
+      /** True when this is a remembered position, not a live fix. */
+      isStale?: boolean;
+    }
   | { ok: false; reason: 'PERMISSION_DENIED' | 'UNAVAILABLE' };
 
 // getCurrentPositionAsync has no built-in timeout — on a device or emulator
@@ -52,9 +62,48 @@ export async function getCurrentDeviceLocation(): Promise<DeviceLocationResult> 
       POSITION_TIMEOUT_MS,
     );
 
-    return { ok: true, latitude: position.coords.latitude, longitude: position.coords.longitude };
+    return {
+      ok: true,
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
+      accuracyMeters: position.coords.accuracy ?? null,
+      capturedAt: new Date(position.timestamp).toISOString(),
+      isStale: false,
+    };
   } catch (e) {
     logger.error('[DeviceLocation] Failed to get current position:', e);
+    return { ok: false, reason: 'UNAVAILABLE' };
+  }
+}
+
+/**
+ * A fix for an emergency, falling back to the last position the platform
+ * remembers when no live one can be had.
+ *
+ * The fallback is always returned marked `isStale` with the time it was
+ * actually taken, because a ten-minute-old point presented as current sends
+ * help to where someone no longer is. Nothing here is ever invented: with
+ * neither a live nor a remembered position this fails, and the caller has
+ * to say so.
+ */
+export async function getEmergencyDeviceLocation(): Promise<DeviceLocationResult> {
+  const live = await getCurrentDeviceLocation();
+  if (live.ok) return live;
+  if (live.reason === 'PERMISSION_DENIED') return live;
+
+  try {
+    const lastKnown = await Location.getLastKnownPositionAsync();
+    if (!lastKnown) return { ok: false, reason: 'UNAVAILABLE' };
+    return {
+      ok: true,
+      latitude: lastKnown.coords.latitude,
+      longitude: lastKnown.coords.longitude,
+      accuracyMeters: lastKnown.coords.accuracy ?? null,
+      capturedAt: new Date(lastKnown.timestamp).toISOString(),
+      isStale: true,
+    };
+  } catch (e) {
+    logger.error('[DeviceLocation] Last known position unavailable:', e);
     return { ok: false, reason: 'UNAVAILABLE' };
   }
 }

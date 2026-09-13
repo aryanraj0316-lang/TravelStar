@@ -3,7 +3,8 @@ import { z } from 'zod';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 import { requireUserId, isAdmin } from '../../lib/auth-context';
-import { getSosAudienceUserIds } from '../../services/sos-audience';
+import { getSosAudienceUserIds, resolveSosAudience } from '../../services/sos-audience';
+import { sendPushToUsers } from '../../lib/push';
 
 const router = Router();
 
@@ -58,6 +59,14 @@ const sosSchema = z.object({
   userName: z.string().trim().max(100).optional(),
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
+  message: z.string().trim().max(500).optional(),
+  // Provenance of the fix, carried so the alert can say how much to trust
+  // the position rather than presenting a ten-minute-old point as current.
+  // The client sends a last-known position labelled stale when it cannot
+  // get a fresh one; it never invents coordinates.
+  accuracyMeters: z.number().nonnegative().max(100000).optional(),
+  capturedAt: z.coerce.date().optional(),
+  isStale: z.boolean().default(false),
 });
 
 // POST /safety/sos — Trigger a new SOS alert (Prisma-backed + socket broadcast)
@@ -65,47 +74,130 @@ router.post('/sos', async (req, res) => {
   const userId = requireUserId(req);
   const parsed = sosSchema.safeParse(req.body);
   if (!parsed.success) return validationError(res, parsed.error.issues);
-  const { userName, latitude, longitude } = parsed.data;
+  const { userName, latitude, longitude, message, accuracyMeters, capturedAt, isStale } = parsed.data;
 
   try {
     const newAlert = await prisma.sOSAlert.create({
-      data: {
-        userId,
-        latitude,
-        longitude,
-      },
+      data: { userId, latitude, longitude },
     });
+
+    const alerting = await prisma.user.findUnique({ where: { id: userId }, include: { profile: true } });
+    const displayName =
+      userName ||
+      (alerting?.profile
+        ? `${alerting.profile.firstName} ${alerting.profile.lastName || ''}`.trim()
+        : (alerting?.email?.split('@')[0] ?? 'A traveller'));
+
+    const audience = await resolveSosAudience(userId);
+    const recipients = audience.userIds.filter((uid) => uid !== userId);
 
     const alertPayload = {
       id: newAlert.id,
-      userName: userName || `User ${userId.slice(0, 8)}`,
+      alertId: newAlert.id,
+      userId,
+      userName: displayName,
       latitude: newAlert.latitude,
       longitude: newAlert.longitude,
-      timestamp: newAlert.alertTime.toLocaleTimeString(),
+      accuracyMeters: accuracyMeters ?? null,
+      capturedAt: (capturedAt ?? newAlert.alertTime).toISOString(),
+      isStale,
+      createdAt: newAlert.alertTime.toISOString(),
+      timestamp: newAlert.alertTime.toISOString(),
       status: newAlert.status,
+      message: message ?? null,
     };
 
-    // Notify only the scoped audience (emergency contacts who are app users,
-    // fellow trip members, admins) — never every connected client.
+    // The alert is written into each trip's group chat as a real LOCATION
+    // message, not only pushed over the socket. Someone who opens the app
+    // ten minutes later must still find it — a socket-only alert is gone
+    // for anyone who was offline when it fired.
+    for (const room of audience.chatRooms) {
+      const body = isStale
+        ? `🆘 ${displayName} needs help. Last known location (not a live fix).`
+        : `🆘 ${displayName} needs help.`;
+      const saved = await prisma.message.create({
+        data: {
+          chatRoomId: room.chatRoomId,
+          senderId: userId,
+          content: message ? `${body} ${message}` : body,
+          mediaType: 'LOCATION',
+          latitude,
+          longitude,
+          isSystem: true,
+        },
+      });
+
+      const io = req.app.get('socketio');
+      io?.to(room.chatRoomId).emit('messageReceived', {
+        roomId: room.chatRoomId,
+        message: {
+          id: saved.id,
+          senderId: userId,
+          senderName: 'System',
+          senderRole: 'SYSTEM',
+          senderAvatar: null,
+          avatar: null,
+          content: saved.content || '',
+          mediaUrl: null,
+          mediaType: 'LOCATION',
+          latitude: saved.latitude,
+          longitude: saved.longitude,
+          timestamp: saved.createdAt.toISOString(),
+          createdAt: saved.createdAt.toISOString(),
+        },
+      });
+      io?.to(room.chatRoomId).emit('sosReceived', { ...alertPayload, tripId: room.tripId });
+    }
+
     const io = req.app.get('socketio');
     if (io) {
-      const audience = await getSosAudienceUserIds(userId);
-      audience.forEach((uid: string) => io.to(uid).emit('sosReceived', alertPayload));
+      audience.userIds.forEach((uid: string) => io.to(uid).emit('sosReceived', alertPayload));
+    }
+
+    if (recipients.length > 0) {
+      const title = `🆘 ${displayName} needs help`;
+      const content = audience.chatRooms.length > 0
+        ? `Emergency alert from ${displayName} on ${audience.chatRooms[0]!.tripName}.`
+        : `Emergency alert from ${displayName}.`;
+
+      // Persisted per recipient: socket delivery alone loses the alert for
+      // anyone who was not connected at that moment, which is precisely the
+      // case an emergency has to survive.
+      await prisma.notification.createMany({
+        data: recipients.map((uid) => ({
+          userId: uid,
+          type: 'HAZARD' as const,
+          title,
+          content,
+          time: 'Just now',
+        })),
+      });
+
+      await sendPushToUsers(recipients, 'HAZARD', {
+        title,
+        body: content,
+        data: {
+          screen: 'map',
+          alertId: newAlert.id,
+          focusLat: String(latitude),
+          focusLng: String(longitude),
+        },
+      });
     }
 
     res.status(201).json({
       ok: true,
       data: {
         ...alertPayload,
-        alertId: newAlert.id,
+        notifiedCount: recipients.length,
         // docs/REMEDIATION.md §8.8/§8.9: this used to claim "police, and
         // emergency support notified". No police force is integrated with
         // this app and none is contacted — the real audience is exactly
-        // getSosAudienceUserIds: emergency contacts who are app users,
-        // fellow trip members, and admins. Telling someone in danger that
+        // what resolveSosAudience returns. Telling someone in danger that
         // police are coming when they are not is the worst kind of fake
         // message this codebase can carry.
-        message: 'SOS sent to your emergency contacts on TravelStar, your trip members, and our safety team. For police, fire, or ambulance, call 112.',
+        message:
+          'SOS sent to your trip group, your emergency contacts on TravelStar, and our safety team. For police, fire, or ambulance, call 112.',
       },
     });
   } catch (err) {
@@ -114,7 +206,6 @@ router.post('/sos', async (req, res) => {
   }
 });
 
-// POST /safety/sos/:id/resolve — Resolve an SOS alert
 router.post('/sos/:id/resolve', async (req, res) => {
   const { id } = req.params;
   const userId = requireUserId(req);
@@ -128,9 +219,27 @@ router.post('/sos/:id/resolve', async (req, res) => {
       return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'SOS alert not found.' } });
     }
 
-    // Only the person in distress or an admin/responder may stand down an
-    // alert. Anyone else silently resolving it could leave someone stranded.
-    if (alert.userId !== userId && !isAdmin(req)) {
+    // The person in distress, an admin, or someone responsible for them on
+    // the trip they are on: the organizer, or a guide assigned to one of
+    // its checkpoints. Anyone else silently resolving it could leave
+    // someone stranded.
+    let canResolve = alert.userId === userId || isAdmin(req);
+    if (!canResolve) {
+      const audience = await resolveSosAudience(alert.userId);
+      if (audience.tripIds.length > 0) {
+        const [organizes, guidesAtCheckpoint] = await Promise.all([
+          prisma.trip.count({ where: { id: { in: audience.tripIds }, creatorId: userId } }),
+          prisma.tripTimelineStopGuide.count({
+            where: {
+              tripTimelineStop: { tripId: { in: audience.tripIds } },
+              guideProfile: { userId },
+            },
+          }),
+        ]);
+        canResolve = organizes > 0 || guidesAtCheckpoint > 0;
+      }
+    }
+    if (!canResolve) {
       return res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'You are not authorised to resolve this alert.' } });
     }
 
@@ -139,11 +248,45 @@ router.post('/sos/:id/resolve', async (req, res) => {
       data: { status: 'RESOLVED' },
     });
 
-    // Notify the same scoped audience that received the original alert.
+    // Notify the same scoped audience that received the original alert, and
+    // stand the alert down in the group chats it was posted into — the SOS
+    // card there is what people are looking at.
     const io = req.app.get('socketio');
-    if (io) {
-      const audience = await getSosAudienceUserIds(alert.userId);
-      audience.forEach((uid: string) => io.to(uid).emit('sosResolved', { id }));
+    const audience = await resolveSosAudience(alert.userId);
+    audience.userIds.forEach((uid: string) => io?.to(uid).emit('sosResolved', { id }));
+
+    const resolver = await prisma.user.findUnique({ where: { id: userId }, include: { profile: true } });
+    const resolverName = resolver?.profile
+      ? `${resolver.profile.firstName} ${resolver.profile.lastName || ''}`.trim()
+      : (resolver?.email?.split('@')[0] ?? 'Someone');
+
+    for (const room of audience.chatRooms) {
+      const saved = await prisma.message.create({
+        data: {
+          chatRoomId: room.chatRoomId,
+          senderId: userId,
+          content: `✅ Marked safe by ${resolverName}.`,
+          mediaType: 'NONE',
+          isSystem: true,
+        },
+      });
+      io?.to(room.chatRoomId).emit('messageReceived', {
+        roomId: room.chatRoomId,
+        message: {
+          id: saved.id,
+          senderId: userId,
+          senderName: 'System',
+          senderRole: 'SYSTEM',
+          senderAvatar: null,
+          avatar: null,
+          content: saved.content || '',
+          mediaUrl: null,
+          mediaType: 'NONE',
+          timestamp: saved.createdAt.toISOString(),
+          createdAt: saved.createdAt.toISOString(),
+        },
+      });
+      io?.to(room.chatRoomId).emit('sosResolved', { id, tripId: room.tripId });
     }
 
     res.status(200).json({ ok: true, data: { message: `SOS Alert ${id} marked as resolved` } });

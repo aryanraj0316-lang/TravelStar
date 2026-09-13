@@ -2,7 +2,7 @@ import { useApp } from '@/store/AppContext';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { logger } from '@/lib/logger';
 import { toast } from '@/lib/feedback';
-import { getCurrentDeviceLocation } from '@/lib/device-location';
+import { getCurrentDeviceLocation, getEmergencyDeviceLocation } from '@/lib/device-location';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import { useIsFocused, useLocalSearchParams, useNavigation, useRouter, type ErrorBoundaryProps } from 'expo-router';
@@ -1003,7 +1003,10 @@ function MapScreen() {
   // route's start coordinate (or a hardcoded New Delhi fallback), not
   // where the user actually was.
   const handleSOS = async () => {
-    const location = await getCurrentDeviceLocation();
+    // Falls back to the last known position when no live fix is available,
+    // but always says which it sent — help going to a ten-minute-old point
+    // believed to be current is worse than knowing it is approximate.
+    const location = await getEmergencyDeviceLocation();
     if (!location.ok) {
       const message = location.reason === 'PERMISSION_DENIED'
         ? t('map.sosPermissionRequired')
@@ -1011,7 +1014,12 @@ function MapScreen() {
       toast(message, 'error');
       return;
     }
-    triggerSOS(location.latitude, location.longitude);
+    triggerSOS(location.latitude, location.longitude, {
+      accuracyMeters: location.accuracyMeters ?? null,
+      capturedAt: location.capturedAt,
+      isStale: location.isStale ?? false,
+    });
+    if (location.isStale) toast(t('map.sosSentWithLastKnown'), 'info');
     setSosCoords({ latitude: location.latitude, longitude: location.longitude });
     setSosTriggered(true);
   };
