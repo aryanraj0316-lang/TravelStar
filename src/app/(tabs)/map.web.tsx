@@ -99,6 +99,7 @@ const getLegDetails = (startIndex: number, coords: RoutePoint[]) => {
 function WebMapScreen() {
   const { t } = useTranslation();
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
+  const [isDismissed, setIsDismissed] = useState(false);
 
   useEffect(() => {
     logger.log('Screen mounted: WebMapScreen');
@@ -108,8 +109,14 @@ function WebMapScreen() {
     return unsub;
   }, []);
   const router = useRouter();
-  const { triggerSOS, trips } = useApp();
+  const { triggerSOS, trips, setNavbarHidden } = useApp();
   const { tripId } = useLocalSearchParams<{ tripId: string }>();
+
+  useEffect(() => {
+    if (tripId) {
+      setIsDismissed(false);
+    }
+  }, [tripId]);
   const [mapFilter, setMapFilter] = useState<MapFilter>('ALL');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [sosTriggered, setSosTriggered] = useState(false);
@@ -204,7 +211,14 @@ function WebMapScreen() {
   };
 
   // Resolve dynamic route coords from the active trip or nearby place
-  let activeTrip = trips.find((t) => t.id === (selectedTripId || tripId));
+  let activeTrip = isDismissed ? undefined : trips.find((t) => t.id === (selectedTripId || tripId));
+
+  useEffect(() => {
+    setNavbarHidden(!!activeTrip);
+    return () => {
+      setNavbarHidden(false);
+    };
+  }, [activeTrip, setNavbarHidden]);
 
   const [, setBottomCardHeight] = useState(180);
 
@@ -751,7 +765,7 @@ function WebMapScreen() {
             accessibilityRole="button"
             accessibilityLabel={t('map.goBack')}
           >
-            <ArrowLeft size={22} color="#FFF" strokeWidth={3} />
+            <ArrowLeft size={22} color="#0D1117" strokeWidth={2.5} />
           </TouchableOpacity>
 
           {/* OPTION 1: ROUTE ITINERARY SELECTOR DROPDOWN */}
@@ -950,6 +964,8 @@ function WebMapScreen() {
 
 
 
+        {activeTrip && (
+          <>
         {/* BOTTOM TRIP INFO CARD / SEGMENT NAVIGATION CARD */}
         <View
           style={styles.bottomCardContainer}
@@ -1198,6 +1214,8 @@ function WebMapScreen() {
             </GlassCard>
           )}
         </View>
+          </>
+        )}
 
 
 
@@ -1554,6 +1572,15 @@ const styles = StyleSheet.create({
   },
   segmentTabTextActive: {
     color: C.white,
+  },
+  closeTripRouteBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 6,
   },
   bottomCardContainer: {
     position: 'absolute',

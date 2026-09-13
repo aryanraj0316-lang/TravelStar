@@ -163,3 +163,7 @@ export function createGuideMediaUploadUrl(uploaderId: string, contentType: strin
 export function createChatMediaUploadUrl(uploaderId: string, contentType: string) {
   return createUploadUrl('chat-media', uploaderId, contentType);
 }
+
+export function createStoryMediaUploadUrl(uploaderId: string, contentType: string) {
+  return createUploadUrl('stories', uploaderId, contentType);
+}

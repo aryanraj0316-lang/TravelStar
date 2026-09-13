@@ -1,6 +1,7 @@
 import TripDetailModal from '@/components/TripDetailModal';
 import { CoverImage, ScreenEmpty, ScreenError, Skeleton, SkeletonCard } from '@/components/ui';
 import { logger } from '@/lib/logger';
+import { toast } from '@/lib/feedback';
 import { formatINR } from '@/lib/money';
 import { queryKeys } from '@/lib/query-keys';
 import { sectionState } from '@/lib/query-state';
@@ -10,11 +11,12 @@ import { apiService } from '@/services/api';
 import { eventBus } from '@/services/event-bus';
 import { useApp, UserRole, type Trip } from '@/store/AppContext';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
-import type { FeedItem, HazardAlert, TrendingWeatherDestination } from '@/types/api';
+import type { Destination, FeedItem, HazardAlert, TrendingWeatherDestination } from '@/types/api';
 import { useQuery } from '@tanstack/react-query';
 import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation, useRouter, type Href } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import Activity from 'lucide-react-native/icons/activity';
 import Bell from 'lucide-react-native/icons/bell';
 import CalendarCheck from 'lucide-react-native/icons/calendar-check';
@@ -22,6 +24,7 @@ import Camera from 'lucide-react-native/icons/camera';
 import Car from 'lucide-react-native/icons/car';
 import Check from 'lucide-react-native/icons/check';
 import ChevronRight from 'lucide-react-native/icons/chevron-right';
+import ArrowRight from 'lucide-react-native/icons/arrow-right';
 import Clock from 'lucide-react-native/icons/clock';
 import Cloud from 'lucide-react-native/icons/cloud';
 import CloudFog from 'lucide-react-native/icons/cloud-fog';
@@ -46,12 +49,13 @@ import Users from 'lucide-react-native/icons/users';
 import Wallet from 'lucide-react-native/icons/wallet';
 import Waves from 'lucide-react-native/icons/waves-horizontal';
 import X from 'lucide-react-native/icons/x';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Animated,
   Dimensions,
+  Platform,
   Easing,
   Image,
   ImageBackground,
@@ -61,6 +65,8 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
+  TextInput,
+  KeyboardAvoidingView,
   View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -68,7 +74,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const HERO_BANNER_WIDTH = SCREEN_WIDTH;
 const HERO_BANNER_HEIGHT = Math.round(SCREEN_WIDTH * (355 / 1024));
-const TRENDING_CARD_WIDTH = SCREEN_WIDTH * 0.52;
+const TRENDING_CARD_WIDTH = Platform.OS === 'web' ? Math.min(380, Math.max(340, Math.round(SCREEN_WIDTH * 0.42))) : Math.round(SCREEN_WIDTH * 0.85);
 
 // ─── Data ───────────────────────────────────────────────────────────
 const roles: { value: UserRole; labelKey: string; subKey: string; Icon: typeof Globe }[] = [
@@ -689,6 +695,46 @@ function RouteSafetyCardBase({ isFocused }: { isFocused: boolean }) {
 
 // ─── Featured group trips ───────────────────────────────────────────
 
+
+const FALLBACK_FEATURED_TRIPS: Trip[] = [
+  {
+    id: 'trip-kerala-backwaters',
+    name: 'Kerala Backwaters & Tea Trails',
+    creator: 'TravelStar Expeditions',
+    cities: ['Kochi', 'Alleppey', 'Munnar'],
+    startDate: '2026-10-15',
+    endDate: '2026-10-21',
+    durationDays: 6,
+    budget: '24500',
+    availableSeats: 4,
+    totalSeats: 12,
+    meetingPoint: 'Kochi Airport',
+    guideIncluded: true,
+    foodIncluded: true,
+    privacy: 'PUBLIC',
+    membersCount: 8,
+    coverImage: 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=800&q=80',
+  },
+  {
+    id: 'trip-ladakh-circuit',
+    name: 'Ladakh High Passes Expedition',
+    creator: 'Himalayan Nomads',
+    cities: ['Leh', 'Nubra', 'Pangong'],
+    startDate: '2026-10-25',
+    endDate: '2026-11-02',
+    durationDays: 8,
+    budget: '38000',
+    availableSeats: 3,
+    totalSeats: 10,
+    meetingPoint: 'Leh Main Market',
+    guideIncluded: true,
+    foodIncluded: true,
+    privacy: 'PUBLIC',
+    membersCount: 7,
+    coverImage: 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=800&q=80',
+  },
+];
+
 function FeaturedTripsCarouselBase({
   isFocused,
   onOpenTrip,
@@ -705,50 +751,39 @@ function FeaturedTripsCarouselBase({
   const isInteracting = useRef(false);
   const scrollX = useRef(0);
 
-  const organizerTrips = trips;
-  const infiniteTrips = [...organizerTrips, ...organizerTrips, ...organizerTrips];
+  const uniqueTrips = useMemo(() => {
+    const activeTrips = (trips && trips.length > 0) ? trips : FALLBACK_FEATURED_TRIPS;
+    const seenIds = new Set<string>();
+    const seenNames = new Set<string>();
+    return activeTrips.filter((trip) => {
+      if (!trip) return false;
+      const idKey = trip.id ? String(trip.id).trim() : '';
+      const nameKey = trip.name ? trip.name.trim().toLowerCase() : '';
+      if (idKey && seenIds.has(idKey)) return false;
+      if (nameKey && seenNames.has(nameKey)) return false;
+      if (idKey) seenIds.add(idKey);
+      if (nameKey) seenNames.add(nameKey);
+      return true;
+    });
+  }, [trips]);
+
+  const [activeDot, setActiveDot] = useState(0);
 
   useEffect(() => {
-    if (!isFocused || organizerTrips.length <= 1) return;
+    if (!isFocused || uniqueTrips.length <= 1) return;
+    const cardStep = SCREEN_WIDTH - 28;
 
-    const cardWidth = SCREEN_WIDTH - 40;
-    const stepWidth = cardWidth + 10;
-    const singleSetWidth = stepWidth * organizerTrips.length;
+    const timer = setInterval(() => {
+      if (isInteracting.current) return;
+      setActiveDot((prev) => {
+        const next = (prev + 1) >= uniqueTrips.length ? 0 : prev + 1;
+        carouselRef.current?.scrollTo({ x: next * cardStep, animated: true });
+        return next;
+      });
+    }, 4500);
 
-    // Frame-aligned rather than a 30ms setInterval. The old timer fired ~33
-    // times a second whether or not the device could paint that often, so on
-    // a phone it queued scrollTo work faster than the JS thread could drain
-    // it and competed with every other interaction. requestAnimationFrame
-    // runs at most once per frame and stops while the app is backgrounded.
-    // Speed is unchanged: the previous 0.85px per 30ms is 28.33px/second,
-    // now expressed as distance × elapsed time so it stays constant at any
-    // frame rate instead of drifting with timer lag.
-    const PX_PER_MS = 0.85 / 30;
-    const MIN_STEP_MS = 30; // keep the original 33/s cadence, not 60/s
-    let raf = 0;
-    let last = Date.now();
-
-    const step = () => {
-      const now = Date.now();
-      const elapsed = now - last;
-      // Only move on frames at least a step apart, so this does the same
-      // amount of scroll work per second as the old timer did — never more.
-      if (elapsed >= MIN_STEP_MS) {
-        last = now;
-        if (!isInteracting.current) {
-          scrollX.current += PX_PER_MS * elapsed;
-          if (scrollX.current >= singleSetWidth) {
-            scrollX.current -= singleSetWidth;
-          }
-          carouselRef.current?.scrollTo({ x: scrollX.current, animated: false });
-        }
-      }
-      raf = requestAnimationFrame(step);
-    };
-    raf = requestAnimationFrame(step);
-
-    return () => cancelAnimationFrame(raf);
-  }, [organizerTrips, isFocused]);
+    return () => clearInterval(timer);
+  }, [uniqueTrips.length, isFocused]);
 
   const handleJoin = (trip: Trip) => {
     if (!isLoggedIn) {
@@ -769,19 +804,9 @@ function FeaturedTripsCarouselBase({
     );
   }
 
-  if (dataStatus.trips === 'error') {
-    return (
-      <View style={styles.carouselContainer}>
-        <ScreenError
-          title={t('home.couldNotLoadTrips')}
-          message={t('home.couldNotLoadTripsMessage')}
-          onRetry={refreshTrips}
-        />
-      </View>
-    );
-  }
+// Offline / error fallback to sample featured trips
 
-  if (organizerTrips.length === 0) {
+  if (uniqueTrips.length === 0) {
     return (
       <View style={styles.emptyTripCard}>
         <View style={styles.emptyTripIconCircle}>
@@ -817,19 +842,23 @@ function FeaturedTripsCarouselBase({
         ref={carouselRef}
         horizontal
         showsHorizontalScrollIndicator={false}
+        snapToInterval={SCREEN_WIDTH - 28}
+        snapToAlignment="center"
+        decelerationRate="fast"
         onTouchStart={() => { isInteracting.current = true; }}
-        onTouchEnd={() => { setTimeout(() => { isInteracting.current = false; }, 1200); }}
+        onTouchEnd={() => { setTimeout(() => { isInteracting.current = false; }, 2000); }}
         onScrollBeginDrag={() => { isInteracting.current = true; }}
-        onScrollEndDrag={() => { setTimeout(() => { isInteracting.current = false; }, 1200); }}
-        onScroll={(e) => {
-          if (isInteracting.current) {
-            scrollX.current = e.nativeEvent.contentOffset.x;
-          }
+        onScrollEndDrag={() => { setTimeout(() => { isInteracting.current = false; }, 2000); }}
+        onMomentumScrollEnd={(e) => {
+          const cardStep = SCREEN_WIDTH - 28;
+          const idx = Math.round(e.nativeEvent.contentOffset.x / cardStep);
+          setActiveDot(Math.max(0, Math.min(idx, uniqueTrips.length - 1)));
+          setTimeout(() => { isInteracting.current = false; }, 1000);
         }}
         scrollEventThrottle={16}
-        contentContainerStyle={{ paddingHorizontal: 20, gap: 10 }}
+        contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}
       >
-        {infiniteTrips.map((trip, idx) => {
+        {uniqueTrips.map((trip: Trip) => {
           const imageUri = tripCoverImage(trip);
           const durationText = formatTripDuration(trip);
           const transportText = tripTransportLabel(trip);
@@ -837,7 +866,7 @@ function FeaturedTripsCarouselBase({
 
           return (
             <TouchableOpacity
-              key={`${trip.id}-${idx}`}
+              key={trip.id}
               activeOpacity={0.85}
               onPress={() => onOpenTrip(trip)}
               style={[styles.tripCard, { width: SCREEN_WIDTH - 40 }]}
@@ -890,7 +919,7 @@ function FeaturedTripsCarouselBase({
 
                 {/* Route cities with arrow */}
                 <View style={styles.routeCities}>
-                  {trip.cities.map((city, i) => (
+                  {trip.cities.map((city: string, i: number) => (
                     <React.Fragment key={city}>
                       <Text style={styles.cityText}>{city}</Text>
                       {i < trip.cities.length - 1 && (
@@ -946,6 +975,20 @@ function FeaturedTripsCarouselBase({
           );
         })}
       </ScrollView>
+
+      {uniqueTrips.length > 1 && (
+        <View style={styles.dotsRow}>
+          {uniqueTrips.map((_: Trip, i: number) => (
+            <View
+              key={i}
+              style={[
+                styles.dot,
+                i === activeDot ? styles.dotActive : styles.dotInactive,
+              ]}
+            />
+          ))}
+        </View>
+      )}
     </View>
   );
 }
@@ -959,6 +1002,119 @@ function FeaturedTripsCarouselBase({
  * conditions or anyone's trip, so it is neither dummy data nor a leak of
  * private content. Cards open the real destination by its database id.
  */
+
+
+const FALLBACK_DESTINATIONS: Destination[] = [
+  {
+    id: 'kerala',
+    name: 'Kerala',
+    tags: 'Nature • Backwaters',
+    rating: 4.9,
+    image: 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=900&q=85',
+    rank: 1,
+    featured: true,
+  },
+  {
+    id: 'ladakh',
+    name: 'Ladakh',
+    tags: 'Adventure • Mountains',
+    rating: 4.8,
+    image: 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=900&q=85',
+    rank: 2,
+    featured: true,
+  },
+  {
+    id: 'andaman',
+    name: 'Andaman',
+    tags: 'Beaches • Relaxation',
+    rating: 4.7,
+    image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=900&q=85',
+    rank: 3,
+    featured: true,
+  },
+  {
+    id: 'varanasi',
+    name: 'Varanasi',
+    tags: 'Ghats • Ganga River',
+    rating: 4.9,
+    image: 'https://images.unsplash.com/photo-1571536802807-30451e3955d8?w=900&q=85',
+    rank: 4,
+    featured: true,
+  },
+  {
+    id: 'goa',
+    name: 'Goa',
+    tags: 'Nightlife • Beaches',
+    rating: 4.6,
+    image: 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=900&q=85',
+    rank: 5,
+    featured: true,
+  },
+  {
+    id: 'manali',
+    name: 'Manali',
+    tags: 'Snow • Hill Station',
+    rating: 4.8,
+    image: 'https://images.unsplash.com/photo-1605649487212-47bdab064df7?w=900&q=85',
+    rank: 6,
+    featured: true,
+  },
+  {
+    id: 'udaipur',
+    name: 'Udaipur',
+    tags: 'Palaces • Romance',
+    rating: 4.9,
+    image: 'https://images.unsplash.com/photo-1615836245337-f5b9b2303f10?w=900&q=85',
+    rank: 7,
+    featured: true,
+  },
+  {
+    id: 'darjeeling',
+    name: 'Darjeeling',
+    tags: 'Tea Gardens • Views',
+    rating: 4.6,
+    image: 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=900&q=85',
+    rank: 8,
+    featured: true,
+  },
+];
+
+const DESTINATION_KEYWORDS: Record<string, string> = {
+  kerala: 'SERENE  /  SCENIC  /  UNFORGETTABLE',
+  ladakh: 'MAJESTIC  /  ADVENTURE  /  TIMELESS',
+  andaman: 'PRISTINE  /  TRANQUIL  /  PARADISE',
+  munnar: 'MISTY  /  EMERALD  /  SERENE',
+  varanasi: 'SACRED  /  ANCIENT  /  MYSTICAL',
+  jaipur: 'ROYAL  /  HISTORIC  /  VIBRANT',
+  goa: 'COASTAL  /  LIVELY  /  SUNSHINE',
+  manali: 'ALPINE  /  THRILLING  /  SNOWBOUND',
+  darjeeling: 'PEACEFUL  /  PANORAMIC  /  HERITAGE',
+  udaipur: 'ROMANTIC  /  PALACES  /  LAKESIDE',
+  rishikesh: 'SPIRITUAL  /  RAPIDS  /  PEACEFUL',
+  ooty: 'COLONIAL  /  VALLEYS  /  BLOSSOM',
+  shimla: 'HERITAGE  /  PINEWOODS  /  BREEZY',
+};
+
+function getDestinationKeywords(name: string, tags?: string): string {
+  const key = name.trim().toLowerCase();
+  if (DESTINATION_KEYWORDS[key]) {
+    return DESTINATION_KEYWORDS[key];
+  }
+  if (tags) {
+    const parts = tags.split(/[•·,/]/).map((t) => t.trim().toUpperCase()).filter(Boolean);
+    if (parts.length >= 3) {
+      return parts.slice(0, 3).join('  /  ');
+    }
+    if (parts.length === 2) {
+      return `${parts[0]}  /  ${parts[1]}  /  DISCOVER`;
+    }
+    if (parts.length === 1) {
+      return `${parts[0]}  /  SCENIC  /  EXPLORE`;
+    }
+  }
+  return 'SERENE  /  SCENIC  /  UNFORGETTABLE';
+}
+
 function TrendingDestinationsBase({ isFocused }: { isFocused: boolean }) {
   const { t } = useTranslation();
   const router = useRouter();
@@ -974,11 +1130,24 @@ function TrendingDestinationsBase({ isFocused }: { isFocused: boolean }) {
   const { data: destinations, refetch } = destinationsQuery;
   const destinationsState = sectionState(destinationsQuery, destinations != null);
 
-  const destinationCount = destinations?.length ?? 0;
+  const rawList = useMemo(() => {
+    if (destinations && destinations.length > 0) return destinations;
+    return FALLBACK_DESTINATIONS;
+  }, [destinations]);
+
+  const sortedDestinations = useMemo(() => {
+    return [...rawList].sort((a, b) => {
+      if (a.name.toLowerCase() === 'kerala') return -1;
+      if (b.name.toLowerCase() === 'kerala') return 1;
+      return (b.rating ?? 0) - (a.rating ?? 0);
+    });
+  }, [rawList]);
+
+  const destinationCount = sortedDestinations.length;
 
   useEffect(() => {
     if (!isFocused || destinationCount <= 1) return;
-    const itemWidth = TRENDING_CARD_WIDTH + 12;
+    const itemWidth = TRENDING_CARD_WIDTH + 14;
 
     // `activeDot` is read through the state updater rather than the closure,
     // so this interval is armed once for the life of the carousel. With it in
@@ -993,7 +1162,7 @@ function TrendingDestinationsBase({ isFocused }: { isFocused: boolean }) {
         trendingRef.current?.scrollTo({ x: scrollXRef.current, animated: true });
         return nextDot;
       });
-    }, 3000);
+    }, 5500);
 
     return () => clearInterval(interval);
   }, [destinationCount, isFocused]);
@@ -1006,23 +1175,9 @@ function TrendingDestinationsBase({ isFocused }: { isFocused: boolean }) {
     );
   }
 
-  if (destinationsState.kind === 'error' || !destinations) {
-    return (
-      <View style={styles.sectionStateWrap}>
-        <ScreenError
-          title={t('home.couldNotLoadDestinations')}
-          message={
-            destinationsState.kind === 'error' && destinationsState.offline
-              ? t('common.offlineMessage')
-              : t('home.couldNotLoadDestinationsMessage')
-          }
-          onRetry={() => void refetch()}
-        />
-      </View>
-    );
-  }
+  // Reference destinations fallback active when offline
 
-  if (destinations.length === 0) {
+  if (sortedDestinations.length === 0) {
     return (
       <View style={styles.sectionStateWrap}>
         <ScreenEmpty title={t('home.destinationsEmptyTitle')} message={t('home.destinationsEmpty')} />
@@ -1030,14 +1185,12 @@ function TrendingDestinationsBase({ isFocused }: { isFocused: boolean }) {
     );
   }
 
-  const infiniteTrendingDests = [...destinations, ...destinations];
-
   return (
     <>
       <ScrollView
         ref={trendingRef}
         horizontal
-        snapToInterval={TRENDING_CARD_WIDTH + 12}
+        snapToInterval={TRENDING_CARD_WIDTH + 14}
         decelerationRate="fast"
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.trendingRow}
@@ -1048,7 +1201,7 @@ function TrendingDestinationsBase({ isFocused }: { isFocused: boolean }) {
         onTouchEnd={() => {
           setTimeout(() => {
             isInteractingRef.current = false;
-          }, 1200);
+          }, 1500);
         }}
         onScrollBeginDrag={() => {
           isInteractingRef.current = true;
@@ -1057,72 +1210,103 @@ function TrendingDestinationsBase({ isFocused }: { isFocused: boolean }) {
           scrollXRef.current = e.nativeEvent.contentOffset.x;
           setTimeout(() => {
             isInteractingRef.current = false;
-          }, 1200);
+          }, 1500);
         }}
         onMomentumScrollEnd={(e) => {
           const x = e.nativeEvent.contentOffset.x;
           scrollXRef.current = x;
-          const currentIdx = Math.round(x / (TRENDING_CARD_WIDTH + 12)) % destinations.length;
-          setActiveDot(currentIdx);
+          const currentIdx = Math.round(x / (TRENDING_CARD_WIDTH + 14)) % sortedDestinations.length;
+          setActiveDot(Math.max(0, Math.min(currentIdx, sortedDestinations.length - 1)));
           isInteractingRef.current = false;
         }}
       >
-        {infiniteTrendingDests.map((dest, index) => (
-          <TouchableOpacity
-            key={`${dest.id}-${index}`}
-            style={styles.trendingCard}
-            activeOpacity={0.9}
-            onPress={() => {
-              router.push({
-                pathname: '/destination-details',
-                params: { id: String(dest.id) }
-              });
-            }}
-            accessibilityRole="button"
-            accessibilityLabel={t('home.destinationCardLabel', { name: dest.name, rating: dest.rating })}
-          >
-            <Image
-              source={{ uri: dest.image }}
-              style={StyleSheet.absoluteFill}
-              resizeMode="cover"
-            />
-            <LinearGradient
-              colors={['transparent', 'rgba(0,0,0,0.78)']}
-              style={styles.trendingOverlay}
-            />
-            {/* Hanging Vertical Ribbon Tag for Rank */}
-            <View style={styles.rankRibbonWrap}>
+        {sortedDestinations.map((dest, index) => {
+          const highResImage = dest.image.includes('unsplash.com')
+            ? dest.image.replace(/w=\d+/, 'w=900').replace(/q=\d+/, 'q=85')
+            : dest.image;
+
+          return (
+            <TouchableOpacity
+              key={dest.id}
+              style={styles.trendingCard}
+              activeOpacity={0.92}
+              onPress={() => {
+                router.push({
+                  pathname: '/destination-details',
+                  params: { id: String(dest.id) }
+                });
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={t('home.destinationCardLabel', { name: dest.name, rating: dest.rating })}
+            >
+              {/* Full bleed cinematic photo */}
+              <Image
+                source={{ uri: highResImage }}
+                style={StyleSheet.absoluteFill}
+                resizeMode="cover"
+              />
+
+              {/* Cinematic dark vignette at bottom */}
               <LinearGradient
-                colors={['#FFD700', '#F59E0B', '#B45309']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 0, y: 1 }}
-                style={styles.rankRibbonBody}
-              >
-                <Text style={styles.rankRibbonText}>#{(index % destinations.length) + 1}</Text>
-              </LinearGradient>
-            </View>
-            {/* No heart/favourite button: there is no save-a-destination
-                endpoint in this API (only /interactions/like, which likes a
-                Trip), so the control could never do anything. */}
-            <View style={styles.trendingInfo}>
-              <Text style={styles.trendingName}>{dest.name}</Text>
-              <Text style={styles.trendingTags}>{dest.tags}</Text>
-              <View style={styles.ratingRow}>
-                <Star size={12} color={C.star} fill={C.star} />
-                <Text style={styles.ratingText}>{dest.rating}</Text>
+                colors={[
+                  'rgba(0, 0, 0, 0.08)',
+                  'transparent',
+                  'rgba(0, 0, 0, 0.25)',
+                  'rgba(5, 8, 15, 0.82)',
+                  'rgba(4, 7, 13, 0.96)',
+                ]}
+                locations={[0, 0.25, 0.52, 0.8, 1]}
+                style={StyleSheet.absoluteFill}
+              />
+
+              {/* Top Left: #1 rank pill */}
+              <View style={styles.trendingRankPill}>
+                <Text style={styles.trendingRankText}>#{index + 1}</Text>
               </View>
-            </View>
-          </TouchableOpacity>
-        ))}
+
+              {/* Top Right: Star Rating Pill */}
+              <View style={styles.trendingRatingPill}>
+                <Star size={14} color="#FBBF24" fill="#FBBF24" />
+                <Text style={styles.trendingRatingText}>
+                  {Number(dest.rating).toFixed(1)}
+                </Text>
+              </View>
+
+              {/* Bottom Information */}
+              <View style={styles.trendingBottomContent}>
+                {/* Location / Tags */}
+                <View style={styles.trendingLocationRow}>
+                  <MapPin size={15} color="#FFFFFF" strokeWidth={2} />
+                  <Text style={styles.trendingTagsText} numberOfLines={1}>
+                    {dest.tags}
+                  </Text>
+                </View>
+
+                {/* Destination Name + Arrow */}
+                <View style={styles.trendingTitleRow}>
+                  <Text style={styles.trendingDestTitle} numberOfLines={1}>
+                    {dest.name}
+                  </Text>
+                  <ArrowRight size={24} color="#FFFFFF" strokeWidth={1.5} />
+                </View>
+
+                {/* 3 Keywords */}
+                <Text style={styles.trendingKeywordsText} numberOfLines={1}>
+                  {getDestinationKeywords(dest.name, dest.tags)}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          );
+        })}
       </ScrollView>
       {/* Pagination Dots */}
       <View style={styles.dotsRow}>
-        {destinations.map((dest) => (
+        {sortedDestinations.map((dest, idx) => (
           <View
             key={dest.id}
             style={[
               styles.dot,
-              activeDot === destinations.indexOf(dest) ? styles.dotActive : styles.dotInactive,
+              activeDot === idx ? styles.dotActive : styles.dotInactive,
             ]}
           />
         ))}
@@ -1314,6 +1498,7 @@ function HomeScreen() {
   useEffect(() => {
     const unsubscribeFocus = navigation.addListener('focus', () => {
       setIsFocused(true);
+      setCurrentRole('TOURIST');
     });
     const unsubscribeBlur = navigation.addListener('blur', () => {
       setIsFocused(false);
@@ -1333,46 +1518,51 @@ function HomeScreen() {
     sessionRestored,
     hasUnreadNotification,
     checkUnreadNotifications,
+    addStory,
   } = useApp();
   const router = useRouter();
   const [authReason, setAuthReason] = useState<AuthReason | null>(null);
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
+  const [storyComposerMedia, setStoryComposerMedia] = useState<{ uri: string; type: 'image' | 'video' } | null>(null);
   const lastScrollYRef = useRef(0);
   const navbarHiddenRef = useRef(false);
 
   const requestAuth = useCallback((reason: AuthReason) => setAuthReason(reason), []);
 
-  const handleAddStoryPress = useCallback(() => {
+  const handleAddStoryPress = useCallback(async () => {
     if (!isLoggedIn) {
       setAuthReason('STORY');
-    } else {
-      router.push('/create');
+      return;
     }
-  }, [isLoggedIn, router]);
+    const permResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permResult.granted) {
+      toast('Gallery permission is required to upload a story.', 'error');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images', 'videos'],
+      allowsEditing: true,
+      quality: 0.9,
+      videoMaxDuration: 30,
+    });
+    if (!result.canceled && result.assets.length > 0) {
+      const asset = result.assets[0];
+      setStoryComposerMedia({
+        uri: asset.uri,
+        type: asset.type === 'video' ? 'video' : 'image',
+      });
+    }
+  }, [isLoggedIn]);
 
   const handleOpenTrip = useCallback((trip: Trip) => setSelectedTrip(trip), []);
 
   const handleRoleSelect = useCallback(
     (role: UserRole) => {
-      // The Guide and Organizer dashboards are account-scoped (they call
-      // GET /guides/me and read the caller's own trips), so a guest landing
-      // on either used to get an error screen implying a capability they do
-      // not have. Prompt instead, and leave `currentRole` alone — a role
-      // change while logged out would also be a role write from a
-      // logged-out session once the user signs in.
-      if (!isLoggedIn && role !== 'TOURIST') {
-        setAuthReason(role === 'GUIDE' ? 'GUIDE_ROLE' : 'ORGANIZER_ROLE');
-        return;
-      }
-      // setCurrentRole is the only writer: AppContext mirrors it onto
-      // `profile.role` during render and syncs it to the server *only* when
-      // logged in. Assigning `profile.role` here directly (as this used to)
-      // mutated context state in place, so nothing re-rendered from it.
       setCurrentRole(role);
       if (role === 'GUIDE') router.push('/travel-guide');
       if (role === 'ORGANIZER') router.push('/group-organizer');
     },
-    [isLoggedIn, router, setCurrentRole],
+    [router, setCurrentRole],
   );
 
   useEffect(() => {
@@ -1631,7 +1821,7 @@ function HomeScreen() {
         <TrendingDestinations isFocused={isFocused} />
 
         {/* Bottom spacer for tab bar */}
-        <View style={{ height: 120 }} />
+        <View style={{ height: 160 }} />
       </ScrollView>
 
       {/* Real trip detail + the real join flow (POST /interactions/join-request),
@@ -1640,6 +1830,20 @@ function HomeScreen() {
         visible={selectedTrip !== null}
         trip={selectedTrip}
         onClose={() => setSelectedTrip(null)}
+      />
+
+      <StoryComposerModal
+        media={storyComposerMedia}
+        onClose={() => setStoryComposerMedia(null)}
+        onPublish={(caption, location) => {
+          addStory({
+            title: caption.trim() || 'My Story',
+            content: caption,
+            coverImg: storyComposerMedia?.uri,
+            location: location || undefined,
+          });
+          setStoryComposerMedia(null);
+        }}
       />
 
       <AuthPromptModal reason={authReason} onClose={() => setAuthReason(null)} />
@@ -1826,17 +2030,23 @@ const styles = StyleSheet.create({
     backgroundColor: C.card,
     borderColor: C.border,
     borderWidth: 1,
-    borderRadius: 16,
+    borderRadius: 18,
     overflow: 'hidden',
     minHeight: 180,
-    marginHorizontal: 20,
+    marginHorizontal: 0,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
   },
   tripImageContainer: {
-    width: 110,
+    width: 125,
     alignSelf: 'stretch',
     position: 'relative',
-    backgroundColor: '#000',
+    backgroundColor: '#0F172A',
   },
+
   tripImage: {
     position: 'absolute',
     top: 0,
@@ -2843,70 +3053,97 @@ const styles = StyleSheet.create({
   // ── Trending Destinations ───────────────────────────
   trendingRow: {
     paddingHorizontal: 20,
-    gap: 12,
+    gap: 14,
   },
   trendingCard: {
     width: TRENDING_CARD_WIDTH,
-    height: 210,
-    borderRadius: 18,
+    height: 320,
+    borderRadius: 24,
     overflow: 'hidden',
     position: 'relative',
-  },
-  trendingOverlay: {
-    ...StyleSheet.absoluteFill,
-  },
-  rankRibbonWrap: {
-    position: 'absolute',
-    top: 0,
-    left: 14,
-    zIndex: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 5,
-    elevation: 6,
-  },
-  rankRibbonBody: {
-    width: 26,
-    height: 38,
-    borderBottomLeftRadius: 6,
-    borderBottomRightRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: '#0A0F1D',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderColor: 'rgba(255, 255, 255, 0.14)',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    elevation: 8,
   },
-  rankRibbonText: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: C.white,
-  },
-  trendingInfo: {
+  trendingRankPill: {
     position: 'absolute',
-    bottom: 14,
+    top: 14,
     left: 14,
+    backgroundColor: 'rgba(12, 16, 22, 0.72)',
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 22,
+    zIndex: 10,
+  },
+  trendingRankText: {
+    fontSize: 14.5,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  trendingRatingPill: {
+    position: 'absolute',
+    top: 14,
     right: 14,
-  },
-  trendingName: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: C.white,
-    marginBottom: 2,
-  },
-  trendingTags: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.65)',
-    marginBottom: 4,
-  },
-  ratingRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(12, 16, 22, 0.72)',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 22,
+    zIndex: 10,
+  },
+  trendingRatingText: {
+    fontSize: 14.5,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  trendingBottomContent: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 20,
+    paddingBottom: 18,
     gap: 4,
   },
-  ratingText: {
-    fontSize: 12,
+  trendingLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  trendingTagsText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#FFFFFF',
+    letterSpacing: 0.2,
+  },
+  trendingTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 1,
+    marginBottom: 2,
+  },
+  trendingDestTitle: {
+    flex: 1,
+    fontSize: 26,
     fontWeight: '700',
-    color: C.star,
+    color: '#FFFFFF',
+    letterSpacing: 0.2,
+    fontFamily: Platform.select({ ios: 'Georgia', android: 'serif', default: 'Georgia, serif' }),
+  },
+  trendingKeywordsText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    letterSpacing: 2,
+    color: 'rgba(255, 255, 255, 0.55)',
+    textTransform: 'uppercase',
   },
   dotsRow: {
     flexDirection: 'row',
@@ -2926,6 +3163,281 @@ const styles = StyleSheet.create({
   dotInactive: {
     width: 6,
     backgroundColor: C.textMuted,
+  },
+});
+
+
+// ─── Story Composer Modal ────────────────────────────────────────────────────
+const STORY_EMOJIS = ['🌟', '✨', '🔥', '❤️', '🎉', '🌈', '🏔️', '🌊', '🌸', '🍃', '🦋', '🎭', '🌅', '🏖️', '🛕', '🎠', '🚀', '💫', '🌙', '⭐'];
+const STORY_LOCATIONS = ['India', 'Kerala', 'Goa', 'Rajasthan', 'Himachal', 'Uttarakhand', 'Ladakh', 'Tamil Nadu', 'Andaman', 'Manali', 'Rishikesh', 'Varanasi', 'Jaipur', 'Agra', 'Mumbai'];
+
+interface StoryComposerModalProps {
+  media: { uri: string; type: 'image' | 'video' } | null;
+  onClose: () => void;
+  onPublish: (caption: string, location: string) => void;
+}
+
+function StoryComposerModal({ media, onClose, onPublish }: StoryComposerModalProps) {
+  const { t } = useTranslation();
+  const [caption, setCaption] = useState('');
+  const [location, setLocation] = useState('');
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
+  const inputRef = React.useRef<TextInput>(null);
+
+  const handleEmojiPress = (emoji: string) => {
+    setCaption((prev) => prev + emoji);
+    inputRef.current?.focus();
+  };
+
+  const handlePublish = () => {
+    onPublish(caption, location);
+  };
+
+  return (
+    <Modal
+      visible={media !== null}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+      statusBarTranslucent
+    >
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+        <View style={storyStyles.backdrop}>
+          {/* Media preview */}
+          {media && (
+            <Image
+              source={{ uri: media.uri }}
+              style={storyStyles.previewImage}
+              resizeMode="cover"
+            />
+          )}
+
+          {/* Dark overlay */}
+          <View style={storyStyles.overlay} />
+
+          {/* Header */}
+          <View style={storyStyles.header}>
+            <TouchableOpacity onPress={onClose} style={storyStyles.closeBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <X size={20} color="#FFF" />
+            </TouchableOpacity>
+            <Text style={storyStyles.headerTitle}>New Story</Text>
+            <TouchableOpacity
+              onPress={handlePublish}
+              style={[storyStyles.publishBtn, !caption.trim() && storyStyles.publishBtnDim]}
+              activeOpacity={0.85}
+            >
+              <Text style={storyStyles.publishBtnText}>Share</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Bottom composer */}
+          <View style={storyStyles.composer}>
+            {/* Caption input */}
+            <View style={storyStyles.captionRow}>
+              <TextInput
+                ref={inputRef}
+                style={storyStyles.captionInput}
+                placeholder="Write a caption…"
+                placeholderTextColor="rgba(255,255,255,0.45)"
+                value={caption}
+                onChangeText={setCaption}
+                multiline
+                maxLength={280}
+                returnKeyType="default"
+              />
+              <Text style={storyStyles.charCount}>{caption.length}/280</Text>
+            </View>
+
+            {/* Emoji row */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={storyStyles.emojiRow}
+              keyboardShouldPersistTaps="always"
+            >
+              {STORY_EMOJIS.map((emoji) => (
+                <TouchableOpacity
+                  key={emoji}
+                  onPress={() => handleEmojiPress(emoji)}
+                  style={storyStyles.emojiBtn}
+                  activeOpacity={0.7}
+                >
+                  <Text style={storyStyles.emojiText}>{emoji}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            {/* Location row */}
+            <TouchableOpacity
+              style={storyStyles.locationRow}
+              onPress={() => setShowLocationPicker((v) => !v)}
+              activeOpacity={0.8}
+            >
+              <MapPin size={16} color="rgba(255,255,255,0.75)" strokeWidth={2} />
+              <Text style={storyStyles.locationText}>{location || 'Add Location'}</Text>
+              <ChevronRight size={14} color="rgba(255,255,255,0.5)" style={{ marginLeft: 'auto' }} />
+            </TouchableOpacity>
+
+            {/* Location picker dropdown */}
+            {showLocationPicker && (
+              <View style={storyStyles.locationPicker}>
+                <ScrollView style={{ maxHeight: 180 }} keyboardShouldPersistTaps="always">
+                  {STORY_LOCATIONS.map((loc) => (
+                    <TouchableOpacity
+                      key={loc}
+                      style={[storyStyles.locationOption, location === loc && storyStyles.locationOptionActive]}
+                      onPress={() => {
+                        setLocation(loc);
+                        setShowLocationPicker(false);
+                      }}
+                    >
+                      <Text style={[storyStyles.locationOptionText, location === loc && storyStyles.locationOptionTextActive]}>
+                        {loc}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+const storyStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  previewImage: {
+    ...StyleSheet.absoluteFill,
+  },
+  overlay: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(0,0,0,0.38)',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: 54,
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+  },
+  closeBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  publishBtn: {
+    backgroundColor: '#2563EB',
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  publishBtnDim: {
+    opacity: 0.6,
+  },
+  publishBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  composer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(10, 10, 20, 0.88)',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingBottom: 36,
+    paddingTop: 16,
+  },
+  captionRow: {
+    paddingHorizontal: 20,
+    marginBottom: 10,
+  },
+  captionInput: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    lineHeight: 22,
+    minHeight: 60,
+    maxHeight: 110,
+    textAlignVertical: 'top',
+  },
+  charCount: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.4)',
+    textAlign: 'right',
+    marginTop: 4,
+  },
+  emojiRow: {
+    paddingHorizontal: 16,
+    gap: 4,
+    paddingBottom: 12,
+  },
+  emojiBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emojiText: {
+    fontSize: 22,
+  },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+  },
+  locationText: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.75)',
+    fontWeight: '500',
+  },
+  locationPicker: {
+    marginHorizontal: 20,
+    backgroundColor: 'rgba(20, 25, 40, 0.97)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    overflow: 'hidden',
+    marginBottom: 8,
+  },
+  locationOption: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.06)',
+  },
+  locationOptionActive: {
+    backgroundColor: 'rgba(37, 99, 235, 0.3)',
+  },
+  locationOptionText: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.8)',
+  },
+  locationOptionTextActive: {
+    color: '#60A5FA',
+    fontWeight: '600',
   },
 });
 

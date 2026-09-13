@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { remoteMediaUrl } from '../../lib/validators';
+import { ObjectStorageNotConfiguredError, createStoryMediaUploadUrl } from '../../lib/object-storage';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 import { requireUserId } from '../../lib/auth-context';
@@ -98,6 +99,39 @@ router.post('/:id/like', async (req, res) => {
   } catch (err) {
     logger.warn('[Stories] Like error:', err);
     res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Story not found' } });
+  }
+});
+
+
+const storyMediaUploadUrlSchema = z.object({
+  contentType: z.enum(['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/quicktime']),
+});
+
+router.post('/media-upload-url', async (req, res) => {
+  const parsed = storyMediaUploadUrlSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      ok: false,
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'contentType must be an image/jpeg|png|webp or video/mp4|quicktime.',
+      },
+    });
+  }
+
+  try {
+    const userId = requireUserId(req);
+    const { uploadUrl, publicUrl } = await createStoryMediaUploadUrl(userId, parsed.data.contentType);
+    return res.status(200).json({ ok: true, data: { uploadUrl, publicUrl } });
+  } catch (err) {
+    if (err instanceof ObjectStorageNotConfiguredError) {
+      return res.status(503).json({
+        ok: false,
+        error: { code: 'STORAGE_UNAVAILABLE', message: 'Media upload is not available right now.' },
+      });
+    }
+    logger.error('[Stories] Media upload URL failed:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not start the upload.' } });
   }
 });
 

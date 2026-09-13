@@ -781,6 +781,7 @@ const getLegDetails = (startIndex: number, coords: RoutePoint[]) => {
 function MapScreen() {
   const { t } = useTranslation();
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
+  const [isDismissed, setIsDismissed] = useState(false);
 
   useEffect(() => {
     logger.log('Screen mounted: MapScreen');
@@ -789,8 +790,14 @@ function MapScreen() {
     });
     return unsub;
   }, []);
-  const { triggerSOS, trips, joinTrip, profile, isLoggedIn, requestedTrips, reloadJoinRequests } = useApp();
+  const { triggerSOS, trips, joinTrip, profile, isLoggedIn, requestedTrips, reloadJoinRequests, setNavbarHidden } = useApp();
   const { tripId } = useLocalSearchParams<{ tripId: string }>();
+
+  useEffect(() => {
+    if (tripId) {
+      setIsDismissed(false);
+    }
+  }, [tripId]);
   const navigation = useNavigation();
   const router = useRouter();
   // React Navigation's tab navigator keeps a visited tab mounted-but-hidden
@@ -850,7 +857,14 @@ function MapScreen() {
   }, []);
 
   // Resolve dynamic route coords from the active trip or nearby place
-  let activeTrip = trips.find((t) => t.id === (selectedTripId || tripId));
+  let activeTrip = isDismissed ? undefined : trips.find((t) => t.id === (selectedTripId || tripId));
+
+  useEffect(() => {
+    setNavbarHidden(!!activeTrip);
+    return () => {
+      setNavbarHidden(false);
+    };
+  }, [activeTrip, setNavbarHidden]);
 
   const [bottomCardHeight, setBottomCardHeight] = useState(180);
   const panelTranslateY = useState(() => new Animated.Value(0))[0];
@@ -1119,7 +1133,7 @@ function MapScreen() {
               accessibilityRole="button"
               accessibilityLabel={t('map.goBack')}
             >
-              <ArrowLeft size={22} color="#FFF" strokeWidth={3} />
+              <ArrowLeft size={22} color="#0D1117" strokeWidth={2.5} />
             </TouchableOpacity>
 
             {/* OPTION 1: ROUTE ITINERARY SELECTOR DROPDOWN */}
@@ -1355,6 +1369,8 @@ function MapScreen() {
 
 
 
+        {activeTrip && (
+          <>
         {/* BOTTOM TRIP INFO CARD / SEGMENT NAVIGATION CARD */}
         <Animated.View
           style={[
@@ -1655,6 +1671,8 @@ function MapScreen() {
             </LinearGradient>
           )}
         </Animated.View>
+          </>
+        )}
 
 
 
@@ -1964,6 +1982,15 @@ const styles = StyleSheet.create({
   },
 
   // Bottom trip card
+  closeTripRouteBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 6,
+  },
   bottomCardContainer: {
     position: 'absolute',
     bottom: 16,

@@ -156,7 +156,13 @@ interface WeatherData {
 export default function TravelGuideScreen() {
   const { t } = useTranslation();
   const router = useRouter();
-  const { isLoggedIn } = useApp();
+  const { isLoggedIn, setCurrentRole } = useApp();
+
+  useEffect(() => {
+    return () => {
+      setCurrentRole('TOURIST');
+    };
+  }, [setCurrentRole]);
   const confirm = useConfirm();
 
   const [activeTab, setActiveTab] = useState<'leads' | 'upload' | 'planning' | 'weather' | 'safety'>('leads');
@@ -953,6 +959,7 @@ export default function TravelGuideScreen() {
           <TouchableOpacity
             activeOpacity={0.7}
             onPress={() => {
+              setCurrentRole('TOURIST');
               if (router.canGoBack()) {
                 router.back();
               } else {

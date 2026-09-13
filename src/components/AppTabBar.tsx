@@ -138,6 +138,7 @@ export function AppTabBar({ state, navigation }: AppTabBarProps) {
   // here as "hide the bar" conditions). Only two real cases remain: an open
   // chat room, and an explicit navbarHidden signal from a tab screen itself.
   const shouldHideTabBar =
+    currentRouteName === 'map' ||
     (currentRouteName === 'chat' && activeRoomId !== null) ||
     (currentRouteName !== 'index' && navbarHidden);
 

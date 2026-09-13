@@ -821,6 +821,13 @@ export const apiService = {
     return request<Story[]>('/stories');
   },
 
+  async getStoryMediaUploadUrl(contentType: UploadImageContentType | 'video/mp4' | 'video/quicktime') {
+    return request<UploadUrlResponse>('/stories/media-upload-url', {
+      method: 'POST',
+      body: JSON.stringify({ contentType }),
+    });
+  },
+
   async createStory(storyData: StoryPayload) {
     return request('/stories', {
       method: 'POST',

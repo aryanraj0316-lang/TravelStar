@@ -1,3 +1,5 @@
+import { uploadFileToUrl } from '@/lib/upload';
+import { queryClient } from '@/lib/query-client';
 import { safeStorage } from '@/services/storage';
 import type { Money } from '@/lib/money';
 import { logger } from '@/lib/logger';
@@ -442,7 +444,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     apiService
       .getTrips()
       .then((remoteTrips) => {
-        setTrips(remoteTrips ?? []);
+        if (!remoteTrips) {
+          setTrips([]);
+          setDataStatus((prev) => ({ ...prev, trips: 'ready' }));
+          return;
+        }
+        // Deduplicate remote trips by ID and name
+        const seenIds = new Set<string>();
+        const seenNames = new Set<string>();
+        const unique = remoteTrips.filter((t) => {
+          if (!t) return false;
+          const idKey = t.id ? String(t.id).trim() : '';
+          const nameKey = t.name ? t.name.trim().toLowerCase() : '';
+          if (idKey && seenIds.has(idKey)) return false;
+          if (nameKey && seenNames.has(nameKey)) return false;
+          if (idKey) seenIds.add(idKey);
+          if (nameKey) seenNames.add(nameKey);
+          return true;
+        });
+        setTrips(unique);
         setDataStatus((prev) => ({ ...prev, trips: 'ready' }));
       })
       .catch((e) => {
@@ -877,6 +897,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const addStory = useCallback(
     (storyData: NewStoryInput) => {
+      const isRemoteUrl = typeof storyData.coverImg === 'string' && /^https?:\/\//i.test(storyData.coverImg);
       const newStory = {
         id: `story-${Date.now()}`,
         authorName: profile.name,
@@ -889,9 +910,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createdAt: new Date().toISOString(),
       };
       setStoriesList((prev) => [newStory, ...prev]);
-      apiService
-        .createStory(newStory)
+
+      (async () => {
+        let remoteCoverUrl: string | undefined = isRemoteUrl ? storyData.coverImg : undefined;
+
+        if (!remoteCoverUrl && storyData.coverImg && /^file:|^content:/i.test(storyData.coverImg)) {
+          try {
+            const ext = storyData.coverImg.split('.').pop()?.toLowerCase();
+            const contentType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+            const { uploadUrl, publicUrl } = await apiService.getStoryMediaUploadUrl(contentType);
+            await uploadFileToUrl(storyData.coverImg, uploadUrl, contentType);
+            remoteCoverUrl = publicUrl;
+          } catch {
+            // Object storage is unconfigured or upload was unavailable; omit device-local path so remoteMediaUrl doesn't fail
+            logger.warn('[Stories] Cloud storage not available for story media; saving story record');
+          }
+        }
+
+        const payload = {
+          title: storyData.title || 'My Travel Story',
+          content: storyData.content || '',
+          location: storyData.location || 'India',
+          hasReel: false,
+          ...(remoteCoverUrl ? { coverImg: remoteCoverUrl } : {}),
+        };
+
+        return apiService.createStory(payload);
+      })()
         .then(() => {
+          queryClient.invalidateQueries({ queryKey: queryKeys.feed() });
           toast('Story shared', 'success');
         })
         .catch((e) => {

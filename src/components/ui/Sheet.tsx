@@ -80,7 +80,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: space[5],
     paddingVertical: space[4],
   },
-  title: { color: C.white, fontSize: fontSize.md, fontWeight: fontWeight.semibold },
+  title: { color: C.text, fontSize: fontSize.md, fontWeight: fontWeight.semibold },
   close: {
     width: MIN_TOUCH_TARGET,
     height: MIN_TOUCH_TARGET,
