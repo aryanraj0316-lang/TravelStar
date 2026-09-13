@@ -83,8 +83,12 @@ const PUBLIC_GET_PATTERNS = [
 ];
 
 function isPublicRoute(req: Request): boolean {
-  if (req.method === 'POST' && (/^\/stories\/[^/]+\/view$/.test(req.path) || /^\/stories\/[^/]+\/like$/.test(req.path))) return true;
-  if (req.method === 'GET' && /^\/stories\/[^/]+\/interactions$/.test(req.path)) return true;
+  // Story views, likes and the interactions list were exempt from auth
+  // here, while the routes themselves read the acting user out of the
+  // request body — so a view or a like could be recorded as anybody, by
+  // anybody, without even signing in, and the "seen by" list was readable
+  // by everyone. All three now take identity from the token, which only
+  // means anything if the token is actually required.
   if (PUBLIC_PATHS.has(req.path)) return true;
   if (req.method !== 'GET') return false;
   if (PUBLIC_GET_EXACT.has(req.path)) return true;

@@ -244,17 +244,12 @@ export default function StoriesScreen() {
       const res = await apiService.getStoryInteractions(activeStory.id);
       if (res) {
         setInteractions(res);
-        const currentUserId = profile.id;
-        const currentUserName = profile.name?.trim().toLowerCase();
-        const meLiked = res.viewers.some(
-          (v) =>
-            v.hasLiked &&
-            ((currentUserId && v.userId === currentUserId) ||
-              (currentUserName && v.name?.trim().toLowerCase() === currentUserName))
-        );
-        if (meLiked) {
-          setIsLiked((prev) => ({ ...prev, [activeStory.id]: true }));
-        }
+        // The server resolves the caller's own like by user id. This used
+        // to be inferred by scanning the viewer list and matching on
+        // display *name*, which got the heart wrong for anyone sharing a
+        // name — and could not work at all for a non-author, who does not
+        // receive that list.
+        setIsLiked((prev) => ({ ...prev, [activeStory.id]: res.viewerHasLiked }));
       }
     } catch (e) {
       logger.warn('[Stories] Failed to load interactions:', e);
@@ -263,20 +258,19 @@ export default function StoriesScreen() {
     }
   }, [activeStory?.id, profile.id, profile.name]);
 
-  // Record view on story change (only when logged in)
+  // A view is recorded once the slide has actually been on screen for a
+  // moment. Firing on mount counted every story someone swiped straight
+  // past as seen, which is what made the counts wrong.
   useEffect(() => {
-    if (isLoggedIn && activeStory?.id) {
-      void apiService.recordStoryView(activeStory.id, {
-        userId: profile.id,
-        name: profile.name,
-        avatar: profile.avatar,
-      }).then(() => {
-        if (isMyStory) {
-          void fetchInteractions();
-        }
+    if (!isLoggedIn || !activeStory?.id) return;
+    const storyId = activeStory.id;
+    const dwellTimer = setTimeout(() => {
+      void apiService.recordStoryView(storyId).then(() => {
+        if (isMyStory) void fetchInteractions();
       });
-    }
-  }, [isLoggedIn, activeStory?.id, profile.id, profile.name, profile.avatar, isMyStory, fetchInteractions]);
+    }, 1000);
+    return () => clearTimeout(dwellTimer);
+  }, [isLoggedIn, activeStory?.id, isMyStory, fetchInteractions]);
 
   useEffect(() => {
     if (isMyStory && activeStory?.id) {
@@ -369,11 +363,7 @@ export default function StoriesScreen() {
     const wasLiked = !!isLiked[activeStory.id];
     setIsLiked((prev) => ({ ...prev, [activeStory.id]: !wasLiked }));
     try {
-      const res = await apiService.likeStory(activeStory.id, {
-        userId: profile.id,
-        name: profile.name,
-        avatar: profile.avatar,
-      });
+      const res = await apiService.likeStory(activeStory.id);
       if (res && typeof res.liked === 'boolean') {
         setIsLiked((prev) => ({ ...prev, [activeStory.id]: res.liked }));
       }

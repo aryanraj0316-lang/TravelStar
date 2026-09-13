@@ -41,6 +41,7 @@ import type {
   TripGuideMatches,
   GuideServiceZone,
   GuideReview,
+  MessageAudienceEntry,
   ReviewableEngagement,
   IncomingJoinRequest,
   JoinRequestSummary,
@@ -943,17 +944,13 @@ export const apiService = {
     }
   },
 
-  async recordStoryView(
-    storyId: string,
-    viewer?: { userId?: string; name?: string; avatar?: string | null }
-  ): Promise<void> {
+  // No viewer identity in the body: the server takes it from the token.
+  // Passing it was how a view could be attributed to someone else.
+  async recordStoryView(storyId: string): Promise<void> {
     try {
-      await request(`/stories/${storyId}/view`, {
-        method: 'POST',
-        body: JSON.stringify(viewer || {}),
-      });
+      await request(`/stories/${storyId}/view`, { method: 'POST' });
     } catch {
-      // Quiet fail on network/offline
+      // A missed view is not worth interrupting the viewer for.
     }
   },
 
@@ -965,14 +962,8 @@ export const apiService = {
     }
   },
 
-  async likeStory(
-    storyId: string,
-    liker?: { userId?: string; name?: string; avatar?: string | null }
-  ): Promise<{ liked: boolean; likesCount: number } | null> {
-    return request(`/stories/${storyId}/like`, {
-      method: 'POST',
-      body: JSON.stringify(liker || {}),
-    });
+  async likeStory(storyId: string): Promise<{ liked: boolean; totalLikes: number; likesCount: number } | null> {
+    return request(`/stories/${storyId}/like`, { method: 'POST' });
   },
 
   // Safety
@@ -1282,6 +1273,16 @@ export const apiService = {
 
   async getChatMessages(id: string): Promise<ChatMessage[] | null> {
     return request<ChatMessage[]>(`/chats/${id}/messages`);
+  },
+
+  /** Catch-up sweep for messages that arrived while this device was offline. */
+  async markChatDelivered(id: string): Promise<{ delivered: number } | null> {
+    return request(`/chats/${id}/delivered`, { method: 'POST' });
+  },
+
+  /** Who has received and who has read one of the caller's own messages. */
+  async getMessageInfo(roomId: string, messageId: string): Promise<MessageAudienceEntry[] | null> {
+    return request<MessageAudienceEntry[]>(`/chats/${roomId}/messages/${messageId}/info`);
   },
 
   async markChatRead(id: string): Promise<MessageResponse | null> {

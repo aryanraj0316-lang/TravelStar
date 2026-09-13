@@ -247,6 +247,7 @@ model User {
   chatMemberships ChatRoomMember[]
   sentMessages    Message[]            @relation("MessageSender")
   readReceipts    MessageReadReceipt[]
+  deliveryReceipts MessageDeliveryReceipt[]
   initiatedCalls  CallLog[]            @relation("CallInitiator")
   receivedCalls   CallLog[]            @relation("CallReceiver")
 
@@ -933,9 +934,30 @@ model Message {
   isSystem   Boolean              @default(false)
   createdAt  DateTime             @default(now())
   readBy     MessageReadReceipt[]
+  deliveredTo MessageDeliveryReceipt[]
 
   @@index([chatRoomId, createdAt])
   @@index([senderId])
+}
+
+// The delivery half of a message's status, separate from the read half.
+//
+// MessageReadReceipt alone can only ever say "seen" — with no record of a
+// message reaching a device, a sender's ticks cannot distinguish "the
+// server has it" from "their phone has it", which is the whole single-tick
+// / double-tick distinction. Written when a recipient's client actually
+// receives the message, either live over the socket or in a catch-up sweep
+// after being offline.
+model MessageDeliveryReceipt {
+  id          String   @id @default(uuid())
+  messageId   String
+  message     Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveredAt DateTime @default(now())
+
+  @@unique([messageId, userId])
+  @@index([messageId])
 }
 
 model MessageReadReceipt {
@@ -1391,15 +1413,23 @@ model TripPaymentOrder {
 
 
 
+// One row per person per story. Re-opening a story updates lastViewedAt
+// rather than adding a second row — a view count is how many people saw it,
+// not how many times it was opened. userId is required: a view that cannot
+// be attributed to an account cannot be deduplicated or shown in a
+// "seen by" list, and the name-based matching this replaced collided
+// between any two users with the same display name.
 model StoryView {
-  id         String      @id @default(uuid())
-  storyId    String
-  story      TravelStory @relation(fields: [storyId], references: [id], onDelete: Cascade)
-  userId     String?
-  userName   String?
-  userAvatar String?
-  createdAt  DateTime    @default(now())
+  id           String      @id @default(uuid())
+  storyId      String
+  story        TravelStory @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  userId       String
+  userName     String?
+  userAvatar   String?
+  createdAt    DateTime    @default(now())
+  lastViewedAt DateTime    @default(now())
 
+  @@unique([storyId, userId])
   @@index([storyId])
   @@index([userId])
 }
@@ -1408,11 +1438,12 @@ model StoryLike {
   id         String      @id @default(uuid())
   storyId    String
   story      TravelStory @relation(fields: [storyId], references: [id], onDelete: Cascade)
-  userId     String?
+  userId     String
   userName   String?
   userAvatar String?
   createdAt  DateTime    @default(now())
 
+  @@unique([storyId, userId])
   @@index([storyId])
   @@index([userId])
 }

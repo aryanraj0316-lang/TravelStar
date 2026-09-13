@@ -218,6 +218,10 @@ export interface StoryViewerItem {
 export interface StoryInteractionsResponse {
   totalViews: number;
   totalLikes: number;
+  /** The caller's own like state — resolved by user id server-side, which
+   *  is what the heart on their screen reflects. */
+  viewerHasLiked: boolean;
+  /** Author-only. Empty for everyone else: a viewer list is the author's. */
   viewers: StoryViewerItem[];
 }
 
@@ -344,6 +348,18 @@ export interface ChatRoomSummary {
   muted: boolean;
 }
 
+/** WhatsApp-style per-message state, from the sender's point of view. */
+export type MessageStatus = 'SENT' | 'DELIVERED' | 'SEEN';
+
+/** Who has received and who has read one message (sender-only). */
+export interface MessageAudienceEntry {
+  userId: string;
+  name: string;
+  avatar: string | null;
+  deliveredAt: IsoDateTime | null;
+  readAt: IsoDateTime | null;
+}
+
 export interface ChatMessage {
   id: string;
   senderId: string;
@@ -355,6 +371,8 @@ export interface ChatMessage {
   timestamp: string;
   mediaType: 'NONE' | 'IMAGE' | 'VOICE' | 'LOCATION';
   mediaUrl?: string | null;
+  /** Set only on the caller's own messages — ticks are the sender's view. */
+  status?: MessageStatus | null;
   /** Set only when mediaType is 'LOCATION' — a shared pin's coordinates. */
   latitude?: number | null;
   longitude?: number | null;

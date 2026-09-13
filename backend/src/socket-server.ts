@@ -1,3 +1,4 @@
+import { recordDelivery } from './services/message-status';
 import type { Server as HttpServer } from 'http';
 import { Server } from 'socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
@@ -183,6 +184,46 @@ export function createSocketServer(httpServer: HttpServer): Server {
       } catch (e) {
         logger.error('[Socket] sendMessage failed:', e);
         socket.emit('sendMessageError', { message: 'Failed to send message.' });
+      }
+    });
+
+    /**
+     * A recipient's client telling the server the message actually reached
+     * this device — the live half of delivery. The catch-up half is
+     * POST /chats/:id/delivered, for anything that arrived while offline.
+     *
+     * Membership is checked here for the same reason every other socket
+     * handler checks it: without it, any connected user could write receipts
+     * into a room they are not in.
+     */
+    const markDeliveredSchema = z.object({
+      chatRoomId: z.string().min(1),
+      messageIds: z.array(z.string().min(1)).max(500).optional(),
+    });
+
+    socket.on('markDelivered', async (raw: unknown) => {
+      const parsed = markDeliveredSchema.safeParse(raw);
+      if (!parsed.success) return;
+      const { chatRoomId, messageIds } = parsed.data;
+
+      try {
+        const membership = await prisma.chatRoomMember.findUnique({
+          where: { chatRoomId_userId: { chatRoomId, userId } },
+        });
+        if (!membership) return;
+
+        const newlyDelivered = await recordDelivery(chatRoomId, userId, messageIds);
+        if (newlyDelivered.length === 0) return;
+
+        // One batched event for the whole set, so a device coming back
+        // online does not emit hundreds of individual tick updates.
+        io.to(chatRoomId).emit('messageDelivered', {
+          roomId: chatRoomId,
+          messageIds: newlyDelivered,
+          userId,
+        });
+      } catch (e) {
+        logger.error('[Socket] markDelivered failed:', e);
       }
     });
 

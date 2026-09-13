@@ -104,326 +104,173 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Helper to resolve viewer/liker identity from req & body
-async function resolveUserIdentity(req: any) {
-  let userId: string | null = req.user?.id || req.body?.userId || null;
-  let userName: string = req.body?.name || req.body?.userName || '';
-  let userAvatar: string | null = req.body?.avatar || req.body?.userAvatar || null;
-
-  if (req.user?.id) {
-    try {
-      const u = await prisma.user.findUnique({ where: { id: req.user.id }, include: { profile: true } });
-      if (u) {
-        if (!userName) {
-          if (u.profile?.firstName) {
-            userName = `${u.profile.firstName} ${u.profile.lastName || ''}`.trim();
-          } else if (u.email) {
-            userName = u.email.split('@')[0] ?? 'Traveler';
-          }
-        }
-        if (!userAvatar && u.profile?.avatarUrl) {
-          userAvatar = u.profile.avatarUrl;
-        }
-      }
-    } catch {
-      // Ignore DB lookup error
-    }
-  }
-
-  if (!userName || userName.trim().toLowerCase() === 'guest traveler') {
-    userName = 'Traveler';
-  }
-
-  return { userId, userName, userAvatar };
+/**
+ * Display name and avatar for a viewer/liker row, captured at write time.
+ *
+ * Identity itself is never taken from the request body. It used to be
+ * (req.body.userId / name / avatar), which meant anyone could record a view
+ * or a like as anybody else, and dedup fell back to matching on display
+ * *name* — so two users called "Traveler" were treated as one person. The
+ * JWT is the only source now.
+ */
+async function viewerIdentity(userId: string): Promise<{ userName: string; userAvatar: string | null }> {
+  const u = await prisma.user.findUnique({ where: { id: userId }, include: { profile: true } });
+  const userName = u?.profile
+    ? (u.profile.firstName + ' ' + (u.profile.lastName || '')).trim()
+    : (u?.email ? (u.email.split('@')[0] ?? 'Traveller') : 'Traveller');
+  return { userName, userAvatar: u?.profile?.avatarUrl ?? null };
 }
 
-// Record a view on a story
+/**
+ * Record that this user has seen the story.
+ *
+ * One row per (story, user): re-opening updates lastViewedAt instead of
+ * adding another row, because a view count is how many people saw it, not
+ * how many times it was opened. The author's own view is not recorded —
+ * looking at your own story is not an audience.
+ *
+ * This used to create the story row itself when the id was unknown, from an
+ * id supplied by the caller, which let any client mint arbitrary story
+ * rows. An unknown story is now a 404.
+ */
 router.post('/:id/view', async (req, res) => {
-  const parsedParams = z.object({ id: z.string() }).safeParse(req.params);
+  const parsedParams = z.object({ id: z.string().uuid() }).safeParse(req.params);
   if (!parsedParams.success) {
     return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid story id.' } });
   }
   const storyId = parsedParams.data.id;
+  const userId = requireUserId(req);
 
   try {
-    const { userId, userName, userAvatar } = await resolveUserIdentity(req);
-
-    // Auto-upsert story if not yet in database
-    let story = await prisma.travelStory.findUnique({
+    const story = await prisma.travelStory.findUnique({
       where: { id: storyId },
       select: { id: true, userId: true },
     });
-
     if (!story) {
-      try {
-        story = await prisma.travelStory.create({
-          data: {
-            id: storyId,
-            userId: userId ?? null,
-            authorName: userName,
-            authorAvatar: userAvatar,
-            title: 'Travel Story',
-            content: '',
-            location: '',
-            likesCount: 0,
-            hasReel: false,
-          },
-        });
-      } catch {
-        story = await prisma.travelStory.findUnique({ where: { id: storyId }, select: { id: true, userId: true } });
-      }
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Story not found.' } });
     }
 
-    // Check if this viewer already recorded a view on this story
-    const orConditions: any[] = [];
-    if (userId) orConditions.push({ userId });
-    if (userName && userName !== 'Traveler') orConditions.push({ userName });
-
-    let existingView = null;
-    if (orConditions.length > 0) {
-      existingView = await prisma.storyView.findFirst({
-        where: {
-          storyId,
-          OR: orConditions,
-        },
-      });
+    if (story.userId === userId) {
+      const totalViews = await prisma.storyView.count({ where: { storyId } });
+      return res.status(200).json({ ok: true, data: { counted: false, totalViews } });
     }
 
-    if (existingView) {
-      await prisma.storyView.update({
-        where: { id: existingView.id },
-        data: {
-          createdAt: new Date(),
-          userName: userName || existingView.userName,
-          userAvatar: userAvatar || existingView.userAvatar,
-          userId: userId || existingView.userId,
-        },
-      });
-    } else {
-      await prisma.storyView.create({
-        data: {
-          storyId,
-          userId,
-          userName,
-          userAvatar,
-        },
-      });
-    }
+    const { userName, userAvatar } = await viewerIdentity(userId);
+    await prisma.storyView.upsert({
+      where: { storyId_userId: { storyId, userId } },
+      create: { storyId, userId, userName, userAvatar },
+      update: { lastViewedAt: new Date(), userName, userAvatar },
+    });
 
-    return res.status(200).json({ ok: true });
+    const totalViews = await prisma.storyView.count({ where: { storyId } });
+    return res.status(200).json({ ok: true, data: { counted: true, totalViews } });
   } catch (err) {
     logger.warn('[Stories] View error:', err);
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to record view' } });
   }
 });
 
-// Like or unlike a story with user tracking
+/**
+ * Toggle this user's like.
+ *
+ * likesCount is a denormalised cache, so it is recomputed from the rows in
+ * the same transaction rather than incremented blindly — a blind increment
+ * is how a counter ends up disagreeing with the likes it is counting.
+ */
 router.post('/:id/like', async (req, res) => {
-  const parsedParams = z.object({ id: z.string() }).safeParse(req.params);
+  const parsedParams = z.object({ id: z.string().uuid() }).safeParse(req.params);
   if (!parsedParams.success) {
     return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid story id.' } });
   }
   const storyId = parsedParams.data.id;
+  const userId = requireUserId(req);
 
   try {
-    const { userId, userName, userAvatar } = await resolveUserIdentity(req);
+    const story = await prisma.travelStory.findUnique({ where: { id: storyId }, select: { id: true } });
+    if (!story) {
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Story not found.' } });
+    }
 
-    let story = await prisma.travelStory.findUnique({
-      where: { id: storyId },
+    const existing = await prisma.storyLike.findUnique({
+      where: { storyId_userId: { storyId, userId } },
     });
 
-    if (!story) {
-      try {
-        story = await prisma.travelStory.create({
-          data: {
-            id: storyId,
-            userId: userId ?? null,
-            authorName: userName,
-            authorAvatar: userAvatar,
-            title: 'Travel Story',
-            content: '',
-            location: '',
-            likesCount: 0,
-            hasReel: false,
-          },
-        });
-      } catch {
-        story = await prisma.travelStory.findUnique({ where: { id: storyId } });
-      }
-    }
-
-    if (!story) {
-      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Story not found' } });
-    }
-
-    // Check if user already liked
-    const orConditions: any[] = [];
-    if (userId) orConditions.push({ userId });
-    if (userName && userName !== 'Traveler') orConditions.push({ userName });
-
-    let existingLike = null;
-    if (orConditions.length > 0) {
-      existingLike = await prisma.storyLike.findFirst({
-        where: {
-          storyId,
-          OR: orConditions,
-        },
-      });
-    }
-
-    if (existingLike) {
-      // Toggle off / Unlike
-      const [, updatedStory] = await prisma.$transaction([
-        prisma.storyLike.delete({ where: { id: existingLike.id } }),
-        prisma.travelStory.update({
-          where: { id: storyId },
-          data: { likesCount: { decrement: 1 } },
-        }),
-      ]);
-      return res.status(200).json({
-        ok: true,
-        data: { liked: false, likesCount: Math.max(0, updatedStory.likesCount) },
-      });
-    } else {
-      // Toggle on / Like
-      const [, updatedStory] = await prisma.$transaction([
-        prisma.storyLike.create({
-          data: {
-            storyId,
-            userId,
-            userName,
-            userAvatar,
-          },
-        }),
-        prisma.travelStory.update({
-          where: { id: storyId },
-          data: { likesCount: { increment: 1 } },
-        }),
-      ]);
-
-      // Ensure liker is also recorded as a viewer
-      let existingView = null;
-      if (orConditions.length > 0) {
-        existingView = await prisma.storyView.findFirst({
-          where: {
-            storyId,
-            OR: orConditions,
-          },
+    const { liked, totalLikes } = await prisma.$transaction(async (tx) => {
+      if (existing) {
+        await tx.storyLike.delete({ where: { id: existing.id } });
+      } else {
+        const identity = await viewerIdentity(userId);
+        await tx.storyLike.create({
+          data: { storyId, userId, userName: identity.userName, userAvatar: identity.userAvatar },
         });
       }
-      if (!existingView) {
-        await prisma.storyView.create({
-          data: {
-            storyId,
-            userId,
-            userName,
-            userAvatar,
-          },
-        }).catch(() => {});
-      }
+      const total = await tx.storyLike.count({ where: { storyId } });
+      await tx.travelStory.update({ where: { id: storyId }, data: { likesCount: total } });
+      return { liked: !existing, totalLikes: total };
+    });
 
-      return res.status(200).json({
-        ok: true,
-        data: { liked: true, likesCount: updatedStory.likesCount },
-      });
-    }
+    return res.status(200).json({ ok: true, data: { liked, totalLikes, likesCount: totalLikes } });
   } catch (err) {
     logger.warn('[Stories] Like error:', err);
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to like story' } });
   }
 });
 
-// Get interactions (viewer list & like status) for a story
+/**
+ * Who saw this story. The viewer list is author-only: showing one person's
+ * audience to everybody else leaks who has been reading whom. Counts and
+ * the caller's own like state are returned to anyone, because that is what
+ * the heart on their own screen reflects.
+ */
 router.get('/:id/interactions', async (req, res) => {
-  const parsedParams = z.object({ id: z.string() }).safeParse(req.params);
+  const parsedParams = z.object({ id: z.string().uuid() }).safeParse(req.params);
   if (!parsedParams.success) {
     return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid story id.' } });
   }
   const storyId = parsedParams.data.id;
+  const userId = requireUserId(req);
 
   try {
     const story = await prisma.travelStory.findUnique({
       where: { id: storyId },
-      select: { id: true, userId: true, likesCount: true },
+      select: { id: true, userId: true },
     });
-
     if (!story) {
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Story not found.' } });
+    }
+
+    const [totalViews, totalLikes, viewerLike] = await Promise.all([
+      prisma.storyView.count({ where: { storyId } }),
+      prisma.storyLike.count({ where: { storyId } }),
+      prisma.storyLike.findUnique({ where: { storyId_userId: { storyId, userId } }, select: { id: true } }),
+    ]);
+
+    if (story.userId !== userId) {
       return res.status(200).json({
         ok: true,
-        data: {
-          totalViews: 0,
-          totalLikes: 0,
-          viewers: [],
-        },
+        data: { totalViews, totalLikes, viewerHasLiked: !!viewerLike, viewers: [] },
       });
     }
 
     const [views, likes] = await Promise.all([
-      prisma.storyView.findMany({
-        where: { storyId },
-        orderBy: { createdAt: 'desc' },
-      }),
-      prisma.storyLike.findMany({
-        where: { storyId },
-        orderBy: { createdAt: 'desc' },
-      }),
+      prisma.storyView.findMany({ where: { storyId }, orderBy: { lastViewedAt: 'desc' }, take: 200 }),
+      prisma.storyLike.findMany({ where: { storyId }, select: { userId: true } }),
     ]);
-
-    const likedIds = new Set<string>();
-    const likedNames = new Set<string>();
-    for (const l of likes) {
-      if (l.userId) likedIds.add(l.userId);
-      if (l.userName) likedNames.add(l.userName.toLowerCase().trim());
-    }
-
-    const viewerMap = new Map<string, {
-      userId: string;
-      name: string;
-      avatar: string | null;
-      hasLiked: boolean;
-      viewedAt: string;
-    }>();
-
-    for (const v of views) {
-      const name = v.userName?.trim() || 'Traveler';
-      const key = v.userId ? `id:${v.userId}` : (name !== 'Traveler' ? `name:${name.toLowerCase()}` : `view:${v.id}`);
-      const hasLiked = (v.userId ? likedIds.has(v.userId) : false) || (name !== 'Traveler' && likedNames.has(name.toLowerCase()));
-      viewerMap.set(key, {
-        userId: v.userId || v.id,
-        name,
-        avatar: v.userAvatar,
-        hasLiked,
-        viewedAt: v.createdAt.toISOString(),
-      });
-    }
-
-    for (const l of likes) {
-      const name = l.userName?.trim() || 'Traveler';
-      const key = l.userId ? `id:${l.userId}` : (name !== 'Traveler' ? `name:${name.toLowerCase()}` : `like:${l.id}`);
-      if (!viewerMap.has(key)) {
-        viewerMap.set(key, {
-          userId: l.userId || l.id,
-          name,
-          avatar: l.userAvatar,
-          hasLiked: true,
-          viewedAt: l.createdAt.toISOString(),
-        });
-      } else {
-        const existing = viewerMap.get(key)!;
-        existing.hasLiked = true;
-      }
-    }
-
-    const viewersList = Array.from(viewerMap.values()).sort(
-      (a, b) => new Date(b.viewedAt).getTime() - new Date(a.viewedAt).getTime()
-    );
+    const likedBy = new Set(likes.map((l) => l.userId));
 
     return res.status(200).json({
       ok: true,
       data: {
-        totalViews: Math.max(views.length, viewerMap.size),
-        totalLikes: Math.max(story.likesCount, likes.length),
-        viewers: viewersList,
+        totalViews,
+        totalLikes,
+        viewerHasLiked: !!viewerLike,
+        viewers: views.map((v) => ({
+          userId: v.userId,
+          name: v.userName || 'Traveller',
+          avatar: v.userAvatar,
+          hasLiked: likedBy.has(v.userId),
+          viewedAt: v.lastViewedAt.toISOString(),
+        })),
       },
     });
   } catch (err) {
@@ -431,6 +278,7 @@ router.get('/:id/interactions', async (req, res) => {
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve interactions' } });
   }
 });
+
 
 const storyMediaUploadUrlSchema = z.object({
   contentType: z.enum(['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/quicktime']),

@@ -4,6 +4,7 @@ import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 import { requireUserId } from '../../lib/auth-context';
 import { ObjectStorageNotConfiguredError, createChatMediaUploadUrl } from '../../lib/object-storage';
+import { audienceForMessage, recordDelivery, statusesForOwnMessages } from '../../services/message-status';
 
 const router = Router();
 
@@ -276,6 +277,12 @@ router.get('/:id/messages', async (req, res) => {
     const hasMore = dbMessages.length > take;
     const page = hasMore ? dbMessages.slice(0, take) : dbMessages;
 
+    // Ticks are only meaningful to the person who sent the message, so this
+    // is computed for the caller's own messages and left off everyone
+    // else's — see services/message-status.ts.
+    const ownMessageIds = page.filter((m) => m.senderId === tokenUserId && !m.isSystem).map((m) => m.id);
+    const statuses = await statusesForOwnMessages(id, tokenUserId, ownMessageIds);
+
     const history = page
       .map((m) => {
         let name = 'System';
@@ -307,6 +314,7 @@ router.get('/:id/messages', async (req, res) => {
           // Set only on LOCATION messages — a shared pin's coordinates.
           latitude: m.latitude,
           longitude: m.longitude,
+          status: statuses.get(m.id) ?? null,
         };
       })
       .reverse(); // chronological order for display
@@ -368,10 +376,87 @@ router.post('/:id/read', async (req, res) => {
       );
     }
 
+    // One batched event, not one per message: opening a room with 200
+    // unread would otherwise fan out 200 socket emits to update ticks.
+    if (messagesToRead.length > 0) {
+      const io = req.app.get('socketio');
+      io?.to(id).emit('messageRead', {
+        roomId: id,
+        messageIds: messagesToRead.map((m) => m.id),
+        userId: tokenUserId,
+      });
+    }
+
     return res.status(200).json({ ok: true, data: { message: 'Messages marked as read' } });
   } catch (err) {
     logger.warn('[Chats] Mark messages read error:', err);
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to mark messages as read' } });
+  }
+});
+
+/**
+ * Catch-up delivery sweep, for messages that arrived while this device was
+ * offline — the live path is the socket's markDelivered. Idempotent.
+ */
+router.post('/:id/delivered', async (req, res) => {
+  const parsedParams = roomIdParamSchema.safeParse(req.params);
+  if (!parsedParams.success) {
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid chat room id.' } });
+  }
+  const { id } = parsedParams.data;
+  const tokenUserId = requireUserId(req);
+
+  try {
+    if (!(await assertChatRoomMember(res, id, tokenUserId))) return;
+
+    const newlyDelivered = await recordDelivery(id, tokenUserId);
+    if (newlyDelivered.length > 0) {
+      const io = req.app.get('socketio');
+      io?.to(id).emit('messageDelivered', { roomId: id, messageIds: newlyDelivered, userId: tokenUserId });
+    }
+
+    return res.status(200).json({ ok: true, data: { delivered: newlyDelivered.length } });
+  } catch (err) {
+    logger.warn('[Chats] Mark delivered error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to mark messages delivered' } });
+  }
+});
+
+/**
+ * Who has received and who has read one message. Sender-only: this is the
+ * group analogue of WhatsApp's message info, and it is their message.
+ */
+router.get('/:id/messages/:messageId/info', async (req, res) => {
+  const parsed = z
+    .object({ id: z.string().uuid(), messageId: z.string().uuid() })
+    .safeParse(req.params);
+  if (!parsed.success) {
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid ids.' } });
+  }
+  const { id, messageId } = parsed.data;
+  const tokenUserId = requireUserId(req);
+
+  try {
+    if (!(await assertChatRoomMember(res, id, tokenUserId))) return;
+
+    const message = await prisma.message.findUnique({
+      where: { id: messageId },
+      select: { senderId: true, chatRoomId: true },
+    });
+    if (!message || message.chatRoomId !== id) {
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Message not found.' } });
+    }
+    if (message.senderId !== tokenUserId) {
+      return res
+        .status(403)
+        .json({ ok: false, error: { code: 'FORBIDDEN', message: 'You can only see info for your own messages.' } });
+    }
+
+    const audience = await audienceForMessage(messageId, tokenUserId);
+    return res.status(200).json({ ok: true, data: audience });
+  } catch (err) {
+    logger.warn('[Chats] Message info error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to load message info' } });
   }
 });
 
