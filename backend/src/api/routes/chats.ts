@@ -70,6 +70,7 @@ router.get('/', async (req, res) => {
         chatRoom: {
           include: {
             trip: true,
+            inquiryTrip: { select: { id: true, name: true } },
             members: {
               include: {
                 user: {
@@ -126,7 +127,11 @@ router.get('/', async (req, res) => {
           : null;
       const otherAvatar = otherMember?.user?.profile?.avatarUrl ?? null;
 
-      const roomName = room.name || otherName || trip?.name || (room.isGroup ? 'Group Chat' : 'Direct Chat');
+      // An enquiry thread is labelled with the trip it is about, so it does
+      // not sit in the inbox as a bare DM with no context.
+      const roomName = room.inquiryTrip
+        ? (otherName ? otherName + ' · ' + room.inquiryTrip.name : 'Enquiry · ' + room.inquiryTrip.name)
+        : (room.name || otherName || trip?.name || (room.isGroup ? 'Group Chat' : 'Direct Chat'));
       const roomAvatar = (!room.isGroup && otherAvatar) ? otherAvatar : (trip?.coverImage ?? otherAvatar ?? null);
       const roomType = room.isGroup ? 'GROUP' : 'GUIDE';
 
@@ -157,6 +162,8 @@ router.get('/', async (req, res) => {
         // This user's own membership row — `m` is always their own, since
         // `memberships` was fetched by `userId: tokenUserId` above.
         muted: m.muted,
+        inquiryTripId: room.inquiryTripId,
+        inquiryTripName: room.inquiryTrip?.name ?? null,
       };
     });
 
@@ -166,6 +173,64 @@ router.get('/', async (req, res) => {
   } catch (err) {
     logger.warn('[Chats] Get chat rooms list error:', err);
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve chat rooms' } });
+  }
+});
+
+/**
+ * Open (or reopen) the enquiry thread between this traveller and a trip's
+ * organizer.
+ *
+ * Deliberately not gated on join state: the point is to ask questions
+ * *before* requesting a seat, which is when someone most needs an answer.
+ * Idempotent — the (inquiryTripId, inquiryUserId) unique index means
+ * tapping "Ask the organizer" twice returns the same thread rather than
+ * spawning a second one the organizer would have to reconcile.
+ */
+router.post('/inquiry', async (req, res) => {
+  const parsed = z.object({ tripId: z.string().uuid() }).safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid trip id.' } });
+  }
+  const { tripId } = parsed.data;
+  const tokenUserId = requireUserId(req);
+
+  try {
+    const trip = await prisma.trip.findUnique({
+      where: { id: tripId },
+      select: { id: true, name: true, creatorId: true },
+    });
+    if (!trip) {
+      return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found.' } });
+    }
+    if (trip.creatorId === tokenUserId) {
+      return res
+        .status(400)
+        .json({ ok: false, error: { code: 'SELF_INQUIRY', message: 'This is your own trip.' } });
+    }
+
+    const existing = await prisma.chatRoom.findUnique({
+      where: { inquiryTripId_inquiryUserId: { inquiryTripId: tripId, inquiryUserId: tokenUserId } },
+      select: { id: true },
+    });
+    if (existing) {
+      return res.status(200).json({ ok: true, data: { chatRoomId: existing.id, tripId, tripName: trip.name } });
+    }
+
+    const room = await prisma.chatRoom.create({
+      data: {
+        isGroup: false,
+        name: null,
+        inquiryTripId: tripId,
+        inquiryUserId: tokenUserId,
+        members: { create: [{ userId: tokenUserId }, { userId: trip.creatorId }] },
+      },
+      select: { id: true },
+    });
+
+    return res.status(201).json({ ok: true, data: { chatRoomId: room.id, tripId, tripName: trip.name } });
+  } catch (err) {
+    logger.warn('[Chats] Create inquiry error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to open the enquiry.' } });
   }
 });
 

@@ -14,7 +14,7 @@ import { useApp } from '@/store/AppContext';
 import type { MessageAudienceEntry, MessageStatus } from '@/types/api';
 import { C, MIN_TOUCH_TARGET, fontSize, radii } from '@/theme/tokens';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useFocusEffect, useRouter, type ErrorBoundaryProps } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter, type ErrorBoundaryProps } from 'expo-router';
 import ArrowLeft from 'lucide-react-native/icons/arrow-left';
 import Bell from 'lucide-react-native/icons/bell';
 import BellOff from 'lucide-react-native/icons/bell-off';
@@ -926,6 +926,18 @@ function ChatScreen() {
   // Navigation States
   const selectedRoomId = activeRoomId;
   const setSelectedRoomId = setActiveRoomId;
+
+  // Deep link into one thread: "Ask the organizer" on a trip and the
+  // organizer's enquiry list both push here with a roomId. Without this the
+  // push landed on the chat tab with whatever room happened to be open.
+  const { roomId: roomIdParam } = useLocalSearchParams<{ roomId?: string }>();
+  const openedRoomParamRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!roomIdParam || openedRoomParamRef.current === roomIdParam) return;
+    openedRoomParamRef.current = roomIdParam;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelectedRoomId(roomIdParam);
+  }, [roomIdParam, setSelectedRoomId]);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [unreadSessionCount, setUnreadSessionCount] = useState<number>(0);
   const [isChatContentReady, setIsChatContentReady] = useState(false);

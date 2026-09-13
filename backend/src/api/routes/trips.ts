@@ -10,6 +10,7 @@ import { calculateMidwayPrice } from '../../services/midway-pricing';
 import { coordsForCity, haversineKm, stateForCity } from '../../lib/india-city-coords';
 import { boundingBox, resolveTripCoordinates } from '../../lib/trip-coordinates';
 import { extractRouteWaypoints, findGuidesForRoute } from '../../services/guide-route-matching';
+import { computeBalances, paiseToRupeeString, rupeesToPaise, settle } from '../../services/expense-split';
 import { createTripCoverUploadUrl, ObjectStorageNotConfiguredError } from '../../lib/object-storage';
 import { sendPushToUsers } from '../../lib/push';
 
@@ -525,6 +526,98 @@ router.get('/:id/matching-guides', async (req, res) => {
   } catch (err) {
     logger.error('[Trips] Matching guides error:', err);
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to match guides to this route' } });
+  }
+});
+
+/**
+ * The pre-join enquiry threads for one trip, for its organizer.
+ *
+ * Sits beside the join requests in the organizer's Chat & Approvals view so
+ * one person's whole picture — what they asked, and whether they have
+ * actually requested a seat — reads as a single line, rather than a DM in
+ * one place and a request in another with nothing connecting them.
+ */
+router.get('/:id/inquiries', async (req, res) => {
+  const parsedParams = z.object({ id: z.string().uuid() }).safeParse(req.params);
+  if (!parsedParams.success) {
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid trip id.' } });
+  }
+  const { id: tripId } = parsedParams.data;
+  const userId = requireUserId(req);
+
+  try {
+    const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { creatorId: true } });
+    if (!trip) {
+      return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found.' } });
+    }
+    if (trip.creatorId !== userId) {
+      return res.status(403).json({
+        ok: false,
+        error: { code: 'FORBIDDEN', message: "Only this trip's organizer can read its enquiries." },
+      });
+    }
+
+    const rooms = await prisma.chatRoom.findMany({
+      where: { inquiryTripId: tripId },
+      include: {
+        inquiryUser: { include: { profile: true } },
+        messages: { orderBy: { createdAt: 'desc' }, take: 1 },
+      },
+    });
+    if (rooms.length === 0) {
+      return res.status(200).json({ ok: true, data: [] });
+    }
+
+    // Same MessageReadReceipt-based rule GET /chats uses: unread is what the
+    // organizer has not read, excluding their own messages.
+    const [unreadRows, joinRequests] = await Promise.all([
+      prisma.message.groupBy({
+        by: ['chatRoomId'],
+        where: {
+          chatRoomId: { in: rooms.map((r) => r.id) },
+          senderId: { not: userId },
+          isSystem: false,
+          readBy: { none: { userId } },
+        },
+        _count: { chatRoomId: true },
+      }),
+      prisma.joinRequest.findMany({
+        where: { tripId, userId: { in: rooms.map((r) => r.inquiryUserId!).filter(Boolean) } },
+        select: { userId: true, status: true },
+      }),
+    ]);
+
+    const unreadByRoom = new Map(unreadRows.map((u) => [u.chatRoomId, u._count.chatRoomId]));
+    const requestByUser = new Map(joinRequests.map((j) => [j.userId, j.status]));
+
+    const data = rooms
+      .map((room) => {
+        const profile = room.inquiryUser?.profile;
+        const lastMessage = room.messages[0];
+        return {
+          chatRoomId: room.id,
+          user: {
+            id: room.inquiryUserId,
+            name: profile
+              ? `${profile.firstName} ${profile.lastName || ''}`.trim()
+              : (room.inquiryUser?.email?.split('@')[0] ?? 'Traveller'),
+            avatar: profile?.avatarUrl ?? null,
+          },
+          lastMessage: lastMessage?.content ?? null,
+          lastMessageAt: (lastMessage?.createdAt ?? room.createdAt).toISOString(),
+          unreadCount: unreadByRoom.get(room.id) ?? 0,
+          // So a traveller who asked a question but has not requested a seat
+          // is still visible, and one who has shows their status inline.
+          hasJoinRequest: requestByUser.has(room.inquiryUserId ?? ''),
+          joinRequestStatus: requestByUser.get(room.inquiryUserId ?? '') ?? null,
+        };
+      })
+      .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
+
+    return res.status(200).json({ ok: true, data });
+  } catch (err) {
+    logger.error('[Trips] Get inquiries error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to load enquiries.' } });
   }
 });
 
@@ -1578,79 +1671,169 @@ async function loadTripParticipants(tripId: string): Promise<TripParticipant[] |
 
 const EXPENSE_CATEGORIES = ['TRANSPORT', 'LODGING', 'FOOD', 'ACTIVITY', 'OTHER'] as const;
 
+const expenseShareSchema = z.object({
+  userId: z.string().uuid(),
+  amount: z.coerce.number().nonnegative().max(10_000_000),
+});
+
 const createExpenseSchema = z.object({
   description: z.string().trim().min(1).max(200),
   amount: z.coerce.number().positive().max(10_000_000),
   category: z.enum(EXPENSE_CATEGORIES).default('OTHER'),
+  // Defaults to the caller: the common case is "I paid for this".
+  paidById: z.string().uuid().optional(),
+  splitMode: z.enum(['EQUAL', 'CUSTOM']).default('EQUAL'),
+  shares: z.array(expenseShareSchema).max(50).optional(),
 });
 
-// List a trip's shared expenses with the derived per-member split.
+const updateExpenseSchema = createExpenseSchema.partial();
+
+/**
+ * A CUSTOM split has to account for the whole expense and name only people
+ * on the trip — otherwise the ledger silently stops adding up, which is the
+ * one thing a shared expense tracker cannot do.
+ */
+function validateCustomShares(
+  amountPaise: number,
+  shares: { userId: string; amount: number }[],
+  participantIds: string[],
+): string | null {
+  if (shares.length === 0) return 'A custom split needs at least one share.';
+
+  const seen = new Set<string>();
+  let sum = 0;
+  for (const share of shares) {
+    if (seen.has(share.userId)) return 'Each person can appear only once in a custom split.';
+    seen.add(share.userId);
+    if (!participantIds.includes(share.userId)) return 'A custom split can only include people on this trip.';
+    sum += rupeesToPaise(share.amount);
+  }
+  if (sum !== amountPaise) {
+    return `The shares add up to ₹${paiseToRupeeString(sum)}, but the expense is ₹${paiseToRupeeString(amountPaise)}.`;
+  }
+  return null;
+}
+
+/** The one authorization check every expense route goes through. */
+async function assertTripParticipant(
+  tripId: string,
+  userId: string,
+): Promise<{ ok: true; participants: TripParticipant[]; me: TripParticipant } | { ok: false; status: number; code: string; message: string }> {
+  const participants = await loadTripParticipants(tripId);
+  if (!participants) {
+    return { ok: false, status: 404, code: 'TRIP_NOT_FOUND', message: 'Trip not found' };
+  }
+  const me = participants.find((p) => p.userId === userId);
+  if (!me) {
+    return { ok: false, status: 403, code: 'FORBIDDEN', message: 'You are not on this trip.' };
+  }
+  return { ok: true, participants, me };
+}
+
+/**
+ * A trip's shared expenses, with each person's balance and the smallest set
+ * of payments that settles up.
+ *
+ * All arithmetic is in integer paise (services/expense-split.ts) and only
+ * becomes rupee strings here at the boundary. The previous version divided
+ * in floating point and rounded each row, so the shares of an amount that
+ * did not divide evenly summed to less than the total.
+ */
 router.get('/:tripId/expenses', async (req, res) => {
   const userId = requireUserId(req);
   const { tripId } = req.params;
   try {
-    const participants = await loadTripParticipants(tripId);
-    if (!participants) {
-      return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found' } });
+    const access = await assertTripParticipant(tripId!, userId);
+    if (!access.ok) {
+      return res.status(access.status).json({ ok: false, error: { code: access.code, message: access.message } });
     }
-    if (!participants.some((p) => p.userId === userId)) {
-      return res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'You are not on this trip.' } });
-    }
+    const { participants, me } = access;
 
     const expenses = await prisma.tripExpense.findMany({
       where: { tripId },
       orderBy: { createdAt: 'desc' },
-      include: { paidBy: { include: { profile: true } } },
+      include: { paidBy: { include: { profile: true } }, shares: true },
     });
 
-    const headCount = participants.length;
-    const total = expenses.reduce((acc, e) => acc + Number(e.amount), 0);
-    const equalShare = headCount > 0 ? total / headCount : 0;
+    const participantIds = participants.map((p) => p.userId);
+    const balances = computeBalances(
+      expenses.map((e) => ({
+        id: e.id,
+        amountPaise: rupeesToPaise(e.amount.toString()),
+        paidById: e.paidById,
+        splitMode: e.splitMode,
+        shares: e.shares.map((sh) => ({ userId: sh.userId, amountPaise: rupeesToPaise(sh.amount.toString()) })),
+      })),
+      participantIds,
+    );
 
-    // Per-member: what they paid, what they owe (equal share), net balance.
-    const paidByUser = new Map<string, number>();
-    for (const e of expenses) {
-      paidByUser.set(e.paidById, (paidByUser.get(e.paidById) ?? 0) + Number(e.amount));
-    }
-    const balances = participants.map((p) => {
-      const paid = paidByUser.get(p.userId) ?? 0;
-      return {
-        userId: p.userId,
-        name: p.name,
-        avatar: p.avatar,
-        isOrganizer: p.isOrganizer,
-        paid: paid.toFixed(2),
-        share: equalShare.toFixed(2),
-        net: (paid - equalShare).toFixed(2), // positive => is owed; negative => owes
-      };
-    });
+    const nameById = new Map(participants.map((p) => [p.userId, p.name]));
+    const avatarById = new Map(participants.map((p) => [p.userId, p.avatar]));
+
+    const totalPaise = expenses.reduce((acc, e) => acc + rupeesToPaise(e.amount.toString()), 0);
+    const settlements = settle(balances).map((t) => ({
+      fromUserId: t.fromUserId,
+      fromName: nameById.get(t.fromUserId) ?? 'Traveller',
+      toUserId: t.toUserId,
+      toName: nameById.get(t.toUserId) ?? 'Traveller',
+      amount: paiseToRupeeString(t.amountPaise),
+    }));
 
     const items = expenses.map((e) => ({
       id: e.id,
       description: e.description,
-      amount: Number(e.amount).toFixed(2),
+      amount: paiseToRupeeString(rupeesToPaise(e.amount.toString())),
       category: e.category,
+      splitMode: e.splitMode,
+      shares:
+        e.splitMode === 'CUSTOM'
+          ? e.shares.map((sh) => ({
+              userId: sh.userId,
+              name: nameById.get(sh.userId) ?? 'Traveller',
+              amount: paiseToRupeeString(rupeesToPaise(sh.amount.toString())),
+            }))
+          : [],
       createdAt: e.createdAt.toISOString(),
       paidById: e.paidById,
       paidByName: e.paidBy.profile
         ? `${e.paidBy.profile.firstName} ${e.paidBy.profile.lastName}`.trim()
-        : (e.paidBy.email?.split('@')[0] ?? 'Traveler'),
-      canDelete: e.paidById === userId || participants.find((p) => p.userId === userId)?.isOrganizer === true,
+        : (e.paidBy.email?.split('@')[0] ?? 'Traveller'),
+      paidByAvatar: avatarById.get(e.paidById) ?? null,
+      canEdit: e.paidById === userId || me.isOrganizer,
+      canDelete: e.paidById === userId || me.isOrganizer,
     }));
+
+    const myBalance = balances.find((b) => b.userId === userId);
 
     return res.status(200).json({
       ok: true,
       data: {
         tripId,
-        headCount,
-        total: total.toFixed(2),
-        yourShare: equalShare.toFixed(2),
-        yourNet: (() => {
-          const me = balances.find((b) => b.userId === userId);
-          return me ? me.net : '0.00';
-        })(),
+        headCount: participants.length,
+        total: paiseToRupeeString(totalPaise),
+        // Rounded down to the paisa; the per-person shares themselves always
+        // sum to the exact total, which this average cannot.
+        perPersonAverage: paiseToRupeeString(
+          participants.length > 0 ? Math.floor(totalPaise / participants.length) : 0,
+        ),
+        participantCount: participants.length,
+        // The caller's own share of everything so far — their real owed
+        // amount, which for a custom split is not the per-person average.
+        yourShare: paiseToRupeeString(myBalance?.owesPaise ?? 0),
+        yourNet: paiseToRupeeString(myBalance?.netPaise ?? 0),
         expenses: items,
-        balances,
+        balances: balances.map((b) => ({
+          userId: b.userId,
+          name: nameById.get(b.userId) ?? 'Traveller',
+          avatar: avatarById.get(b.userId) ?? null,
+          isOrganizer: participants.find((p) => p.userId === b.userId)?.isOrganizer ?? false,
+          paid: paiseToRupeeString(b.paidPaise),
+          owes: paiseToRupeeString(b.owesPaise),
+          /** Alias of owes, kept for clients written against the original shape. */
+          share: paiseToRupeeString(b.owesPaise),
+          net: paiseToRupeeString(b.netPaise),
+        })),
+        settlements,
       },
     });
   } catch (err) {
@@ -1659,7 +1842,9 @@ router.get('/:tripId/expenses', async (req, res) => {
   }
 });
 
-// Add a shared expense — paid by the caller, who must be on the trip.
+// Add a shared expense. Defaults to the caller having paid, but any
+// participant can be named as the payer — someone else's card at dinner is
+// the ordinary case, not an edge case.
 router.post('/:tripId/expenses', async (req, res) => {
   const userId = requireUserId(req);
   const { tripId } = req.params;
@@ -1675,21 +1860,39 @@ router.post('/:tripId/expenses', async (req, res) => {
     });
   }
   try {
-    const participants = await loadTripParticipants(tripId);
-    if (!participants) {
-      return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found' } });
+    const access = await assertTripParticipant(tripId!, userId);
+    if (!access.ok) {
+      return res.status(access.status).json({ ok: false, error: { code: access.code, message: access.message } });
     }
-    if (!participants.some((p) => p.userId === userId)) {
-      return res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'You are not on this trip.' } });
+    const { participants } = access;
+    const participantIds = participants.map((p) => p.userId);
+
+    const paidById = parsed.data.paidById ?? userId;
+    if (!participantIds.includes(paidById)) {
+      return res
+        .status(400)
+        .json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'The payer must be on this trip.' } });
+    }
+
+    const amountPaise = rupeesToPaise(parsed.data.amount);
+    if (parsed.data.splitMode === 'CUSTOM') {
+      const problem = validateCustomShares(amountPaise, parsed.data.shares ?? [], participantIds);
+      if (problem) {
+        return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: problem } });
+      }
     }
 
     const expense = await prisma.tripExpense.create({
       data: {
-        tripId,
+        tripId: tripId!,
         description: parsed.data.description,
         amount: parsed.data.amount,
         category: parsed.data.category,
-        paidById: userId,
+        paidById,
+        splitMode: parsed.data.splitMode,
+        ...(parsed.data.splitMode === 'CUSTOM' && parsed.data.shares
+          ? { shares: { create: parsed.data.shares.map((sh) => ({ userId: sh.userId, amount: sh.amount })) } }
+          : {}),
       },
     });
     return res.status(201).json({ ok: true, data: { id: expense.id } });
@@ -1699,19 +1902,99 @@ router.post('/:tripId/expenses', async (req, res) => {
   }
 });
 
+// Edit a shared expense — only the payer or the trip organizer.
+router.patch('/:tripId/expenses/:expenseId', async (req, res) => {
+  const userId = requireUserId(req);
+  const { tripId, expenseId } = req.params;
+  const parsed = updateExpenseSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      ok: false,
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'Please check the expense details.',
+        details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+      },
+    });
+  }
+
+  try {
+    const access = await assertTripParticipant(tripId!, userId);
+    if (!access.ok) {
+      return res.status(access.status).json({ ok: false, error: { code: access.code, message: access.message } });
+    }
+    const { participants, me } = access;
+    const participantIds = participants.map((p) => p.userId);
+
+    const expense = await prisma.tripExpense.findUnique({ where: { id: expenseId }, include: { shares: true } });
+    if (!expense || expense.tripId !== tripId) {
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Expense not found' } });
+    }
+    if (expense.paidById !== userId && !me.isOrganizer) {
+      return res.status(403).json({
+        ok: false,
+        error: { code: 'FORBIDDEN', message: 'Only the person who paid or the organizer can edit this.' },
+      });
+    }
+
+    const nextAmount = parsed.data.amount ?? Number(expense.amount);
+    const nextSplitMode = parsed.data.splitMode ?? expense.splitMode;
+    const nextPaidById = parsed.data.paidById ?? expense.paidById;
+    if (!participantIds.includes(nextPaidById)) {
+      return res
+        .status(400)
+        .json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'The payer must be on this trip.' } });
+    }
+
+    const nextShares =
+      parsed.data.shares ??
+      expense.shares.map((sh) => ({ userId: sh.userId, amount: Number(sh.amount) }));
+
+    if (nextSplitMode === 'CUSTOM') {
+      const problem = validateCustomShares(rupeesToPaise(nextAmount), nextShares, participantIds);
+      if (problem) {
+        return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: problem } });
+      }
+    }
+
+    // Shares are replaced wholesale rather than merged: a partial update of
+    // a custom split is how one stops summing to its total.
+    await prisma.$transaction(async (tx) => {
+      await tx.tripExpense.update({
+        where: { id: expenseId },
+        data: {
+          ...(parsed.data.description !== undefined ? { description: parsed.data.description } : {}),
+          ...(parsed.data.amount !== undefined ? { amount: parsed.data.amount } : {}),
+          ...(parsed.data.category !== undefined ? { category: parsed.data.category } : {}),
+          paidById: nextPaidById,
+          splitMode: nextSplitMode,
+        },
+      });
+      await tx.tripExpenseShare.deleteMany({ where: { tripExpenseId: expenseId } });
+      if (nextSplitMode === 'CUSTOM') {
+        await tx.tripExpenseShare.createMany({
+          data: nextShares.map((sh) => ({ tripExpenseId: expenseId!, userId: sh.userId, amount: sh.amount })),
+        });
+      }
+    });
+
+    return res.status(200).json({ ok: true, data: { id: expenseId } });
+  } catch (err) {
+    logger.error('[Trips] Update expense error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to update expense' } });
+  }
+});
+
 // Delete a shared expense — only the payer or the trip organizer.
 router.delete('/:tripId/expenses/:expenseId', async (req, res) => {
   const userId = requireUserId(req);
   const { tripId, expenseId } = req.params;
   try {
-    const participants = await loadTripParticipants(tripId);
-    if (!participants) {
-      return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found' } });
+    const access = await assertTripParticipant(tripId!, userId);
+    if (!access.ok) {
+      return res.status(access.status).json({ ok: false, error: { code: access.code, message: access.message } });
     }
-    const me = participants.find((p) => p.userId === userId);
-    if (!me) {
-      return res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'You are not on this trip.' } });
-    }
+    const { me } = access;
 
     const expense = await prisma.tripExpense.findUnique({ where: { id: expenseId } });
     if (!expense || expense.tripId !== tripId) {

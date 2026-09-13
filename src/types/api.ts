@@ -346,6 +346,22 @@ export interface ChatRoomSummary {
   lastMessageAt: IsoDateTime;
   /** This user's own per-room notification mute — see POST /chats/:id/mute. */
   muted: boolean;
+  /** Set on a pre-join enquiry thread, so the inbox can label which trip
+   *  it is about instead of showing a bare DM. */
+  inquiryTripId?: string | null;
+  inquiryTripName?: string | null;
+}
+
+/** One pre-join enquiry thread, as the trip organizer sees it. */
+export interface TripInquiryThread {
+  chatRoomId: string;
+  user: { id: string | null; name: string; avatar: string | null };
+  lastMessage: string | null;
+  lastMessageAt: IsoDateTime;
+  unreadCount: number;
+  /** Whether this person has also requested a seat, and where that stands. */
+  hasJoinRequest: boolean;
+  joinRequestStatus: JoinRequestStatus | null;
 }
 
 /** WhatsApp-style per-message state, from the sender's point of view. */

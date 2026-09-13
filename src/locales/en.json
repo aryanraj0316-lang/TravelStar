@@ -693,7 +693,10 @@
     "modeCAB": "Cab",
     "modeTRAIN": "Train",
     "modeFLIGHT": "Flight",
-    "modeBUS": "Bus"
+    "modeBUS": "Bus",
+    "askOrganizer": "Ask the organizer a question",
+    "openingChat": "Opening chat…",
+    "couldNotOpenChat": "Could not open the chat. Please try again."
   },
   "profile": {
     "personalDetails": "PERSONAL DETAILS",
@@ -1026,6 +1029,25 @@
     "quoteStatusAccepted": "Accepted",
     "quoteStatusDeclined": "Declined",
     "noCoverPhoto": "No cover photo",
+    "tabChatApprovals": "Chat & Approvals",
+    "reviewInApprovalsTab": "Review in Chat & Approvals",
+    "enquiriesTitle": "Enquiries",
+    "enquiriesSub": "Questions travellers sent you before requesting a seat",
+    "loadingEnquiries": "Loading enquiries...",
+    "couldNotLoadEnquiries": "Could not load enquiries.",
+    "noEnquiriesTitle": "No enquiries yet",
+    "noEnquiriesDesc": "When a traveller messages you about this journey, the conversation appears here.",
+    "enquiryNoMessages": "No messages yet",
+    "unnamedTraveler": "Traveler",
+    "inquiryStatusPending": "Pending",
+    "inquiryStatusAwaitingPayment": "Awaiting payment",
+    "inquiryStatusApproved": "Approved",
+    "inquiryStatusRejected": "Rejected",
+    "joinRequestsTitle": "Join requests",
+    "joinRequestsSub": "Travelers asking for a seat on this journey",
+    "requestPartySize": "Party of {{partySize}} (+{{familyMemberCount}} family)",
+    "requestCheckpointRange": "{{from}} → {{to}}",
+    "requestJoiningDate": "Joins {{date}}",
     "tabCheckpointGuides": "Checkpoint Guides",
     "checkpointGuidesTitle": "Checkpoint Guides",
     "checkpointGuidesSub": "Assign a verified guide to any stop on this trip's route",
@@ -1045,7 +1067,9 @@
     "guideAssigned": "{{name}} assigned to this checkpoint.",
     "guideAssignFailed": "Could not assign that guide. Please try again.",
     "guideUnassigned": "Guide removed from this checkpoint.",
-    "guideUnassignFailed": "Could not remove that guide. Please try again."
+    "guideUnassignFailed": "Could not remove that guide. Please try again.",
+    "approveFailed": "Could not approve {{name}}'s request. Please try again.",
+    "rejectFailed": "Could not decline {{name}}'s request. Please try again."
   },
   "createTrip": {
     "organizerConsole": "ORGANIZER CONSOLE",

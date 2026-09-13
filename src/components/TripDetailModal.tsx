@@ -16,6 +16,7 @@ import Calendar from 'lucide-react-native/icons/calendar';
 import MapPin from 'lucide-react-native/icons/map-pin';
 import Users from 'lucide-react-native/icons/users';
 import UserCheck from 'lucide-react-native/icons/user-check';
+import MessageCircle from 'lucide-react-native/icons/message-circle';
 import Hotel from 'lucide-react-native/icons/hotel';
 import Utensils from 'lucide-react-native/icons/utensils';
 import Bike from 'lucide-react-native/icons/bike';
@@ -26,7 +27,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, type Trip } from '@/store/AppContext';
 import { eventBus } from '@/services/event-bus';
 import { useRouter } from 'expo-router';
-import { toast } from '@/lib/feedback';
+import { errorToastMessage, toast } from '@/lib/feedback';
 import { formatDate, formatDateShort, toDate } from '@/lib/datetime';
 import { formatTransitTime } from '@/lib/transit-time';
 import { queryKeys } from '@/lib/query-keys';
@@ -78,6 +79,7 @@ export default function TripDetailModal({
   const [fromStopId, setFromStopId] = useState<string | null>(null);
   const [toStopId, setToStopId] = useState<string | null>(null);
   const [joiningDayIndex, setJoiningDayIndex] = useState<number | null>(null);
+  const [openingInquiry, setOpeningInquiry] = useState(false);
 
   // The list payload this modal is opened with is deliberately lean — it
   // has no description, route timeline or packing checklist. Those live on
@@ -221,6 +223,25 @@ export default function TripDetailModal({
 
   const handleCancelRequest = () => {
     cancelJoinRequest(trip.id);
+  };
+
+  const handleAskOrganizer = async () => {
+    if (!isLoggedIn) {
+      onClose();
+      router.push('/auth');
+      return;
+    }
+    setOpeningInquiry(true);
+    try {
+      const thread = await apiService.openTripInquiry(trip.id);
+      if (!thread) throw new Error('No thread returned');
+      onClose();
+      router.push({ pathname: '/(tabs)/chat', params: { roomId: thread.chatRoomId } });
+    } catch (e) {
+      toast(errorToastMessage(e, t('tripDetailModal.couldNotOpenChat')), 'error');
+    } finally {
+      setOpeningInquiry(false);
+    }
   };
 
   return (
@@ -442,6 +463,24 @@ export default function TripDetailModal({
                   >
                     <UserCheck size={14} color={C.blueText} />
                     <Text style={styles.findGuideLinkText}>{t('tripDetailModal.findGuideForCheckpoint')}</Text>
+                  </TouchableOpacity>
+                ) : null}
+
+                {/* Questions are free: this is deliberately not gated on
+                    seats or join state, because it exists to be used
+                    *before* deciding to request one. */}
+                {!isMyTrip ? (
+                  <TouchableOpacity
+                    style={styles.findGuideLink}
+                    onPress={handleAskOrganizer}
+                    disabled={openingInquiry}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('tripDetailModal.askOrganizer')}
+                  >
+                    <MessageCircle size={14} color={C.blueText} />
+                    <Text style={styles.findGuideLinkText}>
+                      {openingInquiry ? t('tripDetailModal.openingChat') : t('tripDetailModal.askOrganizer')}
+                    </Text>
                   </TouchableOpacity>
                 ) : null}
 

@@ -42,6 +42,7 @@ import type {
   GuideServiceZone,
   GuideReview,
   MessageAudienceEntry,
+  TripInquiryThread,
   ReviewableEngagement,
   IncomingJoinRequest,
   JoinRequestSummary,
@@ -1281,6 +1282,19 @@ export const apiService = {
   // Chats
   async getChats(): Promise<ChatRoomSummary[] | null> {
     return request<ChatRoomSummary[]>('/chats');
+  },
+
+  /**
+   * Open (or reopen) the enquiry thread with a trip's organizer. Safe to
+   * call repeatedly — the server returns the same thread.
+   */
+  async openTripInquiry(tripId: string): Promise<{ chatRoomId: string; tripId: string; tripName: string } | null> {
+    return request('/chats/inquiry', { method: 'POST', body: JSON.stringify({ tripId }) });
+  },
+
+  /** Organizer-only: the pre-join enquiry threads for one trip. */
+  async getTripInquiries(tripId: string): Promise<TripInquiryThread[] | null> {
+    return request<TripInquiryThread[]>(`/trips/${tripId}/inquiries`);
   },
 
   async getChatDetails(id: string): Promise<ChatRoomSummary | null> {

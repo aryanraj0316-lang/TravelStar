@@ -212,6 +212,7 @@ model User {
   votes            PollVote[]
   expensesPaid     Expense[]      @relation("ExpensePaidBy")
   tripExpensesPaid TripExpense[]  @relation("TripExpensePaidBy")
+  tripExpenseShares TripExpenseShare[] @relation("TripExpenseShareOwner")
 
   // Payments & Wallet
   wallet       Wallet?
@@ -245,6 +246,7 @@ model User {
 
   // Chat Relations
   chatMemberships ChatRoomMember[]
+  inquiryRooms    ChatRoom[]           @relation("UserInquiries")
   sentMessages    Message[]            @relation("MessageSender")
   readReceipts    MessageReadReceipt[]
   deliveryReceipts MessageDeliveryReceipt[]
@@ -472,6 +474,7 @@ model Trip {
   checklist TripChecklistItem[]
   quotes    GuideQuote[]
   reviews   Review[]
+  inquiryRooms ChatRoom[] @relation("TripInquiries")
 
   @@index([creatorId])
   @@index([createdAt])
@@ -667,6 +670,13 @@ model Expense {
 // and split equally across everyone on the trip (organizer + confirmed
 // members) at read time — the split is derived, never stored, so it can't
 // drift when membership changes.
+/// How one expense is divided. EQUAL splits it across every participant;
+/// CUSTOM uses explicit per-person amounts that must sum to the total.
+enum SplitMode {
+  EQUAL
+  CUSTOM
+}
+
 model TripExpense {
   id          String   @id @default(uuid())
   tripId      String
@@ -676,11 +686,30 @@ model TripExpense {
   category    String   @default("OTHER") // TRANSPORT | LODGING | FOOD | ACTIVITY | OTHER
   paidById    String
   paidBy      User     @relation("TripExpensePaidBy", fields: [paidById], references: [id], onDelete: Cascade)
+  splitMode   SplitMode @default(EQUAL)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  shares TripExpenseShare[]
+
   @@index([tripId])
   @@index([paidById])
+}
+
+/// One person's share of a CUSTOM-split expense. Absent for EQUAL splits,
+/// where the division is derived at read time so it cannot drift when the
+/// trip roster changes.
+model TripExpenseShare {
+  id            String      @id @default(uuid())
+  tripExpenseId String
+  tripExpense   TripExpense @relation(fields: [tripExpenseId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User        @relation("TripExpenseShareOwner", fields: [userId], references: [id], onDelete: Cascade)
+  amount        Decimal     @db.Decimal(12, 2)
+  createdAt     DateTime    @default(now())
+
+  @@unique([tripExpenseId, userId])
+  @@index([tripExpenseId])
 }
 
 // Day-by-day plan for a trip, authored by its organiser
@@ -901,6 +930,21 @@ model ChatRoom {
   messages  Message[]
   tripId    String?          @unique
   trip      Trip?            @relation(fields: [tripId], references: [id])
+
+  /// A pre-join enquiry thread between a prospective traveller and a trip's
+  /// organizer. Deliberately separate from tripId above, which is @unique
+  /// and means "this is that trip which group room" — reusing it would collide
+  /// on the second enquiry. Without the trip attribution an organizer just
+  /// sees a nameless DM and cannot tell which of their trips it is about.
+  inquiryTripId String?
+  inquiryTrip   Trip?   @relation("TripInquiries", fields: [inquiryTripId], references: [id], onDelete: Cascade)
+  inquiryUserId String?
+  inquiryUser   User?   @relation("UserInquiries", fields: [inquiryUserId], references: [id], onDelete: Cascade)
+
+  /// One thread per (trip, traveller): tapping "Ask the organizer" twice
+  /// reopens the same conversation instead of spawning duplicates.
+  @@unique([inquiryTripId, inquiryUserId])
+  @@index([inquiryTripId])
 }
 
 model ChatRoomMember {

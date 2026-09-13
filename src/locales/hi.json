@@ -693,7 +693,10 @@
     "modeCAB": "कैब",
     "modeTRAIN": "ट्रेन",
     "modeFLIGHT": "फ़्लाइट",
-    "modeBUS": "बस"
+    "modeBUS": "बस",
+    "askOrganizer": "आयोजक से सवाल पूछें",
+    "openingChat": "चैट खुल रही है…",
+    "couldNotOpenChat": "चैट नहीं खुल सकी। कृपया पुनः प्रयास करें।"
   },
   "profile": {
     "personalDetails": "व्यक्तिगत विवरण",
@@ -1026,6 +1029,25 @@
     "quoteStatusAccepted": "स्वीकृत",
     "quoteStatusDeclined": "अस्वीकृत",
     "noCoverPhoto": "कोई कवर फोटो नहीं",
+    "tabChatApprovals": "चैट और मंज़ूरी",
+    "reviewInApprovalsTab": "चैट और मंज़ूरी में देखें",
+    "enquiriesTitle": "पूछताछ",
+    "enquiriesSub": "सीट माँगने से पहले यात्रियों ने आपसे जो सवाल पूछे",
+    "loadingEnquiries": "पूछताछ लोड हो रही है...",
+    "couldNotLoadEnquiries": "पूछताछ लोड नहीं हो सकी।",
+    "noEnquiriesTitle": "अभी तक कोई पूछताछ नहीं",
+    "noEnquiriesDesc": "जब कोई यात्री इस यात्रा के बारे में आपको संदेश भेजेगा, बातचीत यहाँ दिखेगी।",
+    "enquiryNoMessages": "अभी तक कोई संदेश नहीं",
+    "unnamedTraveler": "यात्री",
+    "inquiryStatusPending": "लंबित",
+    "inquiryStatusAwaitingPayment": "भुगतान बाकी",
+    "inquiryStatusApproved": "स्वीकृत",
+    "inquiryStatusRejected": "अस्वीकृत",
+    "joinRequestsTitle": "जुड़ने के अनुरोध",
+    "joinRequestsSub": "इस यात्रा में सीट माँगने वाले यात्री",
+    "requestPartySize": "{{partySize}} लोगों का समूह (+{{familyMemberCount}} परिवार)",
+    "requestCheckpointRange": "{{from}} → {{to}}",
+    "requestJoiningDate": "{{date}} को जुड़ेंगे",
     "tabCheckpointGuides": "चेकपॉइंट गाइड",
     "checkpointGuidesTitle": "चेकपॉइंट गाइड",
     "checkpointGuidesSub": "इस ट्रिप के रूट के किसी भी पड़ाव पर एक सत्यापित गाइड असाइन करें",
@@ -1045,7 +1067,9 @@
     "guideAssigned": "{{name}} को इस चेकपॉइंट पर असाइन किया गया।",
     "guideAssignFailed": "उस गाइड को असाइन नहीं किया जा सका। कृपया फिर से कोशिश करें।",
     "guideUnassigned": "गाइड को इस चेकपॉइंट से हटा दिया गया।",
-    "guideUnassignFailed": "उस गाइड को हटाया नहीं जा सका। कृपया फिर से कोशिश करें।"
+    "guideUnassignFailed": "उस गाइड को हटाया नहीं जा सका। कृपया फिर से कोशिश करें।",
+    "approveFailed": "{{name}} का अनुरोध स्वीकृत नहीं हो सका। कृपया पुनः प्रयास करें।",
+    "rejectFailed": "{{name}} का अनुरोध अस्वीकार नहीं हो सका। कृपया पुनः प्रयास करें।"
   },
   "createTrip": {
     "organizerConsole": "आयोजक कंसोल",

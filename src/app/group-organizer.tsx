@@ -1,14 +1,14 @@
 import { Avatar, Button, CoverImage, Input, ScreenEmpty, Sheet } from '@/components/ui';
-import { formatRelative } from '@/lib/datetime';
+import { formatDateShort, formatRelative } from '@/lib/datetime';
 import { formatINR, parseMoney, type Money } from '@/lib/money';
 import { tripCoverImage } from '@/lib/trip-display';
-import { showPrompt, toast, useConfirm } from '@/lib/feedback';
+import { errorToastMessage, showPrompt, toast, useConfirm } from '@/lib/feedback';
 import { logger } from '@/lib/logger';
 import { apiService, type TripTimelineStop } from '@/services/api';
 import { safeStorage } from '@/services/storage';
 import { useApp, type Trip } from '@/store/AppContext';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
-import type { IncomingJoinRequest, PublicGuide, ReceivedGuideQuote, TripGuideMatches, TripMemberRow } from '@/types/api';
+import type { IncomingJoinRequest, PublicGuide, ReceivedGuideQuote, TripGuideMatches, TripInquiryThread, TripMemberRow } from '@/types/api';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Activity from 'lucide-react-native/icons/activity';
@@ -140,8 +140,15 @@ const STATUS_LABEL_KEYS: Record<ActiveTour['status'], string> = {
   COMPLETED: 'groupOrganizer.statusCompleted',
 };
 
+const INQUIRY_STATUS_LABEL_KEYS: Record<NonNullable<TripInquiryThread['joinRequestStatus']>, string> = {
+  PENDING: 'groupOrganizer.inquiryStatusPending',
+  AWAITING_PAYMENT: 'groupOrganizer.inquiryStatusAwaitingPayment',
+  APPROVED: 'groupOrganizer.inquiryStatusApproved',
+  REJECTED: 'groupOrganizer.inquiryStatusRejected',
+};
+
 export type GroupOrganizerTab = 'console' | 'chat';
-export type CreationSubTab = 'dashboard' | 'requests' | 'itinerary' | 'roster' | 'overview' | 'checkpoints';
+export type CreationSubTab = 'dashboard' | 'approvals' | 'itinerary' | 'roster' | 'overview' | 'checkpoints';
 
 
 // ─── Live Map Geocoding & Road Routing Engine (OpenStreetMap & OSRM) ───
@@ -429,6 +436,11 @@ export default function GroupOrganizerScreen() {
   const [timelineStops, setTimelineStops] = useState<TripTimelineStop[]>([]);
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [timelineError, setTimelineError] = useState<string | null>(null);
+  // Pre-join enquiry DMs on this trip. A thread can exist with no join
+  // request behind it — someone asking a question is not an applicant.
+  const [inquiries, setInquiries] = useState<TripInquiryThread[]>([]);
+  const [inquiriesLoading, setInquiriesLoading] = useState(false);
+  const [inquiriesError, setInquiriesError] = useState<string | null>(null);
   const [publicGuides, setPublicGuides] = useState<PublicGuide[]>([]);
   // Which guides' declared service zones actually cover this trip's route.
   const [routeMatches, setRouteMatches] = useState<TripGuideMatches | null>(null);
@@ -1066,6 +1078,29 @@ export default function GroupOrganizerScreen() {
     [t],
   );
 
+  const fetchTripInquiries = useCallback(
+    (tripId: string) => {
+      return Promise.resolve()
+        .then(() => {
+          setInquiriesLoading(true);
+          setInquiriesError(null);
+          return apiService.getTripInquiries(tripId);
+        })
+        .then((data) => {
+          setInquiries(data ?? []);
+        })
+        .catch((e) => {
+          logger.warn('Failed to fetch trip inquiries:', e);
+          setInquiries([]);
+          setInquiriesError(errorToastMessage(e, t('groupOrganizer.couldNotLoadEnquiries')));
+        })
+        .finally(() => {
+          setInquiriesLoading(false);
+        });
+    },
+    [t],
+  );
+
   const fetchPublicGuides = useCallback(() => {
     setGuidesLoading(true);
     apiService
@@ -1213,11 +1248,19 @@ export default function GroupOrganizerScreen() {
   // Fetch the route timeline (for per-checkpoint guide assignment) only
   // once the organizer actually opens that tab, matching the trip currently
   // selected in the console inspector.
+  // The approvals tab needs the same timeline, to name the stops a join
+  // request asked for.
   useEffect(() => {
-    if (creationSubTab === 'checkpoints' && selectedCreation) {
+    if ((creationSubTab === 'checkpoints' || creationSubTab === 'approvals') && selectedCreation) {
       void fetchTripTimeline(selectedCreation.id);
     }
   }, [creationSubTab, selectedCreation, fetchTripTimeline]);
+
+  useEffect(() => {
+    if (creationSubTab === 'approvals' && selectedCreation) {
+      void fetchTripInquiries(selectedCreation.id);
+    }
+  }, [creationSubTab, selectedCreation, fetchTripInquiries]);
 
   // Create new Tour form
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -1284,7 +1327,12 @@ export default function GroupOrganizerScreen() {
         nextStatus = 'AWAITING_PAYMENT';
       }
     } catch (e) {
-      logger.warn('Approve request api failed, updating local state:', e);
+      // A failed approval must not report success and flip the row locally:
+      // the organizer would believe someone is on the trip who never got a
+      // seat, and the next refetch would silently contradict the UI.
+      logger.warn('Approve request failed:', e);
+      toast(errorToastMessage(e, t('groupOrganizer.approveFailed', { name: userName })), 'error');
+      return;
     }
     setRawJoinRequests((prev) => {
       const updated = prev.map((r) => (r.id === reqId ? { ...r, status: nextStatus } : r));
@@ -1308,7 +1356,9 @@ export default function GroupOrganizerScreen() {
     try {
       await apiService.updateJoinRequestStatus(reqId, 'REJECTED');
     } catch (e) {
-      logger.warn('Reject request api failed, updating local state:', e);
+      logger.warn('Reject request failed:', e);
+      toast(errorToastMessage(e, t('groupOrganizer.rejectFailed', { name: userName })), 'error');
+      return;
     }
     setRawJoinRequests((prev) => {
       const updated = prev.map((r) => (r.id === reqId ? { ...r, status: 'REJECTED' as const } : r));
@@ -1848,10 +1898,12 @@ export default function GroupOrganizerScreen() {
                         { key: 'dashboard', label: 'Dashboard', Icon: TrendingUp },
                         { key: 'roster', label: 'Members', Icon: Users },
                         {
-                          key: 'requests',
-                          label: 'Requests',
+                          key: 'approvals',
+                          label: t('groupOrganizer.tabChatApprovals'),
                           Icon: MessageSquare,
-                          badge: rawJoinRequests.filter((r) => r.tripId === selectedCreation.id && r.status === 'PENDING').length,
+                          badge:
+                            rawJoinRequests.filter((r) => r.tripId === selectedCreation.id && r.status === 'PENDING').length +
+                            inquiries.filter((th) => th.unreadCount > 0).length,
                         },
                         { key: 'itinerary', label: 'Itinerary', Icon: Calendar },
                         { key: 'checkpoints', label: t('groupOrganizer.tabCheckpointGuides'), Icon: MapPin },
@@ -2034,7 +2086,7 @@ export default function GroupOrganizerScreen() {
                             {tripPendingRequests}
                           </Text>
                           <Text style={styles.minimalStatSub}>
-                            {tripPendingRequests > 0 ? 'Review in Requests tab' : 'No pending requests'}
+                            {tripPendingRequests > 0 ? t('groupOrganizer.reviewInApprovalsTab') : 'No pending requests'}
                           </Text>
                         </View>
                       </View>
@@ -2169,8 +2221,118 @@ export default function GroupOrganizerScreen() {
               {/* ========================================================
               CREATION OPTION 2: REQUESTS & APPROVALS
               ======================================================== */}
-              {creationSubTab === 'requests' && (
+              {creationSubTab === 'approvals' && (
                 <View style={styles.requestsSection}>
+                  {/* ─── Section 1: pre-join enquiry DMs ─── */}
+                  <View style={styles.membersHeaderRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.membersTitle}>{t('groupOrganizer.enquiriesTitle')}</Text>
+                      <Text style={styles.membersSub}>{t('groupOrganizer.enquiriesSub')}</Text>
+                    </View>
+                  </View>
+
+                  {inquiriesLoading ? (
+                    <View style={styles.emptyMembersState}>
+                      <ActivityIndicator color={C.blue} />
+                      <Text style={styles.emptyMembersSub}>{t('groupOrganizer.loadingEnquiries')}</Text>
+                    </View>
+                  ) : inquiriesError ? (
+                    <View style={styles.emptyMembersState}>
+                      <MessageSquare size={32} color={C.textMuted} />
+                      <Text style={styles.emptyMembersTitle}>{inquiriesError}</Text>
+                      <TouchableOpacity
+                        onPress={() => fetchTripInquiries(selectedCreation.id)}
+                        accessibilityRole="button"
+                      >
+                        <Text style={[styles.emptyMembersSub, { color: C.blueText, marginTop: 6 }]}>
+                          {t('groupOrganizer.retry')}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : inquiries.length === 0 ? (
+                    <View style={styles.emptyMembersState}>
+                      <MessageSquare size={32} color={C.textMuted} />
+                      <Text style={styles.emptyMembersTitle}>{t('groupOrganizer.noEnquiriesTitle')}</Text>
+                      <Text style={styles.emptyMembersSub}>{t('groupOrganizer.noEnquiriesDesc')}</Text>
+                    </View>
+                  ) : (
+                    <View style={{ gap: 8 }}>
+                      {inquiries.map((thread) => {
+                        const threadName = thread.user.name || t('groupOrganizer.unnamedTraveler');
+                        const chipStatus = thread.hasJoinRequest ? thread.joinRequestStatus : null;
+                        return (
+                          <TouchableOpacity
+                            key={thread.chatRoomId}
+                            style={styles.inquiryRow}
+                            onPress={() =>
+                              router.push({ pathname: '/(tabs)/chat', params: { roomId: thread.chatRoomId } })
+                            }
+                            activeOpacity={0.8}
+                            accessibilityRole="button"
+                            accessibilityLabel={threadName}
+                          >
+                            <Avatar uri={thread.user.avatar} name={threadName} size={38} />
+                            <View style={styles.inquiryBody}>
+                              <View style={styles.inquiryTopRow}>
+                                <Text style={styles.inquiryName} numberOfLines={1}>
+                                  {threadName}
+                                </Text>
+                                {chipStatus ? (
+                                  <View
+                                    style={[
+                                      styles.requestStatusBadge,
+                                      chipStatus === 'APPROVED'
+                                        ? styles.requestStatusApproved
+                                        : chipStatus === 'REJECTED'
+                                        ? styles.requestStatusRejected
+                                        : chipStatus === 'AWAITING_PAYMENT'
+                                        ? styles.requestStatusAwaiting
+                                        : styles.requestStatusPending,
+                                    ]}
+                                  >
+                                    <Text
+                                      style={[
+                                        styles.requestStatusBadgeText,
+                                        chipStatus === 'APPROVED'
+                                          ? styles.requestStatusApprovedText
+                                          : chipStatus === 'REJECTED'
+                                          ? styles.requestStatusRejectedText
+                                          : chipStatus === 'AWAITING_PAYMENT'
+                                          ? styles.requestStatusAwaitingText
+                                          : styles.requestStatusPendingText,
+                                      ]}
+                                    >
+                                      {t(INQUIRY_STATUS_LABEL_KEYS[chipStatus])}
+                                    </Text>
+                                  </View>
+                                ) : null}
+                                <Text style={styles.inquiryTime}>{formatRelative(thread.lastMessageAt)}</Text>
+                              </View>
+                              <View style={styles.inquiryBottomRow}>
+                                <Text style={styles.inquiryPreview} numberOfLines={1}>
+                                  {thread.lastMessage || t('groupOrganizer.enquiryNoMessages')}
+                                </Text>
+                                {thread.unreadCount > 0 ? (
+                                  <View style={styles.inquiryUnreadBadge}>
+                                    <Text style={styles.inquiryUnreadBadgeText}>{thread.unreadCount}</Text>
+                                  </View>
+                                ) : null}
+                              </View>
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  )}
+
+                  {/* ─── Section 2: join requests ─── */}
+                  <View style={[styles.membersHeaderRow, { marginTop: 8 }]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.membersTitle}>{t('groupOrganizer.joinRequestsTitle')}</Text>
+                      <Text style={styles.membersSub}>{t('groupOrganizer.joinRequestsSub')}</Text>
+                    </View>
+                  </View>
+
                   {/* Requests Notification Banner (Active whenever there are pending requests / messages) */}
                   {(() => {
                     const pendingCount = rawJoinRequests.filter(
@@ -2309,6 +2471,38 @@ export default function GroupOrganizerScreen() {
                                 <Text style={styles.requestCardRoute} numberOfLines={1}>
                                   {req.fromCity && req.toCity ? `${req.fromCity} ➔ ${req.toCity}` : 'Full Journey Route'}
                                 </Text>
+                                {req.familyMemberCount > 0 ? (
+                                  <Text style={styles.requestCardRoute} numberOfLines={1}>
+                                    {t('groupOrganizer.requestPartySize', {
+                                      partySize: req.partySize,
+                                      familyMemberCount: req.familyMemberCount,
+                                    })}
+                                  </Text>
+                                ) : null}
+                                {(() => {
+                                  const fromStop = req.fromStopId
+                                    ? timelineStops.find((s) => s.id === req.fromStopId)
+                                    : undefined;
+                                  const toStop = req.toStopId
+                                    ? timelineStops.find((s) => s.id === req.toStopId)
+                                    : undefined;
+                                  if (!fromStop || !toStop) return null;
+                                  return (
+                                    <Text style={styles.requestCardRoute} numberOfLines={1}>
+                                      {t('groupOrganizer.requestCheckpointRange', {
+                                        from: fromStop.city,
+                                        to: toStop.city,
+                                      })}
+                                    </Text>
+                                  );
+                                })()}
+                                {req.joiningDate ? (
+                                  <Text style={styles.requestCardRoute} numberOfLines={1}>
+                                    {t('groupOrganizer.requestJoiningDate', {
+                                      date: formatDateShort(req.joiningDate),
+                                    })}
+                                  </Text>
+                                ) : null}
                               </View>
                             </View>
 
@@ -3709,6 +3903,60 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+  },
+  inquiryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: C.card,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 12,
+    minHeight: MIN_TOUCH_TARGET,
+  },
+  inquiryBody: {
+    flex: 1,
+    gap: 3,
+  },
+  inquiryTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  inquiryName: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '700',
+    color: C.text,
+  },
+  inquiryTime: {
+    fontSize: 10.5,
+    color: C.textMuted,
+  },
+  inquiryBottomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  inquiryPreview: {
+    flex: 1,
+    fontSize: 11.5,
+    color: C.textSec,
+  },
+  inquiryUnreadBadge: {
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.blue,
+  },
+  inquiryUnreadBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: C.white,
   },
   requestCardInfo: {
     flex: 1,
