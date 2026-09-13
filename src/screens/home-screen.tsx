@@ -704,6 +704,7 @@ const FALLBACK_FEATURED_TRIPS: Trip[] = [
     id: 'trip-kerala-backwaters',
     name: 'Kerala Backwaters & Tea Trails',
     creator: 'TravelStar Expeditions',
+    creatorAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&q=80',
     cities: ['Kochi', 'Alleppey', 'Munnar'],
     startDate: '2026-10-15',
     endDate: '2026-10-21',
@@ -722,6 +723,7 @@ const FALLBACK_FEATURED_TRIPS: Trip[] = [
     id: 'trip-ladakh-circuit',
     name: 'Ladakh High Passes Expedition',
     creator: 'Himalayan Nomads',
+    creatorAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&q=80',
     cities: ['Leh', 'Nubra', 'Pangong'],
     startDate: '2026-10-25',
     endDate: '2026-11-02',
@@ -748,7 +750,7 @@ function FeaturedTripsCarouselBase({
   onRequestAuth: (reason: AuthReason) => void;
 }) {
   const { t } = useTranslation();
-  const { trips, dataStatus, refreshTrips, isLoggedIn, joinTrip, requestedTrips } = useApp();
+  const { trips, dataStatus, refreshTrips, isLoggedIn, joinTrip, requestedTrips, profile } = useApp();
   const router = useRouter();
   const carouselRef = useRef<ScrollView>(null);
   const isInteracting = useRef(false);
@@ -760,6 +762,9 @@ function FeaturedTripsCarouselBase({
     const seenNames = new Set<string>();
     return activeTrips.filter((trip) => {
       if (!trip) return false;
+      // Exclude trips created by the current user from the featured carousel
+      if (isLoggedIn && profile?.id && trip.creatorId && trip.creatorId === profile.id) return false;
+      if (isLoggedIn && trip.isMyTrip) return false;
       const idKey = trip.id ? String(trip.id).trim() : '';
       const nameKey = trip.name ? trip.name.trim().toLowerCase() : '';
       if (idKey && seenIds.has(idKey)) return false;
@@ -768,7 +773,7 @@ function FeaturedTripsCarouselBase({
       if (nameKey) seenNames.add(nameKey);
       return true;
     });
-  }, [trips]);
+  }, [trips, isLoggedIn, profile]);
 
   const [activeDot, setActiveDot] = useState(0);
 

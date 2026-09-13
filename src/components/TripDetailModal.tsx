@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Image } from 'expo-image';
 import {
   ActivityIndicator,
-  Image,
   Modal,
   View,
   Text,
@@ -60,6 +60,11 @@ export default function TripDetailModal({
   const { joinTrip, cancelJoinRequest, profile, isLoggedIn, requestedTrips, joinRequestStatuses } = useApp();
 
   const [midwayJoin, setMidwayJoin] = useState(false);
+  const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
+
+  React.useEffect(() => {
+    setAvatarLoadFailed(false);
+  }, [trip?.id]);
   const [startCity, setStartCity] = useState('');
   const [endCity, setEndCity] = useState('');
   const [joinedMsg, setJoinedMsg] = useState(false);
@@ -91,6 +96,26 @@ export default function TripDetailModal({
 
   const tripName = trip.name;
   const organizerName = trip.creator;
+
+  const isMeOrganizer = Boolean(
+    isLoggedIn &&
+      profile &&
+      (("isMyTrip" in trip && (trip as any).isMyTrip) ||
+        (trip.creatorId && profile.id && trip.creatorId === profile.id) ||
+        (organizerName && profile.name && (
+          organizerName.toLowerCase().includes(profile.name.toLowerCase()) ||
+          profile.name.toLowerCase().includes(organizerName.toLowerCase()) ||
+          organizerName.toLowerCase().includes('you') ||
+          (organizerName.toLowerCase().includes('organizer') && profile.name)
+        )))
+  );
+
+  const organizerAvatarUri =
+    (!avatarLoadFailed && (
+      (isMeOrganizer && profile?.avatar ? profile.avatar : null) ||
+      ('creatorAvatar' in trip && (trip as any).creatorAvatar ? (trip as any).creatorAvatar : null) ||
+      (isMeOrganizer && (profile as any)?.avatarUrl ? (profile as any).avatarUrl : null)
+    )) || null;
   const price = trip.budget;
   const isMyTrip = isLoggedIn && !!(profile && profile.id && trip.creatorId && trip.creatorId === profile.id);
   const joinCtaLabel = !isLoggedIn
@@ -264,14 +289,21 @@ export default function TripDetailModal({
               </View>
 
               <ScrollView style={styles.modalForm} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
-                {/* Organizer Profile Card */}
+                                {/* Organizer Profile Card */}
                 <View style={styles.modalOrganizerCard}>
-                  {'creatorAvatar' in trip && (trip as any).creatorAvatar ? (
-                    <Image source={{ uri: (trip as any).creatorAvatar }} style={styles.organizerAvatarImg} />
+                  {organizerAvatarUri ? (
+                    <Image
+                      source={{ uri: organizerAvatarUri }}
+                      style={styles.organizerAvatarImg}
+                      contentFit="cover"
+                      transition={150}
+                      cachePolicy="memory-disk"
+                      onError={() => setAvatarLoadFailed(true)}
+                    />
                   ) : (
                     <View style={styles.organizerAvatarWrap}>
                       <Text style={{ fontSize: 16, fontWeight: 'bold', color: C.accent }}>
-                        {organizerName.charAt(0)}
+                        {organizerName ? organizerName.charAt(0).toUpperCase() : 'O'}
                       </Text>
                     </View>
                   )}

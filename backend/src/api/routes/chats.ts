@@ -26,9 +26,27 @@ async function assertChatRoomMember(
   chatRoomId: string,
   userId: string,
 ): Promise<boolean> {
-  const membership = await prisma.chatRoomMember.findUnique({
+  let membership = await prisma.chatRoomMember.findUnique({
     where: { chatRoomId_userId: { chatRoomId, userId } },
   });
+  if (!membership) {
+    // Check if user is trip creator or confirmed member of the associated trip
+    const room = await prisma.chatRoom.findUnique({
+      where: { id: chatRoomId },
+      include: { trip: { include: { members: true } } },
+    });
+    if (
+      room?.trip &&
+      (room.trip.creatorId === userId ||
+        room.trip.members.some((m) => m.userId === userId && m.status === 'CONFIRMED'))
+    ) {
+      membership = await prisma.chatRoomMember.upsert({
+        where: { chatRoomId_userId: { chatRoomId, userId } },
+        create: { chatRoomId, userId },
+        update: {},
+      });
+    }
+  }
   if (!membership) {
     res
       .status(403)
@@ -80,6 +98,7 @@ router.get('/', async (req, res) => {
           where: {
             chatRoomId: { in: roomIds },
             senderId: { not: tokenUserId },
+            isSystem: false,
             readBy: { none: { userId: tokenUserId } },
           },
           select: { id: true, chatRoomId: true, createdAt: true },
@@ -317,6 +336,7 @@ router.post('/:id/read', async (req, res) => {
       where: {
         chatRoomId: id,
         senderId: { not: tokenUserId },
+        isSystem: false,
         readBy: {
           none: {
             userId: tokenUserId,

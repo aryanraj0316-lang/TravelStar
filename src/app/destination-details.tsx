@@ -17,7 +17,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Dimensions, Modal, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Image } from 'expo-image';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { queryKeys } from '@/lib/query-keys';
 import { apiService, type SavedDestination } from '@/services/api';
@@ -136,8 +136,9 @@ export default function DestinationDetailsScreen() {
     }
   };
 
+    const insets = useSafeAreaInsets();
   const renderHeader = (title: string) => (
-    <View style={styles.floatingHeader}>
+    <View style={[styles.floatingHeader, { top: Math.max(insets.top + 8, 16) }]}>
       <TouchableOpacity
         style={styles.circleHeaderBtn}
         activeOpacity={0.8}
@@ -145,7 +146,7 @@ export default function DestinationDetailsScreen() {
         accessibilityRole="button"
         accessibilityLabel={t('destinationDetails.goBack')}
       >
-        <ArrowLeft size={18} color={C.text} />
+        <ArrowLeft size={20} color="#0F172A" strokeWidth={2.4} />
       </TouchableOpacity>
       <Text style={styles.headerTitleText} numberOfLines={1}>
         {title}
@@ -161,7 +162,7 @@ export default function DestinationDetailsScreen() {
         }
         accessibilityState={{ selected: isSaved, disabled: !destination || toggleSaved.isPending }}
       >
-        <Heart size={18} color={isSaved ? C.red : C.text} fill={isSaved ? C.red : 'transparent'} />
+        <Heart size={20} color={isSaved ? '#EF4444' : '#0F172A'} fill={isSaved ? '#EF4444' : 'transparent'} strokeWidth={2} />
       </TouchableOpacity>
     </View>
   );
@@ -170,7 +171,7 @@ export default function DestinationDetailsScreen() {
   if (isLoading || (destId.length > 0 && !destination && !isError)) {
     return (
       <SafeAreaView edges={['left', 'right']} style={styles.container}>
-        <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+        <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
         {renderHeader(t('destinationDetails.headerFallback'))}
         <ScreenLoading label={t('destinationDetails.loadingDestination')} />
       </SafeAreaView>
@@ -185,7 +186,7 @@ export default function DestinationDetailsScreen() {
       (error as { statusCode?: number } | null)?.statusCode === 404;
     return (
       <SafeAreaView edges={['left', 'right']} style={styles.container}>
-        <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+        <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
         {renderHeader(t('destinationDetails.headerFallback'))}
         {notFound ? (
           <ScreenEmpty title={t('destinationDetails.notFoundTitle')} message={t('destinationDetails.notFoundMessage')} />
@@ -202,7 +203,7 @@ export default function DestinationDetailsScreen() {
   // ── Content ────────────────────────────────────────────────────────
   return (
     <SafeAreaView edges={['left', 'right']} style={styles.container}>
-      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+      <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
       {renderHeader(destination.name)}
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
@@ -216,7 +217,8 @@ export default function DestinationDetailsScreen() {
             cachePolicy="memory-disk"
           />
           <LinearGradient
-            colors={['rgba(6,8,20,0.2)', 'rgba(6,8,20,0.5)', C.bg]}
+            colors={['rgba(0,0,0,0.35)', 'transparent', 'rgba(15,23,42,0.85)']}
+            locations={[0, 0.4, 1]}
             style={StyleSheet.absoluteFill}
           />
           <View style={styles.heroMetaOverlay}>
@@ -234,7 +236,9 @@ export default function DestinationDetailsScreen() {
           {destination.description.length > 0 && (
             <View style={styles.sectionBlock}>
               <Text style={styles.sectionTitle}>{t('destinationDetails.overview')}</Text>
-              <Text style={styles.overviewDesc}>{destination.description}</Text>
+              <View style={styles.overviewCard}>
+                <Text style={styles.overviewDesc}>{destination.description}</Text>
+              </View>
             </View>
           )}
 
@@ -353,42 +357,46 @@ export default function DestinationDetailsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: C.bg,
+    backgroundColor: '#F8FAFC',
   },
   floatingHeader: {
     position: 'absolute',
-    top: 40,
-    left: 20,
-    right: 20,
-    zIndex: 10,
+    left: 16,
+    right: 16,
+    zIndex: 20,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(6, 8, 20, 0.4)',
-    borderRadius: 25,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 28,
     paddingHorizontal: 8,
     paddingVertical: 6,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: '#E2E8F0',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 6,
   },
   circleHeaderBtn: {
-    width: MIN_TOUCH_TARGET,
-    height: MIN_TOUCH_TARGET,
-    borderRadius: MIN_TOUCH_TARGET / 2,
-    backgroundColor: 'rgba(17, 19, 34, 0.75)',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: '#E2E8F0',
   },
   headerTitleText: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '800',
-    color: C.text,
+    color: '#0F172A',
     flex: 1,
     textAlign: 'center',
     marginHorizontal: 10,
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
   scrollContent: {
     paddingBottom: 120,
@@ -397,6 +405,7 @@ const styles = StyleSheet.create({
     height: SCREEN_HEIGHT * 0.44,
     position: 'relative',
     width: '100%',
+    backgroundColor: '#0F172A',
   },
   heroImage: {
     width: '100%',
@@ -404,7 +413,7 @@ const styles = StyleSheet.create({
   },
   heroMetaOverlay: {
     position: 'absolute',
-    bottom: 25,
+    bottom: 24,
     left: 20,
     right: 20,
   },
@@ -412,35 +421,42 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
     borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.3)',
-    borderRadius: 12,
+    borderColor: 'rgba(245, 158, 11, 0.4)',
+    borderRadius: 14,
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: 5,
     gap: 6,
-    marginBottom: 10,
+    marginBottom: 8,
   },
   ratingBadgeText: {
     fontSize: 12,
     fontWeight: '800',
-    color: C.orange,
+    color: '#F59E0B',
   },
   heroTitle: {
     fontSize: 32,
     fontWeight: '900',
-    color: C.white,
+    color: '#FFFFFF',
     letterSpacing: 0.5,
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 6,
   },
   heroTags: {
-    fontSize: 13,
-    color: C.textSec,
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.9)',
     fontWeight: '600',
     marginTop: 4,
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   contentBody: {
     paddingHorizontal: 20,
-    gap: 28,
+    paddingTop: 24,
+    gap: 26,
   },
   sectionBlock: {
     gap: 12,
@@ -448,13 +464,25 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '800',
-    color: C.white,
+    color: '#0F172A',
     letterSpacing: 0.3,
   },
+  overviewCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
   overviewDesc: {
-    fontSize: 13,
-    color: C.textSec,
-    lineHeight: 20,
+    fontSize: 14,
+    color: '#475569',
+    lineHeight: 22,
     fontWeight: '500',
   },
   specialtiesGrid: {
@@ -464,30 +492,40 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   specialtyIconBox: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: 'rgba(0, 102, 255, 0.1)',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#EFF6FF',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(0, 102, 255, 0.15)',
+    borderColor: '#DBEAFE',
   },
   specialtyInfo: {
     flex: 1,
   },
   specialtyTitle: {
-    fontSize: 13.5,
+    fontSize: 15,
     fontWeight: '700',
-    color: C.white,
+    color: '#0F172A',
   },
   specialtyDesc: {
-    fontSize: 12,
-    color: C.textSec,
-    marginTop: 2,
-    lineHeight: 14.5,
+    fontSize: 13,
+    color: '#64748B',
+    marginTop: 3,
+    lineHeight: 18,
   },
   galleryScroll: {
     gap: 12,
@@ -498,6 +536,8 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: 'hidden',
     position: 'relative',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   galleryImage: {
     width: '100%',
@@ -507,7 +547,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 8,
     left: 8,
-    backgroundColor: 'rgba(6, 8, 20, 0.65)',
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
     borderRadius: 8,
     paddingHorizontal: 6,
     paddingVertical: 2,
@@ -515,11 +555,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     borderWidth: 0.8,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   hdIndicatorText: {
     fontSize: 12,
-    color: C.white,
+    color: '#FFFFFF',
     fontWeight: '800',
     letterSpacing: 0.5,
   },
@@ -529,8 +569,16 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     paddingHorizontal: 20,
-    paddingTop: 15,
-    paddingBottom: 25,
+    paddingTop: 12,
+    paddingBottom: 24,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 10,
     zIndex: 10,
   },
   ctaBackgroundGlow: {
@@ -575,11 +623,11 @@ const styles = StyleSheet.create({
   zoomTitle: {
     fontSize: 15,
     fontWeight: '800',
-    color: C.white,
+    color: '#FFFFFF',
   },
   zoomCounter: {
     fontSize: 12,
-    color: C.textSec,
+    color: 'rgba(255,255,255,0.7)',
     fontWeight: '600',
   },
 });

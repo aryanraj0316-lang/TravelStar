@@ -8,6 +8,7 @@ import { registerForPushNotifications, unregisterPushNotifications } from '@/lib
 import { toast, errorToastMessage } from '@/lib/feedback';
 import { enqueueMutation, registerMutationHandler } from '@/lib/offline-mutation-queue';
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { AppState } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/query-keys';
 import { apiService, clearTokens, ApiError, type CreateTripInput } from '../services/api';
@@ -166,6 +167,7 @@ export interface Message {
   longitude?: number | null;
   roomId?: string;
   senderId?: string;
+  isSystem?: boolean;
 }
 
 export interface SOSAlert {
@@ -298,12 +300,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [hasUnreadNotification, setHasUnreadNotification] = useState<boolean>(false);
   const activeTabNameRef = useRef<string>('index');
 
-  useEffect(() => {
-    const unsub = eventBus.on('tabChanged', (name: string) => {
-      activeTabNameRef.current = name;
-    });
-    return unsub;
-  }, []);
+  // activeTabNameRef will be synced in the tabChanged listener below checkUnreadChats
   // Placeholder shown only until the real profile loads (or the session
   // restores as logged-out, at which point this is what it settles on
   // anyway). Reuses GUEST_PROFILE itself rather than a second hand-typed
@@ -501,7 +498,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (nameKey) seenNames.add(nameKey);
           return true;
         });
-        setTrips(unique);
+        const enriched = unique.map((t) => {
+          if (!t.creatorAvatar && profile && (t.isMyTrip || (profile.id && t.creatorId === profile.id) || (profile.name && t.creator?.toLowerCase().includes(profile.name.toLowerCase())))) {
+            return { ...t, creatorAvatar: profile.avatar || null };
+          }
+          return t;
+        });
+        setTrips(enriched);
         setDataStatus((prev) => ({ ...prev, trips: 'ready' }));
       })
       .catch((e) => {
@@ -539,12 +542,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (notifs && notifs.length > 0) {
           const hasAnyUnread = notifs.some((n: AppNotification) => n.unread === true);
           setHasUnreadNotification(hasAnyUnread);
-          const hasUnreadJoinAccepted = notifs.some(
-            (n: AppNotification) => (n.category === 'CHAT_ADDED' || n.category === 'JOIN_ACCEPTED') && n.unread === true,
-          );
-          if (hasUnreadJoinAccepted) {
-            setHasUnreadChat(true);
-          }
         } else {
           setHasUnreadNotification(false);
         }
@@ -558,17 +555,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .getChats()
       .then((rooms) => {
         if (rooms && rooms.length > 0) {
-          // ChatRoomSummary has no top-level `unread` flag - unreadCount is
-          // the real signal (the `any` here had been silently treating a
-          // nonexistent field as a second, always-false condition).
-          const hasUnread = rooms.some((r: ChatRoomSummary) => r.unreadCount > 0);
+          const hasUnread = rooms.some((r: ChatRoomSummary) => r.unreadCount > 0 && r.id !== activeRoomId);
           setHasUnreadChat(hasUnread);
         } else {
           setHasUnreadChat(false);
         }
       })
       .catch((e) => logger.warn('[Chats] Unread check failed:', e));
-  }, [isLoggedIn]);
+  }, [isLoggedIn, activeRoomId]);
+
+  useEffect(() => {
+    const unsub = eventBus.on('tabChanged', (name: string) => {
+      activeTabNameRef.current = name;
+      if (name !== 'chat') {
+        checkUnreadChats();
+      }
+    });
+    return unsub;
+  }, [checkUnreadChats]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        checkUnreadChats();
+        checkUnreadNotifications();
+        reloadIncomingRequestsCount();
+      }
+    });
+    return () => sub.remove();
+  }, [checkUnreadChats, checkUnreadNotifications, reloadIncomingRequestsCount]);
 
   // ── One-time mount: hydrate auth, profile, socket, guides, wallet, SOS, stories ──
   useEffect(() => {
@@ -682,6 +697,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       socketService.joinRoom('trip-1');
     }
 
+    // Proactively fetch all user chat rooms and join their socket channels
+    apiService
+      .getChats()
+      .then((rooms) => {
+        if (rooms && rooms.length > 0) {
+          rooms.forEach((r) => socketService.joinRoom(r.id));
+          const hasUnread = rooms.some((r) => r.unreadCount > 0);
+          if (hasUnread) {
+            setHasUnreadChat(true);
+          }
+        }
+      })
+      .catch(() => {});
+
     refreshTrips();
     reloadJoinRequests();
     reloadIncomingRequestsCount();
@@ -698,9 +727,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return [...prev, msgWithRoom];
         });
 
-        // Set unread chat dot if message is from a different room OR user is not currently viewing the Chat tab
-        if (data.roomId !== activeRoomId || activeTabNameRef.current !== 'chat') {
-          setHasUnreadChat(true);
+        // Set unread chat dot and trigger in-app notification banner
+        // only when a real person (not me and not system) messages
+        const isOwn = profile?.id && data.message.senderId === profile.id;
+        const isSystem = !!(data.message.isSystem || data.message.senderRole === 'SYSTEM' || data.message.senderName === 'System');
+        if (!isOwn && !isSystem) {
+          if (data.roomId !== activeRoomId || activeTabNameRef.current !== 'chat') {
+            setHasUnreadChat(true);
+
+            eventBus.emit('inAppNotification', {
+              id: data.message.id || `msg-${Date.now()}`,
+              title: data.message.senderName || 'New Message',
+              content:
+                data.message.content ||
+                (data.message.mediaType === 'IMAGE'
+                  ? 'Sent a photo'
+                  : data.message.mediaType === 'LOCATION'
+                    ? 'Shared a location'
+                    : 'Sent a message'),
+              chatRoomId: data.roomId,
+              category: 'CHAT_MESSAGE',
+            });
+          }
         }
       }
     });
@@ -809,6 +857,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     async (trip: CreateTripInput): Promise<Trip | null> => {
       try {
         const created = await apiService.createTrip(trip);
+        if (created) {
+          if (!created.creatorAvatar && profile.avatar) {
+            created.creatorAvatar = profile.avatar;
+          }
+          created.isMyTrip = true;
+        }
         toast('Trip created', 'success');
         refreshTrips();
         return created;

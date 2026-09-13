@@ -43,6 +43,22 @@ export function createSocketServer(httpServer: HttpServer): Server {
     const userId = getSocketUserId(socket);
     void socket.join(userId);
 
+    // Auto-join all chat rooms the user is a member of so they receive
+    // real-time message events on all active devices, regardless of current screen/tab.
+    prisma.chatRoomMember
+      .findMany({
+        where: { userId },
+        select: { chatRoomId: true },
+      })
+      .then((memberships) => {
+        memberships.forEach((m) => {
+          void socket.join(m.chatRoomId);
+        });
+      })
+      .catch((err) => {
+        logger.warn('[Socket] Failed to auto-join user chat rooms on connect:', err);
+      });
+
     // Join a trip chatroom — only if the caller is actually a member. Message
     // history is not sent over the socket: the client loads it via the
     // paginated REST endpoint (GET /chats/:id/messages) and uses the socket
@@ -145,6 +161,25 @@ export function createSocketServer(httpServer: HttpServer): Server {
         };
 
         io.to(chatRoomId).emit('messageReceived', { roomId: chatRoomId, message: newMsg });
+
+        // Also emit directly to every room member's personal user room (`userId`),
+        // ensuring every active socket belonging to room members receives the message
+        // in real-time even if they are currently on another tab, screen, or reconnected.
+        prisma.chatRoomMember
+          .findMany({
+            where: { chatRoomId },
+            select: { userId: true },
+          })
+          .then((members) => {
+            members.forEach((m) => {
+              if (m.userId !== userId) {
+                io.to(m.userId).emit('messageReceived', { roomId: chatRoomId, message: newMsg });
+              }
+            });
+          })
+          .catch((err) => {
+            logger.warn('[Socket] Failed to broadcast messageReceived to members:', err);
+          });
       } catch (e) {
         logger.error('[Socket] sendMessage failed:', e);
         socket.emit('sendMessageError', { message: 'Failed to send message.' });

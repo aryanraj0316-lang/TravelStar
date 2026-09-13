@@ -22,7 +22,7 @@ import Check from 'lucide-react-native/icons/check';
 import ChevronRight from 'lucide-react-native/icons/chevron-right';
 import CloudRain from 'lucide-react-native/icons/cloud-rain';
 import Flame from 'lucide-react-native/icons/flame';
-import HelpCircle from 'lucide-react-native/icons/help-circle';
+import HelpCircle from 'lucide-react-native/icons/circle-question-mark';
 import MapPin from 'lucide-react-native/icons/map-pin';
 import Mountain from 'lucide-react-native/icons/mountain';
 import Tornado from 'lucide-react-native/icons/tornado';

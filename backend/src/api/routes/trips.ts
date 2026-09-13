@@ -673,6 +673,8 @@ router.post('/', async (req, res) => {
         ? `${user.profile.firstName} ${user.profile.lastName} (Organizer)`
         : `${user.email} (Organizer)`,
       creatorId: user.id,
+      creatorAvatar: user.profile?.avatarUrl ?? null,
+      isMyTrip: true,
       chatRoomId: chatRoom.id,
       cities: newTrip.cities,
       startDate: newTrip.startDate.toISOString().split('T')[0],

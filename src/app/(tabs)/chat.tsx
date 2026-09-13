@@ -1,36 +1,37 @@
-import { LinearGradient } from 'expo-linear-gradient';
-import { logger } from '@/lib/logger';
-import { errorToastMessage, showAlert, toast, useConfirm } from '@/lib/feedback';
-import { getCurrentDeviceLocation } from '@/lib/device-location';
-import { uploadFileToUrl } from '@/lib/upload';
-import { recordConsent } from '@/lib/consent';
-import { formatINR } from '@/lib/money';
-import { formatDateRange, formatTime } from '@/lib/datetime';
-import { useRouter, type ErrorBoundaryProps } from 'expo-router';
 import { RouteErrorFallback } from '@/components/route-error-fallback';
-import AlertCircle from 'lucide-react-native/icons/circle-alert';
-import AlertTriangle from 'lucide-react-native/icons/triangle-alert';
+import { Avatar, Button, Input, ScreenEmpty } from '@/components/ui';
+import { recordConsent } from '@/lib/consent';
+import { formatDateRange, formatTime } from '@/lib/datetime';
+import { getCurrentDeviceLocation } from '@/lib/device-location';
+import { errorToastMessage, showAlert, toast, useConfirm } from '@/lib/feedback';
+import { logger } from '@/lib/logger';
+import { formatINR } from '@/lib/money';
+import { uploadFileToUrl } from '@/lib/upload';
+import { apiService } from '@/services/api';
+import { eventBus } from '@/services/event-bus';
+import { useApp } from '@/store/AppContext';
+import { C, MIN_TOUCH_TARGET, fontSize, radii } from '@/theme/tokens';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useFocusEffect, useRouter, type ErrorBoundaryProps } from 'expo-router';
 import ArrowLeft from 'lucide-react-native/icons/arrow-left';
-import BarChart2 from 'lucide-react-native/icons/chart-no-axes-column';
 import Bell from 'lucide-react-native/icons/bell';
 import BellOff from 'lucide-react-native/icons/bell-off';
 import Calendar from 'lucide-react-native/icons/calendar';
-import Check from 'lucide-react-native/icons/check';
+import BarChart2 from 'lucide-react-native/icons/chart-no-axes-column';
+import CheckCheck from 'lucide-react-native/icons/check-check';
+import AlertCircle from 'lucide-react-native/icons/circle-alert';
 import CheckCircle from 'lucide-react-native/icons/circle-check-big';
-import ChevronDown from 'lucide-react-native/icons/chevron-down';
-import ChevronUp from 'lucide-react-native/icons/chevron-up';
 import Clock from 'lucide-react-native/icons/clock';
 import Compass from 'lucide-react-native/icons/compass';
 import Copy from 'lucide-react-native/icons/copy';
 import CornerUpLeft from 'lucide-react-native/icons/corner-up-left';
 import DeleteIcon from 'lucide-react-native/icons/delete';
 import DollarSign from 'lucide-react-native/icons/dollar-sign';
-import Download from 'lucide-react-native/icons/download';
+import TranslateIcon from 'lucide-react-native/icons/globe';
 import ImageIcon from 'lucide-react-native/icons/image';
 import LogOut from 'lucide-react-native/icons/log-out';
 import MapPin from 'lucide-react-native/icons/map-pin';
 import MessageSquare from 'lucide-react-native/icons/message-square';
-import MoreVertical from 'lucide-react-native/icons/ellipsis-vertical';
 import Pencil from 'lucide-react-native/icons/pencil';
 import Pin from 'lucide-react-native/icons/pin';
 import Plus from 'lucide-react-native/icons/plus';
@@ -39,8 +40,8 @@ import Send from 'lucide-react-native/icons/send';
 import Settings from 'lucide-react-native/icons/settings';
 import ShieldAlert from 'lucide-react-native/icons/shield-alert';
 import Smile from 'lucide-react-native/icons/smile';
-import TranslateIcon from 'lucide-react-native/icons/globe';
 import Trash2 from 'lucide-react-native/icons/trash-2';
+import AlertTriangle from 'lucide-react-native/icons/triangle-alert';
 import UsersIcon from 'lucide-react-native/icons/users';
 import X from 'lucide-react-native/icons/x';
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -48,15 +49,14 @@ import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Animated,
+  BackHandler,
+  FlatList,
   Image,
   Keyboard,
-  LayoutAnimation,
   Modal,
   PanResponder,
   Platform,
   Pressable,
-  FlatList,
-  Alert,
   ScrollView,
   StyleSheet,
   Switch,
@@ -64,14 +64,9 @@ import {
   TextInput,
   TouchableOpacity,
   UIManager,
-  View,
+  View
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { apiService } from '@/services/api';
-import { eventBus } from '@/services/event-bus';
-import { useApp } from '@/store/AppContext';
-import { C, MIN_TOUCH_TARGET, fontSize, radii } from '@/theme/tokens';
-import { Avatar, Button, Input, ScreenEmpty } from '@/components/ui';
 
 // Deliberately require(), not import(): needs to synchronously catch a
 // missing/unlinked native module at load time (same reasoning as
@@ -366,6 +361,8 @@ function formatChatTime(rawTime: string | number | Date | null | undefined): str
 // it had ever loaded, all at once (docs/REMEDIATION.md Phase 10).
 function MessageBubble({
   msg,
+  isConsecutive: isConsecutiveProp,
+  isFirstMessage = false,
   previousSenderName,
   isTranslated,
   onReply,
@@ -379,7 +376,9 @@ function MessageBubble({
   members,
 }: {
   msg: CustomMessage;
-  previousSenderName: string | null;
+  isConsecutive?: boolean;
+  isFirstMessage?: boolean;
+  previousSenderName?: string | null;
   isTranslated: boolean;
   onReply: (msg: CustomMessage) => void;
   onShowOptions: (msg: CustomMessage) => void;
@@ -408,8 +407,11 @@ function MessageBubble({
     );
   }
 
-  // Check if previous message was sent by the same sender using senderName as key
-  const isConsecutive = previousSenderName === msg.senderName;
+  // Check if previous message was sent by the same sender
+  const isConsecutive =
+    isConsecutiveProp !== undefined
+      ? isConsecutiveProp
+      : previousSenderName === msg.senderName;
 
   return (
     <SwipeableMessageRow isMe={msg.isMe} onSwipeReply={() => onReply(msg)}>
@@ -418,7 +420,11 @@ function MessageBubble({
           styles.messageRow,
           msg.isMe && { justifyContent: 'flex-end' },
           isSOS && styles.sosMessageBg,
-          isConsecutive && { marginTop: 2 },
+          isConsecutive
+            ? styles.consecutiveMessageRow
+            : isFirstMessage
+              ? styles.consecutiveMessageRow
+              : styles.differentSenderRow,
         ]}
       >
         {!msg.isMe && (
@@ -430,8 +436,8 @@ function MessageBubble({
         )}
 
         <View style={[styles.messageBody, msg.isMe ? { flex: 1, alignItems: 'flex-end' } : { flex: 1 }]}>
-          {!isConsecutive && (
-            <View style={[styles.senderHeader, msg.isMe && { justifyContent: 'flex-end' }]}>
+          {!isConsecutive && !msg.isMe && (
+            <View style={styles.senderHeader}>
               <Text
                 style={[
                   styles.senderNameText,
@@ -442,7 +448,7 @@ function MessageBubble({
                       : { color: C.text },
                 ]}
               >
-                {msg.isMe ? t('chat.you') : msg.senderName}
+                {msg.senderName}
               </Text>
               {msg.senderRole && !msg.isMe && (
                 <View
@@ -593,10 +599,10 @@ function MessageBubble({
                 </View>
               </Pressable>
               {msg.content &&
-              msg.content !== '📷 Photo' &&
-              !msg.content.includes('📷') &&
-              msg.content !== 'Photo' &&
-              msg.content.trim().length > 0 ? (
+                msg.content !== '📷 Photo' &&
+                !msg.content.includes('📷') &&
+                msg.content !== 'Photo' &&
+                msg.content.trim().length > 0 ? (
                 <View style={styles.imageCaptionRow}>
                   <Text style={styles.imageCardDesc} numberOfLines={3}>
                     {msg.content}
@@ -639,97 +645,55 @@ function MessageBubble({
               </View>
             </View>
           ) : (
-            <View style={[msg.isMe ? styles.instagramBubbleContainerMe : styles.bubbleContainerOther]}>
+            <View style={[msg.isMe ? styles.bubbleContainerMe : styles.bubbleContainerOther]}>
               {msg.isMe ? (
                 <TouchableOpacity
-                  activeOpacity={0.9}
+                  activeOpacity={0.88}
                   onLongPress={() => onShowOptions(msg)}
                   accessibilityRole="button"
                   accessibilityLabel={t('chat.you')}
                   accessibilityHint={t('chat.messageOptionsHint')}
+                  style={styles.modernBubbleMe}
                 >
-                  <LinearGradient
-                    colors={['#0066FF', '#7C3AED', '#BA68C8']}
-                    start={(() => {
-                      // Compute deterministic but randomized start coordinates based on message ID
-                      let hash = 0;
-                      const idStr = msg.id || 'random';
-                      for (let i = 0; i < idStr.length; i++) {
-                        hash = idStr.charCodeAt(i) + ((hash << 5) - hash);
-                      }
-                      const normX = (Math.abs(hash) % 5) / 10; // 0.0 to 0.4
-                      const normY = (Math.abs(hash >> 2) % 5) / 10; // 0.0 to 0.4
-                      return { x: normX, y: normY };
-                    })()}
-                    end={(() => {
-                      let hash = 0;
-                      const idStr = msg.id || 'random';
-                      for (let i = 0; i < idStr.length; i++) {
-                        hash = idStr.charCodeAt(i) + ((hash << 3) - hash);
-                      }
-                      const normX = 0.6 + (Math.abs(hash) % 5) / 10; // 0.6 to 1.0
-                      const normY = 0.6 + (Math.abs(hash >> 2) % 5) / 10; // 0.6 to 1.0
-                      return { x: normX, y: normY };
-                    })()}
-                    style={styles.instagramGradientBubble}
-                  >
-                    {msg.replyTo && (
-                      <View style={styles.bubbleReplyHeaderMe}>
-                        <Text style={styles.bubbleReplySenderMe} numberOfLines={1}>
-                          {msg.replyTo.senderName}
-                        </Text>
-                        <Text style={styles.bubbleReplyContentMe} numberOfLines={1}>
-                          {msg.replyTo.content}
-                        </Text>
-                      </View>
-                    )}
+                  {msg.replyTo && (
+                    <View style={styles.bubbleReplyHeaderMe}>
+                      <Text style={styles.bubbleReplySenderMe} numberOfLines={1}>
+                        {msg.replyTo.senderName}
+                      </Text>
+                      <Text style={styles.bubbleReplyContentMe} numberOfLines={1}>
+                        {msg.replyTo.content}
+                      </Text>
+                    </View>
+                  )}
+                  <View style={styles.bubbleInnerMe}>
                     <Text style={styles.bubbleTextMe}>{displayedContent}</Text>
-                    <Text style={styles.timestampTextMe}>{formatChatTime(msg.createdAt || msg.timestamp)}</Text>
-                  </LinearGradient>
+                    <View style={styles.bubbleMetaRowMe}>
+                      <Text style={styles.timestampTextMe}>{formatChatTime(msg.createdAt || msg.timestamp)}</Text>
+                      <CheckCheck size={13} color="#2563EB" strokeWidth={2.4} style={styles.statusCheckIcon} />
+                    </View>
+                  </View>
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity
-                  activeOpacity={0.9}
+                  activeOpacity={0.88}
                   onLongPress={() => onShowOptions(msg)}
                   accessibilityRole="button"
                   accessibilityLabel={msg.senderName}
                   accessibilityHint={t('chat.messageOptionsHint')}
+                  style={styles.modernBubbleOther}
                 >
-                  <LinearGradient
-                    colors={['#0066FF', '#7C3AED', '#BA68C8']}
-                    start={(() => {
-                      let hash = 0;
-                      const idStr = msg.id || 'random';
-                      for (let i = 0; i < idStr.length; i++) {
-                        hash = idStr.charCodeAt(i) + ((hash << 5) - hash);
-                      }
-                      const normX = (Math.abs(hash) % 5) / 10;
-                      const normY = (Math.abs(hash >> 2) % 5) / 10;
-                      return { x: normX, y: normY };
-                    })()}
-                    end={(() => {
-                      let hash = 0;
-                      const idStr = msg.id || 'random';
-                      for (let i = 0; i < idStr.length; i++) {
-                        hash = idStr.charCodeAt(i) + ((hash << 3) - hash);
-                      }
-                      const normX = 0.6 + (Math.abs(hash) % 5) / 10;
-                      const normY = 0.6 + (Math.abs(hash >> 2) % 5) / 10;
-                      return { x: normX, y: normY };
-                    })()}
-                    style={styles.instagramGradientBubbleOther}
-                  >
-                    {msg.replyTo && (
-                      <View style={styles.bubbleReplyHeaderOther}>
-                        <Text style={styles.bubbleReplySenderOther} numberOfLines={1}>
-                          {msg.replyTo.senderName}
-                        </Text>
-                        <Text style={styles.bubbleReplyContentOther} numberOfLines={1}>
-                          {msg.replyTo.content}
-                        </Text>
-                      </View>
-                    )}
-                    <Text style={styles.bubbleText}>{displayedContent}</Text>
+                  {msg.replyTo && (
+                    <View style={styles.bubbleReplyHeaderOther}>
+                      <Text style={styles.bubbleReplySenderOther} numberOfLines={1}>
+                        {msg.replyTo.senderName}
+                      </Text>
+                      <Text style={styles.bubbleReplyContentOther} numberOfLines={1}>
+                        {msg.replyTo.content}
+                      </Text>
+                    </View>
+                  )}
+                  <View style={styles.bubbleInnerOther}>
+                    <Text style={styles.bubbleTextOther}>{displayedContent}</Text>
                     {msg.translations && (
                       <TouchableOpacity
                         activeOpacity={0.7}
@@ -739,14 +703,16 @@ function MessageBubble({
                         accessibilityRole="button"
                         accessibilityLabel={hasTranslation ? t('chat.showOriginal') : t('chat.translateToHindi')}
                       >
-                        <TranslateIcon size={12} color="#FFF" />
-                        <Text style={styles.translateText}>
+                        <TranslateIcon size={12} color={C.blue} />
+                        <Text style={styles.translateTextOther}>
                           {hasTranslation ? t('chat.showOriginal') : t('chat.translateToHindi')}
                         </Text>
                       </TouchableOpacity>
                     )}
-                    <Text style={styles.timestampText}>{formatChatTime(msg.createdAt || msg.timestamp)}</Text>
-                  </LinearGradient>
+                    <View style={styles.bubbleMetaRowOther}>
+                      <Text style={styles.timestampTextOther}>{formatChatTime(msg.createdAt || msg.timestamp)}</Text>
+                    </View>
+                  </View>
                 </TouchableOpacity>
               )}
             </View>
@@ -874,10 +840,15 @@ function ChatScreen() {
           const merged = [...prevRooms];
           loadedRooms.forEach((lr) => {
             const idx = merged.findIndex((mr) => mr.id === lr.id);
+            const isCurrentlyOpen = lr.id === selectedRoomId || (selectedRoomId && (`room-${selectedRoomId}` === lr.id || selectedRoomId === `room-${lr.id}`));
+            const serverUnread = lr.unreadCount || 0;
+            const existingUnread = idx >= 0 ? (merged[idx].unreadCount || 0) : 0;
+            const finalUnread = isCurrentlyOpen ? 0 : Math.max(serverUnread, existingUnread);
+
             if (idx >= 0) {
-              merged[idx] = { ...merged[idx], ...lr };
+              merged[idx] = { ...merged[idx], ...lr, unreadCount: finalUnread };
             } else {
-              merged.push(lr);
+              merged.push({ ...lr, unreadCount: finalUnread });
             }
           });
           return merged;
@@ -908,6 +879,11 @@ function ChatScreen() {
   const selectedRoomId = activeRoomId;
   const setSelectedRoomId = setActiveRoomId;
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [unreadSessionCount, setUnreadSessionCount] = useState<number>(0);
+  const [isChatContentReady, setIsChatContentReady] = useState(false);
+  const [isScrolledUp, setIsScrolledUp] = useState(false);
+  const initialScrollDoneRoomRef = useRef<string | null>(null);
+  const lastProcessedSocketMsgIdRef = useRef<string | null>(null);
   const [isTripDetailsExpanded, setIsTripDetailsExpanded] = useState(true);
 
   // Tab Selection (Itinerary & Members only)
@@ -929,14 +905,25 @@ function ChatScreen() {
   // Load message history from DB
   useEffect(() => {
     if (selectedRoomId) {
+      initialScrollDoneRoomRef.current = null;
+      setIsChatContentReady(true);
+
+      // Optimistically clear unread on current room immediately so badges disappear
+      setInboxRooms((prevRooms) => {
+        const updated = prevRooms.map((room) =>
+          room.id === selectedRoomId || `room-${room.id}` === selectedRoomId || room.id === `room-${selectedRoomId}`
+            ? { ...room, unreadCount: 0 }
+            : room,
+        );
+        if (!updated.some((r) => r.unreadCount > 0)) {
+          clearChatUnread();
+        }
+        return updated;
+      });
+
       apiService
         .markChatRead(selectedRoomId)
         .then(() => {
-          setInboxRooms((prevRooms) =>
-            prevRooms.map((room) => (room.id === selectedRoomId ? { ...room, unreadCount: 0 } : room)),
-          );
-          // Re-sync the tab-bar unread dot against every room's real
-          // unreadCount, not just the one just opened.
           checkUnreadChats();
         })
         .catch((e) => logger.warn('[Chat] Mark-read failed:', e));
@@ -971,6 +958,12 @@ function ChatScreen() {
               ...prev,
               [selectedRoomId]: mappedHistory,
             }));
+
+            // Inverted FlatList naturally displays latest message at offset 0
+            setTimeout(() => {
+              messageListRef.current?.scrollToOffset({ offset: 0, animated: false });
+              setIsChatContentReady(true);
+            }, 30);
 
             const lastMsg = history[history.length - 1];
             setInboxRooms((prevRooms) => {
@@ -1023,6 +1016,10 @@ function ChatScreen() {
   useEffect(() => {
     if (messages.length > 0) {
       const latestMsg = messages[messages.length - 1];
+      if (!latestMsg || !latestMsg.id) return;
+      if (lastProcessedSocketMsgIdRef.current === latestMsg.id) return;
+      lastProcessedSocketMsgIdRef.current = latestMsg.id;
+
       const key = latestMsg.roomId || activeRoomId || 'unknown-room';
       // AppContext's Message type predates LOCATION messages; the real-time
       // socket payload carries mediaType 'LOCATION' plus latitude/longitude
@@ -1061,11 +1058,11 @@ function ChatScreen() {
         const isMe = latestMsg.senderId === profile.id || !!(profile.name && latestMsg.senderName === profile.name);
         const dupIdx = isMe
           ? roomMsgs.findIndex(
-              (m) =>
-                m.isMe &&
-                (m.content === latestMsg.content || (m.type === 'image' && latestMsg.mediaType === 'IMAGE')) &&
-                m.id.startsWith('msg-'),
-            )
+            (m) =>
+              m.isMe &&
+              (m.content === latestMsg.content || (m.type === 'image' && latestMsg.mediaType === 'IMAGE')) &&
+              m.id.startsWith('msg-'),
+          )
           : -1;
 
         if (dupIdx >= 0) {
@@ -1132,12 +1129,16 @@ function ChatScreen() {
         const existingRoom = prevRooms.find((room) => room.id === key);
         const otherRooms = prevRooms.filter((room) => room.id !== key);
 
+        const isCurrentRoom =
+          Boolean(selectedRoomId && (key === selectedRoomId || key === `room-${selectedRoomId}` || selectedRoomId === `room-${key}`));
+        const shouldMarkUnread = !isCurrentRoom && !isMe && !latestMsg.isSystem;
+
         if (existingRoom) {
           const updatedRoom: ChatRoom = {
             ...existingRoom,
             latestMessage: snippetText,
             latestTime: latestMsg.createdAt || latestMsg.timestamp || nowIso,
-            unreadCount: key === activeRoomId ? 0 : existingRoom.unreadCount + 1,
+            unreadCount: isCurrentRoom ? 0 : (shouldMarkUnread ? (existingRoom.unreadCount || 0) + 1 : (existingRoom.unreadCount || 0)),
             lastMessageAt: nowIso,
           };
           return [updatedRoom, ...otherRooms];
@@ -1157,7 +1158,7 @@ function ChatScreen() {
             type: roomType,
             latestMessage: snippetText,
             latestTime: latestMsg.createdAt || latestMsg.timestamp || nowIso,
-            unreadCount: key === activeRoomId || isMe ? 0 : 1,
+            unreadCount: isCurrentRoom ? 0 : (shouldMarkUnread ? 1 : 0),
             badge: roomType === 'GUIDE' ? 'Guide' : 'Group Chat',
             lastMessageAt: nowIso,
           };
@@ -1386,10 +1387,101 @@ function ChatScreen() {
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollToBottom = useCallback((animated = true) => {
     if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
-    scrollTimerRef.current = setTimeout(() => {
-      messageListRef.current?.scrollToEnd({ animated });
-    }, 40);
+    messageListRef.current?.scrollToOffset({ offset: 0, animated });
   }, []);
+
+  // Hardware/System Back Button Handler:
+  // When inside a particular chat, pressing the system back button directs back to the chat list screen
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        // 1. Close full-screen image viewer if open
+        if (viewerImageUri) {
+          setViewerImageUri(null);
+          return true;
+        }
+
+        // 2. Close message options overlay if open
+        if (selectedMessageForOptions) {
+          setSelectedMessageForOptions(null);
+          return true;
+        }
+
+        // 3. Close room options modal if open
+        if (selectedRoomForOptions) {
+          setSelectedRoomForOptions(null);
+          return true;
+        }
+
+        // 4. Close keyboard drawers / reply preview
+        if (isEmojiPickerOpen) {
+          setIsEmojiPickerOpen(false);
+          return true;
+        }
+        if (isAttachmentOpen) {
+          setIsAttachmentOpen(false);
+          return true;
+        }
+        if (replyingToMessage) {
+          setReplyingToMessage(null);
+          return true;
+        }
+
+        // 5. Close settings drawer if open
+        if (isSettingsOpen) {
+          setIsSettingsOpen(false);
+          return true;
+        }
+
+        // 6. Close itinerary / trip modals if open
+        if (itineraryModalMode !== 'NONE') {
+          setItineraryModalMode('NONE');
+          return true;
+        }
+        if (isEditTripModalOpen) {
+          setIsEditTripModalOpen(false);
+          return true;
+        }
+
+        // 7. If inside a particular chat screen, return to the chat list screen
+        if (selectedRoomId) {
+          const leavingRoomId = selectedRoomId;
+          setInboxRooms((prev) => {
+            const updated = prev.map((r) =>
+              r.id === leavingRoomId || `room-${r.id}` === leavingRoomId || r.id === `room-${leavingRoomId}`
+                ? { ...r, unreadCount: 0 }
+                : r,
+            );
+            if (!updated.some((r) => r.unreadCount > 0)) {
+              clearChatUnread();
+            }
+            return updated;
+          });
+          setSelectedRoomId(null);
+          setUnreadSessionCount(0);
+          return true;
+        }
+
+        // Otherwise on the chat list screen, let default system back handler proceed
+        return false;
+      };
+
+      const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+      return () => subscription.remove();
+    }, [
+      viewerImageUri,
+      selectedMessageForOptions,
+      selectedRoomForOptions,
+      isEmojiPickerOpen,
+      isAttachmentOpen,
+      replyingToMessage,
+      isSettingsOpen,
+      itineraryModalMode,
+      isEditTripModalOpen,
+      selectedRoomId,
+      setSelectedRoomId,
+    ])
+  );
 
   // Fetch current active trip data
   // The real trip for the open room, or null. This used to fall back to a
@@ -1455,6 +1547,10 @@ function ChatScreen() {
       return resolved && resolved !== msg.avatar ? { ...msg, avatar: resolved } : msg;
     });
   }, [tripMessages, selectedRoomId, selectedTripId, dbMembers, profile.avatar]);
+
+  const reversedMessages = useMemo(() => {
+    return [...currentMessages].reverse();
+  }, [currentMessages]);
 
   // Dynamically extract group members from message history in this room/trip
   const groupMembers = useMemo(() => {
@@ -1691,11 +1787,20 @@ function ChatScreen() {
   }, [typingUser, selectedTripId, selectedRoomId]);
 
 
+  const scrollToInitialFocus = useCallback(() => {
+    if (!selectedRoomId) return;
+
+    // Inverted FlatList shows latest messages at offset 0 by default
+    messageListRef.current?.scrollToOffset({ offset: 0, animated: false });
+    setIsChatContentReady(true);
+    initialScrollDoneRoomRef.current = selectedRoomId;
+  }, [selectedRoomId]);
+
   useEffect(() => {
     if (selectedRoomId) {
-      scrollToBottom(true);
+      scrollToInitialFocus();
     }
-  }, [selectedRoomId, tripMessages, scrollToBottom]);
+  }, [selectedRoomId, scrollToInitialFocus]);
 
   // Translate toggle
   const toggleTranslate = (id: string) => {
@@ -2277,9 +2382,9 @@ function ChatScreen() {
   const dmTrip =
     isDM
       ? trips.find((t) => t.id === activeRoom?.tripId) ||
-        trips.find((t) => t.id === selectedTripId) ||
-        trips.find((t) => t.creator?.trim().toLowerCase() === activeRoom?.name?.trim().toLowerCase()) ||
-        null
+      trips.find((t) => t.id === selectedTripId) ||
+      trips.find((t) => t.creator?.trim().toLowerCase() === activeRoom?.name?.trim().toLowerCase()) ||
+      null
       : null;
 
   const handleOpenTripGroup = () => {
@@ -2419,6 +2524,20 @@ function ChatScreen() {
                   key={room.id}
                   style={[styles.roomItemTouch, room.type === 'GROUP' && styles.roomItemTouchGroup]}
                   onPress={() => {
+                    setUnreadSessionCount(room.unreadCount || 0);
+                    setIsChatContentReady(true);
+                    initialScrollDoneRoomRef.current = null;
+                    setInboxRooms((prev) => {
+                      const updated = prev.map((r) =>
+                        r.id === room.id || `room-${r.id}` === room.id || r.id === `room-${room.id}` || (room.tripId && r.tripId === room.tripId)
+                          ? { ...r, unreadCount: 0 }
+                          : r,
+                      );
+                      if (!updated.some((r) => r.unreadCount > 0)) {
+                        clearChatUnread();
+                      }
+                      return updated;
+                    });
                     setSelectedRoomId(room.id);
                     setSelectedTripId(room.tripId);
                   }}
@@ -2714,8 +2833,23 @@ function ChatScreen() {
           <TouchableOpacity
             style={styles.backBtnTouch}
             onPress={() => {
+              if (selectedRoomId) {
+                const leavingRoomId = selectedRoomId;
+                setInboxRooms((prev) => {
+                  const updated = prev.map((r) =>
+                    r.id === leavingRoomId || `room-${r.id}` === leavingRoomId || r.id === `room-${leavingRoomId}`
+                      ? { ...r, unreadCount: 0 }
+                      : r,
+                  );
+                  if (!updated.some((r) => r.unreadCount > 0)) {
+                    clearChatUnread();
+                  }
+                  return updated;
+                });
+              }
               setSelectedRoomId(null);
               setIsSettingsOpen(false);
+              setUnreadSessionCount(0);
             }}
             hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             accessibilityRole="button"
@@ -2821,288 +2955,343 @@ function ChatScreen() {
 
       {/* ─── WORKSPACE CONTENT AREA (CLEAN CONVERSATION FEED) ───── */}
       <View style={{ flex: 1 }}>
-          {/* docs/REMEDIATION.md §9.3/§9.4 follow-up: a "Pinned Group Update"
-          banner used to live here — fully fabricated content (a fixed
-          Leh-Ladakh acclimatization notice for `selectedTripId === 'trip-2'`,
-          a generic placeholder otherwise) with no backing model, endpoint,
-          or real pinned-message concept anywhere in this codebase. Removed
-          rather than kept faked, per the same §0.2 rule 4 call already
-          applied to this file's polls/expense-ledger/documents-vault
-          (see the comments near INITIAL_TRIP_MESSAGES and the Docs tab). */}
+        <FlatList
+          ref={messageListRef}
+          data={reversedMessages}
+          inverted
+          keyExtractor={messageKeyExtractor}
+          renderItem={({ item, index }) => {
+            const prevMsg = index < reversedMessages.length - 1 ? reversedMessages[index + 1] : null;
+            const isConsecutive =
+              !!prevMsg &&
+              prevMsg.senderRole?.toUpperCase() !== 'SYSTEM' &&
+              prevMsg.senderName !== 'System' &&
+              (item.isMe
+                ? prevMsg.isMe
+                : !prevMsg.isMe &&
+                  (prevMsg.senderId && item.senderId
+                    ? prevMsg.senderId === item.senderId
+                    : prevMsg.senderName === item.senderName));
 
-          <FlatList
-            ref={messageListRef}
-            data={currentMessages}
-            keyExtractor={messageKeyExtractor}
-            renderItem={({ item, index }) => (
-              <MessageBubble
-                msg={item}
-                previousSenderName={index > 0 ? currentMessages[index - 1].senderName : null}
-                isTranslated={translatedMsgs.has(item.id)}
-                onReply={setReplyingToMessage}
-                onShowOptions={setSelectedMessageForOptions}
-                onToggleTranslate={toggleTranslate}
-                onPollVote={handlePollVote}
-                onOpenMap={handleOpenMapForMessage}
-                onOpenImage={setViewerImageUri}
-                canResolveSOS={profile.role === 'ORGANIZER' || profile.role === 'GUIDE'}
-                onResolveSOS={handleResolveSOSEvent}
-                members={dbMembers}
-              />
-            )}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.scrollContent}
-            onContentSizeChange={() => scrollToBottom(false)}
-            onTouchStart={() => {
-              if (isEmojiPickerOpen) setIsEmojiPickerOpen(false);
-            }}
-            initialNumToRender={15}
-            maxToRenderPerBatch={12}
-            windowSize={11}
-            removeClippedSubviews
-            ListFooterComponent={
-              <>
-                {isTyping && (
-                  <View style={styles.typingIndicatorRow}>
-                    <View style={styles.typingDotWrap}>
-                      <Text style={styles.typingText}>{t('chat.isTyping', { name: typerName })}</Text>
-                      <ActivityIndicator size="small" color={C.textSec} style={{ marginLeft: 6 }} />
+            const firstUnreadIndex =
+              unreadSessionCount > 0
+                ? unreadSessionCount - 1
+                : -1;
+            const isFirstUnread = unreadSessionCount > 0 && index === firstUnreadIndex;
+
+            return (
+              <React.Fragment key={item.id}>
+                <MessageBubble
+                  msg={item}
+                  isConsecutive={isConsecutive}
+                  isFirstMessage={index === reversedMessages.length - 1}
+                  previousSenderName={prevMsg ? prevMsg.senderName : null}
+                  isTranslated={translatedMsgs.has(item.id)}
+                  onReply={setReplyingToMessage}
+                  onShowOptions={setSelectedMessageForOptions}
+                  onToggleTranslate={toggleTranslate}
+                  onPollVote={handlePollVote}
+                  onOpenMap={handleOpenMapForMessage}
+                  onOpenImage={setViewerImageUri}
+                  canResolveSOS={profile.role === 'ORGANIZER' || profile.role === 'GUIDE'}
+                  onResolveSOS={handleResolveSOSEvent}
+                  members={dbMembers}
+                />
+                {isFirstUnread && (
+                  <View style={styles.unreadDividerContainer}>
+                    <View style={styles.unreadDividerLine} />
+                    <View style={styles.unreadDividerPill}>
+                      <Text style={styles.unreadDividerText}>
+                        {unreadSessionCount} UNREAD MESSAGE{unreadSessionCount > 1 ? 'S' : ''}
+                      </Text>
                     </View>
+                    <View style={styles.unreadDividerLine} />
                   </View>
                 )}
+              </React.Fragment>
+            );
+          }}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+          onScroll={(e) => {
+            const { contentOffset } = e.nativeEvent;
+            setIsScrolledUp(contentOffset.y > 150);
+          }}
+          scrollEventThrottle={100}
+          onTouchStart={() => {
+            if (isEmojiPickerOpen) setIsEmojiPickerOpen(false);
+          }}
+          initialNumToRender={20}
+          maxToRenderPerBatch={15}
+          windowSize={11}
+          ListHeaderComponent={
+            <>
+              {/* Scroll spacer dynamically adjusts with keyboard height to keep latest messages clearly visible above the input box */}
+              <Animated.View
+                style={{
+                  height: Animated.add(
+                    selectedRoomId
+                      ? (isEmojiPickerOpen ? 340 : 120)
+                      : (isEmojiPickerOpen ? 400 : 170),
+                    keyboardOffset,
+                  ),
+                }}
+              />
+              {isTyping && (
+                <View style={styles.typingIndicatorRow}>
+                  <View style={styles.typingDotWrap}>
+                    <Text style={styles.typingText}>{t('chat.isTyping', { name: typerName })}</Text>
+                    <ActivityIndicator size="small" color={C.textSec} style={{ marginLeft: 6 }} />
+                  </View>
+                </View>
+              )}
+            </>
+          }
+        />
 
-                {/* Scroll spacer dynamically adjusts with keyboard height to keep latest messages just above the input box */}
-                <Animated.View
-                  style={{
-                    height: Animated.add(
-                      selectedRoomId
-                        ? (isEmojiPickerOpen ? 340 : 110)
-                        : (isEmojiPickerOpen ? 400 : 170),
-                      keyboardOffset,
-                    ),
-                  }}
-                />
-              </>
-            }
-          />
-
-          {/* Floating Attachments Drawer */}
-          <Animated.View
-            style={[
-              styles.attachmentPanel,
-              {
-                height: attachMenuHeight,
-                bottom: Animated.add(selectedRoomId ? Math.max(insets.bottom + 58, 74) : 140, keyboardOffset),
-                borderWidth: isAttachmentOpen ? 1 : 0,
-              },
-            ]}
+                {/* Floating Jump to Bottom Button when scrolled up (e.g. reading unread messages) */}
+        {isScrolledUp && (
+          <TouchableOpacity
+            style={styles.floatingScrollBottomBtn}
+            onPress={() => scrollToBottom(true)}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="Jump to latest message"
           >
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.attachScrollInner}
-            >
-              {/* "Create Poll" and "Split Expense" removed here — polls had
+            <ArrowLeft size={18} color="#2563EB" style={{ transform: [{ rotate: '-90deg' }] }} />
+            {unreadSessionCount > 0 && (
+              <View style={styles.floatingUnreadBadge}>
+                <Text style={styles.floatingUnreadBadgeText}>{unreadSessionCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        )}
+
+        {/* Floating Attachments Drawer */}
+        <Animated.View
+          style={[
+            styles.attachmentPanel,
+            {
+              height: attachMenuHeight,
+              bottom: Animated.add(selectedRoomId ? Math.max(insets.bottom + 58, 74) : 140, keyboardOffset),
+              borderWidth: isAttachmentOpen ? 1 : 0,
+            },
+          ]}
+        >
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.attachScrollInner}
+          >
+            {/* "Create Poll" and "Split Expense" removed here — polls had
                   no backend at all, and the expense form wrote to a
                   local-only ledger that contradicted the real one
                   (docs/REMEDIATION.md §8.7). The expense tracker is reachable
                   from this room's settings panel. */}
 
-              <TouchableOpacity
-                style={styles.attachBtn}
-                onPress={() => setActiveModal('LOCATION')}
-                accessibilityRole="button"
-                accessibilityLabel={t('chat.sharePlace')}
-              >
-                <LinearGradient colors={['#64B5F6', '#2196F3']} style={styles.attachIconCircle}>
-                  <MapPin size={18} color="#FFF" />
-                </LinearGradient>
-                <Text style={styles.attachLabel}>{t('chat.sharePlace')}</Text>
-              </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.attachBtn}
+              onPress={() => setActiveModal('LOCATION')}
+              accessibilityRole="button"
+              accessibilityLabel={t('chat.sharePlace')}
+            >
+              <LinearGradient colors={['#64B5F6', '#2196F3']} style={styles.attachIconCircle}>
+                <MapPin size={18} color="#FFF" />
+              </LinearGradient>
+              <Text style={styles.attachLabel}>{t('chat.sharePlace')}</Text>
+            </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.attachBtn}
-                onPress={handleSendPhoto}
-                disabled={photoUploading}
-                accessibilityRole="button"
-                accessibilityLabel={photoUploading ? t('chat.sendingPhoto') : t('chat.sendPhotoHint')}
-                accessibilityState={{ disabled: photoUploading, busy: photoUploading }}
-              >
-                <LinearGradient colors={['#4DB6AC', '#009688']} style={styles.attachIconCircle}>
-                  {photoUploading ? <ActivityIndicator size="small" color="#FFF" /> : <ImageIcon size={18} color="#FFF" />}
-                </LinearGradient>
-                <Text style={styles.attachLabel}>{photoUploading ? t('chat.sendingEllipsis') : t('chat.sendPhoto')}</Text>
-              </TouchableOpacity>
-            </ScrollView>
-          </Animated.View>
+            <TouchableOpacity
+              style={styles.attachBtn}
+              onPress={handleSendPhoto}
+              disabled={photoUploading}
+              accessibilityRole="button"
+              accessibilityLabel={photoUploading ? t('chat.sendingPhoto') : t('chat.sendPhotoHint')}
+              accessibilityState={{ disabled: photoUploading, busy: photoUploading }}
+            >
+              <LinearGradient colors={['#4DB6AC', '#009688']} style={styles.attachIconCircle}>
+                {photoUploading ? <ActivityIndicator size="small" color="#FFF" /> : <ImageIcon size={18} color="#FFF" />}
+              </LinearGradient>
+              <Text style={styles.attachLabel}>{photoUploading ? t('chat.sendingEllipsis') : t('chat.sendPhoto')}</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </Animated.View>
 
-          {/* BOTTOM MESSAGE INPUT BAR — lifts with keyboard, dynamically positioned when tab bar is hidden, respecting system bottom inset */}
-          <Animated.View
-            style={[
-              styles.bottomInputBarDetail,
-              {
-                bottom: keyboardOffset,
-                paddingBottom: insets.bottom > 0 ? insets.bottom + 12 : 20,
-              },
-            ]}
-          >
-            {replyingToMessage && (
-              <View style={styles.replyPreviewContainer}>
-                <View style={styles.replyPreviewTextCol}>
-                  <Text style={styles.replyPreviewSenderName}>
-                    {replyingToMessage.isMe
-                      ? t('chat.replyingToYourself')
-                      : t('chat.replyingToName', { name: replyingToMessage.senderName })}
-                  </Text>
-                  <Text style={styles.replyPreviewContentText} numberOfLines={1}>
-                    {replyingToMessage.content}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.replyPreviewCloseBtn}
-                  onPress={() => setReplyingToMessage(null)}
-                  hitSlop={{ top: 11, bottom: 11, left: 11, right: 11 }}
-                  accessibilityRole="button"
-                  accessibilityLabel={t('chat.cancelReply')}
-                >
-                  <X size={14} color={C.textSec} />
-                </TouchableOpacity>
+        {/* BOTTOM MESSAGE INPUT BAR — lifts with keyboard, dynamically positioned when tab bar is hidden, respecting system bottom inset */}
+        <Animated.View
+          style={[
+            styles.bottomInputBarDetail,
+            {
+              bottom: keyboardOffset,
+              paddingBottom: insets.bottom > 0 ? insets.bottom + 12 : 20,
+            },
+          ]}
+        >
+          {replyingToMessage && (
+            <View style={styles.replyPreviewContainer}>
+              <View style={styles.replyPreviewTextCol}>
+                <Text style={styles.replyPreviewSenderName}>
+                  {replyingToMessage.isMe
+                    ? t('chat.replyingToYourself')
+                    : t('chat.replyingToName', { name: replyingToMessage.senderName })}
+                </Text>
+                <Text style={styles.replyPreviewContentText} numberOfLines={1}>
+                  {replyingToMessage.content}
+                </Text>
               </View>
-            )}
-
-            <View style={styles.inputRowContainer}>
               <TouchableOpacity
-                style={[styles.plusCircle, isAttachmentOpen && styles.plusCircleOpen]}
-                onPress={() => {
-                  if (!isAttachmentOpen && isEmojiPickerOpen) {
+                style={styles.replyPreviewCloseBtn}
+                onPress={() => setReplyingToMessage(null)}
+                hitSlop={{ top: 11, bottom: 11, left: 11, right: 11 }}
+                accessibilityRole="button"
+                accessibilityLabel={t('chat.cancelReply')}
+              >
+                <X size={14} color={C.textSec} />
+              </TouchableOpacity>
+            </View>
+          )}
+
+          <View style={styles.inputRowContainer}>
+            <TouchableOpacity
+              style={[styles.plusCircle, isAttachmentOpen && styles.plusCircleOpen]}
+              onPress={() => {
+                if (!isAttachmentOpen && isEmojiPickerOpen) {
+                  setIsEmojiPickerOpen(false);
+                }
+                setIsAttachmentOpen(!isAttachmentOpen);
+              }}
+              hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+              accessibilityRole="button"
+              accessibilityLabel={t('chat.attachmentOptions')}
+              accessibilityState={{ expanded: isAttachmentOpen }}
+            >
+              {isAttachmentOpen ? (
+                <X size={18} color="#FFFFFF" />
+              ) : (
+                <Plus size={20} color={C.blue} />
+              )}
+            </TouchableOpacity>
+
+            <View style={styles.textInputWrapper}>
+              <TextInput
+                placeholder={t('chat.messagePlaceholder')}
+                placeholderTextColor={C.textMuted}
+                style={styles.textInput}
+                value={inputText}
+                onChangeText={handleInputChange}
+                onSubmitEditing={handleSendText}
+                multiline={true}
+                blurOnSubmit={false}
+                onKeyPress={(e) => {
+                  if (Platform.OS === 'web' && (e.nativeEvent as any).key === 'Enter' && !(e.nativeEvent as any).shiftKey) {
+                    (e as any).preventDefault?.();
+                    handleSendText();
+                  }
+                }}
+                onFocus={() => {
+                  if (isEmojiPickerOpen) {
                     setIsEmojiPickerOpen(false);
                   }
-                  setIsAttachmentOpen(!isAttachmentOpen);
                 }}
-                hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
-                accessibilityRole="button"
-                accessibilityLabel={t('chat.attachmentOptions')}
-                accessibilityState={{ expanded: isAttachmentOpen }}
-              >
-                {isAttachmentOpen ? (
-                  <X size={18} color="#FFFFFF" />
-                ) : (
-                  <Plus size={20} color={C.blue} />
-                )}
-              </TouchableOpacity>
-
-              <View style={styles.textInputWrapper}>
-                <TextInput
-                  placeholder={t('chat.messagePlaceholder')}
-                  placeholderTextColor={C.textMuted}
-                  style={styles.textInput}
-                  value={inputText}
-                  onChangeText={handleInputChange}
-                  onSubmitEditing={handleSendText}
-                  onFocus={() => {
-                    if (isEmojiPickerOpen) {
-                      setIsEmojiPickerOpen(false);
-                    }
-                  }}
-                  accessibilityLabel={t('chat.messagePlaceholder')}
-                />
-                <TouchableOpacity
-                  style={[styles.smileIcon, isEmojiPickerOpen && styles.smileIconActive]}
-                  hitSlop={{ top: 11, bottom: 11, left: 8, right: 8 }}
-                  accessibilityRole="button"
-                  accessibilityLabel={t('chat.emojiPicker')}
-                  onPress={() => {
-                    if (isEmojiPickerOpen) {
-                      setIsEmojiPickerOpen(false);
-                    } else {
-                      Keyboard.dismiss();
-                      setIsAttachmentOpen(false);
-                      setIsEmojiPickerOpen(true);
-                      scrollToBottom();
-                    }
-                  }}
-                >
-                  <Smile size={18} color={isEmojiPickerOpen ? C.blue : C.textSec} />
-                </TouchableOpacity>
-              </View>
-
+                accessibilityLabel={t('chat.messagePlaceholder')}
+              />
               <TouchableOpacity
-                style={[
-                  styles.sendIconCircle,
-                  inputText.trim() === '' ? styles.sendIconCircleDisabled : styles.sendIconCircleActive,
-                ]}
-                onPress={handleSendText}
-                disabled={inputText.trim() === ''}
-                hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+                style={[styles.smileIcon, isEmojiPickerOpen && styles.smileIconActive]}
+                hitSlop={{ top: 11, bottom: 11, left: 8, right: 8 }}
                 accessibilityRole="button"
-                accessibilityLabel={t('chat.sendMessage')}
-                accessibilityState={{ disabled: inputText.trim() === '' }}
+                accessibilityLabel={t('chat.emojiPicker')}
+                onPress={() => {
+                  if (isEmojiPickerOpen) {
+                    setIsEmojiPickerOpen(false);
+                  } else {
+                    Keyboard.dismiss();
+                    setIsAttachmentOpen(false);
+                    setIsEmojiPickerOpen(true);
+                    scrollToBottom();
+                  }
+                }}
               >
-                <Send size={15} color={inputText.trim() === '' ? C.textMuted : '#FFF'} />
+                <Smile size={18} color={isEmojiPickerOpen ? C.blue : C.textSec} />
               </TouchableOpacity>
             </View>
 
-            {/* EMOJI PICKER DRAWER */}
-            {isEmojiPickerOpen && (
-              <View style={styles.emojiPickerContainer}>
-                <View style={styles.emojiTopBar}>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.emojiCategoryRow}
-                  >
-                    {EMOJI_CATEGORIES.map((cat) => {
-                      const isActive = selectedEmojiCategory === cat.id;
-                      return (
-                        <TouchableOpacity
-                          key={cat.id}
-                          style={[styles.emojiCategoryPill, isActive && styles.emojiCategoryPillActive]}
-                          onPress={() => setSelectedEmojiCategory(cat.id)}
-                          accessibilityRole="button"
-                          accessibilityLabel={cat.name}
-                        >
-                          <Text style={[styles.emojiCategoryPillText, isActive && styles.emojiCategoryPillTextActive]}>
-                            {cat.name}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
+            <TouchableOpacity
+              style={[
+                styles.sendIconCircle,
+                inputText.trim() === '' ? styles.sendIconCircleDisabled : styles.sendIconCircleActive,
+              ]}
+              onPress={handleSendText}
+              disabled={inputText.trim() === ''}
+              hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+              accessibilityRole="button"
+              accessibilityLabel={t('chat.sendMessage')}
+              accessibilityState={{ disabled: inputText.trim() === '' }}
+            >
+              <Send size={15} color={inputText.trim() === '' ? C.textMuted : '#FFF'} />
+            </TouchableOpacity>
+          </View>
 
-                  <TouchableOpacity
-                    style={styles.emojiBackspaceBtn}
-                    onPress={handleEmojiBackspace}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    accessibilityRole="button"
-                    accessibilityLabel={t('chat.deleteLastCharacter', 'Delete last character')}
-                  >
-                    <DeleteIcon size={18} color="#64748B" />
-                  </TouchableOpacity>
-                </View>
-
+          {/* EMOJI PICKER DRAWER */}
+          {isEmojiPickerOpen && (
+            <View style={styles.emojiPickerContainer}>
+              <View style={styles.emojiTopBar}>
                 <ScrollView
-                  style={styles.emojiGridScroll}
-                  contentContainerStyle={styles.emojiGridContainer}
-                  keyboardShouldPersistTaps="handled"
-                  showsVerticalScrollIndicator={false}
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.emojiCategoryRow}
                 >
-                  {(EMOJI_CATEGORIES.find((c) => c.id === selectedEmojiCategory)?.emojis ?? []).map((emoji, idx) => (
-                    <TouchableOpacity
-                      key={`${emoji}-${idx}`}
-                      style={styles.emojiCellTouch}
-                      onPress={() => handleSelectEmoji(emoji)}
-                      activeOpacity={0.6}
-                      accessibilityRole="button"
-                      accessibilityLabel={emoji}
-                    >
-                      <Text style={styles.emojiCellText}>{emoji}</Text>
-                    </TouchableOpacity>
-                  ))}
+                  {EMOJI_CATEGORIES.map((cat) => {
+                    const isActive = selectedEmojiCategory === cat.id;
+                    return (
+                      <TouchableOpacity
+                        key={cat.id}
+                        style={[styles.emojiCategoryPill, isActive && styles.emojiCategoryPillActive]}
+                        onPress={() => setSelectedEmojiCategory(cat.id)}
+                        accessibilityRole="button"
+                        accessibilityLabel={cat.name}
+                      >
+                        <Text style={[styles.emojiCategoryPillText, isActive && styles.emojiCategoryPillTextActive]}>
+                          {cat.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </ScrollView>
+
+                <TouchableOpacity
+                  style={styles.emojiBackspaceBtn}
+                  onPress={handleEmojiBackspace}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('chat.deleteLastCharacter', 'Delete last character')}
+                >
+                  <DeleteIcon size={18} color="#64748B" />
+                </TouchableOpacity>
               </View>
-            )}
-          </Animated.View>
-        </View>
+
+              <ScrollView
+                style={styles.emojiGridScroll}
+                contentContainerStyle={styles.emojiGridContainer}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+              >
+                {(EMOJI_CATEGORIES.find((c) => c.id === selectedEmojiCategory)?.emojis ?? []).map((emoji, idx) => (
+                  <TouchableOpacity
+                    key={`${emoji}-${idx}`}
+                    style={styles.emojiCellTouch}
+                    onPress={() => handleSelectEmoji(emoji)}
+                    activeOpacity={0.6}
+                    accessibilityRole="button"
+                    accessibilityLabel={emoji}
+                  >
+                    <Text style={styles.emojiCellText}>{emoji}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
+        </Animated.View>
+      </View>
 
 
       {/* ─── MESSAGE LONG PRESS OPTIONS OVERLAY ────────────────── */}
@@ -3491,8 +3680,8 @@ function ChatScreen() {
                         <Text style={styles.memberRoleText}>
                           {otherParticipant?.role
                             ? (SENDER_ROLE_LABEL_KEYS[otherParticipant.role]
-                                ? t(SENDER_ROLE_LABEL_KEYS[otherParticipant.role])
-                                : otherParticipant.role)
+                              ? t(SENDER_ROLE_LABEL_KEYS[otherParticipant.role])
+                              : otherParticipant.role)
                             : (settingsRoom.type === 'GUIDE' ? t('chat.roleGuide') : t('chat.contact'))}
                         </Text>
                       </View>
@@ -4593,6 +4782,75 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 12,
+    paddingBottom: 12,
+  },
+  unreadDividerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 14,
+    paddingHorizontal: 16,
+  },
+  unreadDividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#CBD5E1',
+  },
+  unreadDividerPill: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    marginHorizontal: 10,
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  unreadDividerText: {
+    color: '#2563EB',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  floatingScrollBottomBtn: {
+    position: 'absolute',
+    right: 16,
+    bottom: 60,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
+    zIndex: 50,
+  },
+  floatingUnreadBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -4,
+    backgroundColor: '#2563EB',
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  floatingUnreadBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
   },
   dateSeparator: {
     alignItems: 'center',
@@ -4605,8 +4863,14 @@ const styles = StyleSheet.create({
   },
   messageRow: {
     flexDirection: 'row',
-    marginBottom: 16,
+    marginBottom: -10,
     paddingVertical: 4,
+  },
+  consecutiveMessageRow: {
+    marginTop: 2,
+  },
+  differentSenderRow: {
+    marginTop: 12,
   },
   sosMessageBg: {
     backgroundColor: 'rgba(239, 68, 68, 0.08)',
@@ -4695,13 +4959,91 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
     alignSelf: 'flex-start',
   },
+  bubbleContainerMe: {
+    alignSelf: 'flex-end',
+    maxWidth: '78%',
+    marginVertical: 2.5,
+  },
   instagramBubbleContainerMe: {
     alignSelf: 'flex-end',
-    maxWidth: '85%',
+    maxWidth: '82%',
+    marginVertical: 2.5,
   },
   bubbleContainerOther: {
     alignSelf: 'flex-start',
-    maxWidth: '85%',
+    maxWidth: '78%',
+    marginVertical: 2.5,
+  },
+  modernBubbleMe: {
+    backgroundColor: '#E8EDFD',
+    borderRadius: 18,
+    borderBottomRightRadius: 4,
+    paddingHorizontal: 13,
+    paddingTop: 8,
+    paddingBottom: 6,
+    minWidth: 64,
+  },
+  modernBubbleOther: {
+    backgroundColor: '#F1F3F8',
+    borderRadius: 18,
+    borderBottomLeftRadius: 4,
+    paddingHorizontal: 13,
+    paddingTop: 8,
+    paddingBottom: 6,
+    minWidth: 64,
+  },
+  bubbleInnerMe: {
+    flexDirection: 'column',
+  },
+  bubbleInnerOther: {
+    flexDirection: 'column',
+  },
+  bubbleTextMe: {
+    color: '#0F172A',
+    fontSize: 14.5,
+    fontWeight: '400',
+    lineHeight: 20.5,
+    letterSpacing: 0.1,
+  },
+  bubbleTextOther: {
+    color: '#0F172A',
+    fontSize: 14.5,
+    fontWeight: '400',
+    lineHeight: 20.5,
+    letterSpacing: 0.1,
+  },
+  bubbleMetaRowMe: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    alignSelf: 'flex-end',
+    marginTop: 2,
+  },
+  bubbleMetaRowOther: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    alignSelf: 'flex-end',
+    marginTop: 2,
+  },
+  timestampTextMe: {
+    color: '#64748B',
+    fontSize: 10.5,
+    fontWeight: '400',
+  },
+  timestampTextOther: {
+    color: '#8C9AA8',
+    fontSize: 10.5,
+    fontWeight: '400',
+  },
+  statusCheckIcon: {
+    marginLeft: 3,
+  },
+  translateTextOther: {
+    color: C.blue,
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
   },
   instagramGradientBubble: {
     borderRadius: 18,
@@ -4730,18 +5072,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
-  bubbleTextMe: {
-    color: '#FFF',
-    fontSize: 14,
-    fontWeight: '500',
-    lineHeight: 20,
-  },
-  timestampTextMe: {
-    color: 'rgba(255, 255, 255, 0.7)',
-    fontSize: 11,
-    alignSelf: 'flex-end',
-    marginTop: 4,
-  },
+
   bubbleMe: {
     backgroundColor: 'rgba(0, 102, 255, 0.22)',
     borderWidth: 1.2,
@@ -5281,6 +5612,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 8,
+    marginBottom: 1,
     shadowColor: '#2563EB',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
@@ -5304,7 +5636,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
     paddingHorizontal: 14,
-    height: 42,
+    paddingVertical: Platform.OS === 'ios' ? 6 : 2,
+    minHeight: 42,
+    maxHeight: 120,
     shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04,
@@ -5315,7 +5649,11 @@ const styles = StyleSheet.create({
     flex: 1,
     color: C.text,
     fontSize: 14.5,
-    paddingVertical: 6,
+    paddingVertical: Platform.OS === 'ios' ? 4 : 4,
+    paddingTop: Platform.OS === 'android' ? 6 : 4,
+    paddingBottom: Platform.OS === 'android' ? 6 : 4,
+    minHeight: 28,
+    maxHeight: 100,
   },
   smileIcon: {
     padding: 4,
@@ -5408,6 +5746,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 8,
+    marginBottom: 1,
   },
   sendIconCircleActive: {
     backgroundColor: C.blue,
@@ -5575,7 +5914,7 @@ const styles = StyleSheet.create({
   // Swipe to Reply & Reply UI Styles
   inputRowContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     width: '100%',
   },
   replyPreviewContainer: {
@@ -5609,41 +5948,41 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   bubbleReplyHeaderMe: {
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    backgroundColor: 'rgba(37, 99, 235, 0.08)',
     borderLeftWidth: 3,
-    borderLeftColor: '#FFF',
+    borderLeftColor: '#2563EB',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 4,
     marginBottom: 6,
   },
   bubbleReplySenderMe: {
-    color: '#FFF',
-    fontWeight: '800',
+    color: '#1D4ED8',
+    fontWeight: '700',
     fontSize: 12,
     marginBottom: 1,
   },
   bubbleReplyContentMe: {
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: '#475569',
     fontSize: 12,
   },
   bubbleReplyHeaderOther: {
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    backgroundColor: 'rgba(100, 116, 139, 0.1)',
     borderLeftWidth: 3,
-    borderLeftColor: '#FFF',
+    borderLeftColor: '#64748B',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 4,
     marginBottom: 6,
   },
   bubbleReplySenderOther: {
-    color: '#FFF',
+    color: '#334155',
     fontWeight: '700',
     fontSize: 12,
     marginBottom: 1,
   },
   bubbleReplyContentOther: {
-    color: 'rgba(255, 255, 255, 0.85)',
+    color: '#64748B',
     fontSize: 12,
   },
 

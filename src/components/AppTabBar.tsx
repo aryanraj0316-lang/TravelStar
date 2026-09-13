@@ -121,6 +121,7 @@ export function AppTabBar({ state, navigation }: AppTabBarProps) {
   const router = useRouter();
   const {
     activeRoomId,
+    setActiveRoomId,
     navbarHidden,
     setNavbarHidden,
     pendingRequestsCount,
@@ -195,6 +196,11 @@ export function AppTabBar({ state, navigation }: AppTabBarProps) {
             if (route.name === 'profile' && !isLoggedIn) {
               router.push('/auth?mode=SIGNUP');
               return;
+            }
+
+            // Whenever the chat tab is pressed, reset active room so chat list is always shown
+            if (route.name === 'chat') {
+              setActiveRoomId(null);
             }
 
             const event = navigation.emit({
@@ -286,18 +292,19 @@ const styles = StyleSheet.create({
   },
   tabDot: {
     position: 'absolute',
-    top: -1,
-    right: -1,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: C.red,
+    top: -2,
+    right: -2,
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
+    backgroundColor: '#EF4444',
     borderWidth: 1.5,
     borderColor: '#FFFFFF',
+    zIndex: 10,
   },
   tabDotActive: {
-    top: 2,
-    right: 2,
+    top: 1,
+    right: 1,
     borderColor: '#6366F1',
   },
 });

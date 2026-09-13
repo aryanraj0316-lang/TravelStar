@@ -73,6 +73,19 @@ try {
   ImagePicker = null;
 }
 
+// Helper to enforce exactly 10 digits for mobile and emergency numbers
+const sanitizePhone10 = (val: string | null | undefined): string => {
+  if (!val) return '';
+  let digits = val.replace(/\D/g, '');
+  if (digits.startsWith('91') && digits.length > 10) {
+    digits = digits.slice(2);
+  }
+  if (digits.startsWith('0') && digits.length > 10) {
+    digits = digits.slice(1);
+  }
+  return digits.slice(0, 10);
+};
+
 function ProfileScreen() {
   useEffect(() => {
     logger.log('Screen mounted: ProfileScreen');
@@ -132,10 +145,28 @@ function ProfileScreen() {
   const [editName, setEditName] = useState(profile.name || '');
   const [editGender, setEditGender] = useState(profile.gender || 'Private');
   const [editBio, setEditBio] = useState(profile.bio || '');
-  const [editPhone, setEditPhone] = useState(profile.phoneNumber || '');
-  const [editEmergencyPhone, setEditEmergencyPhone] = useState(profile.emergencyContact || '');
+  const [editPhone, setEditPhone] = useState(sanitizePhone10(profile.phoneNumber));
+  const [editEmergencyPhone, setEditEmergencyPhone] = useState(sanitizePhone10(profile.emergencyContact));
   const [editLanguages, setEditLanguages] = useState(profile.languages || '');
   const [editStyles, setEditStyles] = useState(profile.travelStyles || '');
+  const [phoneError, setPhoneError] = useState('');
+  const [emergencyPhoneError, setEmergencyPhoneError] = useState('');
+
+  const handlePhoneChange = (text: string) => {
+    const clean = sanitizePhone10(text);
+    setEditPhone(clean);
+    if (clean.length === 10 || clean.length === 0) {
+      setPhoneError('');
+    }
+  };
+
+  const handleEmergencyPhoneChange = (text: string) => {
+    const clean = sanitizePhone10(text);
+    setEditEmergencyPhone(clean);
+    if (clean.length === 10 || clean.length === 0) {
+      setEmergencyPhoneError('');
+    }
+  };
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
@@ -160,8 +191,10 @@ function ProfileScreen() {
       setEditName(profile.name || '');
       setEditGender(profile.gender || 'Private');
       setEditBio(profile.bio || '');
-      setEditPhone(profile.phoneNumber || '');
-      setEditEmergencyPhone(profile.emergencyContact || '');
+      setEditPhone(sanitizePhone10(profile.phoneNumber));
+      setEditEmergencyPhone(sanitizePhone10(profile.emergencyContact));
+      setPhoneError('');
+      setEmergencyPhoneError('');
       setEditLanguages(profile.languages || '');
       setEditStyles(profile.travelStyles || '');
     }
@@ -418,21 +451,36 @@ function ProfileScreen() {
   // Handlers
   const handleSaveProfile = () => {
     if (!editName.trim()) {
-      toast(t('profile.nameCannotBeEmpty'), 'error');
+      toast(t('profile.nameCannotBeEmpty', 'Name cannot be empty'), 'error');
       return;
     }
+
+    const cleanPhone = sanitizePhone10(editPhone);
+    if (cleanPhone.length > 0 && cleanPhone.length !== 10) {
+      setPhoneError(t('profile.phoneMustBe10Digits', 'Mobile number must be exactly 10 digits'));
+      toast(t('profile.phoneMustBe10Digits', 'Mobile number must be exactly 10 digits'), 'error');
+      return;
+    }
+
+    const cleanEmergency = sanitizePhone10(editEmergencyPhone);
+    if (cleanEmergency.length > 0 && cleanEmergency.length !== 10) {
+      setEmergencyPhoneError(t('profile.emergencyMustBe10Digits', 'Emergency SOS contact number must be exactly 10 digits'));
+      toast(t('profile.emergencyMustBe10Digits', 'Emergency SOS contact number must be exactly 10 digits'), 'error');
+      return;
+    }
+
     updateProfile({
       name: editName,
       avatar: editAvatar,
       gender: editGender,
       bio: editBio,
-      phoneNumber: editPhone,
-      emergencyContact: editEmergencyPhone,
+      phoneNumber: cleanPhone,
+      emergencyContact: cleanEmergency,
       languages: editLanguages,
       travelStyles: editStyles,
     });
     setShowEditModal(false);
-    toast(t('profile.profileSaved'), 'success');
+    toast(t('profile.profileSaved', 'Profile saved successfully'), 'success');
   };
 
   // "Share Profile" was removed rather than kept (docs/REMEDIATION.md §0.2
@@ -757,7 +805,7 @@ function ProfileScreen() {
                   <View style={styles.menuItemTextCol}>
                     <Text style={styles.detailLabel}>{t('profile.mobilePhone')}</Text>
                     <Text style={[styles.detailValue, !profile.phoneNumber && styles.detailValueEmpty]}>
-                      {profile.phoneNumber || t('profile.notAddedYet')}
+                      {profile.phoneNumber ? sanitizePhone10(profile.phoneNumber) : t('profile.notAddedYet')}
                     </Text>
                   </View>
                 </View>
@@ -779,7 +827,7 @@ function ProfileScreen() {
                   <View style={styles.menuItemTextCol}>
                     <Text style={styles.detailLabel}>{t('profile.emergencySosContact')}</Text>
                     <Text style={[styles.detailValue, !profile.emergencyContact && styles.detailValueEmpty]}>
-                      {profile.emergencyContact || t('profile.notAddedYet')}
+                      {profile.emergencyContact ? sanitizePhone10(profile.emergencyContact) : t('profile.notAddedYet')}
                     </Text>
                   </View>
                 </View>
@@ -1365,15 +1413,23 @@ function ProfileScreen() {
         <Input
           label={t('profile.mobilePhone')}
           value={editPhone}
-          onChangeText={setEditPhone}
-          keyboardType="phone-pad"
+          onChangeText={handlePhoneChange}
+          keyboardType="numeric"
+          maxLength={10}
+          placeholder="10-digit mobile number"
+          hint={editPhone.length > 0 && editPhone.length < 10 ? `${editPhone.length}/10 digits (${10 - editPhone.length} more needed)` : undefined}
+          error={phoneError}
           containerStyle={styles.editFieldGap}
         />
         <Input
           label={t('profile.emergencySosContact')}
           value={editEmergencyPhone}
-          onChangeText={setEditEmergencyPhone}
-          keyboardType="phone-pad"
+          onChangeText={handleEmergencyPhoneChange}
+          keyboardType="numeric"
+          maxLength={10}
+          placeholder="10-digit emergency SOS contact"
+          hint={editEmergencyPhone.length > 0 && editEmergencyPhone.length < 10 ? `${editEmergencyPhone.length}/10 digits (${10 - editEmergencyPhone.length} more needed)` : undefined}
+          error={emergencyPhoneError}
           containerStyle={styles.editFieldGap}
         />
         <Input

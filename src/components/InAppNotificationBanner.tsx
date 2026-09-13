@@ -2,6 +2,7 @@ import { eventBus, type InAppNotif } from '@/services/event-bus';
 import { useApp } from '@/store/AppContext';
 import { useRouter } from 'expo-router';
 import CheckCheck from 'lucide-react-native/icons/check-check';
+import MessageSquare from 'lucide-react-native/icons/message-square';
 import ChevronRight from 'lucide-react-native/icons/chevron-right';
 import X from 'lucide-react-native/icons/x';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -84,8 +85,12 @@ export const InAppNotificationBanner: React.FC = () => {
         accessibilityHint={notif.chatRoomId ? t('notifications.tapToOpenGroupChat') : undefined}
       >
         {/* Left icon */}
-        <View style={styles.iconWrap}>
-          <CheckCheck size={20} color="#fff" />
+        <View style={[styles.iconWrap, notif.category === 'CHAT_MESSAGE' && { backgroundColor: C.blue }]}>
+          {notif.category === 'CHAT_MESSAGE' ? (
+            <MessageSquare size={20} color="#fff" />
+          ) : (
+            <CheckCheck size={20} color="#fff" />
+          )}
         </View>
 
         {/* Text body */}
@@ -94,8 +99,10 @@ export const InAppNotificationBanner: React.FC = () => {
           <Text style={styles.content} numberOfLines={2}>{notif.content}</Text>
           {notif.chatRoomId && (
             <View style={styles.tapRow}>
-              <Text style={styles.tapHint}>{t('notifications.tapToOpenGroupChat')}</Text>
-              <ChevronRight size={11} color="#10B981" />
+              <Text style={[styles.tapHint, notif.category === 'CHAT_MESSAGE' && { color: '#60A5FA' }]}>
+                {notif.category === 'CHAT_MESSAGE' ? t('chat.tapToOpen', 'Tap to open chat') : t('notifications.tapToOpenGroupChat')}
+              </Text>
+              <ChevronRight size={11} color={notif.category === 'CHAT_MESSAGE' ? '#60A5FA' : '#10B981'} />
             </View>
           )}
         </View>
