@@ -712,7 +712,13 @@ function buildMapHTML(tileKey: string, routeCoords: MapRoutePoint[], strings: Le
             if (window.__focusMarker) { map.removeLayer(window.__focusMarker); window.__focusMarker = null; }
             var focusLatLng = [data.lat, data.lng];
             window.__focusMarker = L.marker(focusLatLng).addTo(map);
-            if (data.label) window.__focusMarker.bindPopup(data.label).openPopup();
+            if (data.label) {
+              // A DOM node with textContent, not an HTML popup string: the
+              // label is user-authored chat text.
+              var focusPopupEl = document.createElement('div');
+              focusPopupEl.textContent = data.label;
+              window.__focusMarker.bindPopup(focusPopupEl).openPopup();
+            }
             map.flyTo(focusLatLng, 15, { animate: true, duration: 0.85 });
           }
           if (data.type === 'SELECT_LEG') {

@@ -110,7 +110,12 @@ function WebMapScreen() {
   }, []);
   const router = useRouter();
   const { triggerSOS, trips, setNavbarHidden } = useApp();
-  const { tripId } = useLocalSearchParams<{ tripId: string }>();
+  const { tripId, focusLat, focusLng, focusLabel } = useLocalSearchParams<{
+    tripId: string;
+    focusLat?: string;
+    focusLng?: string;
+    focusLabel?: string;
+  }>();
 
   useEffect(() => {
     if (tripId) {
@@ -173,6 +178,17 @@ function WebMapScreen() {
   useEffect(() => {
     postMapMessage({ type: 'FILTER', filter: mapFilter });
   }, [mapFilter, postMapMessage]);
+
+  // Opened from a chat "shared location" card or the SOS "Show on Map" button.
+  useEffect(() => {
+    const lat = focusLat ? Number(focusLat) : NaN;
+    const lng = focusLng ? Number(focusLng) : NaN;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    const timer = setTimeout(() => {
+      postMapMessage({ type: 'FLY_TO', lat, lng, label: focusLabel ?? null });
+    }, 600); // Leaflet needs a beat to finish mounting after the iframe document is written.
+    return () => clearTimeout(timer);
+  }, [focusLat, focusLng, focusLabel, postMapMessage]);
 
 
   // Dials India's real national emergency number. The button that calls this
@@ -707,6 +723,18 @@ function WebMapScreen() {
                 } else if (pathPoints.length > 0) {
                   map.flyTo(pathPoints[0], 6, { animate: true, duration: 0.85 });
                 }
+              }
+              if (data.type === 'FLY_TO') {
+                if (window.__focusMarker) { map.removeLayer(window.__focusMarker); window.__focusMarker = null; }
+                var focusLatLng = [data.lat, data.lng];
+                window.__focusMarker = L.marker(focusLatLng).addTo(map);
+                if (data.label) {
+                  // textContent, not a bindPopup string: the label is chat text.
+                  var focusPopupEl = document.createElement('div');
+                  focusPopupEl.textContent = data.label;
+                  window.__focusMarker.bindPopup(focusPopupEl).openPopup();
+                }
+                map.flyTo(focusLatLng, 15, { animate: true, duration: 0.85 });
               }
               if (data.type === 'SELECT_LEG') {
                 var idx = data.index;

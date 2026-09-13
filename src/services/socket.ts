@@ -219,10 +219,36 @@ class SocketService {
     }
   }
 
+  /**
+   * Tell the server these messages reached this device. Called the moment a
+   * message arrives live, and again as a sweep when the app comes back to
+   * the foreground so anything that landed while offline is marked once the
+   * device really has it.
+   */
+  markDelivered(chatRoomId: string, messageIds?: string[]) {
+    if (this.socket) {
+      this.socket.emit('markDelivered', { chatRoomId, ...(messageIds ? { messageIds } : {}) });
+    }
+  }
+
   onMessage(listener: MessageListener) {
     this.messageListeners.push(listener);
     return () => {
       this.messageListeners = this.messageListeners.filter((l) => l !== listener);
+    };
+  }
+
+  /** Tick updates for the sender's own bubbles, batched per room by the server. */
+  onMessageStatus(listener: (e: { roomId: string; messageIds: string[]; userId: string; kind: 'DELIVERED' | 'SEEN' }) => void) {
+    const onDelivered = (p: { roomId: string; messageIds: string[]; userId: string }) =>
+      listener({ ...p, kind: 'DELIVERED' as const });
+    const onRead = (p: { roomId: string; messageIds: string[]; userId: string }) =>
+      listener({ ...p, kind: 'SEEN' as const });
+    this.socket?.on('messageDelivered', onDelivered);
+    this.socket?.on('messageRead', onRead);
+    return () => {
+      this.socket?.off('messageDelivered', onDelivered);
+      this.socket?.off('messageRead', onRead);
     };
   }
 

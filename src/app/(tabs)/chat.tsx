@@ -1,7 +1,7 @@
 import { RouteErrorFallback } from '@/components/route-error-fallback';
 import { Avatar, Button, Input, ScreenEmpty } from '@/components/ui';
 import { recordConsent } from '@/lib/consent';
-import { formatDateRange, formatTime } from '@/lib/datetime';
+import { formatDateRange, formatMessageTimestamp, formatTime } from '@/lib/datetime';
 import { getCurrentDeviceLocation } from '@/lib/device-location';
 import { errorToastMessage, showAlert, toast, useConfirm } from '@/lib/feedback';
 import { logger } from '@/lib/logger';
@@ -9,7 +9,9 @@ import { formatINR } from '@/lib/money';
 import { uploadFileToUrl } from '@/lib/upload';
 import { apiService } from '@/services/api';
 import { eventBus } from '@/services/event-bus';
+import { socketService } from '@/services/socket';
 import { useApp } from '@/store/AppContext';
+import type { MessageAudienceEntry, MessageStatus } from '@/types/api';
 import { C, MIN_TOUCH_TARGET, fontSize, radii } from '@/theme/tokens';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useRouter, type ErrorBoundaryProps } from 'expo-router';
@@ -18,6 +20,7 @@ import Bell from 'lucide-react-native/icons/bell';
 import BellOff from 'lucide-react-native/icons/bell-off';
 import Calendar from 'lucide-react-native/icons/calendar';
 import BarChart2 from 'lucide-react-native/icons/chart-no-axes-column';
+import Check from 'lucide-react-native/icons/check';
 import CheckCheck from 'lucide-react-native/icons/check-check';
 import AlertCircle from 'lucide-react-native/icons/circle-alert';
 import CheckCircle from 'lucide-react-native/icons/circle-check-big';
@@ -53,6 +56,7 @@ import {
   FlatList,
   Image,
   Keyboard,
+  Linking,
   Modal,
   PanResponder,
   Platform,
@@ -106,6 +110,8 @@ interface CustomMessage {
   expenseDesc?: string;
   expenseSplitWith?: number;
   locationCoords?: { latitude: number; longitude: number };
+  /** Sender's view only — null on other people's and system messages. */
+  status?: MessageStatus | null;
   sosId?: string;
   resolved?: boolean;
   replyTo?: {
@@ -153,6 +159,29 @@ interface CustomMessage {
 // GET/POST/DELETE /trips/:tripId/expenses and server-derived splits, which
 // budget-tracker.tsx uses. Chat now links there instead of keeping a
 // parallel fake ledger that never agreed with it.
+
+const STATUS_RANK: Record<MessageStatus, number> = { SENT: 0, DELIVERED: 1, SEEN: 2 };
+
+// Status events can arrive out of order, so a SEEN bubble must never fall back.
+function mergeStatus(current: MessageStatus | null | undefined, incoming: MessageStatus): MessageStatus {
+  if (!current) return incoming;
+  return STATUS_RANK[incoming] > STATUS_RANK[current] ? incoming : current;
+}
+
+function MessageTicks({ status }: { status: MessageStatus | null | undefined }) {
+  if (!status) return null;
+  if (status === 'SENT') {
+    return <Check size={13} color={C.textSec} strokeWidth={2.4} style={styles.statusCheckIcon} />;
+  }
+  return (
+    <CheckCheck
+      size={13}
+      color={status === 'SEEN' ? C.blueText : C.textSec}
+      strokeWidth={2.4}
+      style={styles.statusCheckIcon}
+    />
+  );
+}
 
 // Swipe to Reply gesture wrapper component
 const SwipeableMessageRow = ({
@@ -370,6 +399,7 @@ function MessageBubble({
   onToggleTranslate,
   onPollVote,
   onOpenMap,
+  onOpenExternalMaps,
   onOpenImage,
   canResolveSOS,
   onResolveSOS,
@@ -385,6 +415,7 @@ function MessageBubble({
   onToggleTranslate: (id: string) => void;
   onPollVote: (msgId: string, optionIdx: number) => void;
   onOpenMap: (msg: CustomMessage) => void;
+  onOpenExternalMaps: (msg: CustomMessage) => void;
   onOpenImage: (uri: string) => void;
   // Resolving an SOS is an organizer/guide action, and it clears the trip's
   // *active* alert rather than this message — hence no message argument.
@@ -555,6 +586,15 @@ function MessageBubble({
               >
                 <Text style={styles.locationActionText}>{t('chat.openLiveNavigation')}</Text>
               </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.locationSecondaryTouch}
+                onPress={() => onOpenExternalMaps(msg)}
+                hitSlop={{ top: 9, bottom: 9, left: 9, right: 9 }}
+                accessibilityRole="button"
+                accessibilityLabel={t('chat.openInMaps')}
+              >
+                <Text style={styles.locationSecondaryText}>{t('chat.openInMaps')}</Text>
+              </TouchableOpacity>
             </View>
           ) : msg.type === 'voice' ? (
             <View style={styles.voiceNoteCard}>
@@ -632,6 +672,14 @@ function MessageBubble({
                 >
                   <Text style={styles.sosAlertBtnText}>{t('chat.showOnMap')}</Text>
                 </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.sosAlertBtn, { backgroundColor: 'rgba(255,255,255,0.15)' }]}
+                  onPress={() => onOpenExternalMaps(msg)}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('chat.openInMaps')}
+                >
+                  <Text style={styles.sosAlertBtnText}>{t('chat.openInMaps')}</Text>
+                </TouchableOpacity>
                 {canResolveSOS ? (
                   <TouchableOpacity
                     style={[styles.sosAlertBtn, { backgroundColor: C.green }]}
@@ -669,7 +717,7 @@ function MessageBubble({
                     <Text style={styles.bubbleTextMe}>{displayedContent}</Text>
                     <View style={styles.bubbleMetaRowMe}>
                       <Text style={styles.timestampTextMe}>{formatChatTime(msg.createdAt || msg.timestamp)}</Text>
-                      <CheckCheck size={13} color="#2563EB" strokeWidth={2.4} style={styles.statusCheckIcon} />
+                      <MessageTicks status={msg.status} />
                     </View>
                   </View>
                 </TouchableOpacity>
@@ -928,6 +976,12 @@ function ChatScreen() {
         })
         .catch((e) => logger.warn('[Chat] Mark-read failed:', e));
 
+      // Catch-up sweep: anything that landed while this device was offline is
+      // only really "delivered" once the device has it.
+      apiService
+        .markChatDelivered(selectedRoomId)
+        .catch((e) => logger.warn('[Chat] Mark-delivered sweep failed:', e));
+
       apiService
         .getChatMessages(selectedRoomId)
         .then((history) => {
@@ -950,6 +1004,7 @@ function ChatScreen() {
                 isMe: isMe,
                 type,
                 mediaUrl: m.mediaUrl || undefined,
+                status: isMe ? (m.status ?? null) : null,
                 ...(type === 'location' ? { locationCoords: { latitude: m.latitude as number, longitude: m.longitude as number } } : {}),
               };
             });
@@ -995,6 +1050,28 @@ function ChatScreen() {
         });
     }
   }, [selectedRoomId, profile.avatar, profile.id, profile.name, checkUnreadChats]);
+
+  // Tick updates for our own bubbles, batched per room by the server.
+  useEffect(() => {
+    const unsubscribe = socketService.onMessageStatus(({ roomId, messageIds, kind }) => {
+      if (!messageIds || messageIds.length === 0) return;
+      const ids = new Set(messageIds);
+      setTripMessages((prev) => {
+        const roomKey = [roomId, `room-${roomId}`, roomId.replace(/^room-/, '')].find((k) => prev[k]);
+        if (!roomKey) return prev;
+        let changed = false;
+        const next = prev[roomKey].map((m) => {
+          if (!m.isMe || !ids.has(m.id)) return m;
+          const merged = mergeStatus(m.status, kind);
+          if (merged === m.status) return m;
+          changed = true;
+          return { ...m, status: merged };
+        });
+        return changed ? { ...prev, [roomKey]: next } : prev;
+      });
+    });
+    return unsubscribe;
+  }, []);
 
   // Reset tab to chat when activeRoomId/selectedRoomId changes. react.dev's
   // documented pattern for this (compare against a ref during render, adjust
@@ -1047,6 +1124,13 @@ function ChatScreen() {
             },
           ];
         });
+      }
+
+      // Someone else's message has now really reached this device.
+      const isMineArriving =
+        latestMsg.senderId === profile.id || !!(profile.name && latestMsg.senderName === profile.name);
+      if (!isMineArriving && !isSystemMsg && latestMsg.id) {
+        socketService.markDelivered(key, [latestMsg.id]);
       }
 
       setTripMessages((prev) => {
@@ -1106,6 +1190,7 @@ function ChatScreen() {
           isMe: isMe,
           type: newMsgType,
           mediaUrl: latestMsg.mediaUrl,
+          status: isMe && !isSystemMsg ? 'SENT' : null,
           ...(newMsgType === 'location'
             ? { locationCoords: { latitude: latestMsgLoc.latitude as number, longitude: latestMsgLoc.longitude as number } }
             : {}),
@@ -1365,6 +1450,10 @@ function ChatScreen() {
   };
   const [replyingToMessage, setReplyingToMessage] = useState<CustomMessage | null>(null);
   const [selectedMessageForOptions, setSelectedMessageForOptions] = useState<CustomMessage | null>(null);
+  const [messageInfoOpen, setMessageInfoOpen] = useState(false);
+  const [messageInfoRows, setMessageInfoRows] = useState<MessageAudienceEntry[] | null>(null);
+  const [messageInfoLoading, setMessageInfoLoading] = useState(false);
+  const [messageInfoError, setMessageInfoError] = useState<string | null>(null);
   const [selectedRoomForOptions, setSelectedRoomForOptions] = useState<ChatRoom | null>(null);
   const [viewerImageUri, setViewerImageUri] = useState<string | null>(null);
   const [pinnedRoomIds, setPinnedRoomIds] = useState<Set<string>>(new Set());
@@ -1829,6 +1918,43 @@ function ChatScreen() {
     }
   };
 
+  // Hands the pin to the device's real navigation app. The universal Google
+  // Maps link resolves to the native app on both platforms when it is present.
+  const handleOpenInExternalMaps = async (msg: CustomMessage) => {
+    const coords = msg.locationCoords;
+    if (!coords) {
+      toast(t('chat.noCoordinatesToOpen'), 'error');
+      return;
+    }
+    const url = `https://www.google.com/maps/search/?api=1&query=${coords.latitude},${coords.longitude}`;
+    try {
+      await Linking.openURL(url);
+    } catch (e) {
+      logger.warn('[Chat] Opening external maps failed:', e);
+      toast(t('chat.couldNotOpenMapsApp'), 'error');
+    }
+  };
+
+  // Sender-only audience view, so two grey ticks on a group message stay legible.
+  const handleShowMessageInfo = async (msg: CustomMessage) => {
+    const roomId = selectedRoomId;
+    if (!roomId) return;
+    setSelectedMessageForOptions(null);
+    setMessageInfoOpen(true);
+    setMessageInfoLoading(true);
+    setMessageInfoRows(null);
+    setMessageInfoError(null);
+    try {
+      const rows = await apiService.getMessageInfo(roomId, msg.id);
+      setMessageInfoRows(rows ?? []);
+    } catch (e) {
+      logger.warn('[Chat] Message info failed:', e);
+      setMessageInfoError(errorToastMessage(e, t('chat.messageInfoFailed')));
+    } finally {
+      setMessageInfoLoading(false);
+    }
+  };
+
   // Core send message handler
   const sendNewMessage = (msgData: Partial<CustomMessage>) => {
     const key = selectedRoomId || selectedTripId;
@@ -1857,6 +1983,7 @@ function ChatScreen() {
       createdAt: nowIso,
       isMe: true,
       mediaUrl: msgData.mediaUrl,
+      status: 'SENT',
       ...msgData,
     };
 
@@ -2992,6 +3119,7 @@ function ChatScreen() {
                   onToggleTranslate={toggleTranslate}
                   onPollVote={handlePollVote}
                   onOpenMap={handleOpenMapForMessage}
+                  onOpenExternalMaps={handleOpenInExternalMaps}
                   onOpenImage={setViewerImageUri}
                   canResolveSOS={profile.role === 'ORGANIZER' || profile.role === 'GUIDE'}
                   onResolveSOS={handleResolveSOSEvent}
@@ -3374,6 +3502,19 @@ function ChatScreen() {
               </TouchableOpacity>
             )}
 
+            {/* MESSAGE INFO — sender-only, and only useful in a group */}
+            {selectedMessageForOptions.isMe && activeRoom?.type === 'GROUP' && (
+              <TouchableOpacity
+                style={styles.optionsRowBtn}
+                onPress={() => handleShowMessageInfo(selectedMessageForOptions)}
+                accessibilityRole="button"
+                accessibilityLabel={t('chat.messageInfo')}
+              >
+                <CheckCheck size={16} color="#94A3B8" style={styles.optionsRowIcon} />
+                <Text style={styles.optionsRowText}>{t('chat.messageInfo')}</Text>
+              </TouchableOpacity>
+            )}
+
             {/* DELETE OPTION */}
             {selectedMessageForOptions.isMe && (
               <TouchableOpacity
@@ -3396,6 +3537,86 @@ function ChatScreen() {
               accessibilityLabel={t('common.cancel')}
             >
               <Text style={styles.optionsCancelText}>{t('common.cancel')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* ─── MESSAGE INFO (DELIVERED / READ AUDIENCE) ─────────── */}
+      {messageInfoOpen && (
+        <View style={styles.optionsModalOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setMessageInfoOpen(false)}
+            accessibilityRole="button"
+            accessibilityLabel={t('common.close')}
+          />
+          <View style={styles.optionsModalContent}>
+            <View style={styles.optionsHeaderRow}>
+              <Text style={styles.optionsHeaderTitle}>{t('chat.messageInfo')}</Text>
+            </View>
+            <View style={styles.optionsDivider} />
+
+            {messageInfoLoading ? (
+              <ActivityIndicator size="small" color={C.blueText} style={{ paddingVertical: 22 }} />
+            ) : messageInfoError ? (
+              <Text style={styles.infoSheetStateText}>{messageInfoError}</Text>
+            ) : !messageInfoRows || messageInfoRows.length === 0 ? (
+              <Text style={styles.infoSheetStateText}>{t('chat.messageInfoEmpty')}</Text>
+            ) : (
+              <ScrollView style={styles.infoSheetScroll} showsVerticalScrollIndicator={false}>
+                {([
+                  { key: 'readBy', label: t('chat.readBy'), rows: messageInfoRows.filter((r) => r.readAt) },
+                  {
+                    key: 'deliveredTo',
+                    label: t('chat.deliveredTo'),
+                    rows: messageInfoRows.filter((r) => !r.readAt && r.deliveredAt),
+                  },
+                  {
+                    key: 'sentTo',
+                    label: t('chat.sentTo'),
+                    rows: messageInfoRows.filter((r) => !r.readAt && !r.deliveredAt),
+                  },
+                ] as const)
+                  .filter((group) => group.rows.length > 0)
+                  .map((group) => (
+                    <View key={group.key}>
+                      <Text style={styles.infoSheetGroupTitle}>{group.label}</Text>
+                      {group.rows.map((row) => (
+                        <View key={row.userId} style={styles.infoSheetRow}>
+                          <Avatar uri={row.avatar || undefined} name={row.name} size={32} />
+                          <View style={styles.infoSheetRowBody}>
+                            <Text style={styles.infoSheetRowName} numberOfLines={1}>
+                              {row.name}
+                            </Text>
+                            {row.readAt ? (
+                              <Text style={styles.infoSheetRowTime}>
+                                {t('chat.readAtTime', { time: formatMessageTimestamp(row.readAt) })}
+                              </Text>
+                            ) : row.deliveredAt ? (
+                              <Text style={styles.infoSheetRowTime}>
+                                {t('chat.deliveredAtTime', { time: formatMessageTimestamp(row.deliveredAt) })}
+                              </Text>
+                            ) : (
+                              <Text style={styles.infoSheetRowTime}>{t('chat.notDeliveredYet')}</Text>
+                            )}
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  ))}
+              </ScrollView>
+            )}
+
+            <View style={styles.optionsCancelDivider} />
+            <TouchableOpacity
+              style={styles.optionsCancelBtn}
+              onPress={() => setMessageInfoOpen(false)}
+              accessibilityRole="button"
+              accessibilityLabel={t('common.close')}
+            >
+              <Text style={styles.optionsCancelText}>{t('common.close')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -5322,6 +5543,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
   },
+  locationSecondaryTouch: {
+    borderRadius: 8,
+    paddingVertical: 6,
+    alignItems: 'center',
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  locationSecondaryText: {
+    color: C.textSec,
+    fontSize: 12,
+    fontWeight: '700',
+  },
 
   // Voice Note Card
   voiceNoteCard: {
@@ -6049,6 +6283,43 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: '#F1F5F9',
     marginVertical: 12,
+  },
+  infoSheetScroll: {
+    maxHeight: 360,
+  },
+  infoSheetGroupTitle: {
+    color: C.textSec,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    marginTop: 14,
+    marginBottom: 6,
+  },
+  infoSheetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    gap: 10,
+  },
+  infoSheetRowBody: {
+    flex: 1,
+  },
+  infoSheetRowName: {
+    color: '#1E293B',
+    fontSize: 13.5,
+    fontWeight: '700',
+  },
+  infoSheetRowTime: {
+    color: C.textSec,
+    fontSize: 11.5,
+    marginTop: 2,
+  },
+  infoSheetStateText: {
+    color: C.textSec,
+    fontSize: 13,
+    paddingVertical: 18,
+    textAlign: 'center',
   },
   optionsCancelBtn: {
     alignItems: 'center',
