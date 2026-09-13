@@ -7,7 +7,7 @@ const prisma = new PrismaClient();
  * Empties every data table in the database DATABASE_URL currently points
  * to, leaving the schema/migration history untouched — no demo users, no
  * seeded reference content (destinations, weather, monsoon advisories,
- * hazard alerts, travel stories), nothing. Unlike prisma/seed.ts this does
+ * hazard alerts, travel stories), nothing. Unlike the removed prisma/seed.ts this does
  * NOT reseed anything afterward; the app is expected to show its real
  * empty states (see src/screens/home-screen.tsx etc.) until real users
  * create real data.

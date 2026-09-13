@@ -612,10 +612,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         checkUnreadChats();
         checkUnreadNotifications();
         reloadIncomingRequestsCount();
+        // Coming back to the foreground is the moment this device really
+        // has everything that arrived while it was away. Without this,
+        // messages in rooms the user never opens stay undelivered and
+        // their sender's ticks never advance past one.
+        if (isLoggedIn) {
+          apiService
+            .markAllChatsDelivered()
+            .catch((e) => logger.warn('[Chat] Delivery sweep failed:', e));
+        }
       }
     });
     return () => sub.remove();
-  }, [checkUnreadChats, checkUnreadNotifications, reloadIncomingRequestsCount]);
+  }, [checkUnreadChats, checkUnreadNotifications, reloadIncomingRequestsCount, isLoggedIn]);
 
   // ── One-time mount: hydrate auth, profile, socket, guides, wallet, SOS, stories ──
   useEffect(() => {

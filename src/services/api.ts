@@ -1305,7 +1305,16 @@ export const apiService = {
     return request<ChatMessage[]>(`/chats/${id}/messages`);
   },
 
-  /** Catch-up sweep for messages that arrived while this device was offline. */
+  /**
+   * Sweep every room this device is a member of. Run on app foreground: the
+   * per-room sweep only fires when a room is opened, so messages in rooms
+   * the user never visits would otherwise never be marked delivered.
+   */
+  async markAllChatsDelivered(): Promise<{ delivered: number; rooms: number } | null> {
+    return request('/chats/delivered', { method: 'POST' });
+  },
+
+  /** Catch-up sweep for one room, when it is opened. */
   async markChatDelivered(id: string): Promise<{ delivered: number } | null> {
     return request(`/chats/${id}/delivered`, { method: 'POST' });
   },

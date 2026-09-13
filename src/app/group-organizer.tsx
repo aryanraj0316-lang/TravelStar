@@ -492,33 +492,24 @@ export default function GroupOrganizerScreen() {
 
       // Pre-populate based on trip cities
       const cities =
-        selectedCreation.cities && selectedCreation.cities.length > 0
-          ? selectedCreation.cities
-          : ['Departure Point', 'Destination'];
+        selectedCreation.cities && selectedCreation.cities.length > 0 ? selectedCreation.cities : [];
 
       const initialCheckpoints: ItineraryCheckpoint[] = cities.map((city, idx) => {
         const isFirst = idx === 0;
         const isLast = idx === cities.length - 1;
         const cleanName = city.trim();
         const preCoords = PRELOADED_CITY_COORDS[cleanName] || Object.entries(PRELOADED_CITY_COORDS).find(([k]) => cleanName.toLowerCase().includes(k.toLowerCase()))?.[1];
+        // Only what the trip itself says: the city, its position on the
+        // route, and coordinates we could actually resolve. Times,
+        // activities, packing lists and hotel names are the organizer's to
+        // fill in — inventing a "Heritage Grand Resort" and a departure
+        // time nobody chose made the planner look filled-in while telling
+        // the group things that were never true.
         return {
           id: `cp_${idx}_${Date.now()}`,
           name: city,
           dayNumber: idx + 1,
-          timeSlot: isFirst ? '08:30 AM' : isLast ? '17:00 PM' : '11:00 AM',
           category: isFirst ? 'DEPARTURE' : isLast ? 'STAY' : 'SIGHTSEEING',
-          activities: isFirst
-            ? `Assembly, baggage loading and departure from ${city}.`
-            : isLast
-            ? `Final destination check-in at ${city}, hotel settling and celebration.`
-            : `Sightseeing & cultural stops in ${city}. Group lunch and photography.`,
-          customNotes: isFirst
-            ? 'Ensure all travelers bring valid photo IDs and travel permits.'
-            : `Local entry passes and parking pre-arranged for ${city}.`,
-          customThings: isFirst
-            ? ['Photo ID', 'Booking Pass', 'Emergency Contacts']
-            : ['Camera', 'Walking Shoes', 'Personal Medication'],
-          hotelName: isLast ? `${city} Heritage Grand Resort` : undefined,
           latitude: preCoords?.lat,
           longitude: preCoords?.lon,
           address: preCoords ? `${city}, India` : undefined,
@@ -530,8 +521,11 @@ export default function GroupOrganizerScreen() {
       for (let i = 0; i < cities.length - 1; i++) {
         const fromCp = initialCheckpoints[i];
         const toCp = initialCheckpoints[i + 1];
-        let distStr = `${110 + i * 35} km`;
-        let durStr = `${2 + i}h ${15 + i * 10}m`;
+        // Empty until a real distance is computed below (or OSRM answers).
+        // The previous placeholder was an arithmetic series of the leg
+        // index — a number that looked like a measurement and was not one.
+        let distStr = '';
+        let durStr = '';
         let isLive = false;
 
         if (fromCp.latitude && fromCp.longitude && toCp.latitude && toCp.longitude) {
@@ -551,11 +545,8 @@ export default function GroupOrganizerScreen() {
           duration: durStr,
           transportMode: 'CAR',
           routeTitle: `Route: ${cities[i]} ➔ ${cities[i + 1]}`,
-          roadConditions: 'Smooth multi-lane asphalt road, moderate traffic.',
-          pitstops: 'Midway fuel station and tea lounge (restrooms available).',
-          driverTips: 'Electronic toll lane active. Maintain standard highway speed.',
           isLiveCalculated: isLive,
-          liveSource: isLive ? 'Verified Road Factor' : undefined,
+          liveSource: isLive ? 'Straight-line estimate' : undefined,
         });
       }
 
@@ -891,13 +882,13 @@ export default function GroupOrganizerScreen() {
         id: existing?.id || `leg_${i}_${Date.now()}`,
         fromIndex: i,
         toIndex: i + 1,
-        distance: existing?.distance || '95 km',
-        duration: existing?.duration || '2h 10m',
+        distance: existing?.distance ?? '',
+        duration: existing?.duration ?? '',
         transportMode: existing?.transportMode || 'CAR',
         routeTitle: `Route: ${nextCpList[i].name} ➔ ${nextCpList[i + 1].name}`,
-        roadConditions: existing?.roadConditions || 'Paved road',
-        pitstops: existing?.pitstops || 'Midway rest stop',
-        driverTips: existing?.driverTips || 'Standard highway precautions',
+        ...(existing?.roadConditions ? { roadConditions: existing.roadConditions } : {}),
+        ...(existing?.pitstops ? { pitstops: existing.pitstops } : {}),
+        ...(existing?.driverTips ? { driverTips: existing.driverTips } : {}),
       });
     }
 
@@ -925,13 +916,11 @@ export default function GroupOrganizerScreen() {
   // Derived properties from AppContext
   const myTrips = useMemo(
     () =>
-      trips.filter(
-        (t: Trip) =>
-          t.creatorId === profile?.id ||
-          (profile?.name && t.creator.toLowerCase().includes(profile.name.toLowerCase())) ||
-          t.creator.toLowerCase().includes('aarav sharma'),
-      ),
-    [trips, profile?.id, profile?.name],
+      // isMyTrip is computed server-side against the caller's token; the
+      // creatorId comparison covers payloads that omit it. Matching on the
+      // creator's display name pulled in other people's trips.
+      trips.filter((t: Trip) => t.isMyTrip === true || (!!profile?.id && t.creatorId === profile.id)),
+    [trips, profile?.id],
   );
 
   const mappedTours: ActiveTour[] = useMemo(
@@ -1391,14 +1380,17 @@ export default function GroupOrganizerScreen() {
   // Members join for real via the "Chats & Approvals" tab's join-request
   // approval below, which already goes through that system.
 
+  // Ownership is an identity check, nothing else. This used to end in an
+  // unconditional `return true`, so every viewer was shown organizer
+  // controls — approve/reject, roster edits, guide assignment — on somebody
+  // else's trip, and every one of those actions then 403'd. The display-name
+  // substring match it also did collided between any two users sharing a
+  // first name, and there was a hardcoded match on a demo account's name.
   const isOrganizer = useMemo(() => {
     if (!selectedCreation) return false;
     if (selectedCreation.isMyTrip) return true;
-    if (profile?.id && selectedCreation.creatorId === profile.id) return true;
-    if (profile?.name && selectedCreation.creator && selectedCreation.creator.toLowerCase().includes(profile.name.toLowerCase())) return true;
-    if (selectedCreation.creator && selectedCreation.creator.toLowerCase().includes('aarav sharma')) return true;
-    return true;
-  }, [selectedCreation, profile?.id, profile?.name]);
+    return !!(profile?.id && selectedCreation.creatorId === profile.id);
+  }, [selectedCreation, profile?.id]);
 
 
 
@@ -2714,11 +2706,11 @@ export default function GroupOrganizerScreen() {
                                 <View style={styles.interDriveMetricsRow}>
                                   <View style={styles.interDriveMetric}>
                                     <Text style={styles.interDriveMetricLabel}>DISTANCE</Text>
-                                    <Text style={styles.interDriveMetricVal}>{driveLeg.distance}</Text>
+                                    <Text style={styles.interDriveMetricVal}>{driveLeg.distance || '—'}</Text>
                                   </View>
                                   <View style={styles.interDriveMetric}>
                                     <Text style={styles.interDriveMetricLabel}>EST. TIME</Text>
-                                    <Text style={styles.interDriveMetricVal}>{driveLeg.duration}</Text>
+                                    <Text style={styles.interDriveMetricVal}>{driveLeg.duration || '—'}</Text>
                                   </View>
                                   <View style={[styles.interDriveMetric, { flex: 1.5 }]}>
                                     <Text style={styles.interDriveMetricLabel}>ROUTE</Text>

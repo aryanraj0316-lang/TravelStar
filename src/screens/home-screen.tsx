@@ -11,7 +11,7 @@ import { apiService } from '@/services/api';
 import { eventBus } from '@/services/event-bus';
 import { useApp, UserRole, type Trip } from '@/store/AppContext';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
-import type { Destination, FeedItem, HazardAlert, TrendingWeatherDestination } from '@/types/api';
+import type { FeedItem, HazardAlert, TrendingWeatherDestination } from '@/types/api';
 import { useQuery } from '@tanstack/react-query';
 import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -700,47 +700,6 @@ function RouteSafetyCardBase({ isFocused }: { isFocused: boolean }) {
 // ─── Featured group trips ───────────────────────────────────────────
 
 
-const FALLBACK_FEATURED_TRIPS: Trip[] = [
-  {
-    id: 'trip-kerala-backwaters',
-    name: 'Kerala Backwaters & Tea Trails',
-    creator: 'TravelStar Expeditions',
-    creatorAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&q=80',
-    cities: ['Kochi', 'Alleppey', 'Munnar'],
-    startDate: '2026-10-15',
-    endDate: '2026-10-21',
-    durationDays: 6,
-    budget: '24500',
-    availableSeats: 4,
-    totalSeats: 12,
-    meetingPoint: 'Kochi Airport',
-    guideIncluded: true,
-    foodIncluded: true,
-    privacy: 'PUBLIC',
-    membersCount: 8,
-    coverImage: 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=800&q=80',
-  },
-  {
-    id: 'trip-ladakh-circuit',
-    name: 'Ladakh High Passes Expedition',
-    creator: 'Himalayan Nomads',
-    creatorAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&q=80',
-    cities: ['Leh', 'Nubra', 'Pangong'],
-    startDate: '2026-10-25',
-    endDate: '2026-11-02',
-    durationDays: 8,
-    budget: '38000',
-    availableSeats: 3,
-    totalSeats: 10,
-    meetingPoint: 'Leh Main Market',
-    guideIncluded: true,
-    foodIncluded: true,
-    privacy: 'PUBLIC',
-    membersCount: 7,
-    coverImage: 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=800&q=80',
-  },
-];
-
 function FeaturedTripsCarouselBase({
   isFocused,
   onOpenTrip,
@@ -758,7 +717,10 @@ function FeaturedTripsCarouselBase({
   const scrollX = useRef(0);
 
   const uniqueTrips = useMemo(() => {
-    const activeTrips = (trips && trips.length > 0) ? trips : FALLBACK_FEATURED_TRIPS;
+    // No invented stand-ins when there is nothing to feature: these were
+    // two fabricated trips with fake operators, prices and seat counts, and
+    // tapping one opened a join flow for an id no server knew.
+    const activeTrips = trips ?? [];
     const seenIds = new Set<string>();
     const seenNames = new Set<string>();
     return activeTrips.filter((trip) => {
@@ -1013,81 +975,6 @@ function FeaturedTripsCarouselBase({
  */
 
 
-const FALLBACK_DESTINATIONS: Destination[] = [
-  {
-    id: 'kerala',
-    name: 'Kerala',
-    tags: 'Nature • Backwaters',
-    rating: 4.9,
-    image: 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=900&q=85',
-    rank: 1,
-    featured: true,
-  },
-  {
-    id: 'ladakh',
-    name: 'Ladakh',
-    tags: 'Adventure • Mountains',
-    rating: 4.8,
-    image: 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=900&q=85',
-    rank: 2,
-    featured: true,
-  },
-  {
-    id: 'andaman',
-    name: 'Andaman',
-    tags: 'Beaches • Relaxation',
-    rating: 4.7,
-    image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=900&q=85',
-    rank: 3,
-    featured: true,
-  },
-  {
-    id: 'varanasi',
-    name: 'Varanasi',
-    tags: 'Ghats • Ganga River',
-    rating: 4.9,
-    image: 'https://images.unsplash.com/photo-1571536802807-30451e3955d8?w=900&q=85',
-    rank: 4,
-    featured: true,
-  },
-  {
-    id: 'goa',
-    name: 'Goa',
-    tags: 'Nightlife • Beaches',
-    rating: 4.6,
-    image: 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=900&q=85',
-    rank: 5,
-    featured: true,
-  },
-  {
-    id: 'manali',
-    name: 'Manali',
-    tags: 'Snow • Hill Station',
-    rating: 4.8,
-    image: 'https://images.unsplash.com/photo-1605649487212-47bdab064df7?w=900&q=85',
-    rank: 6,
-    featured: true,
-  },
-  {
-    id: 'udaipur',
-    name: 'Udaipur',
-    tags: 'Palaces • Romance',
-    rating: 4.9,
-    image: 'https://images.unsplash.com/photo-1615836245337-f5b9b2303f10?w=900&q=85',
-    rank: 7,
-    featured: true,
-  },
-  {
-    id: 'darjeeling',
-    name: 'Darjeeling',
-    tags: 'Tea Gardens • Views',
-    rating: 4.6,
-    image: 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=900&q=85',
-    rank: 8,
-    featured: true,
-  },
-];
-
 const DESTINATION_KEYWORDS: Record<string, string> = {
   kerala: 'SERENE  /  SCENIC  /  UNFORGETTABLE',
   ladakh: 'MAJESTIC  /  ADVENTURE  /  TIMELESS',
@@ -1139,10 +1026,10 @@ function TrendingDestinationsBase({ isFocused }: { isFocused: boolean }) {
   const { data: destinations, refetch } = destinationsQuery;
   const destinationsState = sectionState(destinationsQuery, destinations != null);
 
-  const rawList = useMemo(() => {
-    if (destinations && destinations.length > 0) return destinations;
-    return FALLBACK_DESTINATIONS;
-  }, [destinations]);
+  // The real catalogue or nothing. The fallback this replaced carried
+  // invented ratings, and its ids ('kerala', 'ladakh') matched no row, so
+  // opening a card 404'd.
+  const rawList = useMemo(() => destinations ?? [], [destinations]);
 
   const sortedDestinations = useMemo(() => {
     return [...rawList].sort((a, b) => {

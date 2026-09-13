@@ -460,8 +460,45 @@ router.post('/:id/read', async (req, res) => {
 });
 
 /**
- * Catch-up delivery sweep, for messages that arrived while this device was
- * offline — the live path is the socket's markDelivered. Idempotent.
+ * Catch-up sweep across every room the caller is in.
+ *
+ * The per-room sweep below only runs when a room is opened, so a message
+ * sitting in a room the user never visits stayed undelivered indefinitely
+ * and its sender's ticks never advanced. This runs on app foreground, which
+ * is the moment the device genuinely has everything.
+ */
+router.post('/delivered', async (req, res) => {
+  const tokenUserId = requireUserId(req);
+
+  try {
+    const memberships = await prisma.chatRoomMember.findMany({
+      where: { userId: tokenUserId },
+      select: { chatRoomId: true },
+    });
+
+    const io = req.app.get('socketio');
+    let total = 0;
+
+    for (const { chatRoomId } of memberships) {
+      const newlyDelivered = await recordDelivery(chatRoomId, tokenUserId);
+      if (newlyDelivered.length === 0) continue;
+      total += newlyDelivered.length;
+      io?.to(chatRoomId).emit('messageDelivered', {
+        roomId: chatRoomId,
+        messageIds: newlyDelivered,
+        userId: tokenUserId,
+      });
+    }
+
+    return res.status(200).json({ ok: true, data: { delivered: total, rooms: memberships.length } });
+  } catch (err) {
+    logger.warn('[Chats] Delivery sweep error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to sweep deliveries' } });
+  }
+});
+
+/**
+ * Catch-up delivery sweep for one room, when it is opened. Idempotent.
  */
 router.post('/:id/delivered', async (req, res) => {
   const parsedParams = roomIdParamSchema.safeParse(req.params);
