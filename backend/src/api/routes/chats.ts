@@ -37,8 +37,10 @@ async function assertChatRoomMember(
     });
     if (
       room?.trip &&
-      (room.trip.creatorId === userId ||
-        room.trip.members.some((m) => m.userId === userId && m.status === 'CONFIRMED'))
+      // A TripMember row only exists once a seat was actually claimed
+      // (see services/trip-membership.ts), so its presence IS confirmation —
+      // there is no `status` field on it to check.
+      (room.trip.creatorId === userId || room.trip.members.some((m) => m.userId === userId))
     ) {
       membership = await prisma.chatRoomMember.upsert({
         where: { chatRoomId_userId: { chatRoomId, userId } },

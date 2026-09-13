@@ -165,6 +165,10 @@ export interface StoryPayload {
   title: string;
   content?: string;
   coverImg?: string;
+  /** The uploaded asset from POST /stories/media-upload-url. For a video
+   *  story this is the video and `coverImg` is the poster frame. */
+  mediaUrl?: string;
+  mediaType?: 'IMAGE' | 'VIDEO';
   location?: string;
   hasReel?: boolean;
 }
@@ -568,7 +572,12 @@ export interface FeedItem {
   title: string | null;
   content: string;
   coverImg?: string | null;
+  /** Set on REEL items — the reel's video asset. */
   videoUrl?: string | null;
+  /** Set on STORY items — the uploaded asset, which may itself be a video
+   *  (mediaType 'VIDEO', with coverImg as the poster frame). */
+  mediaUrl?: string | null;
+  mediaType?: 'IMAGE' | 'VIDEO';
   /** Null when the author has not filled in a profile name. */
   authorName: string | null;
   authorAvatar?: string | null;

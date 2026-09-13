@@ -1192,6 +1192,11 @@ model Alert {
   @@index([active])
 }
 
+enum StoryMediaType {
+  IMAGE
+  VIDEO
+}
+
 model TravelStory {
   id           String   @id @default(uuid())
   userId       String?
@@ -1199,7 +1204,13 @@ model TravelStory {
   authorAvatar String?
   title        String
   content      String
+  // The story's primary asset. `coverImg` predates video support and is
+  // still the only field older rows have, so it doubles as the poster frame
+  // for a VIDEO story and as the image itself when mediaUrl is null — the
+  // viewer resolves `mediaUrl ?? coverImg` rather than assuming either.
   coverImg     String?
+  mediaUrl     String?
+  mediaType    StoryMediaType @default(IMAGE)
   likesCount   Int      @default(0)
   location     String
   hasReel      Boolean  @default(false)

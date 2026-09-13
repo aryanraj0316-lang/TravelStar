@@ -51,6 +51,9 @@ router.get('/', async (req, res) => {
       userId: s.userId ?? null,
       title: s.title,
       coverImg: s.coverImg,
+      // A story can itself be a video; coverImg is only its poster frame.
+      mediaUrl: s.mediaUrl,
+      mediaType: s.mediaType,
       authorName: s.authorName,
       authorAvatar: s.authorAvatar,
       location: s.location,

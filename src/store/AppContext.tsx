@@ -179,19 +179,34 @@ export interface SOSAlert {
   status: 'ACTIVE' | 'RESOLVED';
 }
 
+export type StoryMediaType = 'IMAGE' | 'VIDEO';
+
 export interface Story {
   id: string;
   authorName: string;
   authorAvatar: string;
   title: string;
   content: string;
+  /** Poster frame for a VIDEO story; the image itself on older image-only
+   *  rows that predate `mediaUrl`. */
   coverImg: string;
+  /** The uploaded asset (image or video). Null on rows created before
+   *  video support — resolve as `mediaUrl ?? coverImg`. */
+  mediaUrl?: string | null;
+  mediaType?: StoryMediaType;
   likesCount: number;
   location: string;
   createdAt: string;
 }
 
-export type NewStoryInput = Pick<Story, 'title' | 'content'> & Partial<Pick<Story, 'coverImg' | 'location'>>;
+export type NewStoryInput = Pick<Story, 'title' | 'content'> &
+  Partial<Pick<Story, 'coverImg' | 'location'>> & {
+    /** Local uri of the picked asset. For a video this is uploaded through
+     *  the presigned-URL path — never the base64 direct path, which is
+     *  image-sized. */
+    mediaUri?: string;
+    mediaType?: StoryMediaType;
+  };
 
 /**
  * Per-collection load state, so a screen can render §0.2.5's four states
@@ -1055,6 +1070,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         title: storyData.title,
         content: storyData.content,
         coverImg: storyData.coverImg || '',
+        // Shown optimistically from the local file uri until the upload
+        // finishes and the server row replaces it.
+        mediaUrl: storyData.mediaUri || storyData.coverImg || null,
+        mediaType: storyData.mediaType || 'IMAGE',
         likesCount: 0,
         location: storyData.location || '',
         createdAt: new Date().toISOString(),
@@ -1068,6 +1087,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       try {
         let remoteCoverUrl: string | undefined = undefined;
+        let remoteMediaUrl: string | undefined = undefined;
+
+        // A video never goes through the base64 direct-upload path — that
+        // path exists for small images and would blow up on a 30s clip.
+        // It uploads to object storage through the presigned URL instead.
+        if (storyData.mediaType === 'VIDEO' && storyData.mediaUri) {
+          if (/^https?:\/\//i.test(storyData.mediaUri)) {
+            remoteMediaUrl = storyData.mediaUri;
+          } else {
+            const ext = storyData.mediaUri.split('.').pop()?.toLowerCase() || 'mp4';
+            const contentType = ext === 'mov' || ext === 'qt' ? 'video/quicktime' : 'video/mp4';
+            const { uploadUrl, publicUrl } = await apiService.getStoryMediaUploadUrl(contentType);
+            await uploadFileToUrl(storyData.mediaUri, uploadUrl, contentType);
+            remoteMediaUrl = publicUrl;
+          }
+        }
 
         if (storyData.coverImg && /^https?:\/\//i.test(storyData.coverImg)) {
           remoteCoverUrl = storyData.coverImg;
@@ -1094,12 +1129,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         }
 
+        const isVideoStory = storyData.mediaType === 'VIDEO' && !!remoteMediaUrl;
         const payload: StoryPayload = {
           title: storyData.title || 'My Travel Story',
           content: storyData.content || '',
           location: storyData.location || '',
-          hasReel: false,
+          hasReel: isVideoStory,
           coverImg: remoteCoverUrl || (storyData.coverImg ? storyData.coverImg : undefined),
+          mediaUrl: remoteMediaUrl ?? remoteCoverUrl,
+          mediaType: isVideoStory ? 'VIDEO' : 'IMAGE',
         };
 
         const created = await apiService.createStory(payload);

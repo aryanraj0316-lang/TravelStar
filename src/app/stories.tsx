@@ -8,6 +8,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useApp } from '@/store/AppContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import Camera from 'lucide-react-native/icons/camera';
 import ChevronUp from 'lucide-react-native/icons/chevron-up';
 import Eye from 'lucide-react-native/icons/eye';
@@ -123,6 +124,29 @@ export default function StoriesScreen() {
   const [isViewerSheetVisible, setIsViewerSheetVisible] = useState(false);
   const [loadingInteractions, setLoadingInteractions] = useState(false);
 
+  // Media resolution, declared above the slide timer because that timer's
+  // behaviour depends on whether this slide is a video.
+  //
+  // Video can arrive two ways: a REEL item carries `videoUrl`, and a STORY
+  // item carries `mediaUrl` with mediaType 'VIDEO'. `coverImg` is the poster
+  // frame in both cases, and is the image itself on story rows that predate
+  // video support — so no single field can be assumed to be the media.
+  const activeSlide = activeStoriesList[Math.min(currentIdx, Math.max(0, activeStoriesList.length - 1))];
+  const slideVideoUrl =
+    activeSlide?.videoUrl || (activeSlide?.mediaType === 'VIDEO' ? activeSlide?.mediaUrl ?? null : null) || null;
+  const storyIsVideo = !!slideVideoUrl;
+  const storyMediaUrl = activeSlide?.mediaUrl || activeSlide?.coverImg || null;
+
+  // An asset that 404s or is otherwise unplayable falls through to the
+  // placeholder rather than leaving the slide blank forever.
+  const [failedMediaIds, setFailedMediaIds] = useState<Record<string, boolean>>({});
+  const mediaFailed = activeSlide ? !!failedMediaIds[activeSlide.id] : false;
+
+  const videoPlayer = useVideoPlayer(slideVideoUrl, (player) => {
+    player.loop = false;
+    player.play();
+  });
+
   // Progress bar
   const progressAnim = useState(() => new Animated.Value(0))[0];
   const progressValueRef = useRef(0);
@@ -164,16 +188,19 @@ export default function StoriesScreen() {
   };
 
   useEffect(() => {
-    if (activeStoriesList.length > 0 && !isViewerSheetVisible) {
+    // A video story is not advanced by the 5s slide timer — it would cut
+    // playback off mid-clip. The viewer taps through those themselves,
+    // using the player's own native controls.
+    if (activeStoriesList.length > 0 && !isViewerSheetVisible && !storyIsVideo) {
       startStoryTimer(0);
     }
     return () => {
       progressAnim.stopAnimation();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentIdx, activeStoriesList, isViewerSheetVisible]);
+  }, [currentIdx, activeStoriesList, isViewerSheetVisible, storyIsVideo]);
 
-  const activeStory = activeStoriesList[Math.min(currentIdx, Math.max(0, activeStoriesList.length - 1))];
+  const activeStory = activeSlide;
 
   // Determine if active story is created by the current user
   const isMyStory = useMemo(() => {
@@ -348,7 +375,7 @@ export default function StoriesScreen() {
     );
   }
 
-  const storyImage = activeStory.coverImg || null;
+  const storyImage = storyMediaUrl;
   const storyCaption = activeStory.content || '';
   const storyCreator = activeStory.authorName || t('stories.defaultCreatorName');
   const storyCreatorAvatar = activeStory.authorAvatar || null;
@@ -362,8 +389,15 @@ export default function StoriesScreen() {
       <StatusBar barStyle="light-content" backgroundColor="#000" />
 
       <View style={styles.storyImageContainer}>
-        {storyImage ? (
-          <Image source={{ uri: storyImage }} style={styles.storyImg} resizeMode="cover" />
+        {storyIsVideo && !mediaFailed ? (
+          <VideoView player={videoPlayer} style={styles.storyImg} contentFit="cover" nativeControls />
+        ) : storyImage && !mediaFailed ? (
+          <Image
+            source={{ uri: storyImage }}
+            style={styles.storyImg}
+            resizeMode="cover"
+            onError={() => setFailedMediaIds((prev) => ({ ...prev, [activeStory.id]: true }))}
+          />
         ) : (
           <LinearGradient
             colors={['#1E293B', '#0F172A', '#020617']}

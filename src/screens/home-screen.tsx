@@ -16,6 +16,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation, useRouter, type Href } from 'expo-router';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import * as ImagePicker from 'expo-image-picker';
 import Activity from 'lucide-react-native/icons/activity';
 import Bell from 'lucide-react-native/icons/bell';
@@ -1922,10 +1923,16 @@ function HomeScreen() {
         media={storyComposerMedia}
         onClose={() => setStoryComposerMedia(null)}
         onPublish={(caption, location) => {
+          const isVideo = storyComposerMedia?.type === 'video';
           addStory({
             title: caption.trim() || 'My Story',
             content: caption,
-            coverImg: storyComposerMedia?.uri,
+            // A picked video is not a cover image — sending it as one is
+            // what made video stories upload as broken JPEGs and render
+            // as a blank slide.
+            coverImg: isVideo ? undefined : storyComposerMedia?.uri,
+            mediaUri: storyComposerMedia?.uri,
+            mediaType: isVideo ? 'VIDEO' : 'IMAGE',
             location: location || undefined,
           });
           setStoryComposerMedia(null);
@@ -3296,6 +3303,10 @@ function StoryComposerModal({ media, onClose, onPublish }: StoryComposerModalPro
   const [location, setLocation] = useState('');
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const inputRef = React.useRef<TextInput>(null);
+  const previewPlayer = useVideoPlayer(media?.type === 'video' ? media.uri : null, (player) => {
+    player.loop = true;
+    player.play();
+  });
 
   const handleEmojiPress = (emoji: string) => {
     setCaption((prev) => prev + emoji);
@@ -3317,13 +3328,16 @@ function StoryComposerModal({ media, onClose, onPublish }: StoryComposerModalPro
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <View style={storyStyles.backdrop}>
           {/* Media preview */}
-          {media && (
-            <Image
-              source={{ uri: media.uri }}
-              style={storyStyles.previewImage}
-              resizeMode="cover"
-            />
-          )}
+          {media &&
+            (media.type === 'video' ? (
+              <VideoView player={previewPlayer} style={storyStyles.previewImage} contentFit="cover" nativeControls={false} />
+            ) : (
+              <Image
+                source={{ uri: media.uri }}
+                style={storyStyles.previewImage}
+                resizeMode="cover"
+              />
+            ))}
 
           {/* Dark overlay */}
           <View style={storyStyles.overlay} />

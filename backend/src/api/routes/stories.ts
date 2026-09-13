@@ -38,6 +38,11 @@ const createStorySchema = z.object({
   title: z.string().trim().min(1).max(200).default('My Travel Story'),
   content: z.string().trim().max(5000).default(''),
   coverImg: z.string().max(2000).optional().nullable(),
+  // The uploaded asset itself (image or video), as returned by
+  // POST /stories/media-upload-url. coverImg stays the poster frame for a
+  // video story, and the image itself for older image-only clients.
+  mediaUrl: z.string().max(2000).optional().nullable(),
+  mediaType: z.enum(['IMAGE', 'VIDEO']).default('IMAGE'),
   location: z.string().trim().max(200).default(''),
   hasReel: z.boolean().default(false),
 });
@@ -65,18 +70,22 @@ router.post('/', async (req, res) => {
       : (user?.email ? (user.email.split('@')[0] ?? 'Traveler') : 'Traveler');
     const authorAvatar = user?.profile?.avatarUrl ?? null;
 
-    const { title, content, coverImg, location, hasReel } = parsed.data;
+    const { title, content, coverImg, mediaUrl, mediaType, location, hasReel } = parsed.data;
     const story = await prisma.travelStory.create({
       data: {
         userId,
         title,
         content,
         coverImg: coverImg ?? null,
+        mediaUrl: mediaUrl ?? null,
+        mediaType,
         authorName,
         authorAvatar,
         likesCount: 0,
         location,
-        hasReel,
+        // A story carrying a video asset is a reel regardless of what the
+        // client claimed, so this flag can't drift from the actual media.
+        hasReel: hasReel || mediaType === 'VIDEO',
       },
     });
     res.status(201).json({ ok: true, data: story });
