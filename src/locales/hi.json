@@ -617,6 +617,7 @@
   },
   "stories": {
     "noStoriesYetTitle": "अभी तक कोई कहानी नहीं",
+    "mediaUnavailable": "यह मीडिया लोड नहीं हो सका",
     "beFirstToShare": "यात्रा कहानी साझा करने वाले पहले व्यक्ति बनें।",
     "goBack": "वापस जाएं",
     "closeStories": "कहानियां बंद करें",

@@ -37,11 +37,19 @@ router.get('/', async (req, res) => {
 const createStorySchema = z.object({
   title: z.string().trim().min(1).max(200).default('My Travel Story'),
   content: z.string().trim().max(5000).default(''),
-  coverImg: z.string().max(2000).optional().nullable(),
+  // remoteMediaUrl, not a bare string: a `file:`/`content:` URI from the
+  // image picker renders only on the uploader's own phone and is blank for
+  // everyone else. The client falls back to that raw uri when an upload
+  // fails, so without this guard an unconfigured object store quietly
+  // produced stories whose media nobody could load — which is exactly the
+  // reported "uploaded photos and videos render blank". Rejecting here
+  // makes the upload failure visible instead.
+  coverImg: remoteMediaUrl.optional().nullable(),
   // The uploaded asset itself (image or video), as returned by
-  // POST /stories/media-upload-url. coverImg stays the poster frame for a
-  // video story, and the image itself for older image-only clients.
-  mediaUrl: z.string().max(2000).optional().nullable(),
+  // POST /stories/media-upload-url or /stories/upload-direct. coverImg
+  // stays the poster frame for a video story, and the image itself for
+  // older image-only clients.
+  mediaUrl: remoteMediaUrl.optional().nullable(),
   mediaType: z.enum(['IMAGE', 'VIDEO']).default('IMAGE'),
   location: z.string().trim().max(200).default(''),
   hasReel: z.boolean().default(false),
@@ -457,6 +465,20 @@ router.post('/media-upload-url', async (req, res) => {
 
 import fs from 'fs';
 
+/**
+ * The fallback path used when object storage is not configured: the bytes
+ * arrive base64-encoded and are written under `uploads/`, which app.ts
+ * serves statically. The public URL is built from the request's own host,
+ * so it is reachable by whatever address the client used to get here.
+ */
+const DIRECT_UPLOAD_EXTENSIONS: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'video/mp4': 'mp4',
+  'video/quicktime': 'mov',
+};
+
 const directUploadSchema = z.object({
   base64: z.string().min(1),
   contentType: z.string().default('image/jpeg'),
@@ -470,7 +492,16 @@ router.post('/upload-direct', async (req, res) => {
 
   try {
     const { base64, contentType } = parsed.data;
-    const ext = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg';
+    // A video saved as ".jpg" is served with the wrong content type and
+    // will not play — the extension has to follow the actual media, and an
+    // unrecognised type is refused rather than guessed at.
+    const ext = DIRECT_UPLOAD_EXTENSIONS[contentType];
+    if (!ext) {
+      return res.status(400).json({
+        ok: false,
+        error: { code: 'UNSUPPORTED_MEDIA_TYPE', message: `Cannot store ${contentType}.` },
+      });
+    }
     const filename = `story-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
     const uploadDir = path.join(process.cwd(), 'uploads');
     if (!fs.existsSync(uploadDir)) {

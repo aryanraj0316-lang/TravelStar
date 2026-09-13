@@ -617,6 +617,7 @@
   },
   "stories": {
     "noStoriesYetTitle": "No stories yet",
+    "mediaUnavailable": "Couldn't load this media",
     "beFirstToShare": "Be the first to share a travel story.",
     "goBack": "Go back",
     "closeStories": "Close stories",

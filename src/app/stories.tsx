@@ -145,6 +145,21 @@ export default function StoriesScreen() {
   // placeholder rather than leaving the slide blank forever.
   const [failedMediaIds, setFailedMediaIds] = useState<Record<string, boolean>>({});
   const mediaFailed = activeSlide ? !!failedMediaIds[activeSlide.id] : false;
+  const [mediaLoaded, setMediaLoaded] = useState<Record<string, boolean>>({});
+  const slideReady = activeSlide ? !!mediaLoaded[activeSlide.id] : false;
+
+  // A spinner that never resolves is the worst outcome: the slide looks
+  // broken with no explanation and no way forward. If the asset has not
+  // loaded within this window, it is treated as failed so the placeholder
+  // and its "couldn't load" line take over.
+  useEffect(() => {
+    if (!activeSlide || slideReady || mediaFailed) return;
+    const slideId = activeSlide.id;
+    const timer = setTimeout(() => {
+      setFailedMediaIds((prev) => (prev[slideId] ? prev : { ...prev, [slideId]: true }));
+    }, 10000);
+    return () => clearTimeout(timer);
+  }, [activeSlide, slideReady, mediaFailed]);
 
   const videoPlayer = useVideoPlayer(slideVideoUrl, (player) => {
     player.loop = false;
@@ -466,6 +481,7 @@ export default function StoriesScreen() {
             source={{ uri: storyImage }}
             style={styles.storyImg}
             resizeMode="cover"
+            onLoad={() => setMediaLoaded((prev) => ({ ...prev, [activeStory.id]: true }))}
             onError={() => setFailedMediaIds((prev) => ({ ...prev, [activeStory.id]: true }))}
           />
         ) : (
@@ -477,8 +493,19 @@ export default function StoriesScreen() {
             <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 16, marginTop: 12, fontWeight: '600' }}>
               {activeStory.title || 'Travel Story'}
             </Text>
+            {mediaFailed ? (
+              <Text style={styles.mediaFailedText}>{t('stories.mediaUnavailable')}</Text>
+            ) : null}
           </LinearGradient>
         )}
+
+        {/* Only while we are genuinely waiting — the timeout above turns
+            this into the placeholder rather than letting it spin forever. */}
+        {!storyIsVideo && storyImage && !slideReady && !mediaFailed ? (
+          <View style={styles.mediaLoadingOverlay} pointerEvents="none">
+            <ActivityIndicator color="#FFF" />
+          </View>
+        ) : null}
         <LinearGradient
           colors={['rgba(0,0,0,0.6)', 'transparent', 'rgba(0,0,0,0.75)']}
           style={StyleSheet.absoluteFill}
@@ -775,6 +802,20 @@ const styles = StyleSheet.create({
   },
   storyImgFallback: {
     backgroundColor: '#111827',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mediaFailedText: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 13,
+    marginTop: 6,
+  },
+  mediaLoadingOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
   },

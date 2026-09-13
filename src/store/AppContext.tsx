@@ -1106,18 +1106,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         let remoteCoverUrl: string | undefined = undefined;
         let remoteMediaUrl: string | undefined = undefined;
 
-        // A video never goes through the base64 direct-upload path — that
-        // path exists for small images and would blow up on a 30s clip.
-        // It uploads to object storage through the presigned URL instead.
+        // Object storage is the preferred path, but it is not configured in
+        // every environment. When it isn't, the presigned call throws and
+        // the bytes go through the same direct-upload endpoint the images
+        // use — which now stores video with the right extension. Silently
+        // giving up here is what previously left a story pointing at a
+        // `file:` uri that only rendered on the uploader's own phone.
         if (storyData.mediaType === 'VIDEO' && storyData.mediaUri) {
           if (/^https?:\/\//i.test(storyData.mediaUri)) {
             remoteMediaUrl = storyData.mediaUri;
           } else {
             const ext = storyData.mediaUri.split('.').pop()?.toLowerCase() || 'mp4';
             const contentType = ext === 'mov' || ext === 'qt' ? 'video/quicktime' : 'video/mp4';
-            const { uploadUrl, publicUrl } = await apiService.getStoryMediaUploadUrl(contentType);
-            await uploadFileToUrl(storyData.mediaUri, uploadUrl, contentType);
-            remoteMediaUrl = publicUrl;
+            try {
+              const { uploadUrl, publicUrl } = await apiService.getStoryMediaUploadUrl(contentType);
+              await uploadFileToUrl(storyData.mediaUri, uploadUrl, contentType);
+              remoteMediaUrl = publicUrl;
+            } catch (presignErr) {
+              logger.warn('[Stories] Presigned video upload unavailable, using direct upload:', presignErr);
+              const base64 = await FileSystem.readAsStringAsync(storyData.mediaUri, {
+                encoding: 'base64' as any,
+              });
+              const direct = await apiService.uploadStoryDirect(base64, contentType);
+              if (direct?.publicUrl) remoteMediaUrl = direct.publicUrl;
+            }
           }
         }
 
@@ -1146,13 +1158,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         }
 
+        // A story whose media never reached the server is not a story — its
+        // only address is a path on this phone, so every other traveller
+        // would see a blank slide. The server rejects those URIs outright
+        // now; failing here instead means the user is told the upload
+        // failed rather than being shown a story that does not really
+        // exist.
+        const hadLocalMedia = !!(storyData.mediaUri || storyData.coverImg);
+        const uploadedSomething = !!(remoteMediaUrl || remoteCoverUrl);
+        if (hadLocalMedia && !uploadedSomething) {
+          throw new Error('Story media could not be uploaded');
+        }
+
         const isVideoStory = storyData.mediaType === 'VIDEO' && !!remoteMediaUrl;
         const payload: StoryPayload = {
           title: storyData.title || 'My Travel Story',
           content: storyData.content || '',
           location: storyData.location || '',
           hasReel: isVideoStory,
-          coverImg: remoteCoverUrl || (storyData.coverImg ? storyData.coverImg : undefined),
+          coverImg: remoteCoverUrl,
           mediaUrl: remoteMediaUrl ?? remoteCoverUrl,
           mediaType: isVideoStory ? 'VIDEO' : 'IMAGE',
         };
@@ -1168,8 +1192,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         queryClient.invalidateQueries({ queryKey: queryKeys.feed() });
         toast('Story shared', 'success');
       } catch (e) {
-        logger.warn('[Stories] Remote create story failed, keeping local story:', e);
-        toast('Story saved to your device', 'info');
+        // The optimistic local story is rolled back rather than kept. Keeping
+        // it reported "saved" for a story that exists only in this app's
+        // AsyncStorage, with media nobody else can load — the user believed
+        // they had posted something that was never really there.
+        logger.warn('[Stories] Create story failed, rolling back the local story:', e);
+        setStoriesList((prev) => {
+          const updated = prev.filter((s) => s.id !== localStoryId);
+          void safeStorage.setItem('savedStories', JSON.stringify(updated));
+          return updated;
+        });
+        toast(errorToastMessage(e, "Couldn't share your story. Please try again."), 'error');
       }
     },
     [profile.name, profile.avatar],
