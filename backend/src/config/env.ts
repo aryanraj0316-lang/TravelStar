@@ -56,6 +56,14 @@ const envSchema = z.object({
   // public URL, or a CDN in front of it). Required alongside the above.
   OBJECT_STORAGE_PUBLIC_URL_BASE: z.string().url().optional(),
 
+  // Where locally-stored uploads (the /uploads static mount) are reachable
+  // from, used only while object storage is unconfigured. Unset, the URL is
+  // built from the request's own host, which is right for a phone on the
+  // same LAN as a dev server but wrong the moment the server sits behind a
+  // domain or proxy — so deployment sets this explicitly. Configuring real
+  // object storage takes over entirely and makes this irrelevant.
+  MEDIA_PUBLIC_BASE_URL: z.string().url().optional(),
+
   // Razorpay payment gateway (docs/REMEDIATION.md §5.5 option A).
   // All three must be set together for payments to work; any subset left unset
   // means trips with budget > 0 return SERVICE_UNAVAILABLE on the payment

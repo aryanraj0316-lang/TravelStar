@@ -6,6 +6,7 @@ import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 import { requireUserId } from '../../lib/auth-context';
 import { buildPage, cursorFilter, cursorPageQuerySchema, takeWithLookahead } from '../../lib/pagination';
+import { env } from '../../config/env';
 import path from 'path';
 
 const router = Router();
@@ -511,9 +512,14 @@ router.post('/upload-direct', async (req, res) => {
     const buffer = Buffer.from(base64, 'base64');
     fs.writeFileSync(filePath, buffer);
 
-    const host = req.get('host') || 'localhost:3000';
-    const protocol = req.protocol || 'http';
-    const publicUrl = `${protocol}://${host}/uploads/${filename}`;
+    // MEDIA_PUBLIC_BASE_URL is what makes this survive deployment: behind a
+    // domain or proxy the request host is not the address clients should
+    // read the file back from. Unset, it falls back to the request's own
+    // host, which is correct for a phone talking to a dev server on the LAN.
+    const base = env.MEDIA_PUBLIC_BASE_URL
+      ? env.MEDIA_PUBLIC_BASE_URL.replace(/\/$/, '')
+      : `${req.protocol || 'http'}://${req.get('host') || 'localhost:5000'}`;
+    const publicUrl = `${base}/uploads/${filename}`;
 
     return res.status(200).json({ ok: true, data: { publicUrl } });
   } catch (err) {

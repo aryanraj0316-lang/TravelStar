@@ -101,6 +101,24 @@ describe('Story media storage', () => {
     expect(upload.body.data.publicUrl).toMatch(/\.mp4$/);
   }, 30_000);
 
+  it('accepts a payload larger than the global 256kb json limit', async () => {
+    const author = await registerAndLogin('largephoto');
+
+    // ~1.4MB of base64, which is a small real photo. The global body limit
+    // is 256kb, so before the upload paths got their own parser this died
+    // with a 413 before reaching the route — the fallback could never store
+    // an actual camera photo.
+    const bigBase64 = TINY_PNG_BASE64 + 'A'.repeat(1_400_000);
+
+    const res = await request(app)
+      .post('/api/v1/stories/upload-direct')
+      .set('Authorization', `Bearer ${author.token}`)
+      .send({ base64: bigBase64, contentType: 'image/jpeg' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.publicUrl).toMatch(/\.jpg$/);
+  }, 60_000);
+
   it('refuses a media type it cannot store', async () => {
     const author = await registerAndLogin('badtype');
 

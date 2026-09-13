@@ -88,7 +88,23 @@ app.use(
 // the original.
 app.use(compression({ threshold: 1024 }));
 
-app.use(express.json({ limit: '256kb', verify: (req: any, _res: any, buf: Buffer) => { req.rawBody = buf.toString(); } }));
+const captureRawBody = (req: any, _res: any, buf: Buffer) => {
+  req.rawBody = buf.toString();
+};
+
+// Base64 media upload is the fallback used while object storage is not
+// configured, and a single real photo is several megabytes once encoded —
+// far past the limit every other endpoint wants. Under the global 256kb
+// parser these requests died with a 413 before reaching their route, which
+// is why story uploads failed even on the fallback path. The large limit is
+// scoped to those paths only; everything else keeps the tight one.
+const LARGE_UPLOAD_PATHS = ['/api/v1/stories/upload-direct'];
+const isLargeUploadPath = (req: { path: string }) => LARGE_UPLOAD_PATHS.some((p) => req.path.startsWith(p));
+
+const standardJson = express.json({ limit: '256kb', verify: captureRawBody });
+const largeUploadJson = express.json({ limit: '32mb', verify: captureRawBody });
+
+app.use((req, res, next) => (isLargeUploadPath(req) ? largeUploadJson(req, res, next) : standardJson(req, res, next)));
 app.use(express.urlencoded({ extended: true, limit: '256kb' }));
 
 const uploadDir = path.join(process.cwd(), 'uploads');
