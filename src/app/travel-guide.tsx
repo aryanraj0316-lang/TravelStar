@@ -824,12 +824,15 @@ export default function TravelGuideScreen() {
     );
   };
 
-  // Budget Calculator
-  const [costTransport, setCostTransport] = useState('1500');
-  const [costFood, setCostFood] = useState('800');
-  const [costLodge, setCostLodge] = useState('2200');
-  const [costGuide, setCostGuide] = useState('1500');
-  const [costMisc, setCostMisc] = useState('500');
+  // Budget Calculator — starts empty. These used to be pre-filled with
+  // invented amounts (1500/800/2200/1500/500) that looked like real
+  // defaults; a user who tapped "Run Cost Analysis" without touching a
+  // field got a total built entirely out of numbers nobody entered.
+  const [costTransport, setCostTransport] = useState('');
+  const [costFood, setCostFood] = useState('');
+  const [costLodge, setCostLodge] = useState('');
+  const [costGuide, setCostGuide] = useState('');
+  const [costMisc, setCostMisc] = useState('');
   const [budgetBreakdown, setBudgetBreakdown] = useState<{ total: number; percentages: Record<string, number> } | null>(
     null,
   );
@@ -1935,12 +1938,14 @@ export default function TravelGuideScreen() {
                   <Input
                     label={t('travelGuide.transportExpenses')}
                     keyboardType="numeric"
+                    placeholder="0"
                     value={costTransport}
                     onChangeText={setCostTransport}
                   />
                   <Input
                     label={t('travelGuide.foodMealsCost')}
                     keyboardType="numeric"
+                    placeholder="0"
                     value={costFood}
                     onChangeText={setCostFood}
                     containerStyle={styles.formFieldGap}
@@ -1948,6 +1953,7 @@ export default function TravelGuideScreen() {
                   <Input
                     label={t('travelGuide.accommodationStays')}
                     keyboardType="numeric"
+                    placeholder="0"
                     value={costLodge}
                     onChangeText={setCostLodge}
                     containerStyle={styles.formFieldGap}
@@ -1955,6 +1961,7 @@ export default function TravelGuideScreen() {
                   <Input
                     label={t('travelGuide.guideServiceCharge')}
                     keyboardType="numeric"
+                    placeholder="0"
                     value={costGuide}
                     onChangeText={setCostGuide}
                     containerStyle={styles.formFieldGap}
@@ -1962,6 +1969,7 @@ export default function TravelGuideScreen() {
                   <Input
                     label={t('travelGuide.miscellaneousBuffer')}
                     keyboardType="numeric"
+                    placeholder="0"
                     value={costMisc}
                     onChangeText={setCostMisc}
                     containerStyle={styles.formFieldGap}
@@ -2688,7 +2696,7 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     borderRadius: 20,
-  },
+  },
   bookingsBlock: { gap: 10, marginBottom: 18 },
   bookingCard: {
     backgroundColor: C.card,

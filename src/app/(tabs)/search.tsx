@@ -10,7 +10,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useNavigation, type ErrorBoundaryProps } from 'expo-router';
 import { RouteErrorFallback } from '@/components/route-error-fallback';
 import { BlurView } from 'expo-blur';
-import Bell from 'lucide-react-native/icons/bell';
 import Bike from 'lucide-react-native/icons/bike';
 import Bus from 'lucide-react-native/icons/bus';
 import Calendar from 'lucide-react-native/icons/calendar';
@@ -29,7 +28,6 @@ import SlidersHorizontal from 'lucide-react-native/icons/sliders-horizontal';
 import Sparkles from 'lucide-react-native/icons/sparkles';
 import UserCheck from 'lucide-react-native/icons/user-check';
 import Users from 'lucide-react-native/icons/users';
-import Wallet from 'lucide-react-native/icons/wallet';
 import X from 'lucide-react-native/icons/x';
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -88,7 +86,6 @@ const TRANSPORT_LABEL_KEYS: Record<string, string> = {
 const QUICK_ACCESS = [
   { key: 'custom', labelKey: 'search.quickCustomTrips', subKey: 'search.quickCustomTripsSub', Icon: Sparkles, color: '#FFB300' },
   { key: 'nearby', labelKey: 'search.quickNearbyTrips', subKey: 'search.quickNearbyTripsSub', Icon: MapPin, color: '#0066FF' },
-  { key: 'budget', labelKey: 'search.quickBudgetTrips', subKey: 'search.quickBudgetTripsSub', Icon: Wallet, color: '#FFCC00' },
 ];
 
 // Helper: derive a badge from trip category or travelStyle (DB-driven).
@@ -377,14 +374,6 @@ function SearchScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [likedTrips, setLikedTrips] = useState<Set<string>>(new Set());
 
-  // REMEDIATION.md §6.3: via useQuery for caching/retry — refetched on
-  // screen focus to match the previous behaviour exactly.
-  const { data: unreadNotifCount = 0, refetch: refetchUnreadNotifs } = useQuery({
-    queryKey: queryKeys.unreadNotificationCount(),
-    queryFn: async () => (await apiService.getUnreadNotificationCount()).count,
-  });
-  const hasUnreadNotifs = unreadNotifCount > 0;
-
   // Load liked trips and join requests on focus / mount. (Liked trips stay
   // hand-rolled state, not useQuery — toggleLike below already implements a
   // correct optimistic-update+rollback against it; see docs/REMEDIATION.md
@@ -403,13 +392,12 @@ function SearchScreen() {
         .catch((e) => logger.warn('[Search] Liked trips fetch failed:', e));
 
       reloadJoinRequests();
-      void refetchUnreadNotifs();
     };
 
     fetchStates();
     const unsubscribe = navigation.addListener('focus', fetchStates);
     return unsubscribe;
-  }, [navigation, reloadJoinRequests, refetchUnreadNotifs]);
+  }, [navigation, reloadJoinRequests]);
 
   // Join modal state — the actual join flow (including midway-join) lives
   // entirely inside <TripDetailModal>, which only takes visible/trip/onClose;
@@ -614,7 +602,7 @@ function SearchScreen() {
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={[styles.safeArea, { backgroundColor: C.bg }]}>
       <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
-        {/* ─── SEARCH INPUT AND BELL ─────────────────────────────── */}
+        {/* ─── SEARCH INPUT ────────────────────────────────────────── */}
         <View style={styles.searchBarRow}>
           <View style={[styles.searchContainer, { backgroundColor: C.card, borderColor: C.cardBorder }]}>
             <Search size={20} color={C.textSecondary} />
@@ -646,18 +634,6 @@ function SearchScreen() {
               )}
             </TouchableOpacity>
           </View>
-          <TouchableOpacity
-            style={[styles.notifBtn, { backgroundColor: C.card, borderColor: C.cardBorder }]}
-            activeOpacity={0.7}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            onPress={() => router.push('/notifications')}
-            accessibilityRole="button"
-            accessibilityLabel={t('search.notificationsLabel')}
-            accessibilityHint={hasUnreadNotifs ? t('home.notificationsUnreadHint') : undefined}
-          >
-            <Bell size={20} color={C.textSecondary} />
-            {hasUnreadNotifs && <View style={styles.notifDot} />}
-          </TouchableOpacity>
         </View>
 
         {/* ─── CATEGORIES CHIPS ───────────────────────────────────── */}
@@ -866,8 +842,6 @@ function SearchScreen() {
                         router.navigate('/create');
                       } else if (item.key === 'nearby') {
                         router.push('/nearby-trips');
-                      } else if (item.key === 'budget') {
-                        router.push('/budget-trips');
                       }
                     }}
                     accessibilityRole="button"
@@ -1424,24 +1398,6 @@ const styles = StyleSheet.create({
   },
   filterIcon: {
     padding: 4,
-  },
-  notifBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    position: 'relative',
-  },
-  notifDot: {
-    position: 'absolute',
-    top: 14,
-    right: 14,
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: '#FF3B30',
   },
 
   // Category horizontal scroll

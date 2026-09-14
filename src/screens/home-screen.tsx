@@ -35,6 +35,7 @@ import CloudSnow from 'lucide-react-native/icons/cloud-snow';
 import CloudSun from 'lucide-react-native/icons/cloud-sun';
 import Flame from 'lucide-react-native/icons/flame';
 import Globe from 'lucide-react-native/icons/globe';
+import IndianRupee from 'lucide-react-native/icons/indian-rupee';
 import Map from 'lucide-react-native/icons/map';
 import MapPin from 'lucide-react-native/icons/map-pin';
 import Mountain from 'lucide-react-native/icons/mountain';
@@ -89,6 +90,9 @@ const quickAccessItems: { labelKey: string; Icon: typeof MapPin; isNew: boolean;
   { labelKey: 'home.quickFindGuide', Icon: Map, isNew: false, route: '/find-guides' },
   { labelKey: 'home.quickBookings', Icon: CalendarCheck, isNew: false, route: '/bookings' },
   { labelKey: 'home.quickBudgetTracker', Icon: Wallet, isNew: false, route: '/budget-tracker' },
+  // This screen (real trips filtered by budget preset) existed fully built
+  // but had no entry point anywhere in the app.
+  { labelKey: 'home.quickBudgetTrips', Icon: IndianRupee, isNew: false, route: '/budget-trips' },
 ];
 
 /**
@@ -1733,7 +1737,7 @@ function HomeScreen() {
         {isLoggedIn && <StoriesRail avatarUri={avatarUri} onAddStory={handleAddStoryPress} />}
 
         {/* ════════════════════════════════════════════════
-            QUICK ACCESS ROW — 3 White Cards
+            QUICK ACCESS ROW — White Cards
             ════════════════════════════════════════════════ */}
         <View style={styles.quickAccessRow}>
           {quickAccessItems.map((item, index) => {

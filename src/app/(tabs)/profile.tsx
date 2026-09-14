@@ -51,6 +51,7 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  Share,
   StatusBar,
   StyleSheet,
   Text,
@@ -525,9 +526,29 @@ function ProfileScreen() {
     setExporting(true);
     try {
       const data = await apiService.exportMyData();
-      // No file-download primitive on RN/Expo web here — surface the export
-      // as JSON the user can copy. A share-sheet / file save is a follow-up.
-      logger.log('[Profile] Data export', JSON.stringify(data));
+      const json = JSON.stringify(data, null, 2);
+      const fileName = `travelstar-data-export-${new Date().toISOString().slice(0, 10)}.json`;
+
+      // This used to only logger.log() the export and claim success — the
+      // user never actually received anything. Native uses the OS share
+      // sheet (save to Files, AirDrop, email, …); web triggers a real
+      // browser download, since RN's Share module has no web implementation.
+      if (Platform.OS === 'web') {
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      } else {
+        await Share.share(
+          Platform.OS === 'ios' ? { message: json, url: `data:application/json;base64,${btoa(unescape(encodeURIComponent(json)))}` } : { message: json },
+          { subject: fileName },
+        );
+      }
       toast(t('profile.exportReady'), 'success');
     } catch (e) {
       toast(errorToastMessage(e, t('profile.couldNotBuildExport')), 'error');

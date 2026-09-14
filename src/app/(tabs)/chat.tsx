@@ -889,9 +889,12 @@ function ChatScreen() {
           loadedRooms.forEach((lr) => {
             const idx = merged.findIndex((mr) => mr.id === lr.id);
             const isCurrentlyOpen = lr.id === selectedRoomId || (selectedRoomId && (`room-${selectedRoomId}` === lr.id || selectedRoomId === `room-${lr.id}`));
-            const serverUnread = lr.unreadCount || 0;
-            const existingUnread = idx >= 0 ? (merged[idx].unreadCount || 0) : 0;
-            const finalUnread = isCurrentlyOpen ? 0 : Math.max(serverUnread, existingUnread);
+            // GET /chats is the authoritative count (real MessageReadReceipt
+            // rows, joinedAt-scoped, isSystem-excluded) — trusting it
+            // outright, rather than Math.max against whatever this device
+            // last believed, is what lets a read recorded on another device
+            // actually clear the badge here instead of only ever growing.
+            const finalUnread = isCurrentlyOpen ? 0 : (lr.unreadCount || 0);
 
             if (idx >= 0) {
               merged[idx] = { ...merged[idx], ...lr, unreadCount: finalUnread };
@@ -1080,6 +1083,21 @@ function ChatScreen() {
           return { ...m, status: merged };
         });
         return changed ? { ...prev, [roomKey]: next } : prev;
+      });
+    });
+    return unsubscribe;
+  }, []);
+
+  // A message was deleted (by its sender, possibly on another device) —
+  // remove it here too, in every room whose key this device might use.
+  useEffect(() => {
+    const unsubscribe = socketService.onMessageDeleted(({ roomId, messageId }) => {
+      setTripMessages((prev) => {
+        const roomKey = [roomId, `room-${roomId}`, roomId.replace(/^room-/, '')].find((k) => prev[k]);
+        if (!roomKey) return prev;
+        const next = prev[roomKey].filter((m) => m.id !== messageId);
+        if (next.length === prev[roomKey].length) return prev;
+        return { ...prev, [roomKey]: next };
       });
     });
     return unsubscribe;
@@ -2140,69 +2158,54 @@ function ChatScreen() {
   // Delete message from current active room history stream
   const handleDeleteMessage = (msgId: string) => {
     const key = selectedRoomId || selectedTripId;
+    const roomId = selectedRoomId;
+    setSelectedMessageForOptions(null);
+
+    let removed: CustomMessage | undefined;
+    let removedIndex = -1;
     setTripMessages((prev) => {
       const list = prev[key] || [];
+      removedIndex = list.findIndex((m) => m.id === msgId);
+      removed = list[removedIndex];
       return {
         ...prev,
         [key]: list.filter((m) => m.id !== msgId),
       };
     });
-    setSelectedMessageForOptions(null);
+
+    if (!roomId) return; // No real room to tell the server about — nothing was ever sent.
+
+    // The optimistic removal above is rolled back on failure, the same rule
+    // every other delete/create in this app follows — a message that is
+    // still on the server (and still visible to everyone else) must not
+    // silently disappear from just this one screen.
+    void apiService.deleteMessage(roomId, msgId).catch((e) => {
+      logger.warn('[Chat] Delete message failed, restoring it:', e);
+      if (removed) {
+        const restoredMsg = removed;
+        setTripMessages((prev) => {
+          const list = prev[key] || [];
+          const next = [...list];
+          next.splice(Math.min(removedIndex, next.length), 0, restoredMsg);
+          return { ...prev, [key]: next };
+        });
+      }
+      toast(errorToastMessage(e, "Couldn't delete this message. Please try again."), 'error');
+    });
   };
 
   // Start Direct Message with sender
-  const handleStartDirectMessage = (senderName: string, avatar: string) => {
-    const dmRoomId = `room-dm-${senderName.toLowerCase().replace(/\s+/g, '-')}`;
-
-    // Check if DM room already exists in state
-    const existingRoom = inboxRooms.find((r) => r.id === dmRoomId);
-    if (existingRoom) {
-      if (!existingRoom.tripId && selectedTripId) {
-        existingRoom.tripId = selectedTripId;
-      }
-      setSelectedRoomId(dmRoomId);
-      if (existingRoom.tripId || selectedTripId) {
-        setSelectedTripId(existingRoom.tripId || selectedTripId);
-      }
-    } else {
-      // Create new private chat room
-      const newRoom: ChatRoom = {
-        id: dmRoomId,
-        tripId: selectedTripId,
-        name: senderName,
-        avatar: avatar,
-        type: 'DM', // distinct from GUIDE so Guides filter doesn't catch it
-        latestMessage: `Direct chat started with ${senderName}`,
-        latestTime: new Date().toISOString(),
-        unreadCount: 0,
-        badge: 'Member',
-        // Use epoch so a brand-new DM with no messages doesn't jump to top.
-        // lastMessageAt will be updated to the real timestamp when a message
-        // is actually sent or received.
-        lastMessageAt: '1970-01-01T00:00:00.000Z',
-      };
-
-      setInboxRooms((prev) => [newRoom, ...prev]);
-
-      // Initialize message history
-      setTripMessages((prev) => ({
-        ...prev,
-        [dmRoomId]: [
-          {
-            id: `dm-init-${Date.now()}`,
-            senderName: senderName,
-            senderRole: 'Tourist',
-            avatar: avatar,
-            content: `This is the beginning of your private message thread with ${senderName}. 👋`,
-            timestamp: new Date().toISOString(),
-            createdAt: new Date().toISOString(),
-            isMe: false,
-          },
-        ],
-      }));
-
-      setSelectedRoomId(dmRoomId);
-    }
+  // There is no backend support for a traveller-initiated DM with an
+  // arbitrary group member — no room, no messages, nothing reaches the
+  // other person or survives a reload. This used to fabricate a fake local
+  // room id from the name (colliding for two same-named members) and a
+  // fake "beginning of your thread" message attributed to the other
+  // person, who never sent it. Rather than build a whole new DM-creation
+  // feature (new schema, a real create endpoint, socket wiring) as a side
+  // effect of a QA pass, this is an honest "not available yet" instead of
+  // a silent fabrication.
+  const handleStartDirectMessage = (_senderName: string, _avatar: string) => {
+    toast(t('chat.directMessageUnavailable'), 'info');
     setSelectedMessageForOptions(null);
   };
 
@@ -2883,40 +2886,7 @@ function ChatScreen() {
                 </TouchableOpacity>
               )}
 
-              {/* CLEAR CHAT HISTORY */}
-              <TouchableOpacity
-                style={styles.optionsRowBtn}
-                onPress={() => {
-                  const targetRoom = selectedRoomForOptions;
-                  setSelectedRoomForOptions(null);
-                  if (!targetRoom) return;
-                  setTimeout(async () => {
-                    const ok = await confirm({
-                      title: t("chat.clearChatTitle"),
-                      message: t("chat.clearChatMessage"),
-                      confirmLabel: t("chat.clear"),
-                      destructive: true,
-                    });
-                    if (ok) {
-                      setTripMessages((prev) => ({ ...prev, [targetRoom.id]: [] }));
-                      toast(t("chat.conversationCleared"));
-                      setInboxRooms((prev) =>
-                        prev.map((r) => {
-                          if (r.id === targetRoom.id) {
-                            return { ...r, latestMessage: t("chat.noMessagesInChat") };
-                          }
-                          return r;
-                        }),
-                      );
-                    }
-                  }, 200);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel={t("chat.clearConversation")}
-              >
-                <Trash2 size={16} color="#EF4444" style={styles.optionsRowIcon} />
-                <Text style={[styles.optionsRowText, { color: "#EF4444" }]}>{t("chat.clearConversation")}</Text>
-              </TouchableOpacity>
+              {/* "Clear conversation" removed: it only wiped the local cache — messages stayed on the server for everyone else and came back on reload. */}
 
               {/* LEAVE GROUP / DELETE CHAT */}
               <TouchableOpacity

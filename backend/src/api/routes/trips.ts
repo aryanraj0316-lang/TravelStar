@@ -621,6 +621,51 @@ router.get('/:id/inquiries', async (req, res) => {
   }
 });
 
+// Real money collected, per trip, across every trip the caller organizes —
+// bulk rather than one-per-id so the organizer's trip list can show a real
+// "Money Collected" figure on every card without an N+1 request per card.
+// TripPaymentOrder.amount is a Decimal in rupees (this table predates the
+// paise-integer convention used elsewhere — see expense-split.ts — and is
+// left as-is rather than migrated in an unrelated fix). Only CAPTURED orders
+// are actual cash in hand; an AWAITING_PAYMENT join request has an order
+// that is still CREATED/PENDING (or none at all), and must not be counted
+// as collected.
+router.get('/mine/payment-summaries', async (req, res) => {
+  const userId = requireUserId(req);
+
+  try {
+    const orders = await prisma.tripPaymentOrder.findMany({
+      where: { joinRequest: { trip: { creatorId: userId } } },
+      select: { amount: true, status: true, joinRequest: { select: { tripId: true } } },
+    });
+
+    const byTrip = new Map<string, { collected: number; capturedCount: number; pendingCount: number }>();
+    for (const order of orders) {
+      const tripId = order.joinRequest.tripId;
+      const entry = byTrip.get(tripId) ?? { collected: 0, capturedCount: 0, pendingCount: 0 };
+      if (order.status === 'CAPTURED') {
+        entry.collected += Number(order.amount);
+        entry.capturedCount += 1;
+      } else if (order.status === 'CREATED' || order.status === 'PENDING') {
+        entry.pendingCount += 1;
+      }
+      byTrip.set(tripId, entry);
+    }
+
+    const data = [...byTrip.entries()].map(([tripId, s]) => ({
+      tripId,
+      collected: s.collected.toFixed(2),
+      capturedCount: s.capturedCount,
+      pendingCount: s.pendingCount,
+    }));
+
+    return res.status(200).json({ ok: true, data });
+  } catch (err) {
+    logger.error('[Trips] Get payment summaries error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to load payment summaries.' } });
+  }
+});
+
 const assignGuideSchema = z.object({
   guideProfileId: z.string().uuid(),
   note: z.string().trim().max(500).optional(),

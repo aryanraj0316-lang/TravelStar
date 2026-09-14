@@ -152,7 +152,19 @@ export function computeBalances(expenses: ExpenseForSplit[], participantIds: str
     }
   }
 
-  return participantIds.map((userId) => {
+  // The output covers the union of current participants and anyone who
+  // ever paid, not participantIds alone. Someone who paid for something and
+  // then left the trip used to vanish from this list entirely — their
+  // amountPaise was still counted in the trip's `total` (summed straight
+  // from the expense rows, elsewhere), but their row, and the paisa they
+  // are owed for it, disappeared from the balances and from settle()'s
+  // plan. They rightly owe nothing further (an EQUAL split is re-derived
+  // against the *current* roster, which no longer includes them — that
+  // part is intentional, see this function's own history), but what they
+  // already paid does not stop being real money the remaining group owes.
+  const allIds = new Set([...participantIds, ...paid.keys()]);
+
+  return [...allIds].map((userId) => {
     const paidPaise = paid.get(userId) ?? 0;
     const owesPaise = owes.get(userId) ?? 0;
     return { userId, paidPaise, owesPaise, netPaise: paidPaise - owesPaise };

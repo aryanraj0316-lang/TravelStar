@@ -62,6 +62,7 @@
     "quickNearby": "Nearby",
     "quickBookings": "Bookings",
     "quickBudgetTracker": "Budget Tracker",
+    "quickBudgetTrips": "Trips by Budget",
     "new": "NEW",
     "userSub": "Explore more. Experience better.",
     "loginSignUp": "Login / Sign Up",
@@ -355,7 +356,14 @@
     "couldNotLoadBookings": "Could not load your bookings.",
     "noBookings": "No bookings",
     "noBookingsAtAll": "You haven't joined any trips yet.",
-    "noBookingsInCategory": "No bookings found in this category."
+    "noBookingsInCategory": "No bookings found in this category.",
+    "guideBookingsTitle": "Guide Bookings",
+    "tripBookingsTitle": "Trip Bookings",
+    "guideAmount": "Amount",
+    "guideStatusPENDING": "PENDING",
+    "guideStatusCONFIRMED": "CONFIRMED",
+    "guideStatusCOMPLETED": "COMPLETED",
+    "guideStatusCANCELLED": "CANCELLED"
   },
   "about": {
     "title": "About TravelStar",
@@ -1680,6 +1688,7 @@
     "groupDirectoryDesc": "All members in this expedition chat. Click a participant to start a private conversation.",
     "startPrivateChatWith": "Start a private chat with {{name}}",
     "directMessageName": "Direct Message {{name}}",
+    "directMessageUnavailable": "Direct messages aren't available yet.",
     "dm": "DM",
     "messageOptions": "Message Options",
     "replyToMessage": "Reply to Message",

@@ -307,6 +307,16 @@ export interface TimelineCheckpoint {
   activities: string;
 }
 
+// Fixed calendar-date literals go stale the moment "today" passes them —
+// this form used to default to 2026-08-01, which is now in the past. A
+// default relative to the actual current date never expires.
+function defaultTripStartDate(): string {
+  return new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]!;
+}
+function defaultTripEndDate(): string {
+  return new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]!;
+}
+
 function CreateTripScreen() {
   useEffect(() => {
     logger.log('Screen mounted: CreateTripScreen');
@@ -320,8 +330,8 @@ function CreateTripScreen() {
 
   const [tripName, setTripName] = useState('');
   const [citiesInput, setCitiesInput] = useState('');
-  const [startDate, setStartDate] = useState('2026-08-01');
-  const [endDate, setEndDate] = useState('2026-08-07');
+  const [startDate, setStartDate] = useState(defaultTripStartDate);
+  const [endDate, setEndDate] = useState(defaultTripEndDate);
   const [budget, setBudget] = useState('');
   const [totalSeats, setTotalSeats] = useState('');
   const [meetingPoint, setMeetingPoint] = useState('');
@@ -441,7 +451,7 @@ function CreateTripScreen() {
   ]);
 
   // Meeting Point details
-  const [meetingDate, setMeetingDate] = useState('2026-08-01');
+  const [meetingDate, setMeetingDate] = useState(defaultTripStartDate);
   const [meetingTime, setMeetingTime] = useState('10:00 AM');
 
   // Calendar Modal State
@@ -684,12 +694,12 @@ function CreateTripScreen() {
 
       setTripName('');
       setCitiesInput('');
-      setStartDate('2026-08-01');
-      setEndDate('2026-08-07');
+      setStartDate(defaultTripStartDate());
+      setEndDate(defaultTripEndDate());
       setBudget('');
       setTotalSeats('');
       setMeetingPoint('');
-      setMeetingDate('2026-08-01');
+      setMeetingDate(defaultTripStartDate());
       setMeetingTime('10:00 AM');
       setShortDesc('');
       setTransportMode('AC Vehicle');

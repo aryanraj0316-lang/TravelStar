@@ -906,6 +906,12 @@ export default function GroupOrganizerScreen() {
 
   const [rawJoinRequests, setRawJoinRequests] = useState<IncomingJoinRequest[]>([]);
 
+  // Real money collected per trip, from captured payments only — a trip
+  // absent from this map has had no payment activity at all yet.
+  const [paymentSummaries, setPaymentSummaries] = useState<
+    Map<string, { collected: number; capturedCount: number; pendingCount: number }>
+  >(new Map());
+
 
 
 
@@ -1014,6 +1020,23 @@ export default function GroupOrganizerScreen() {
         setJoinRequests(pending);
       })
       .catch((e) => logger.warn('Failed to fetch incoming requests:', e));
+  }, []);
+
+  const fetchPaymentSummaries = useCallback(() => {
+    apiService
+      .getMyTripPaymentSummaries()
+      .then((data) => {
+        if (!data) return;
+        setPaymentSummaries(
+          new Map(
+            data.map((s) => [
+              s.tripId,
+              { collected: Number(s.collected), capturedCount: s.capturedCount, pendingCount: s.pendingCount },
+            ]),
+          ),
+        );
+      })
+      .catch((e) => logger.warn('Failed to fetch payment summaries:', e));
   }, []);
 
   // Guide quotes received on this trip. A guide can now bid to run a trip
@@ -1224,7 +1247,8 @@ export default function GroupOrganizerScreen() {
 
   useEffect(() => {
     fetchIncoming();
-  }, [fetchIncoming]);
+    fetchPaymentSummaries();
+  }, [fetchIncoming, fetchPaymentSummaries]);
 
   useEffect(() => {
     if (currentTour) {
@@ -1271,11 +1295,17 @@ export default function GroupOrganizerScreen() {
     // rejected it as a non-UUID (so the trip was never actually created)
     // and the local row pointed at an id no trip ever had.
     void (async () => {
+      // The organizer's own entered duration, not a fixed 5-day span — this
+      // quick form has no separate start-date field, so the trip is still
+      // anchored to start 10 days out, but how long it runs is what they typed.
+      const durationDays = Math.max(1, parseInt(newDuration, 10) || 1);
+      const startDate = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
+      const endDate = new Date(startDate.getTime() + durationDays * 24 * 60 * 60 * 1000);
       const created = await addTrip({
         name: newGroupName.trim(),
         cities: [newDest.trim()],
-        startDate: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        endDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        startDate: startDate.toISOString().split('T')[0],
+        endDate: endDate.toISOString().split('T')[0],
         budget: parseFloat(newPrice),
         totalSeats: parseInt(newMaxSize),
         meetingPoint: t('groupOrganizer.organizerMeetingPoint'),
@@ -1291,7 +1321,7 @@ export default function GroupOrganizerScreen() {
         id: created.id,
         groupName: created.name,
         destination: newDest.trim(),
-        durationDays: parseInt(newDuration),
+        durationDays,
         maxSize: created.totalSeats,
         currentSize: 1, // Organizer starts inside
         price: parseFloat(newPrice),
@@ -1761,7 +1791,9 @@ export default function GroupOrganizerScreen() {
                         const tripAvailSeats = Number(trip.availableSeats) || 0;
                         const tripConfirmedSeats = Math.max(0, tripTotalSeats - tripAvailSeats);
                         const tripTotalCost = tripBudgetPerPerson * tripTotalSeats;
-                        const tripMoneyCollected = tripBudgetPerPerson * tripConfirmedSeats;
+                        // Real captured payments only — not a guess from seat counts, which
+                        // would count an approved-but-unpaid (AWAITING_PAYMENT) member as cash.
+                        const tripMoneyCollected = paymentSummaries.get(trip.id)?.collected ?? 0;
                         const isTripOpen = tripAvailSeats > 0;
 
                         return (
@@ -1939,7 +1971,10 @@ export default function GroupOrganizerScreen() {
                 const tripAvailSeats = Number(selectedCreation.availableSeats) || 0;
                 const tripConfirmedSeats = Math.max(0, tripTotalSeats - tripAvailSeats);
                 const tripTotalCostNeeded = tripBudgetPerPerson * tripTotalSeats;
-                const tripMoneyTaken = tripBudgetPerPerson * tripConfirmedSeats;
+                // Real captured payments only — not a guess from seat counts, which
+                // would count an approved-but-unpaid (AWAITING_PAYMENT) member as cash.
+                const tripPaymentSummary = paymentSummaries.get(selectedCreation.id);
+                const tripMoneyTaken = tripPaymentSummary?.collected ?? 0;
                 const tripRemainingMoney = Math.max(0, tripTotalCostNeeded - tripMoneyTaken);
                 const tripCollectionRate = tripTotalCostNeeded > 0 ? Math.round((tripMoneyTaken / tripTotalCostNeeded) * 100) : 0;
                 const tripOccupancyRate = tripTotalSeats > 0 ? Math.round((tripConfirmedSeats / tripTotalSeats) * 100) : 0;

@@ -113,6 +113,34 @@ describe('computeBalances', () => {
     const threeWay = computeBalances([expense], ['a', 'b', 'c']);
     expect(threeWay.find((b) => b.userId === 'b')!.owesPaise).toBe(rupeesToPaise('300'));
   });
+
+  it('keeps crediting someone who paid and then left the trip', () => {
+    const expense = { id: 'e1', amountPaise: rupeesToPaise('900'), paidById: 'a', splitMode: 'EQUAL' as const };
+
+    // 'a' paid while all three were on the trip...
+    const whileOnTrip = computeBalances([expense], ['a', 'b', 'c']);
+    expect(whileOnTrip.find((b) => b.userId === 'a')!.paidPaise).toBe(rupeesToPaise('900'));
+
+    // ...then left. 'a' must not vanish from the ledger: the money they
+    // paid is still real, even though the *current* roster's equal split
+    // (correctly) no longer charges them a share.
+    const afterLeaving = computeBalances([expense], ['b', 'c']);
+    const a = afterLeaving.find((b) => b.userId === 'a');
+    expect(a).toBeTruthy();
+    expect(a!.paidPaise).toBe(rupeesToPaise('900'));
+    expect(a!.owesPaise).toBe(0);
+    expect(a!.netPaise).toBe(rupeesToPaise('900'));
+
+    // The ledger still balances to zero net overall, and the total paid
+    // across everyone still equals the expense total — neither the money
+    // nor the person disappeared.
+    expect(afterLeaving.reduce((sum, b) => sum + b.netPaise, 0)).toBe(0);
+    expect(afterLeaving.reduce((sum, b) => sum + b.paidPaise, 0)).toBe(rupeesToPaise('900'));
+
+    // And settle() actually pays them back.
+    const plan = settle(afterLeaving);
+    expect(plan.some((t) => t.toUserId === 'a')).toBe(true);
+  });
 });
 
 describe('settle', () => {

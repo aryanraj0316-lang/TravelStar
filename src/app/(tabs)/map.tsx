@@ -1026,10 +1026,15 @@ function MapScreen() {
 
   // Real map pins and hazard overlays (docs/REMEDIATION.md §8.8),
   // replacing the four hardcoded pins this screen used to show everyone.
+  // /map/pins genuinely needs a signed-in identity (it excludes the caller
+  // and shows other live people), unlike /map/hazards below — firing it
+  // while logged out just produced a 401 and an empty map for a guest,
+  // contradicting the app's browse-before-login design.
   const { data: mapPins } = useQuery({
     queryKey: ['map', 'pins'],
     queryFn: () => apiService.getMapPins(),
     staleTime: 60 * 1000,
+    enabled: isLoggedIn,
   });
 
   const { data: mapHazards } = useQuery({

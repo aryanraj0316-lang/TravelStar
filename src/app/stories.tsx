@@ -318,8 +318,18 @@ export default function StoriesScreen() {
               // 1. Calculate remaining stories excluding this one
               const remaining = activeStoriesList.filter((s) => s.id !== storyIdToDelete);
 
-              // 2. Perform deletion (updates deletedStoryIds & local storage & query cache)
-              await deleteStory(storyIdToDelete);
+              // 2. Perform deletion (updates deletedStoryIds & local storage & query cache).
+              // A false result means the server delete failed and deleteStory already
+              // restored the story and toasted the error — navigating away as if it
+              // succeeded would strand the user outside a viewer for a story that is
+              // still there.
+              const deleted = await deleteStory(storyIdToDelete);
+              if (!deleted) {
+                if (!storyIsVideo) {
+                  startStoryTimer(progressValueRef.current);
+                }
+                return;
+              }
 
               // 3. If no stories remain, immediately close viewer and return home
               if (remaining.length === 0) {

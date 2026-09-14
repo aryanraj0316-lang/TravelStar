@@ -62,6 +62,7 @@
     "quickNearby": "आस-पास",
     "quickBookings": "बुकिंग्स",
     "quickBudgetTracker": "बजट ट्रैकर",
+    "quickBudgetTrips": "बजट अनुसार ट्रिप्स",
     "new": "नया",
     "userSub": "और एक्सप्लोर करें। बेहतर अनुभव लें।",
     "loginSignUp": "लॉगिन / साइन अप",
@@ -355,7 +356,14 @@
     "couldNotLoadBookings": "आपकी बुकिंग्स लोड नहीं की जा सकीं।",
     "noBookings": "कोई बुकिंग नहीं",
     "noBookingsAtAll": "आप अभी तक किसी ट्रिप में शामिल नहीं हुए हैं।",
-    "noBookingsInCategory": "इस श्रेणी में कोई बुकिंग नहीं मिली।"
+    "noBookingsInCategory": "इस श्रेणी में कोई बुकिंग नहीं मिली।",
+    "guideBookingsTitle": "गाइड बुकिंग्स",
+    "tripBookingsTitle": "ट्रिप बुकिंग्स",
+    "guideAmount": "राशि",
+    "guideStatusPENDING": "लंबित",
+    "guideStatusCONFIRMED": "पुष्टि की गई",
+    "guideStatusCOMPLETED": "पूर्ण",
+    "guideStatusCANCELLED": "रद्द"
   },
   "about": {
     "title": "TravelStar के बारे में",
@@ -1679,6 +1687,7 @@
     "groupDirectoryDesc": "इस अभियान चैट के सभी सदस्य। निजी बातचीत शुरू करने के लिए किसी सदस्य पर क्लिक करें।",
     "startPrivateChatWith": "{{name}} के साथ निजी चैट शुरू करें",
     "directMessageName": "{{name}} को डायरेक्ट मैसेज करें",
+    "directMessageUnavailable": "डायरेक्ट मैसेज अभी उपलब्ध नहीं हैं।",
     "dm": "DM",
     "messageOptions": "मैसेज विकल्प",
     "replyToMessage": "मैसेज का जवाब दें",

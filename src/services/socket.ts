@@ -252,6 +252,48 @@ class SocketService {
     };
   }
 
+  /** A message was deleted by its sender — remove it from every open view of the room. */
+  onMessageDeleted(listener: (e: { roomId: string; messageId: string }) => void) {
+    this.socket?.on('messageDeleted', listener);
+    return () => {
+      this.socket?.off('messageDeleted', listener);
+    };
+  }
+
+  /** The server rejected a message send — the socket layer's own failure feedback, not a delivery-status tick. */
+  onSendMessageError(listener: (e: { message: string }) => void) {
+    this.socket?.on('sendMessageError', listener);
+    return () => {
+      this.socket?.off('sendMessageError', listener);
+    };
+  }
+
+  /** Joining a chat room's socket channel was refused (not a member, or the room lookup failed). */
+  onRoomJoinError(listener: (e: { roomId: string; message: string }) => void) {
+    this.socket?.on('roomJoinError', listener);
+    return () => {
+      this.socket?.off('roomJoinError', listener);
+    };
+  }
+
+  /** Resolving an SOS alert over the socket was refused. */
+  onResolveSOSError(listener: (e: { message: string }) => void) {
+    this.socket?.on('resolveSOSError', listener);
+    return () => {
+      this.socket?.off('resolveSOSError', listener);
+    };
+  }
+
+  /** A guide booking's status changed — fired at both the traveller and the guide, whichever one did not make the change. */
+  onBookingStatusChanged(
+    listener: (e: { bookingId: string; status: string; guideProfileId: string | null; tripId: string | null }) => void,
+  ) {
+    this.socket?.on('bookingStatusChanged', listener);
+    return () => {
+      this.socket?.off('bookingStatusChanged', listener);
+    };
+  }
+
   onSOS(listener: SOSListener) {
     this.sosListeners.push(listener);
     return () => {

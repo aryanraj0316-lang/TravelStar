@@ -150,9 +150,11 @@ router.get('/', async (req, res) => {
         avatar: roomAvatar,
         type: roomType,
         latestMessage: lastMsgPreview,
-        latestTime: lastMsg
-          ? lastMsg.createdAt.toISOString()
-          : 'Just Now',
+        // A real ISO timestamp always — the room's own creation time when
+        // there is no message yet, never the literal string 'Just Now',
+        // which is not a parseable date and broke every client-side
+        // date formatter that touched an empty room.
+        latestTime: (lastMsg?.createdAt ?? room.createdAt).toISOString(),
         unread: unreadCount > 0,
         unreadCount,
         badge: room.isGroup
@@ -559,6 +561,50 @@ router.get('/:id/messages/:messageId/info', async (req, res) => {
   } catch (err) {
     logger.warn('[Chats] Message info error:', err);
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to load message info' } });
+  }
+});
+
+// Sender-only, hard delete — this app has no "edited"/"deleted" placeholder
+// concept for messages (no soft-delete column exists), so a deleted message
+// is simply gone, for everyone, including its read/delivery receipts
+// (cascaded by the schema). The client used to only ever remove a message
+// from its own local state, which left it fully intact in the database and
+// on every other participant's screen — deleting it locally deleted nothing.
+router.delete('/:id/messages/:messageId', async (req, res) => {
+  const parsed = z
+    .object({ id: z.string().uuid(), messageId: z.string().uuid() })
+    .safeParse(req.params);
+  if (!parsed.success) {
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid ids.' } });
+  }
+  const { id, messageId } = parsed.data;
+  const tokenUserId = requireUserId(req);
+
+  try {
+    if (!(await assertChatRoomMember(res, id, tokenUserId))) return;
+
+    const message = await prisma.message.findUnique({
+      where: { id: messageId },
+      select: { senderId: true, chatRoomId: true, isSystem: true },
+    });
+    if (!message || message.chatRoomId !== id) {
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Message not found.' } });
+    }
+    if (message.isSystem || message.senderId !== tokenUserId) {
+      return res
+        .status(403)
+        .json({ ok: false, error: { code: 'FORBIDDEN', message: 'You can only delete your own messages.' } });
+    }
+
+    await prisma.message.delete({ where: { id: messageId } });
+
+    const io = req.app.get('socketio');
+    io?.to(id).emit('messageDeleted', { roomId: id, messageId });
+
+    return res.status(200).json({ ok: true, data: { messageId } });
+  } catch (err) {
+    logger.warn('[Chats] Delete message error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to delete message' } });
   }
 });
 

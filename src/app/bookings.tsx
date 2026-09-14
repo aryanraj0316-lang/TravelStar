@@ -19,9 +19,10 @@ import { apiService } from '@/services/api';
 import { queryKeys } from '@/lib/query-keys';
 import { MyTripBooking, useApp } from '@/store/AppContext';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
-import { formatDateRange } from '@/lib/datetime';
+import { formatDate, formatDateRange } from '@/lib/datetime';
 import { formatINR } from '@/lib/money';
 import { CoverImage, ScreenEmpty, ScreenError, ScreenLoading } from '@/components/ui';
+import type { MyGuideBooking } from '@/types/api';
 
 
 type BookingFilter = 'ALL' | 'ONGOING' | 'UPCOMING' | 'COMPLETED';
@@ -200,7 +201,44 @@ function BookingCard({
   );
 }
 
+const GUIDE_BOOKING_STATUS_STYLE: Record<MyGuideBooking['status'], { bg: string; border: string; dot: string; text: string }> = {
+  PENDING: { bg: '#EFF6FF', border: '#BFDBFE', dot: C.blue, text: C.blueText },
+  CONFIRMED: { bg: '#ECFDF5', border: '#A7F3D0', dot: C.green, text: C.greenText },
+  COMPLETED: { bg: '#F5F3FF', border: '#DDD6FE', dot: C.purple, text: C.purple },
+  CANCELLED: { bg: '#FEF2F2', border: '#FECACA', dot: '#EF4444', text: '#EF4444' },
+};
+
+// A guide hire is staff booked for part of a trip, not a trip itself — it
+// has no cities/coverImage/meetingPoint/seats, so it cannot honestly reuse
+// BookingCard above without inventing values that field doesn't have.
+function GuideBookingCard({ booking }: { booking: MyGuideBooking }) {
+  const { t } = useTranslation();
+  const statusStyle = GUIDE_BOOKING_STATUS_STYLE[booking.status];
+  return (
+    <View style={styles.guideBookingCard}>
+      <View style={styles.guideBookingHeader}>
+        <Text style={styles.guideBookingName} numberOfLines={1}>
+          {booking.guideName}
+        </Text>
+        <View style={[styles.badgeContainer, { backgroundColor: statusStyle.bg, borderColor: statusStyle.border }]}>
+          <View style={[styles.pulseDot, { backgroundColor: statusStyle.dot }]} />
+          <Text style={[styles.badgeText, { color: statusStyle.text }]}>{t(`bookings.guideStatus${booking.status}`)}</Text>
+        </View>
+      </View>
+      <View style={styles.detailRow}>
+        <Calendar size={13} color={C.textSec} style={{ marginRight: 6 }} />
+        <Text style={styles.detailText}>{formatDate(booking.travelDate)}</Text>
+      </View>
+      <View style={styles.guideBookingFooter}>
+        <Text style={styles.footerLabel}>{t('bookings.guideAmount')}</Text>
+        <Text style={[styles.footerValue, { color: C.green }]}>{formatINR(booking.amount)}</Text>
+      </View>
+    </View>
+  );
+}
+
 const keyExtractor = (b: MyTripBooking) => b.id;
+const guideBookingKeyExtractor = (b: MyGuideBooking) => b.id;
 
 // This screen used to render MOCK_BOOKINGS: fake trips with a fabricated
 // "Amount Paid" and a bookingId, plus Alert.alert popups pretending to
@@ -233,6 +271,15 @@ export default function BookingsScreen() {
   } = useQuery({
     queryKey: queryKeys.myTrips(),
     queryFn: async () => (await apiService.getMyTrips()) ?? [],
+    enabled: isLoggedIn,
+  });
+
+  // Paid guide hires never showed up anywhere for the traveller who made
+  // them — find-guides.tsx invalidates this same query key on a successful
+  // booking, but nothing here was ever actually querying it.
+  const { data: guideBookings = [] } = useQuery({
+    queryKey: queryKeys.myBookings(),
+    queryFn: async () => (await apiService.getMyGuideBookings()) ?? [],
     enabled: isLoggedIn,
   });
 
@@ -387,6 +434,19 @@ export default function BookingsScreen() {
                   title={t('bookings.noBookings')}
                   message={myTrips.length === 0 ? t('bookings.noBookingsAtAll') : t('bookings.noBookingsInCategory')}
                 />
+              }
+              ListHeaderComponent={
+                guideBookings.length > 0 ? (
+                  <View style={styles.guideBookingsSection}>
+                    <Text style={styles.guideBookingsSectionTitle}>{t('bookings.guideBookingsTitle')}</Text>
+                    {guideBookings.map((gb) => (
+                      <GuideBookingCard key={guideBookingKeyExtractor(gb)} booking={gb} />
+                    ))}
+                    {filteredBookings.length > 0 && (
+                      <Text style={styles.guideBookingsSectionTitle}>{t('bookings.tripBookingsTitle')}</Text>
+                    )}
+                  </View>
+                ) : null
               }
             />
           )}
@@ -610,6 +670,47 @@ const styles = StyleSheet.create({
     color: C.white,
     fontSize: 13.5,
     fontWeight: '700',
+  },
+
+  // ── Guide Bookings Section ──────────────────────────
+  guideBookingsSection: {
+    marginBottom: 4,
+  },
+  guideBookingsSectionTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: C.textMuted,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+    marginBottom: 10,
+    marginTop: 4,
+  },
+  guideBookingCard: {
+    backgroundColor: C.card,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 14,
+    marginBottom: 12,
+  },
+  guideBookingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    gap: 8,
+  },
+  guideBookingName: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: C.text,
+    flex: 1,
+  },
+  guideBookingFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 6,
   },
 
   // ── Guest / Sign-in Gate ────────────────────────────

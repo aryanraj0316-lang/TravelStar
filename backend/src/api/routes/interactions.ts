@@ -389,6 +389,34 @@ const handleStatusChange = async (req: Request, res: Response) => {
       if (!released.ok) {
         return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Join request not found' } });
       }
+
+      // Unlike APPROVED and AWAITING_PAYMENT below, this branch previously
+      // returned with no Notification row, no socket emit, and no push —
+      // the requester was never told. The client can't fill that gap on its
+      // own: TripDetailModal's REJECTED branch reads real status, but
+      // nothing ever tells it a status changed to go look.
+      const title = 'Request declined — ' + request.trip.name;
+      const content = `The organizer declined your request to join ${request.trip.name}.`;
+      const io = req.app.get('socketio');
+      io?.to(request.userId).emit('notificationReceived', {
+        id: `notif-${Date.now()}`,
+        userId: request.userId,
+        type: 'TRIP',
+        category: 'JOIN_ACCEPTED',
+        title,
+        content,
+        unread: true,
+        tripId: request.tripId,
+      });
+      await prisma.notification.create({
+        data: { userId: request.userId, type: 'TRIP', title, content, time: 'Just now' },
+      });
+      await sendPushToUsers([request.userId], 'TRIP', {
+        title,
+        body: content,
+        data: { screen: 'trip', tripId: request.tripId },
+      });
+
       const updated = await prisma.joinRequest.findUnique({ where: { id } });
       return res.status(200).json({ ok: true, data: { ...updated, chatRoomId: null } });
     }
@@ -502,6 +530,12 @@ const handleStatusChange = async (req: Request, res: Response) => {
             content: systemMsgContent,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             mediaType: 'NONE',
+            // The DB row is isSystem: true, but this live payload omitted
+            // it — chat.tsx's unread-badge check tests isSystem specifically
+            // (not senderRole), so a join announcement bumped the per-room
+            // badge to 1 while GET /chats (which excludes isSystem rows) and
+            // the tab dot both correctly reported zero unread.
+            isSystem: true,
           }
         });
 

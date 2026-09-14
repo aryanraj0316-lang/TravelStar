@@ -804,7 +804,13 @@ export default function TripDetailModal({
                   const myRequest = joinRequestStatuses.get(trip.id);
                   const status = myRequest?.status;
 
-                  if (!requestedTrips.has(trip.id) || !status) {
+                  // Reading joinRequestStatuses alone, not requestedTrips —
+                  // requestedTrips deliberately excludes REJECTED (see its
+                  // own doc comment), so gating on it here made the REJECTED
+                  // branch below unreachable: a declined request always fell
+                  // through to "not requested" and the user was never told
+                  // why, only that the button had reset.
+                  if (!status) {
                     return (
                       <TouchableOpacity
                         style={styles.modalSubmitBtn}

@@ -48,6 +48,12 @@ const PUBLIC_GET_EXACT = new Set([
   '/feed',
   '/stories',
   '/safety/monsoon-advisory',
+  // Reads no user at all (map.ts's handler takes `_req`) and returns the
+  // same active Alert rows /alerts already serves publicly, just geocoded —
+  // gating it behind a token had no security purpose and broke the map tab
+  // for a signed-out browser, contradicting the app's browse-before-login
+  // design the way /trips and /destinations are built not to.
+  '/map/hazards',
 ]);
 
 const PUBLIC_GET_PATTERNS = [

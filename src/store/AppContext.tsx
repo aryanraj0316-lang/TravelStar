@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system';
+import { File } from 'expo-file-system';
 import { uploadFileToUrl } from '@/lib/upload';
 import { queryClient } from '@/lib/query-client';
 import { safeStorage } from '@/services/storage';
@@ -816,6 +816,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const unsubNotification = socketService.onNotification((data) => {
       // Refresh notification badge count
       checkUnreadNotifications();
+      // A join request's status (APPROVED/AWAITING_PAYMENT/REJECTED) only
+      // ever changed here on the next login/focus/addedToChat — this event
+      // fires for all three, including AWAITING_PAYMENT and REJECTED, which
+      // have no addedToChat side effect at all, so TripDetailModal kept
+      // showing "awaiting organizer" (or "request to join") long after the
+      // organizer had actually answered.
+      if (data.tripId) {
+        reloadJoinRequests();
+      }
       // Show in-app banner (component handles navigation)
       eventBus.emit('inAppNotification', {
         id: data.id || `notif-${Date.now()}`,
@@ -828,12 +837,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
     });
 
+    // The server only ever emitted this over the socket — no in-app banner,
+    // no cache invalidation on either side — so a guide confirming/declining
+    // a booking never moved anything on the traveller's or the guide's own
+    // dashboard until they manually pulled to refresh or reopened the screen.
+    const unsubBookingStatus = socketService.onBookingStatusChanged(() => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.myBookings() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.incomingBookings() });
+    });
+
+    // These three were emitted by the server and dropped on the floor —
+    // sending a message, joining a room, or resolving an SOS alert could
+    // fail silently with no indication to the user that anything went wrong.
+    const unsubSendMessageError = socketService.onSendMessageError((e) => {
+      toast(e.message || "Couldn't send that message.", 'error');
+    });
+    const unsubRoomJoinError = socketService.onRoomJoinError((e) => {
+      logger.warn('[Socket] Room join failed:', e.roomId, e.message);
+    });
+    const unsubResolveSOSError = socketService.onResolveSOSError((e) => {
+      toast(e.message || "Couldn't mark this alert as resolved.", 'error');
+    });
+
     return () => {
       unsubMsg();
       unsubSOS();
       unsubTyping();
       unsubAddedToChat();
       unsubNotification();
+      unsubBookingStatus();
+      unsubSendMessageError();
+      unsubRoomJoinError();
+      unsubResolveSOSError();
     };
   }, [activeRoomId, isLoggedIn, profile.id, refreshTrips, reloadJoinRequests, reloadIncomingRequestsCount, checkUnreadNotifications]);
 
@@ -1133,9 +1168,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               remoteMediaUrl = publicUrl;
             } catch (presignErr) {
               logger.warn('[Stories] Presigned video upload unavailable, using direct upload:', presignErr);
-              const base64 = await FileSystem.readAsStringAsync(storyData.mediaUri, {
-                encoding: 'base64' as any,
-              });
+              // expo-file-system's top-level readAsStringAsync is a stub that
+              // always throws in this SDK — the real API is the File class.
+              const base64 = await new File(storyData.mediaUri).base64();
               const direct = await apiService.uploadStoryDirect(base64, contentType);
               if (direct?.publicUrl) remoteMediaUrl = direct.publicUrl;
             }
@@ -1148,9 +1183,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           try {
             const ext = storyData.coverImg.split('.').pop()?.toLowerCase() || 'jpg';
             const contentType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
-            const base64 = await FileSystem.readAsStringAsync(storyData.coverImg, {
-              encoding: 'base64' as any,
-            });
+            const base64 = await new File(storyData.coverImg).base64();
             const direct = await apiService.uploadStoryDirect(base64, contentType);
             if (direct?.publicUrl) {
               remoteCoverUrl = direct.publicUrl;
@@ -1220,22 +1253,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteStory = useCallback(
     async (storyId: string): Promise<boolean> => {
-      // 1. Persistently track deletedStoryIds
-      setDeletedStoryIds((prev) => {
-        const next = new Set(prev);
-        next.add(storyId);
-        void safeStorage.setItem('deletedStoryIds', JSON.stringify(Array.from(next)));
-        return next;
-      });
+      let removedStory: Story | undefined;
+      let removedIndex = -1;
 
-      // 2. Remove from local device storage
+      // 1. Optimistically remove from local device storage
       setStoriesList((prev) => {
+        removedIndex = prev.findIndex((s) => s.id === storyId);
+        removedStory = prev[removedIndex];
         const updated = prev.filter((s) => s.id !== storyId);
         void safeStorage.setItem('savedStories', JSON.stringify(updated));
         return updated;
       });
 
-      // 3. Optimistically purge from TanStack Query feed cache
+      // 2. Optimistically purge from TanStack Query feed cache
       queryClient.setQueryData(queryKeys.feed(), (old: any) => {
         if (!old) return old;
         if (Array.isArray(old)) {
@@ -1247,12 +1277,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return old;
       });
 
-      // 4. Send remote delete request
+      // 3. Send remote delete request. Failure is rolled back rather than
+      // reported as success — the same rule addStory's own rollback above
+      // follows: the app must not tell the user something happened on the
+      // server when it did not.
       try {
         await apiService.deleteStory(storyId);
       } catch (e) {
-        logger.warn('[Stories] Remote delete failed:', e);
+        logger.warn('[Stories] Remote delete failed, restoring the story:', e);
+        if (removedStory) {
+          const restoredStory = removedStory;
+          setStoriesList((prev) => {
+            const restored = [...prev];
+            restored.splice(Math.min(removedIndex, restored.length), 0, restoredStory);
+            void safeStorage.setItem('savedStories', JSON.stringify(restored));
+            return restored;
+          });
+        }
+        queryClient.invalidateQueries({ queryKey: queryKeys.feed() });
+        toast(errorToastMessage(e, "Couldn't delete your story. Please try again."), 'error');
+        return false;
       }
+
+      // 4. Only a confirmed remote delete is remembered permanently — this
+      // list persists across restarts and keeps a story hidden even after
+      // the feed is refetched, so adding an id here for a delete that
+      // actually failed would hide a story that still exists server-side.
+      setDeletedStoryIds((prev) => {
+        const next = new Set(prev);
+        next.add(storyId);
+        void safeStorage.setItem('deletedStoryIds', JSON.stringify(Array.from(next)));
+        return next;
+      });
 
       toast('Story deleted', 'success');
       return true;

@@ -109,7 +109,7 @@ function WebMapScreen() {
     return unsub;
   }, []);
   const router = useRouter();
-  const { triggerSOS, trips, setNavbarHidden } = useApp();
+  const { triggerSOS, trips, setNavbarHidden, isLoggedIn } = useApp();
   const { tripId, focusLat, focusLng, focusLabel } = useLocalSearchParams<{
     tripId: string;
     focusLat?: string;
@@ -271,11 +271,14 @@ function WebMapScreen() {
 
   const activeRouteCoords: RoutePoint[] = useMemo(() => tripRoute?.points ?? [], [tripRoute]);
 
-  // Real map pins and hazard overlays (docs/REMEDIATION.md §8.8).
+  // Real map pins and hazard overlays (docs/REMEDIATION.md §8.8). Pins need
+  // a signed-in identity (the route excludes the caller and shows other
+  // live people); firing it logged out just 401'd and left the map blank.
   const { data: mapPins } = useQuery({
     queryKey: ['map', 'pins'],
     queryFn: () => apiService.getMapPins(),
     staleTime: 60 * 1000,
+    enabled: isLoggedIn,
   });
 
   const { data: mapHazards } = useQuery({

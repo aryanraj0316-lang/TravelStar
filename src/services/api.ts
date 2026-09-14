@@ -592,13 +592,6 @@ export const apiService = {
     });
   },
 
-  async verifyOtp(phoneNumber: string, otpCode: string) {
-    return request<AuthResponse>('/auth/verify-otp', {
-      method: 'POST',
-      body: JSON.stringify({ phoneNumber, otpCode }),
-    });
-  },
-
   async getProfile(): Promise<UserProfile | null> {
     return request<UserProfile>('/auth/profile');
   },
@@ -1297,6 +1290,17 @@ export const apiService = {
     return request<TripInquiryThread[]>(`/trips/${tripId}/inquiries`);
   },
 
+  /**
+   * Real money collected across every trip the caller organizes, from
+   * CAPTURED TripPaymentOrder rows only — never a guess derived from seat
+   * counts. Trips with no payment activity at all are simply absent.
+   */
+  async getMyTripPaymentSummaries(): Promise<
+    { tripId: string; collected: string; capturedCount: number; pendingCount: number }[] | null
+  > {
+    return request('/trips/mine/payment-summaries');
+  },
+
   async getChatDetails(id: string): Promise<ChatRoomSummary | null> {
     return request<ChatRoomSummary>(`/chats/${id}`);
   },
@@ -1322,6 +1326,13 @@ export const apiService = {
   /** Who has received and who has read one of the caller's own messages. */
   async getMessageInfo(roomId: string, messageId: string): Promise<MessageAudienceEntry[] | null> {
     return request<MessageAudienceEntry[]>(`/chats/${roomId}/messages/${messageId}/info`);
+  },
+
+  /** Sender-only, permanent. Removes the message for every participant, not just locally. */
+  async deleteMessage(roomId: string, messageId: string): Promise<{ messageId: string }> {
+    return request<{ messageId: string }>(`/chats/${roomId}/messages/${messageId}`, {
+      method: 'DELETE',
+    });
   },
 
   async markChatRead(id: string): Promise<MessageResponse | null> {
