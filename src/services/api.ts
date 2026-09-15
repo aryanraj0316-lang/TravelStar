@@ -1301,6 +1301,18 @@ export const apiService = {
     return request('/trips/mine/payment-summaries');
   },
 
+  /**
+   * How many unread traveller messages are waiting across every trip the
+   * caller organizes — the real signal behind the Organizer role card's
+   * notification badge on the home screen.
+   */
+  async getMyEnquiriesSummary(): Promise<{
+    totalUnread: number;
+    trips: { tripId: string; tripName: string; unreadCount: number }[];
+  } | null> {
+    return request('/trips/mine/enquiries-summary');
+  },
+
   async getChatDetails(id: string): Promise<ChatRoomSummary | null> {
     return request<ChatRoomSummary>(`/chats/${id}`);
   },

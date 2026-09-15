@@ -69,6 +69,7 @@
     "notificationsUnreadHint": "आपके पास अपठित सूचनाएं हैं",
     "profileLabel": "अपनी प्रोफ़ाइल खोलें",
     "roleSelectHint": "इस भूमिका पर स्विच करें",
+    "organizerPendingChatHint": "{{count}} यात्री चैट आपके जवाब का इंतज़ार कर रही है",
     "reelsAndStories": "ट्रैवल रील्स और स्टोरीज़",
     "addStory": "स्टोरी जोड़ें",
     "yourStory": "आपकी स्टोरी",

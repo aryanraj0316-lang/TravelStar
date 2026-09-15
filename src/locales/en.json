@@ -69,6 +69,7 @@
     "notificationsUnreadHint": "You have unread notifications",
     "profileLabel": "Open your profile",
     "roleSelectHint": "Switch to this role",
+    "organizerPendingChatHint": "{{count}} traveller chat pending your reply",
     "reelsAndStories": "Travel Reels & Stories",
     "addStory": "Add Story",
     "yourStory": "Your Story",

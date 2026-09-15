@@ -1648,6 +1648,31 @@ function HomeScreen() {
   } = useApp();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+
+  // A pending enquiry is invisible until the organizer is already inside
+  // the portal, on the right trip's Chats & Approvals tab — this is the
+  // badge on the Organizer role card itself that tells them one is
+  // waiting before they even open it. Refetches whenever a fresh in-app
+  // notification arrives (checkUnreadNotifications' own trigger already
+  // does the same for the bell), not just on mount.
+  const enquiriesSummaryQuery = useQuery({
+    queryKey: queryKeys.myEnquiriesSummary(),
+    queryFn: () => apiService.getMyEnquiriesSummary(),
+    enabled: isLoggedIn,
+    refetchOnWindowFocus: false,
+  });
+  const pendingEnquiriesCount = enquiriesSummaryQuery.data?.totalUnread ?? 0;
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    const unsub = eventBus.on('inAppNotification', (n) => {
+      if (n?.category === 'TRIP_ENQUIRY') {
+        void enquiriesSummaryQuery.refetch();
+      }
+    });
+    return unsub;
+  }, [isLoggedIn, enquiriesSummaryQuery]);
+
   const [authReason, setAuthReason] = useState<AuthReason | null>(null);
   const [simulatedTime, setSimulatedTime] = useState<TimeOfDay | null>('evening');
   const [showTimeDropdown, setShowTimeDropdown] = useState(false);
@@ -1977,6 +2002,8 @@ function HomeScreen() {
                   ? C.greenText
                   : C.amberText;
 
+            const showEnquiryBadge = role.value === 'ORGANIZER' && pendingEnquiriesCount > 0;
+
             return (
               <TouchableOpacity
                 key={role.value}
@@ -1984,12 +2011,28 @@ function HomeScreen() {
                 onPress={() => handleRoleSelect(role.value)}
                 style={[styles.roleCard, isActive && styles.roleCardActive]}
                 accessibilityRole="button"
-                accessibilityLabel={`${t(role.labelKey)}, ${t(role.subKey)}`}
+                accessibilityLabel={
+                  showEnquiryBadge
+                    ? `${t(role.labelKey)}, ${t(role.subKey)}, ${t('home.organizerPendingChatHint', { count: pendingEnquiriesCount })}`
+                    : `${t(role.labelKey)}, ${t(role.subKey)}`
+                }
                 accessibilityHint={t('home.roleSelectHint')}
                 accessibilityState={{ selected: isActive }}
               >
-                <View style={[styles.roleIconCircle, { backgroundColor: iconBg }]}>
-                  <role.Icon size={18} color={iconColor} strokeWidth={2.2} />
+                <View style={{ position: 'relative' }}>
+                  <View style={[styles.roleIconCircle, { backgroundColor: iconBg }]}>
+                    <role.Icon size={18} color={iconColor} strokeWidth={2.2} />
+                  </View>
+                  {/* A trip's organizer has a traveller waiting on an
+                      answer in the portal's Chats & Approvals tab — this
+                      is the only place that was visible before opening it. */}
+                  {showEnquiryBadge && (
+                    <View style={styles.roleEnquiryBadge}>
+                      <Text style={styles.roleEnquiryBadgeText}>
+                        {pendingEnquiriesCount > 9 ? '9+' : pendingEnquiriesCount}
+                      </Text>
+                    </View>
+                  )}
                 </View>
                 <Text style={styles.roleLabel}>{t(role.labelKey)}</Text>
                 <Text style={styles.roleSub}>{t(role.subKey)}</Text>
@@ -2714,6 +2757,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
+  },
+  roleEnquiryBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -6,
+    minWidth: 17,
+    height: 17,
+    borderRadius: 8.5,
+    paddingHorizontal: 4,
+    backgroundColor: C.red,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  roleEnquiryBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
   roleLabel: {
     fontSize: 13,

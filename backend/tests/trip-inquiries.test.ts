@@ -210,6 +210,53 @@ describe('Trip enquiries', () => {
     expect(list.body.data[0].joinRequestStatus).toBe('PENDING');
   }, 90_000);
 
+  it('summarizes pending enquiries across every trip the organizer runs, for the home-screen badge', async () => {
+    const organizer = await registerAndLogin('summary-organizer');
+    const asker1 = await registerAndLogin('summary-asker1');
+    const asker2 = await registerAndLogin('summary-asker2');
+    const tripA = await createTrip(organizer.token, `Summary Trip A ${runId}`);
+    const tripB = await createTrip(organizer.token, `Summary Trip B ${runId}`);
+
+    // Starts clean before anyone has written anything.
+    const before = await request(app)
+      .get('/api/v1/trips/mine/enquiries-summary')
+      .set('Authorization', `Bearer ${organizer.token}`);
+    expect(before.status).toBe(200);
+    expect(before.body.data.totalUnread).toBe(0);
+
+    const openA = await request(app)
+      .post('/api/v1/chats/inquiry')
+      .set('Authorization', `Bearer ${asker1.token}`)
+      .send({ tripId: tripA });
+    await request(app)
+      .post('/api/v1/chats/inquiry')
+      .set('Authorization', `Bearer ${asker2.token}`)
+      .send({ tripId: tripB });
+
+    // Two unread messages on trip A's thread, none yet on trip B's.
+    await prisma.message.create({
+      data: { chatRoomId: openA.body.data.chatRoomId, senderId: asker1.userId, content: 'Still 2 seats?', mediaType: 'NONE' },
+    });
+    await prisma.message.create({
+      data: { chatRoomId: openA.body.data.chatRoomId, senderId: asker1.userId, content: 'Also, is food included?', mediaType: 'NONE' },
+    });
+
+    const after = await request(app)
+      .get('/api/v1/trips/mine/enquiries-summary')
+      .set('Authorization', `Bearer ${organizer.token}`);
+    expect(after.status).toBe(200);
+    expect(after.body.data.totalUnread).toBe(2);
+    expect(after.body.data.trips).toEqual([
+      { tripId: tripA, tripName: `Summary Trip A ${runId}`, unreadCount: 2 },
+    ]);
+
+    // The organizer's own message in the thread does not count against them.
+    const asOtherUser = await request(app)
+      .get('/api/v1/trips/mine/enquiries-summary')
+      .set('Authorization', `Bearer ${asker1.token}`);
+    expect(asOtherUser.body.data.totalUnread).toBe(0);
+  }, 90_000);
+
   it('keeps the enquiry list and its messages away from everyone else', async () => {
     const organizer = await registerAndLogin('privateorganizer');
     const asker = await registerAndLogin('privateasker');

@@ -621,6 +621,62 @@ router.get('/:id/inquiries', async (req, res) => {
   }
 });
 
+// A cheap "do I have anything to answer" signal across every trip the
+// caller organizes — for a badge on the organizer entry point itself
+// (the home screen's Organizer role card), which otherwise had no way to
+// show a pending enquiry without the organizer already being inside the
+// portal, on the right trip's Chats & Approvals tab.
+router.get('/mine/enquiries-summary', async (req, res) => {
+  const userId = requireUserId(req);
+
+  try {
+    const myTrips = await prisma.trip.findMany({ where: { creatorId: userId }, select: { id: true, name: true } });
+    if (myTrips.length === 0) {
+      return res.status(200).json({ ok: true, data: { totalUnread: 0, trips: [] } });
+    }
+    const tripNameById = new Map(myTrips.map((t) => [t.id, t.name]));
+
+    const rooms = await prisma.chatRoom.findMany({
+      where: { inquiryTripId: { in: myTrips.map((t) => t.id) } },
+      select: { id: true, inquiryTripId: true },
+    });
+    if (rooms.length === 0) {
+      return res.status(200).json({ ok: true, data: { totalUnread: 0, trips: [] } });
+    }
+
+    const unreadRows = await prisma.message.groupBy({
+      by: ['chatRoomId'],
+      where: {
+        chatRoomId: { in: rooms.map((r) => r.id) },
+        senderId: { not: userId },
+        isSystem: false,
+        readBy: { none: { userId } },
+      },
+      _count: { chatRoomId: true },
+    });
+    const unreadByRoom = new Map(unreadRows.map((u) => [u.chatRoomId, u._count.chatRoomId]));
+
+    const byTrip = new Map<string, number>();
+    for (const room of rooms) {
+      const unread = unreadByRoom.get(room.id) ?? 0;
+      if (unread === 0 || !room.inquiryTripId) continue;
+      byTrip.set(room.inquiryTripId, (byTrip.get(room.inquiryTripId) ?? 0) + unread);
+    }
+
+    const trips = [...byTrip.entries()].map(([tripId, unreadCount]) => ({
+      tripId,
+      tripName: tripNameById.get(tripId) ?? 'Trip',
+      unreadCount,
+    }));
+    const totalUnread = trips.reduce((sum, t) => sum + t.unreadCount, 0);
+
+    return res.status(200).json({ ok: true, data: { totalUnread, trips } });
+  } catch (err) {
+    logger.error('[Trips] Get enquiries summary error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to load enquiries summary.' } });
+  }
+});
+
 // Real money collected, per trip, across every trip the caller organizes —
 // bulk rather than one-per-id so the organizer's trip list can show a real
 // "Money Collected" figure on every card without an N+1 request per card.
