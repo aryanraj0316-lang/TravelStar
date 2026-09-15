@@ -13,11 +13,14 @@ export interface SheetProps {
   children: React.ReactNode;
   /** Set false for a sheet whose body manages its own scrolling. */
   scrollable?: boolean;
+  /** Only used when scrollable — lets a caller scroll the body programmatically (e.g. to a specific field). */
+  scrollRef?: React.RefObject<ScrollView | null>;
 }
 
-export function Sheet({ visible, onClose, title, children, scrollable = true }: SheetProps) {
+export function Sheet({ visible, onClose, title, children, scrollable = true, scrollRef }: SheetProps) {
   const { t } = useTranslation();
   const Body = scrollable ? ScrollView : View;
+  const bodyProps = scrollable && scrollRef ? { ref: scrollRef } : {};
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -46,7 +49,7 @@ export function Sheet({ visible, onClose, title, children, scrollable = true }: 
               </Pressable>
             </View>
           ) : null}
-          <Body style={styles.body}>{children}</Body>
+          <Body style={styles.body} {...bodyProps}>{children}</Body>
         </View>
       </View>
     </Modal>

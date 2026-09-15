@@ -34,12 +34,10 @@ import LogOut from 'lucide-react-native/icons/log-out';
 import Mail from 'lucide-react-native/icons/mail';
 import MapPin from 'lucide-react-native/icons/map-pin';
 import Pencil from 'lucide-react-native/icons/pencil';
-import Phone from 'lucide-react-native/icons/phone';
 import ShieldAlert from 'lucide-react-native/icons/shield-alert';
 import Sparkles from 'lucide-react-native/icons/sparkles';
 import Trash2 from 'lucide-react-native/icons/trash-2';
 import User from 'lucide-react-native/icons/user';
-import Wallet from 'lucide-react-native/icons/wallet';
 import X from 'lucide-react-native/icons/x';
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -60,6 +58,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Circle } from 'react-native-svg';
 
 // Safe dynamic import to prevent native app crash if module is unlinked in old
 // APK. Deliberately require(), not import(): this needs to synchronously
@@ -86,6 +85,56 @@ const sanitizePhone10 = (val: string | null | undefined): string => {
   }
   return digits.slice(0, 10);
 };
+
+// Instagram-style "story ring" progress indicator, reused around the hero
+// avatar to show real profile-completion progress instead of a generic
+// notice. Undrawn (0-length) below 1% so a totally-empty profile shows the
+// track only, not a stray dot.
+function ProfileCompletionRing({
+  size,
+  strokeWidth,
+  progress,
+  children,
+}: {
+  size: number;
+  strokeWidth: number;
+  progress: number;
+  children: React.ReactNode;
+}) {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const dashOffset = circumference * (1 - Math.max(0, Math.min(100, progress)) / 100);
+  return (
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      <Svg width={size} height={size} style={StyleSheet.absoluteFill}>
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke="rgba(255,255,255,0.22)"
+          strokeWidth={strokeWidth}
+          fill="none"
+        />
+        {progress > 0 && (
+          <Circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke="#38BDF8"
+            strokeWidth={strokeWidth}
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={dashOffset}
+            fill="none"
+            rotation={-90}
+            origin={`${size / 2}, ${size / 2}`}
+          />
+        )}
+      </Svg>
+      {children}
+    </View>
+  );
+}
 
 function ProfileScreen() {
   useEffect(() => {
@@ -146,20 +195,10 @@ function ProfileScreen() {
   const [editName, setEditName] = useState(profile.name || '');
   const [editGender, setEditGender] = useState(profile.gender || 'Private');
   const [editBio, setEditBio] = useState(profile.bio || '');
-  const [editPhone, setEditPhone] = useState(sanitizePhone10(profile.phoneNumber));
   const [editEmergencyPhone, setEditEmergencyPhone] = useState(sanitizePhone10(profile.emergencyContact));
   const [editLanguages, setEditLanguages] = useState(profile.languages || '');
   const [editStyles, setEditStyles] = useState(profile.travelStyles || '');
-  const [phoneError, setPhoneError] = useState('');
   const [emergencyPhoneError, setEmergencyPhoneError] = useState('');
-
-  const handlePhoneChange = (text: string) => {
-    const clean = sanitizePhone10(text);
-    setEditPhone(clean);
-    if (clean.length === 10 || clean.length === 0) {
-      setPhoneError('');
-    }
-  };
 
   const handleEmergencyPhoneChange = (text: string) => {
     const clean = sanitizePhone10(text);
@@ -168,6 +207,58 @@ function ProfileScreen() {
       setEmergencyPhoneError('');
     }
   };
+
+  // ── Guided profile completion (Instagram-style) ─────────────────────
+  // Real fields only — no invented "profiles like yours get more views"
+  // stat, since there is no data behind a claim like that yet.
+  type CompletionKey = 'avatar' | 'bio' | 'emergency' | 'languages' | 'styles';
+  const completionItems: { key: CompletionKey; done: boolean; label: string; hint: string; Icon: typeof Camera }[] = [
+    { key: 'avatar', done: !!profile.avatar, label: t('profile.completeAvatarLabel'), hint: t('profile.completeAvatarHint'), Icon: Camera },
+    { key: 'bio', done: !!profile.bio, label: t('profile.completeBioLabel'), hint: t('profile.completeBioHint'), Icon: Pencil },
+    { key: 'emergency', done: !!profile.emergencyContact, label: t('profile.completeEmergencyLabel'), hint: t('profile.completeEmergencyHint'), Icon: ShieldAlert },
+    { key: 'languages', done: !!profile.languages, label: t('profile.completeLanguagesLabel'), hint: t('profile.completeLanguagesHint'), Icon: Globe },
+    { key: 'styles', done: !!profile.travelStyles, label: t('profile.completeStylesLabel'), hint: t('profile.completeStylesHint'), Icon: Compass },
+  ];
+  const completedCount = completionItems.filter((i) => i.done).length;
+  const completionTotal = completionItems.length;
+  const completionPct = Math.round((completedCount / completionTotal) * 100);
+  const incompleteItems = completionItems.filter((i) => !i.done);
+
+  // Scrolls the edit sheet to, and focuses, one specific field — set by
+  // tapping a checklist row below rather than just opening the sheet on
+  // whatever it last scrolled to.
+  const editScrollRef = useRef<ScrollView>(null);
+  const bioInputRef = useRef<TextInput>(null);
+  const emergencyInputRef = useRef<TextInput>(null);
+  const languagesInputRef = useRef<TextInput>(null);
+  const stylesInputRef = useRef<TextInput>(null);
+  const fieldOffsetsRef = useRef<Partial<Record<CompletionKey, number>>>({});
+  const [focusFieldTarget, setFocusFieldTarget] = useState<CompletionKey | null>(null);
+
+  const openEditModalFocused = (target: CompletionKey) => {
+    setFocusFieldTarget(target);
+    setShowEditModal(true);
+  };
+
+  useEffect(() => {
+    if (!showEditModal || !focusFieldTarget) return;
+    const inputRefByKey: Partial<Record<CompletionKey, React.RefObject<TextInput | null>>> = {
+      bio: bioInputRef,
+      emergency: emergencyInputRef,
+      languages: languagesInputRef,
+      styles: stylesInputRef,
+    };
+    // Long enough for the sheet's own slide-in animation and the field
+    // hydration above to have already run, short enough to still read as
+    // one guided motion rather than a delayed jump.
+    const timer = setTimeout(() => {
+      const y = fieldOffsetsRef.current[focusFieldTarget] ?? 0;
+      editScrollRef.current?.scrollTo({ y: Math.max(0, y - 20), animated: true });
+      inputRefByKey[focusFieldTarget]?.current?.focus();
+      setFocusFieldTarget(null);
+    }, 380);
+    return () => clearTimeout(timer);
+  }, [showEditModal, focusFieldTarget]);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
@@ -192,9 +283,7 @@ function ProfileScreen() {
       setEditName(profile.name || '');
       setEditGender(profile.gender || 'Private');
       setEditBio(profile.bio || '');
-      setEditPhone(sanitizePhone10(profile.phoneNumber));
       setEditEmergencyPhone(sanitizePhone10(profile.emergencyContact));
-      setPhoneError('');
       setEmergencyPhoneError('');
       setEditLanguages(profile.languages || '');
       setEditStyles(profile.travelStyles || '');
@@ -456,13 +545,6 @@ function ProfileScreen() {
       return;
     }
 
-    const cleanPhone = sanitizePhone10(editPhone);
-    if (cleanPhone.length > 0 && cleanPhone.length !== 10) {
-      setPhoneError(t('profile.phoneMustBe10Digits', 'Mobile number must be exactly 10 digits'));
-      toast(t('profile.phoneMustBe10Digits', 'Mobile number must be exactly 10 digits'), 'error');
-      return;
-    }
-
     const cleanEmergency = sanitizePhone10(editEmergencyPhone);
     if (cleanEmergency.length > 0 && cleanEmergency.length !== 10) {
       setEmergencyPhoneError(t('profile.emergencyMustBe10Digits', 'Emergency SOS contact number must be exactly 10 digits'));
@@ -475,7 +557,7 @@ function ProfileScreen() {
       avatar: editAvatar,
       gender: editGender,
       bio: editBio,
-      phoneNumber: cleanPhone,
+      phoneNumber: profile.phoneNumber,
       emergencyContact: cleanEmergency,
       languages: editLanguages,
       travelStyles: editStyles,
@@ -632,26 +714,6 @@ function ProfileScreen() {
             pointerEvents="none"
           />
 
-          {/* Top-Left Action: Wallet Balance */}
-          <TouchableOpacity
-            style={[styles.topLeftActionWrap, { top: Math.max(insets.top, 16) + 4 }]}
-            activeOpacity={0.8}
-            onPress={() => {
-              if (!isLoggedIn) {
-                router.push('/auth?mode=SIGNUP');
-              } else {
-                router.push('/budget-tracker');
-              }
-            }}
-            accessibilityRole="button"
-            accessibilityLabel={`${t('profile.statWallet')}: ${formatINR(profile.walletBalance ?? 0)}`}
-          >
-            <View style={styles.topWalletPill}>
-              <Wallet size={12.5} color="#86EFAC" strokeWidth={2} />
-              <Text style={styles.topWalletAmount}>{formatINR(profile.walletBalance ?? 0)}</Text>
-            </View>
-          </TouchableOpacity>
-
           {/* Top-Right Action Column: Edit (Pencil), Notifications (Bell) */}
           <View style={[styles.topRightActionCol, { top: Math.max(insets.top, 16) + 4 }]}>
             <TouchableOpacity
@@ -695,21 +757,48 @@ function ProfileScreen() {
               }}
               style={styles.avatarHaloContainer}
               accessibilityRole="button"
-              accessibilityLabel={isLoggedIn ? t('profile.profilePhoto') : (t('common.login') || 'Sign In')}
+              accessibilityLabel={
+                isLoggedIn
+                  ? completionPct < 100
+                    ? t('profile.profilePhotoWithProgress', { percent: completionPct })
+                    : t('profile.profilePhoto')
+                  : (t('common.login') || 'Sign In')
+              }
             >
-              <View style={styles.avatarBorder}>
-                {isLoggedIn && profile.avatar ? (
-                  <Image source={{ uri: profile.avatar }} style={styles.avatar} />
-                ) : (
-                  <View style={styles.anonymousAvatar}>
-                    <User size={38} color="#94A3B8" strokeWidth={1.8} />
+              {isLoggedIn && completionPct < 100 ? (
+                <ProfileCompletionRing size={104} strokeWidth={3} progress={completionPct}>
+                  <View style={styles.avatarInnerWrap}>
+                    <View style={styles.avatarBorder}>
+                      {profile.avatar ? (
+                        <Image source={{ uri: profile.avatar }} style={styles.avatar} />
+                      ) : (
+                        <View style={styles.anonymousAvatar}>
+                          <User size={38} color="#94A3B8" strokeWidth={1.8} />
+                        </View>
+                      )}
+                    </View>
+                    <View style={styles.avatarCameraBadge}>
+                      <Camera size={12} color="#FFFFFF" strokeWidth={2.4} />
+                    </View>
                   </View>
-                )}
-              </View>
-              {isLoggedIn && (
-                <View style={styles.avatarCameraBadge}>
-                  <Camera size={12} color="#FFFFFF" strokeWidth={2.4} />
-                </View>
+                </ProfileCompletionRing>
+              ) : (
+                <>
+                  <View style={styles.avatarBorder}>
+                    {isLoggedIn && profile.avatar ? (
+                      <Image source={{ uri: profile.avatar }} style={styles.avatar} />
+                    ) : (
+                      <View style={styles.anonymousAvatar}>
+                        <User size={38} color="#94A3B8" strokeWidth={1.8} />
+                      </View>
+                    )}
+                  </View>
+                  {isLoggedIn && (
+                    <View style={styles.avatarCameraBadge}>
+                      <Camera size={12} color="#FFFFFF" strokeWidth={2.4} />
+                    </View>
+                  )}
+                </>
               )}
             </TouchableOpacity>
 
@@ -777,35 +866,50 @@ function ProfileScreen() {
 
 
           {/* ════════════════════════════════════════════════
-              PROFILE SETUP GUIDE BANNER (IF INCOMPLETE)
+              GUIDED PROFILE COMPLETION (IF INCOMPLETE)
               ════════════════════════════════════════════════ */}
-          {isLoggedIn && (!profile.avatar || !profile.bio) && (
+          {isLoggedIn && completionPct < 100 && (
             <View style={styles.profileSetupBannerWrap}>
-              <View style={styles.profileSetupBanner}>
-                <View style={styles.setupBannerLeft}>
+              <View style={styles.setupCard}>
+                <View style={styles.setupCardHeader}>
                   <View style={styles.setupBannerIconBadge}>
                     <Sparkles size={18} color="#0B63E5" />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.setupBannerTitle}>Complete your profile</Text>
-                    <Text style={styles.setupBannerSubtitle}>
-                      {!profile.avatar && !profile.bio
-                        ? 'Add a photo from your device and a bio to connect with travelers.'
-                        : !profile.avatar
-                          ? 'Add your profile picture from your device.'
-                          : 'Add a bio to introduce yourself.'}
-                    </Text>
+                    <Text style={styles.setupBannerTitle}>{t('profile.setupCardTitle')}</Text>
+                    <Text style={styles.setupBannerSubtitle}>{t('profile.setupCardSubtitle')}</Text>
                   </View>
+                  <Text style={styles.setupCardPercent}>{completionPct}%</Text>
                 </View>
-                <TouchableOpacity
-                  style={styles.setupBannerActionBtn}
-                  onPress={() => setShowEditModal(true)}
-                  activeOpacity={0.85}
-                  accessibilityRole="button"
-                  accessibilityLabel="Set up profile"
-                >
-                  <Text style={styles.setupBannerActionText}>Set Up →</Text>
-                </TouchableOpacity>
+
+                <View style={styles.setupProgressTrack}>
+                  <View style={[styles.setupProgressFill, { width: `${completionPct}%` }]} />
+                </View>
+
+                <View style={styles.setupChecklist}>
+                  {incompleteItems.map((item) => (
+                    <TouchableOpacity
+                      key={item.key}
+                      style={styles.setupChecklistRow}
+                      activeOpacity={0.7}
+                      onPress={() => openEditModalFocused(item.key)}
+                      accessibilityRole="button"
+                      accessibilityLabel={item.label}
+                      accessibilityHint={item.hint}
+                    >
+                      <View style={styles.setupChecklistIconWrap}>
+                        <item.Icon size={15} color="#0B63E5" strokeWidth={2} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.setupChecklistLabel}>{item.label}</Text>
+                        <Text style={styles.setupChecklistHint} numberOfLines={1}>
+                          {item.hint}
+                        </Text>
+                      </View>
+                      <ChevronRight size={16} color="#94A3B8" />
+                    </TouchableOpacity>
+                  ))}
+                </View>
               </View>
             </View>
           )}
@@ -817,28 +921,6 @@ function ProfileScreen() {
             {/* Section: PERSONAL DETAILS */}
             <Text style={styles.sectionHeader}>{t('profile.personalDetails')}</Text>
             <View style={styles.menuCard}>
-              <TouchableOpacity
-                style={styles.detailItem}
-                activeOpacity={0.7}
-                onPress={() => (isLoggedIn ? setShowEditModal(true) : router.push('/auth?mode=SIGNUP'))}
-                accessibilityRole="button"
-              >
-                <View style={styles.menuItemLeft}>
-                  <View style={[styles.menuIconBadge, { backgroundColor: '#EFF6FF' }]}>
-                    <Phone size={16} color="#0B63E5" />
-                  </View>
-                  <View style={styles.menuItemTextCol}>
-                    <Text style={styles.detailLabel}>{t('profile.mobilePhone')}</Text>
-                    <Text style={[styles.detailValue, !profile.phoneNumber && styles.detailValueEmpty]}>
-                      {profile.phoneNumber ? sanitizePhone10(profile.phoneNumber) : t('profile.notAddedYet')}
-                    </Text>
-                  </View>
-                </View>
-                <ChevronRight size={15} color="#94A3B8" />
-              </TouchableOpacity>
-
-              <View style={styles.menuDivider} />
-
               <TouchableOpacity
                 style={styles.detailItem}
                 activeOpacity={0.7}
@@ -1300,20 +1382,26 @@ function ProfileScreen() {
       <Sheet
         visible={showEditModal}
         onClose={() => setShowEditModal(false)}
-        title={(!profile.avatar || !profile.bio) ? 'Set Up Your Profile' : t('profile.editProfileTitle')}
+        title={completionPct < 100 ? 'Set Up Your Profile' : t('profile.editProfileTitle')}
+        scrollRef={editScrollRef}
       >
         {/* Friendly setup guide notice if profile is not fully set up */}
-        {(!profile.avatar || !profile.bio) && (
+        {completionPct < 100 && (
           <View style={styles.modalSetupTip}>
             <Sparkles size={18} color="#0B63E5" />
             <Text style={styles.modalSetupTipText}>
-              Add your profile photo from your device and a bio so fellow travelers can get to know you!
+              {t('profile.setupCardSubtitle')} ({completedCount}/{completionTotal})
             </Text>
           </View>
         )}
 
         {/* Profile Photo Selector Section */}
-        <View style={styles.photoPickerSection}>
+        <View
+          style={styles.photoPickerSection}
+          onLayout={(e) => {
+            fieldOffsetsRef.current.avatar = e.nativeEvent.layout.y;
+          }}
+        >
           <Text style={styles.inputLabel}>{t('profile.profilePhoto')}</Text>
 
           {/* Large Preview with Interactive Tap */}
@@ -1427,48 +1515,49 @@ function ProfileScreen() {
           })}
         </View>
 
-        <Input
-          label={t('profile.bioTagline')}
-          value={editBio}
-          onChangeText={setEditBio}
-          multiline
-          placeholder={t('profile.shareTravelMotto')}
-          containerStyle={styles.editFieldGap}
-        />
-        <Input
-          label={t('profile.mobilePhone')}
-          value={editPhone}
-          onChangeText={handlePhoneChange}
-          keyboardType="numeric"
-          maxLength={10}
-          placeholder="10-digit mobile number"
-          hint={editPhone.length > 0 && editPhone.length < 10 ? `${editPhone.length}/10 digits (${10 - editPhone.length} more needed)` : undefined}
-          error={phoneError}
-          containerStyle={styles.editFieldGap}
-        />
-        <Input
-          label={t('profile.emergencySosContact')}
-          value={editEmergencyPhone}
-          onChangeText={handleEmergencyPhoneChange}
-          keyboardType="numeric"
-          maxLength={10}
-          placeholder="10-digit emergency SOS contact"
-          hint={editEmergencyPhone.length > 0 && editEmergencyPhone.length < 10 ? `${editEmergencyPhone.length}/10 digits (${10 - editEmergencyPhone.length} more needed)` : undefined}
-          error={emergencyPhoneError}
-          containerStyle={styles.editFieldGap}
-        />
-        <Input
-          label={t('profile.languagesSpoken')}
-          value={editLanguages}
-          onChangeText={setEditLanguages}
-          containerStyle={styles.editFieldGap}
-        />
-        <Input
-          label={t('profile.travelAdventureStyles')}
-          value={editStyles}
-          onChangeText={setEditStyles}
-          containerStyle={styles.editFieldGap}
-        />
+        <View onLayout={(e) => { fieldOffsetsRef.current.bio = e.nativeEvent.layout.y; }}>
+          <Input
+            ref={bioInputRef}
+            label={t('profile.bioTagline')}
+            value={editBio}
+            onChangeText={setEditBio}
+            multiline
+            placeholder={t('profile.shareTravelMotto')}
+            containerStyle={styles.editFieldGap}
+          />
+        </View>
+        <View onLayout={(e) => { fieldOffsetsRef.current.emergency = e.nativeEvent.layout.y; }}>
+          <Input
+            ref={emergencyInputRef}
+            label={t('profile.emergencySosContact')}
+            value={editEmergencyPhone}
+            onChangeText={handleEmergencyPhoneChange}
+            keyboardType="numeric"
+            maxLength={10}
+            placeholder="10-digit emergency SOS contact"
+            hint={editEmergencyPhone.length > 0 && editEmergencyPhone.length < 10 ? `${editEmergencyPhone.length}/10 digits (${10 - editEmergencyPhone.length} more needed)` : undefined}
+            error={emergencyPhoneError}
+            containerStyle={styles.editFieldGap}
+          />
+        </View>
+        <View onLayout={(e) => { fieldOffsetsRef.current.languages = e.nativeEvent.layout.y; }}>
+          <Input
+            ref={languagesInputRef}
+            label={t('profile.languagesSpoken')}
+            value={editLanguages}
+            onChangeText={setEditLanguages}
+            containerStyle={styles.editFieldGap}
+          />
+        </View>
+        <View onLayout={(e) => { fieldOffsetsRef.current.styles = e.nativeEvent.layout.y; }}>
+          <Input
+            ref={stylesInputRef}
+            label={t('profile.travelAdventureStyles')}
+            value={editStyles}
+            onChangeText={setEditStyles}
+            containerStyle={styles.editFieldGap}
+          />
+        </View>
 
         <Button
           label={t('profile.saveProfileChanges')}
@@ -1667,30 +1756,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#010307',
   },
-  topLeftActionWrap: {
-    position: 'absolute',
-    left: 16,
-    zIndex: 10,
-  },
-  topWalletPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.18)',
-    paddingVertical: 5,
-    paddingHorizontal: 11,
-    borderRadius: MIN_TOUCH_TARGET / 2,
-    minHeight: MIN_TOUCH_TARGET,
-    opacity: 0.88,
-  },
-  topWalletAmount: {
-    fontSize: 12.5,
-    fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.88)',
-    letterSpacing: -0.2,
-  },
   topRightActionCol: {
     position: 'absolute',
     top: 16,
@@ -1739,6 +1804,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 8,
     elevation: 6,
+  },
+  // Sized to exactly the avatar circle, nested inside the wider completion
+  // ring — the camera badge anchors to this (not the ring's own bounds), so
+  // it always sits on the avatar's own edge regardless of ring size.
+  avatarInnerWrap: {
+    width: 90,
+    height: 90,
   },
   avatarBorder: {
     width: 90,
@@ -1890,14 +1962,10 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: 16,
   },
-  profileSetupBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  setupCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 18,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    padding: 16,
     borderWidth: 1,
     borderColor: '#BFDBFE',
     shadowColor: '#0B63E5',
@@ -1905,13 +1973,17 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 12,
     elevation: 3,
-    gap: 12,
+    gap: 14,
   },
-  setupBannerLeft: {
-    flex: 1,
+  setupCardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+  },
+  setupCardPercent: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0B63E5',
   },
   setupBannerIconBadge: {
     width: 38,
@@ -1934,18 +2006,43 @@ const styles = StyleSheet.create({
     color: '#64748B',
     lineHeight: 15,
   },
-  setupBannerActionBtn: {
+  setupProgressTrack: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#E2E8F0',
+    overflow: 'hidden',
+  },
+  setupProgressFill: {
+    height: '100%',
+    borderRadius: 3,
     backgroundColor: '#0B63E5',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 10,
+  },
+  setupChecklist: {
+    gap: 2,
+  },
+  setupChecklistRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 9,
+  },
+  setupChecklistIconWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#EFF6FF',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  setupBannerActionText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#FFFFFF',
+  setupChecklistLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#0F172A',
+  },
+  setupChecklistHint: {
+    fontSize: 11.5,
+    color: '#64748B',
+    marginTop: 1,
   },
 
   // Menu Sections
