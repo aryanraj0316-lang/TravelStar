@@ -13,6 +13,8 @@ import Camera from 'lucide-react-native/icons/camera';
 import ChevronUp from 'lucide-react-native/icons/chevron-up';
 import Eye from 'lucide-react-native/icons/eye';
 import Heart from 'lucide-react-native/icons/heart';
+import MoreHorizontal from 'lucide-react-native/icons/ellipsis';
+import Share2 from 'lucide-react-native/icons/share-2';
 import Trash2 from 'lucide-react-native/icons/trash-2';
 import User from 'lucide-react-native/icons/user';
 import X from 'lucide-react-native/icons/x';
@@ -21,6 +23,7 @@ import { useTranslation } from 'react-i18next';
 import {
   Alert,
   Image,
+  Share,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -262,16 +265,21 @@ export default function StoriesScreen() {
   // Determine if active story is created by the current user
   const isMyStory = useMemo(() => {
     if (!activeStory) return false;
-    if (activeStory.userId && profile.id && activeStory.userId === profile.id) return true;
-    if (
+    // A recorded userId is authoritative and final either way — falling
+    // through to a name match on a *mismatch* (rather than only when no
+    // userId was ever recorded) let two people who merely share a display
+    // name see each other's stories as "mine," "You"-badged and
+    // deletable. The name fallback exists only for the handful of
+    // legacy rows from before story authorship was reliably recorded.
+    if (activeStory.userId) {
+      return !!profile.id && activeStory.userId === profile.id;
+    }
+    return !!(
       activeStory.authorName &&
       profile.name &&
       profile.name !== 'Guest Traveler' &&
       activeStory.authorName.trim().toLowerCase() === profile.name.trim().toLowerCase()
-    ) {
-      return true;
-    }
-    return false;
+    );
   }, [activeStory, profile.id, profile.name]);
 
   // Fetch viewer and like interactions
@@ -335,6 +343,44 @@ export default function StoriesScreen() {
     void fetchInteractions();
   };
 
+  // "..." menu — replaces the header trash icon, which read as a
+  // destructive action sitting in everyone's face rather than an
+  // intentional choice. Delete now lives behind one more tap, next to
+  // Share, like every other options menu in the app.
+  const [showOptionsMenu, setShowOptionsMenu] = useState(false);
+
+  const openOptionsMenu = () => {
+    progressAnim.stopAnimation();
+    setShowOptionsMenu(true);
+  };
+
+  const closeOptionsMenu = () => {
+    setShowOptionsMenu(false);
+    if (!storyIsVideo) {
+      startStoryTimer(progressValueRef.current);
+    }
+  };
+
+  const handleShareStory = async () => {
+    if (!activeStory) return;
+    setShowOptionsMenu(false);
+    try {
+      // No public web view of a story exists yet, so this shares real
+      // content only — never a fabricated link to a page nobody can open.
+      const parts = [activeStory.title, activeStory.content].filter(
+        (s, i, arr) => !!s && arr.indexOf(s) === i,
+      );
+      const author = activeStory.authorName || t('stories.defaultCreatorName');
+      const message = [...parts, `Shared from TravelStar by ${author}`].join('\n\n');
+      await Share.share({ message });
+    } catch (e) {
+      logger.warn('[Stories] Share failed:', e);
+    } finally {
+      if (!storyIsVideo) {
+        startStoryTimer(progressValueRef.current);
+      }
+    }
+  };
 
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -609,21 +655,14 @@ export default function StoriesScreen() {
           </View>
         </View>
         <View style={styles.headerRightActions}>
-          {isMyStory && (
-            <TouchableOpacity
-              style={styles.headerDeleteBtn}
-              onPress={promptDeleteStory}
-              accessibilityRole="button"
-              accessibilityLabel="Delete this story"
-              disabled={isDeleting}
-            >
-              {isDeleting ? (
-                <ActivityIndicator size="small" color="#EF4444" />
-              ) : (
-                <Trash2 size={18} color="#EF4444" strokeWidth={2.2} />
-              )}
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            style={styles.headerMoreBtn}
+            onPress={openOptionsMenu}
+            accessibilityRole="button"
+            accessibilityLabel={t('stories.moreOptions')}
+          >
+            <MoreHorizontal size={20} color="#FFF" strokeWidth={2.2} />
+          </TouchableOpacity>
           <TouchableOpacity style={styles.closeBtn} onPress={goBackOrHome} accessibilityRole="button" accessibilityLabel={t('stories.closeStories')}>
             <X size={20} color="#FFF" />
           </TouchableOpacity>
@@ -810,6 +849,47 @@ export default function StoriesScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* "..." options menu — Share, and Delete for the story's own author */}
+      <Modal visible={showOptionsMenu} animationType="fade" transparent onRequestClose={closeOptionsMenu}>
+        <View style={styles.modalOverlay}>
+          <Pressable style={styles.modalBackdrop} onPress={closeOptionsMenu} />
+          <View style={[styles.optionsMenuSheet, { paddingBottom: Math.max(insets.bottom, 20) }]}>
+            <View style={styles.sheetHandleBar} />
+            <TouchableOpacity
+              style={styles.optionsMenuRow}
+              onPress={() => void handleShareStory()}
+              accessibilityRole="button"
+              accessibilityLabel={t('stories.shareStory')}
+            >
+              <Share2 size={18} color="#FFF" strokeWidth={2} />
+              <Text style={styles.optionsMenuRowText}>{t('stories.shareStory')}</Text>
+            </TouchableOpacity>
+            {isMyStory && (
+              <TouchableOpacity
+                style={styles.optionsMenuRow}
+                onPress={() => {
+                  setShowOptionsMenu(false);
+                  promptDeleteStory();
+                }}
+                disabled={isDeleting}
+                accessibilityRole="button"
+                accessibilityLabel={t('stories.deleteStory')}
+              >
+                {isDeleting ? (
+                  <ActivityIndicator size="small" color="#EF4444" />
+                ) : (
+                  <Trash2 size={18} color="#EF4444" strokeWidth={2} />
+                )}
+                <Text style={[styles.optionsMenuRowText, { color: '#EF4444' }]}>{t('stories.deleteStory')}</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={styles.optionsMenuCancelRow} onPress={closeOptionsMenu} accessibilityRole="button" accessibilityLabel={t('common.cancel')}>
+              <Text style={styles.optionsMenuCancelText}>{t('common.cancel')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -926,13 +1006,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  headerDeleteBtn: {
+  headerMoreBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
     backgroundColor: 'rgba(0, 0, 0, 0.45)',
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.35)',
+    borderColor: 'rgba(255, 255, 255, 0.2)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1081,6 +1161,39 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginTop: 10,
     marginBottom: 4,
+  },
+  optionsMenuSheet: {
+    backgroundColor: '#0F172A',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    paddingTop: 4,
+    paddingHorizontal: 8,
+  },
+  optionsMenuRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 16,
+  },
+  optionsMenuRowText: {
+    color: '#FFF',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  optionsMenuCancelRow: {
+    marginTop: 4,
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+    alignItems: 'center',
+  },
+  optionsMenuCancelText: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 15,
+    fontWeight: '600',
   },
   sheetHeader: {
     flexDirection: 'row',

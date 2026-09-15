@@ -1274,7 +1274,7 @@ function ChatScreen() {
             latestMessage: snippetText,
             latestTime: latestMsg.createdAt || latestMsg.timestamp || nowIso,
             unreadCount: isCurrentRoom ? 0 : (shouldMarkUnread ? 1 : 0),
-            badge: roomType === 'GUIDE' ? 'Guide' : 'Group Chat',
+            badge: roomType === 'GUIDE' ? 'Guide' : roomType === 'DM' ? 'Direct' : 'Group Chat',
             lastMessageAt: nowIso,
           };
           return [newRoom, ...otherRooms];
@@ -1428,8 +1428,11 @@ function ChatScreen() {
         name: t.name.includes('Chat') || t.name.includes('Group') ? t.name : `${t.name} Group Chat`,
         avatar: t.coverImage || 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=150&q=80',
         type: 'GROUP',
-        latestMessage: 'System: Welcome to the group chat! Start planning together.',
-        latestTime: 'Just Now',
+        // A room nobody has posted in has no latest message — saying
+        // "System: Welcome to the group chat!" put words in a System
+        // sender's mouth for a message that was never sent.
+        latestMessage: '',
+        latestTime: (t as any).lastMessageAt || (t as any).createdAt || '',
         unreadCount: 0,
         badge: t.creatorId === profile.id ? 'Organizer Trip' : 'Member',
         myRole: t.creatorId === profile.id ? 'Organizer' : 'Member',
@@ -2514,8 +2517,8 @@ function ChatScreen() {
               : `${matchedTrip.name} Group Chat`,
           avatar: matchedTrip.coverImage || 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=150&q=80',
           type: 'GROUP',
-          latestMessage: 'System: Welcome to the group chat! Start planning together.',
-          latestTime: 'Just Now',
+          latestMessage: '',
+          latestTime: (matchedTrip as any).lastMessageAt || (matchedTrip as any).createdAt || '',
           unreadCount: 0,
           badge: 'Member',
         };
@@ -2760,7 +2763,7 @@ function ChatScreen() {
                               style={[styles.roomSnippetText, hasUnread && { color: C.text, fontWeight: '600' }]}
                               numberOfLines={1}
                             >
-                              {room.latestMessage}
+                              {room.latestMessage || t('chat.noMessagesInChat')}
                             </Text>
                             <View style={styles.roomBadgeWrap}>
                               {/* DM: show shared trip name at bottom-right */}

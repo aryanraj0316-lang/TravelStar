@@ -83,6 +83,67 @@ describe('Trip enquiries', () => {
     expect(members.map((m) => m.userId).sort()).toEqual([organizer.userId, tourist.userId].sort());
   }, 90_000);
 
+  it('tells the organizer a new enquiry is waiting on them', async () => {
+    const organizer = await registerAndLogin('notify-org');
+    const tourist = await registerAndLogin('notify-tourist');
+    const tripId = await createTrip(organizer.token, `Notify Trip ${runId}`);
+
+    const opened = await request(app)
+      .post('/api/v1/chats/inquiry')
+      .set('Authorization', `Bearer ${tourist.token}`)
+      .send({ tripId });
+    expect(opened.status).toBe(201);
+
+    // The thread on its own is invisible to an organizer who is not already
+    // looking at that tab — this is what actually brings them back to it.
+    const notifications = await prisma.notification.findMany({
+      where: { userId: organizer.userId, tripId },
+    });
+    expect(notifications).toHaveLength(1);
+    expect(notifications[0]!.category).toBe('TRIP_ENQUIRY');
+    // Carries the trip and the thread, so the notification can open that
+    // trip's Chats & Approvals section rather than a generic inbox.
+    expect(notifications[0]!.chatRoomId).toBe(opened.body.data.chatRoomId);
+    expect(notifications[0]!.content).toContain('Inquiry notify-tourist');
+
+    // The traveller who asked is not notified about their own question.
+    expect(await prisma.notification.count({ where: { userId: tourist.userId, tripId } })).toBe(0);
+  }, 90_000);
+
+  it('shows an enquiry in the inbox as a direct message with no invented preview', async () => {
+    const organizer = await registerAndLogin('inbox-org');
+    const tourist = await registerAndLogin('inbox-tourist');
+    const tripId = await createTrip(organizer.token, `Inbox Shape ${runId}`);
+
+    const opened = await request(app)
+      .post('/api/v1/chats/inquiry')
+      .set('Authorization', `Bearer ${tourist.token}`)
+      .send({ tripId });
+    const chatRoomId = opened.body.data.chatRoomId;
+
+    for (const side of [organizer, tourist]) {
+      const inbox = await request(app).get('/api/v1/chats').set('Authorization', `Bearer ${side.token}`);
+      expect(inbox.status).toBe(200);
+      const room = inbox.body.data.find((r: { id: string }) => r.id === chatRoomId);
+      expect(room).toBeTruthy();
+
+      // One traveller and one organizer is a direct message, from both
+      // ends — not a group, and not a guide booking thread, which is
+      // where every non-group room used to be filed.
+      expect(room.type).toBe('DM');
+      expect(room.badge).toBe('Direct');
+
+      // Nobody has said anything yet, so there is no last message to show.
+      // This used to read "System: Welcome to the group chat! Start
+      // planning together." — a message no one sent, about a group that
+      // does not exist.
+      expect(room.latestMessage).toBe('');
+      expect(room.latestMessage).not.toContain('group chat');
+      // Still attributed to the trip it is about, so the inbox can label it.
+      expect(room.inquiryTripId).toBe(tripId);
+    }
+  }, 90_000);
+
   it('refuses an organizer opening an enquiry with themselves', async () => {
     const organizer = await registerAndLogin('selforganizer');
     const tripId = await createTrip(organizer.token, `Self Enquiry ${runId}`);

@@ -20,6 +20,8 @@ type NotificationListener = (data: {
   unread?: boolean;
   tripId?: string | null;
   chatRoomId?: string | null;
+  /** Set on PAYMENT_REQUIRED — what the payment screen needs to open. */
+  joinRequestId?: string | null;
   category?: NotificationCategory | null;
 }) => void;
 type TypingListener = (data: { roomId: string; userId: string; userName: string; isTyping: boolean }) => void;

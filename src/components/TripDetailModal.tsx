@@ -99,17 +99,17 @@ export default function TripDetailModal({
   const tripName = trip.name;
   const organizerName = trip.creator;
 
+  // Only the authoritative id checks — the previous version also matched
+  // by substring on display name, including whenever the organizer's own
+  // name happened to *contain* the word "you" (Yousuf, Younis, "Youth
+  // Travels", …) or "organizer", which made every viewer of that trip see
+  // themselves as its organizer: their own avatar and name shown in the
+  // organizer's place, regardless of who actually created the trip.
   const isMeOrganizer = Boolean(
     isLoggedIn &&
       profile &&
       (("isMyTrip" in trip && (trip as any).isMyTrip) ||
-        (trip.creatorId && profile.id && trip.creatorId === profile.id) ||
-        (organizerName && profile.name && (
-          organizerName.toLowerCase().includes(profile.name.toLowerCase()) ||
-          profile.name.toLowerCase().includes(organizerName.toLowerCase()) ||
-          organizerName.toLowerCase().includes('you') ||
-          (organizerName.toLowerCase().includes('organizer') && profile.name)
-        )))
+        (trip.creatorId && profile.id && trip.creatorId === profile.id))
   );
 
   const organizerAvatarUri =

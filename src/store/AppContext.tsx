@@ -530,8 +530,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (nameKey) seenNames.add(nameKey);
           return true;
         });
+        // Only the authoritative id check backfills the viewer's own
+        // avatar onto a trip missing one — the previous version also
+        // matched whenever the organizer's display name merely *contained*
+        // the viewer's own name as a substring (and matched everything
+        // when the viewer's name was empty), which stamped the viewer's
+        // own DP onto other people's trips as if they were the organizer.
         const enriched = unique.map((t) => {
-          if (!t.creatorAvatar && profile && (t.isMyTrip || (profile.id && t.creatorId === profile.id) || (profile.name && t.creator?.toLowerCase().includes(profile.name.toLowerCase())))) {
+          if (!t.creatorAvatar && profile && (t.isMyTrip || (profile.id && t.creatorId === profile.id))) {
             return { ...t, creatorAvatar: profile.avatar || null };
           }
           return t;
@@ -833,7 +839,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         chatRoomId: data.chatRoomId ?? undefined,
         tripId: data.tripId ?? undefined,
         category: data.category ?? undefined,
-        joinRequestId: (data as any).joinRequestId ?? undefined,
+        joinRequestId: data.joinRequestId ?? undefined,
       });
     });
 

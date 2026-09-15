@@ -634,7 +634,10 @@
     "defaultCreatorName": "यात्री",
     "loadingStories": "स्टोरीज़ लोड हो रही हैं…",
     "couldNotLoadStories": "स्टोरीज़ लोड नहीं हो सकीं",
-    "couldNotLoadStoriesMessage": "हम सर्वर तक नहीं पहुंच सके। अपना कनेक्शन जांचें और फिर से प्रयास करें।"
+    "couldNotLoadStoriesMessage": "हम सर्वर तक नहीं पहुंच सके। अपना कनेक्शन जांचें और फिर से प्रयास करें।",
+    "moreOptions": "और विकल्प",
+    "shareStory": "स्टोरी साझा करें",
+    "deleteStory": "स्टोरी हटाएं"
   },
   "tripDetailModal": {
     "requestSubmitted": "अनुरोध सबमिट हो गया!",

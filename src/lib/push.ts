@@ -142,6 +142,7 @@ export async function unregisterPushNotifications(): Promise<void> {
 export function routeForNotificationData(data: Record<string, unknown> | undefined): string {
   const screen = typeof data?.screen === 'string' ? data.screen : '';
   const tripId = typeof data?.tripId === 'string' ? data.tripId : '';
+  const joinRequestId = typeof data?.joinRequestId === 'string' ? data.joinRequestId : '';
   // Only routes that actually exist. There is no standalone trip screen —
   // /map is the one that takes a tripId and focuses that trip — so a trip
   // notification lands there, and anything without one falls back to the
@@ -153,6 +154,19 @@ export function routeForNotificationData(data: Record<string, unknown> | undefin
       return '/monsoon-advisory';
     case 'chat':
       return '/chat';
+    // The payment screen is useless without the request it is collecting
+    // for, so a payload missing it goes to the user's bookings rather than
+    // opening a screen that can only show an error.
+    case 'trip-payment':
+      return joinRequestId
+        ? `/trip-payment?joinRequestId=${encodeURIComponent(joinRequestId)}`
+        : '/bookings';
+    // A trip enquiry is organizer work, so it opens that trip's Chats &
+    // Approvals section in the organizer portal rather than the chat inbox.
+    case 'group-organizer':
+      return tripId
+        ? `/group-organizer?tripId=${encodeURIComponent(tripId)}&sub=approvals`
+        : '/group-organizer';
     default:
       return '/notifications';
   }

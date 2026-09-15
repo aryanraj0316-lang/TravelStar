@@ -5,6 +5,7 @@ import { logger } from '../../lib/logger';
 import { requireUserId } from '../../lib/auth-context';
 import { ObjectStorageNotConfiguredError, createChatMediaUploadUrl } from '../../lib/object-storage';
 import { audienceForMessage, recordDelivery, statusesForOwnMessages } from '../../services/message-status';
+import { notifyTripEnquiry } from '../../services/trip-enquiry-notifications';
 
 const router = Router();
 
@@ -133,12 +134,21 @@ router.get('/', async (req, res) => {
         ? (otherName ? otherName + ' · ' + room.inquiryTrip.name : 'Enquiry · ' + room.inquiryTrip.name)
         : (room.name || otherName || trip?.name || (room.isGroup ? 'Group Chat' : 'Direct Chat'));
       const roomAvatar = (!room.isGroup && otherAvatar) ? otherAvatar : (trip?.coverImage ?? otherAvatar ?? null);
-      const roomType = room.isGroup ? 'GROUP' : 'GUIDE';
+      // An enquiry is a one-to-one conversation between a traveller and an
+      // organizer, so it belongs under Direct Messages. Every non-group room
+      // used to be typed 'GUIDE' regardless, which filed enquiries under
+      // Guides as though the organizer were a hired guide — and left the
+      // client's own 'DMS' filter permanently empty, since nothing ever
+      // returned 'DM'.
+      const roomType = room.isGroup ? 'GROUP' : room.inquiryTripId ? 'DM' : 'GUIDE';
 
       const lastMsg = room.messages[0];
+      // No message yet means no preview — not an invented "System: Welcome
+      // to the group chat!" line that nobody sent, shown even on a
+      // one-to-one enquiry that is not a group at all.
       const lastMsgPreview = lastMsg
         ? `${lastMsg.sender?.profile?.firstName || 'User'}: ${lastMsg.content || ''}`
-        : 'System: Welcome to the group chat! Start planning together.';
+        : '';
 
       const unreadCount = unreadCountByRoom.get(room.id) ?? 0;
       const sortDate = lastMsg?.createdAt || room.createdAt;
@@ -227,6 +237,23 @@ router.post('/inquiry', async (req, res) => {
         members: { create: [{ userId: tokenUserId }, { userId: trip.creatorId }] },
       },
       select: { id: true },
+    });
+
+    const asker = await prisma.user.findUnique({
+      where: { id: tokenUserId },
+      include: { profile: true },
+    });
+    const travellerName = asker?.profile
+      ? `${asker.profile.firstName} ${asker.profile.lastName || ''}`.trim()
+      : (asker?.email?.split('@')[0] ?? 'A traveller');
+
+    await notifyTripEnquiry({
+      tripId,
+      tripName: trip.name,
+      organizerId: trip.creatorId,
+      chatRoomId: room.id,
+      travellerName,
+      io: req.app.get('socketio'),
     });
 
     return res.status(201).json({ ok: true, data: { chatRoomId: room.id, tripId, tripName: trip.name } });

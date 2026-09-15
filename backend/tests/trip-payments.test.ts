@@ -144,6 +144,19 @@ describe('Trip Payments & Payment-Gated Join Flow (CONVENTIONS.md §3, REMEDIATI
     expect(approveRes.status).toBe(200);
     const status = approveRes.body.data.status;
     expect(['AWAITING_PAYMENT', 'APPROVED']).toContain(status);
+
+    // "Please complete payment" is only actionable if the notification says
+    // which request to pay for. Without joinRequestId stored on the row, the
+    // tap had nowhere to go once the original socket payload was gone, and
+    // the traveller was left to find the trip themselves.
+    if (status === 'AWAITING_PAYMENT') {
+      const notif = await prisma.notification.findFirst({
+        where: { userId: traveler.userId, category: 'PAYMENT_REQUIRED', tripId: paidTripId },
+        orderBy: { createdAt: 'desc' },
+      });
+      expect(notif).toBeTruthy();
+      expect(notif!.joinRequestId).toBe(joinReqId);
+    }
   });
 
   it('3. Wallet payment fails with 422 if balance is insufficient', async () => {

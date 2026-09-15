@@ -1,4 +1,5 @@
 import TripDetailModal from '@/components/TripDetailModal';
+import AccountStoriesModal from '@/components/AccountStoriesModal';
 import { CoverImage, ScreenEmpty, ScreenError, Skeleton, SkeletonCard } from '@/components/ui';
 import { logger } from '@/lib/logger';
 import { toast } from '@/lib/feedback';
@@ -24,6 +25,7 @@ import CalendarCheck from 'lucide-react-native/icons/calendar-check';
 import Camera from 'lucide-react-native/icons/camera';
 import Car from 'lucide-react-native/icons/car';
 import Check from 'lucide-react-native/icons/check';
+import ChevronDown from 'lucide-react-native/icons/chevron-down';
 import ChevronRight from 'lucide-react-native/icons/chevron-right';
 import ArrowRight from 'lucide-react-native/icons/arrow-right';
 import Clock from 'lucide-react-native/icons/clock';
@@ -37,6 +39,7 @@ import Flame from 'lucide-react-native/icons/flame';
 import Globe from 'lucide-react-native/icons/globe';
 import Map from 'lucide-react-native/icons/map';
 import MapPin from 'lucide-react-native/icons/map-pin';
+import Moon from 'lucide-react-native/icons/moon';
 import Mountain from 'lucide-react-native/icons/mountain';
 import Plane from 'lucide-react-native/icons/plane';
 import Plus from 'lucide-react-native/icons/plus';
@@ -61,6 +64,7 @@ import {
   Image,
   ImageBackground,
   Modal,
+  Pressable,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -70,12 +74,134 @@ import {
   KeyboardAvoidingView,
   View
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const HERO_BANNER_WIDTH = SCREEN_WIDTH;
 const HERO_BANNER_HEIGHT = Math.round(SCREEN_WIDTH * (355 / 1024));
 const TRENDING_CARD_WIDTH = Platform.OS === 'web' ? Math.min(380, Math.max(340, Math.round(SCREEN_WIDTH * 0.42))) : Math.round(SCREEN_WIDTH * 0.85);
+
+// ─── Time-of-Day Dynamic Header Banner ──────────────────────────────
+export type TimeOfDay = 'day' | 'evening' | 'night';
+
+export const getTimeOfDay = (date: Date = new Date()): TimeOfDay => {
+  const hours = date.getHours();
+  // 4:00 PM (16:00) to 7:59 PM (19:59) is Evening (4PM - 8PM)
+  if (hours >= 16 && hours < 20) {
+    return 'evening';
+  }
+  // 8:00 PM (20:00) to 4:59 AM (04:59) is Night (8PM - 5AM)
+  if (hours >= 20 || hours < 5) {
+    return 'night';
+  }
+  // 5:00 AM (05:00) to 3:59 PM (15:59) is Morning / Day (5AM - 4PM)
+  return 'day';
+};
+
+const TIME_SIM_OPTIONS: {
+  value: TimeOfDay;
+  label: string;
+  sub: string;
+  Icon: typeof Sun;
+  iconColor: string;
+  badgeBg: string;
+}[] = [
+  {
+    value: 'day',
+    label: 'Morning',
+    sub: '5:00 AM – 4:00 PM',
+    Icon: Sun,
+    iconColor: '#D97706',
+    badgeBg: '#FEF3C7',
+  },
+  {
+    value: 'evening',
+    label: 'Evening',
+    sub: '4:00 PM – 8:00 PM',
+    Icon: CloudSun,
+    iconColor: '#EA580C',
+    badgeBg: '#FFEDD5',
+  },
+  {
+    value: 'night',
+    label: 'Night',
+    sub: '8:00 PM – 5:00 AM',
+    Icon: Moon,
+    iconColor: '#6366F1',
+    badgeBg: '#EEF2FF',
+  },
+];
+
+const HEADER_THEMES = {
+  day: {
+    source: require('@/assets/images/hero-banner.jpg'),
+    statusBarStyle: 'dark-content' as const,
+    greetingColor: '#2563EB',
+    userNameColor: '#0F172A',
+    userSubColor: '#475569',
+    textShadow: undefined,
+    greetingShadow: undefined,
+    userSubShadow: undefined,
+    bellWrapBg: '#FFFFFF',
+    bellBorderColor: '#E2E8F0',
+    bellIconColor: C.textSec,
+    avatarBorderColor: '#CBD5E1',
+    avatarBg: '#F1F5F9',
+    avatarIconColor: C.textMuted,
+  },
+  evening: {
+    source: require('@/assets/images/evening.png'),
+    statusBarStyle: 'light-content' as const,
+    greetingColor: '#2563EB',
+    userNameColor: '#FFFFFF',
+    userSubColor: '#FFFFFF',
+    textShadow: {
+      textShadowColor: 'rgba(0, 0, 0, 0.65)',
+      textShadowOffset: { width: 0, height: 1 },
+      textShadowRadius: 3,
+    },
+    greetingShadow: undefined,
+    userSubShadow: {
+      textShadowColor: 'rgba(0, 0, 0, 0.50)',
+      textShadowOffset: { width: 0, height: 1 },
+      textShadowRadius: 2,
+    },
+    bellWrapBg: '#FFFFFF',
+    bellBorderColor: '#E2E8F0',
+    bellIconColor: C.textSec,
+    avatarBorderColor: '#CBD5E1',
+    avatarBg: '#F1F5F9',
+    avatarIconColor: C.textMuted,
+  },
+  night: {
+    source: require('@/assets/images/night.png'),
+    statusBarStyle: 'light-content' as const,
+    greetingColor: '#93C5FD',
+    userNameColor: '#FFFFFF',
+    userSubColor: '#FFFFFF',
+    textShadow: {
+      textShadowColor: 'rgba(0, 0, 0, 0.75)',
+      textShadowOffset: { width: 0, height: 1 },
+      textShadowRadius: 4,
+    },
+    greetingShadow: {
+      textShadowColor: 'rgba(0, 0, 0, 0.60)',
+      textShadowOffset: { width: 0, height: 1 },
+      textShadowRadius: 2,
+    },
+    userSubShadow: {
+      textShadowColor: 'rgba(0, 0, 0, 0.55)',
+      textShadowOffset: { width: 0, height: 1 },
+      textShadowRadius: 2,
+    },
+    bellWrapBg: 'rgba(255, 255, 255, 0.16)',
+    bellBorderColor: 'rgba(255, 255, 255, 0.3)',
+    bellIconColor: '#FFFFFF',
+    avatarBorderColor: 'rgba(255, 255, 255, 0.45)',
+    avatarBg: 'rgba(255, 255, 255, 0.16)',
+    avatarIconColor: '#FFFFFF',
+  },
+};
 
 // ─── Data ───────────────────────────────────────────────────────────
 const roles: { value: UserRole; labelKey: string; subKey: string; Icon: typeof Globe }[] = [
@@ -113,7 +239,15 @@ const GREETING_WORD_SEQUENCES = [
   ['न', 'नम', 'नमस्', 'नमस्त', 'नमस्ते'],
 ];
 
-function AppleMultilingualGreetingBase({ isFocused }: { isFocused: boolean }) {
+function AppleMultilingualGreetingBase({
+  isFocused,
+  color,
+  textShadow,
+}: {
+  isFocused: boolean;
+  color?: string;
+  textShadow?: any;
+}) {
   const wordSequences = GREETING_WORD_SEQUENCES;
 
   const [wordIdx, setWordIdx] = useState(0);
@@ -178,7 +312,7 @@ function AppleMultilingualGreetingBase({ isFocused }: { isFocused: boolean }) {
   return (
     <View style={styles.appleGreetingContainer}>
       <Animated.View style={{ opacity: fadeAnim }}>
-        <Text style={styles.appleGreetingText}>{currentText}</Text>
+        <Text style={[styles.appleGreetingText, color ? { color } : null, textShadow]}>{currentText}</Text>
       </Animated.View>
     </View>
   );
@@ -1302,11 +1436,41 @@ function StoriesRailBase({
   const myStory = React.useMemo(() => mergedFeed.find(isUserStory) ?? null, [mergedFeed, isUserStory]);
   const otherStories = React.useMemo(() => mergedFeed.filter((item) => !isUserStory(item)), [mergedFeed, isUserStory]);
 
+  // A signed-out visitor sees the same "no stories yet, tap + to share"
+  // nudge a signed-in user with zero stories used to see — it just points
+  // them at signup instead of the picker, since they can't actually post
+  // without an account yet.
   if (!isLoggedIn) {
-    return null;
+    return (
+      <View style={styles.storiesEmptyRow}>
+        <TouchableOpacity
+          style={styles.emptyStoryCard}
+          onPress={() => router.push('/auth?mode=SIGNUP')}
+          activeOpacity={0.75}
+          accessibilityRole="button"
+          accessibilityLabel={t('home.addStory')}
+          accessibilityHint={t('home.beTheFirstStory')}
+        >
+          <View style={styles.emptyStoryIconWrap}>
+            <Camera size={20} color={C.blueText} strokeWidth={2} />
+          </View>
+          <View style={styles.emptyStoryTextWrap}>
+            <Text style={styles.emptyStoryTitle} numberOfLines={1}>
+              {t('home.noStoriesYet')}
+            </Text>
+            <Text style={styles.emptyStorySubtitle} numberOfLines={2}>
+              {t('home.beTheFirstStory')}
+            </Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+    );
   }
 
-  const myStoryCover = myStory?.coverImg || avatarUri;
+  // The ring shows who posted, not a preview of what they posted — your own
+  // avatar takes priority over the story's own (possibly absent) cover
+  // image, matching every other story tray in the app.
+  const myStoryCover = avatarUri || myStory?.coverImg;
 
   const addStoryTile = myStory ? (
     <TouchableOpacity
@@ -1386,32 +1550,12 @@ function StoriesRailBase({
     );
   }
 
+  // A signed-in user with zero stories anywhere in the feed gets just the
+  // functional add-story tile — no promotional "no stories yet" nudge
+  // card next to it. That nudge is for signed-out visitors (above); a
+  // real account holder already has the "+" right there.
   if (feed.length === 0) {
-    return (
-      <View style={styles.storiesEmptyRow}>
-        {addStoryTile}
-        <TouchableOpacity
-          style={styles.emptyStoryCard}
-          onPress={onAddStory}
-          activeOpacity={0.75}
-          accessibilityRole="button"
-          accessibilityLabel={t('home.addStory')}
-          accessibilityHint={t('home.beTheFirstStory')}
-        >
-          <View style={styles.emptyStoryIconWrap}>
-            <Camera size={20} color={C.blueText} strokeWidth={2} />
-          </View>
-          <View style={styles.emptyStoryTextWrap}>
-            <Text style={styles.emptyStoryTitle} numberOfLines={1}>
-              {t('home.noStoriesYet')}
-            </Text>
-            <Text style={styles.emptyStorySubtitle} numberOfLines={2}>
-              {t('home.beTheFirstStory')}
-            </Text>
-          </View>
-        </TouchableOpacity>
-      </View>
-    );
+    return <View style={styles.storiesRow}>{addStoryTile}</View>;
   }
 
   return (
@@ -1433,11 +1577,16 @@ function StoriesRailBase({
           accessibilityLabel={t('home.storyLabel', { location: feedItemLabel(item, t) })}
         >
           <View style={styles.storyRing}>
-            {item.coverImg ? (
-              <Image source={{ uri: item.coverImg }} style={styles.storyImage} />
+            {/* The ring shows who posted (their real DP), not a preview of
+                the story itself — falls back to the story's own cover only
+                when the author has no avatar at all, then to a person
+                silhouette rather than a camera icon, which read as "add a
+                photo" on someone else's story. */}
+            {item.authorAvatar || item.coverImg ? (
+              <Image source={{ uri: item.authorAvatar || item.coverImg || undefined }} style={styles.storyImage} />
             ) : (
               <View style={[styles.storyImage, styles.storyImageFallback]}>
-                <Camera size={20} color={C.textMuted} strokeWidth={1.8} />
+                <User size={20} color={C.textMuted} strokeWidth={1.8} />
               </View>
             )}
           </View>
@@ -1475,6 +1624,7 @@ function HomeScreen() {
     const unsubscribeFocus = navigation.addListener('focus', () => {
       setIsFocused(true);
       setCurrentRole('TOURIST');
+      setRealTimeOfDay(getTimeOfDay());
     });
     const unsubscribeBlur = navigation.addListener('blur', () => {
       setIsFocused(false);
@@ -1497,9 +1647,25 @@ function HomeScreen() {
     addStory,
   } = useApp();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [authReason, setAuthReason] = useState<AuthReason | null>(null);
+  const [simulatedTime, setSimulatedTime] = useState<TimeOfDay | null>('evening');
+  const [showTimeDropdown, setShowTimeDropdown] = useState(false);
+  const [realTimeOfDay, setRealTimeOfDay] = useState<TimeOfDay>(() => getTimeOfDay());
+
+  useEffect(() => {
+    setRealTimeOfDay(getTimeOfDay());
+    const interval = setInterval(() => {
+      setRealTimeOfDay(getTimeOfDay());
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [isFocused]);
+
+  const timeOfDay = simulatedTime ?? realTimeOfDay;
+  const headerTheme = HEADER_THEMES[timeOfDay];
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
   const [storyComposerMedia, setStoryComposerMedia] = useState<{ uri: string; type: 'image' | 'video' } | null>(null);
+  const [showMyStoriesModal, setShowMyStoriesModal] = useState(false);
   const lastScrollYRef = useRef(0);
   const navbarHiddenRef = useRef(false);
 
@@ -1566,7 +1732,7 @@ function HomeScreen() {
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <StatusBar barStyle={headerTheme.statusBarStyle} backgroundColor="transparent" translucent />
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
@@ -1596,32 +1762,92 @@ function HomeScreen() {
         }}
       >
         {/* ════════════════════════════════════════════════
-            HERO BANNER — Image at Top Behind Header
+            HERO BANNER — Dynamic Image at Top Behind Header
             ════════════════════════════════════════════════ */}
         <ImageBackground
-          source={require('@/assets/images/hero-banner.jpg')}
+          source={headerTheme.source}
           style={styles.heroBannerWrap}
           imageStyle={styles.heroBannerImage}
-          resizeMode="contain"
+          resizeMode="cover"
         >
           <View style={styles.topHeader}>
             <View style={{ flex: 1 }}>
-              <AppleMultilingualGreeting isFocused={isFocused} />
+              <AppleMultilingualGreeting
+                isFocused={isFocused}
+                color={headerTheme.greetingColor}
+                textShadow={headerTheme.greetingShadow ?? headerTheme.textShadow}
+              />
               {identityResolved ? (
-                <Text style={styles.userName} numberOfLines={1}>
+                <Text
+                  style={[
+                    styles.userName,
+                    { color: headerTheme.userNameColor },
+                    headerTheme.textShadow,
+                  ]}
+                  numberOfLines={1}
+                >
                   {displayName}
                 </Text>
               ) : (
                 <Skeleton width={140} height={20} style={styles.userNameSkeleton} />
               )}
-              <Text style={styles.userSub} numberOfLines={1}>
+              <Text
+                style={[
+                  styles.userSub,
+                  { color: headerTheme.userSubColor },
+                  headerTheme.userSubShadow ?? headerTheme.textShadow,
+                ]}
+                numberOfLines={1}
+              >
                 {t('home.userSub')}
               </Text>
             </View>
             <View style={styles.headerRight}>
               <View style={styles.headerIconsRow}>
+                {/* Time Simulation Dropdown Trigger Pill */}
                 <TouchableOpacity
-                  style={styles.bellWrap}
+                  style={[
+                    styles.timeSimPill,
+                    {
+                      backgroundColor: headerTheme.bellWrapBg,
+                      borderColor: headerTheme.bellBorderColor,
+                    },
+                  ]}
+                  activeOpacity={0.75}
+                  onPress={() => setShowTimeDropdown(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Simulate timing"
+                >
+                  {timeOfDay === 'day' ? (
+                    <Sun size={13} color="#F59E0B" strokeWidth={2.2} />
+                  ) : timeOfDay === 'evening' ? (
+                    <CloudSun size={13} color="#EA580C" strokeWidth={2.2} />
+                  ) : (
+                    <Moon size={13} color="#818CF8" strokeWidth={2.2} />
+                  )}
+                  <Text
+                    style={[
+                      styles.timeSimPillText,
+                      { color: timeOfDay === 'night' ? '#FFFFFF' : '#1E293B' },
+                    ]}
+                  >
+                    {timeOfDay === 'day' ? 'Morning' : timeOfDay === 'evening' ? 'Evening' : 'Night'}
+                  </Text>
+                  <ChevronDown
+                    size={11}
+                    color={timeOfDay === 'night' ? '#CBD5E1' : '#64748B'}
+                    strokeWidth={2.2}
+                  />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.bellWrap,
+                    {
+                      backgroundColor: headerTheme.bellWrapBg,
+                      borderColor: headerTheme.bellBorderColor,
+                    },
+                  ]}
                   activeOpacity={0.7}
                   hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                   onPress={() => router.push('/notifications')}
@@ -1629,13 +1855,16 @@ function HomeScreen() {
                   accessibilityLabel={t('home.notificationsLabel')}
                   accessibilityHint={hasUnreadNotification ? t('home.notificationsUnreadHint') : undefined}
                 >
-                  <Bell size={18} color={C.textSec} strokeWidth={1.8} />
+                  <Bell size={18} color={headerTheme.bellIconColor} strokeWidth={1.8} />
                   {hasUnreadNotification && <View style={styles.bellDot} />}
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   activeOpacity={0.85}
-                  style={styles.avatarWrap}
+                  style={[
+                    styles.avatarWrap,
+                    { borderColor: headerTheme.avatarBorderColor },
+                  ]}
                   onPress={() => {
                     if (!isLoggedIn) {
                       router.push('/auth?mode=SIGNUP');
@@ -1649,8 +1878,13 @@ function HomeScreen() {
                   {avatarUri ? (
                     <Image source={{ uri: avatarUri }} style={styles.avatar} />
                   ) : (
-                    <View style={styles.anonymousAvatarSmall}>
-                      <User size={18} color={C.textMuted} strokeWidth={2} />
+                    <View
+                      style={[
+                        styles.anonymousAvatarSmall,
+                        { backgroundColor: headerTheme.avatarBg },
+                      ]}
+                    >
+                      <User size={18} color={headerTheme.avatarIconColor} strokeWidth={2} />
                     </View>
                   )}
                 </TouchableOpacity>
@@ -1671,6 +1905,58 @@ function HomeScreen() {
             </View>
           </View>
         </ImageBackground>
+
+        {/* Time Simulation Dropdown Modal */}
+        <Modal
+          transparent
+          visible={showTimeDropdown}
+          animationType="fade"
+          onRequestClose={() => setShowTimeDropdown(false)}
+        >
+          <Pressable
+            style={styles.timeDropdownOverlay}
+            onPress={() => setShowTimeDropdown(false)}
+          >
+            <View style={[styles.timeDropdownCard, { top: insets.top + 46 }]}>
+              <Text style={styles.timeDropdownHeaderTitle}>Simulate Time</Text>
+
+              {TIME_SIM_OPTIONS.map((opt) => {
+                const isSelected = timeOfDay === opt.value;
+                const Icon = opt.Icon;
+                return (
+                  <TouchableOpacity
+                    key={opt.value}
+                    style={[
+                      styles.timeDropdownItem,
+                      isSelected && styles.timeDropdownItemActive,
+                    ]}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      setSimulatedTime(opt.value);
+                      setShowTimeDropdown(false);
+                    }}
+                  >
+                    <View style={[styles.timeOptionIconWrap, { backgroundColor: opt.badgeBg }]}>
+                      <Icon size={15} color={opt.iconColor} strokeWidth={2.2} />
+                    </View>
+                    <View style={styles.timeOptionTextCol}>
+                      <Text
+                        style={[
+                          styles.timeOptionLabel,
+                          isSelected && styles.timeOptionLabelActive,
+                        ]}
+                      >
+                        {opt.label}
+                      </Text>
+                      <Text style={styles.timeOptionSub}>{opt.sub}</Text>
+                    </View>
+                    {isSelected && <Check size={16} color="#2563EB" strokeWidth={2.5} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </Pressable>
+        </Modal>
 
         {/* ════════════════════════════════════════════════
             ROLE CARDS — Overlapping Lower Half of Hero Image Banner
@@ -1721,7 +2007,13 @@ function HomeScreen() {
           <TouchableOpacity
             style={styles.viewAllBtn}
             hitSlop={{ top: 14, bottom: 14, left: 10, right: 10 }}
-            onPress={() => router.push('/stories')}
+            onPress={() => {
+              if (!isLoggedIn) {
+                setAuthReason('STORY');
+              } else {
+                setShowMyStoriesModal(true);
+              }
+            }}
             accessibilityRole="button"
             accessibilityLabel={t('home.viewAll')}
           >
@@ -1826,6 +2118,12 @@ function HomeScreen() {
           });
           setStoryComposerMedia(null);
         }}
+      />
+
+      <AccountStoriesModal
+        visible={showMyStoriesModal}
+        onClose={() => setShowMyStoriesModal(false)}
+        onAddStory={handleAddStoryPress}
       />
 
       <AuthPromptModal reason={authReason} onClose={() => setAuthReason(null)} />
@@ -2204,9 +2502,9 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   userSub: {
-    fontSize: 12.5,
+    fontSize: 13,
     color: '#475569',
-    fontWeight: '500',
+    fontWeight: '700',
   },
   headerRight: {
     flexDirection: 'column',
@@ -2241,6 +2539,92 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#2563EB',
     marginRight: 4,
+  },
+  timeSimPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 16,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  timeSimPillText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  timeDropdownOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.28)',
+    justifyContent: 'flex-start',
+    alignItems: 'flex-end',
+    paddingHorizontal: 16,
+  },
+  timeDropdownCard: {
+    width: 220,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 8,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 18,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  timeDropdownHeaderTitle: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#94A3B8',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    paddingHorizontal: 10,
+    paddingTop: 4,
+    paddingBottom: 6,
+  },
+  timeDropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+  },
+  timeDropdownItemActive: {
+    backgroundColor: '#EFF6FF',
+  },
+  timeOptionIconWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  timeOptionTextCol: {
+    flex: 1,
+  },
+  timeOptionLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#0F172A',
+  },
+  timeOptionLabelActive: {
+    fontWeight: '700',
+    color: '#2563EB',
+  },
+  timeOptionSub: {
+    fontSize: 10.5,
+    color: '#64748B',
+    marginTop: 1,
   },
   bellWrap: {
     width: 38,
@@ -2776,6 +3160,7 @@ const styles = StyleSheet.create({
 
   // ── Stories & Add Story ──────────────────────────────
   storiesRow: {
+    flexDirection: 'row',
     paddingHorizontal: 20,
     gap: 14,
     marginBottom: 24,
@@ -2791,7 +3176,8 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   emptyStoryCard: {
-    flex: 1,
+    alignSelf: 'flex-start',
+    width: 240,
     height: 72,
     backgroundColor: '#F8FAFC',
     borderRadius: 16,

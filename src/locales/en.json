@@ -83,6 +83,16 @@
     "maybeLater": "Maybe Later",
     "viewAll": "View all",
     "storyLabel": "Open {{location}}'s story",
+    "myStories": "My Stories",
+    "myStoriesSubtitle": "Stories published from your account",
+    "storySingular": "story",
+    "storyPlural": "stories",
+    "watchStory": "Watch",
+    "deleteStoryConfirmTitle": "Delete Story",
+    "deleteStoryConfirmMsg": "Are you sure you want to delete this story? It will be removed from your profile and the travel feed.",
+    "exploreCommunityStories": "Browse All Community Stories",
+    "communityStoriesSub": "Watch stories shared by other travelers",
+    "createFirstStory": "Share Your First Story",
     "quickAccessHint": "Opens {{label}}",
     "featuredGroupTrips": "Featured Group Trips",
     "trendingDestinations": "Trending Destinations",
@@ -634,7 +644,10 @@
     "defaultCreatorName": "Traveler",
     "loadingStories": "Loading stories…",
     "couldNotLoadStories": "Could not load stories",
-    "couldNotLoadStoriesMessage": "We could not reach the server. Check your connection and try again."
+    "couldNotLoadStoriesMessage": "We could not reach the server. Check your connection and try again.",
+    "moreOptions": "More options",
+    "shareStory": "Share Story",
+    "deleteStory": "Delete Story"
   },
   "tripDetailModal": {
     "requestSubmitted": "Request Submitted!",

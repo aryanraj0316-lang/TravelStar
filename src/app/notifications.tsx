@@ -366,15 +366,27 @@ export default function NotificationsScreen() {
       }
     }
 
-    if (n.category === 'PAYMENT_REQUIRED') {
-      const joinReqId = (n as any).joinRequestId || (n as any).metadata?.joinRequestId || '';
-      if (joinReqId) {
-        router.push({
-          pathname: '/trip-payment',
-          params: { joinRequestId: joinReqId },
-        });
-        return;
-      }
+    // joinRequestId is stored on the notification itself now, so this works
+    // from the list on a cold start — not only while the original socket
+    // payload happened to still be in memory.
+    if (n.category === 'PAYMENT_REQUIRED' && n.joinRequestId) {
+      router.push({
+        pathname: '/trip-payment',
+        params: { joinRequestId: n.joinRequestId },
+      });
+      return;
+    }
+
+    // A pre-join enquiry belongs to the organizer portal's Chats &
+    // Approvals section, not the generic chat inbox — answering one
+    // usually means approving or declining that traveller's join request,
+    // which lives in the same place.
+    if (n.category === 'TRIP_ENQUIRY' && n.tripId) {
+      router.push({
+        pathname: '/group-organizer',
+        params: { tripId: n.tripId, sub: 'approvals' },
+      });
+      return;
     }
 
     if (n.chatRoomId) {

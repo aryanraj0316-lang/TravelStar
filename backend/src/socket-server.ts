@@ -9,6 +9,7 @@ import { logger } from './lib/logger';
 import { env } from './config/env';
 import { socketAuthMiddleware, getSocketUserId } from './lib/socket-auth';
 import { getSosAudienceUserIds } from './services/sos-audience';
+import { notifyTripEnquiry } from './services/trip-enquiry-notifications';
 import { setUserLocation } from './lib/presence-store';
 
 export function createSocketServer(httpServer: HttpServer): Server {
@@ -136,7 +137,10 @@ export function createSocketServer(httpServer: HttpServer): Server {
             },
           }),
           prisma.user.findUnique({ where: { id: userId }, include: { profile: true } }),
-          prisma.chatRoom.findUnique({ where: { id: chatRoomId }, include: { trip: true } }),
+          prisma.chatRoom.findUnique({
+            where: { id: chatRoomId },
+            include: { trip: true, inquiryTrip: { select: { id: true, name: true, creatorId: true } } },
+          }),
         ]);
 
         const senderName = sender?.profile
@@ -181,6 +185,24 @@ export function createSocketServer(httpServer: HttpServer): Server {
           .catch((err) => {
             logger.warn('[Socket] Failed to broadcast messageReceived to members:', err);
           });
+
+        // A pre-join enquiry needs the organizer to actually come back to
+        // it, and a socket broadcast only reaches them if they happen to be
+        // connected with the app open. This is what puts it in their
+        // notification feed and on their lock screen instead, pointing at
+        // the organizer portal's Chats & Approvals section.
+        const enquiryTrip = chatRoom?.inquiryTrip;
+        if (enquiryTrip && enquiryTrip.creatorId !== userId) {
+          void notifyTripEnquiry({
+            tripId: enquiryTrip.id,
+            tripName: enquiryTrip.name,
+            organizerId: enquiryTrip.creatorId,
+            chatRoomId,
+            travellerName: senderName,
+            preview: savedMsg.content || (savedMsg.mediaType === 'IMAGE' ? 'Sent a photo' : null),
+            io,
+          });
+        }
       } catch (e) {
         logger.error('[Socket] sendMessage failed:', e);
         socket.emit('sendMessageError', { message: 'Failed to send message.' });

@@ -41,6 +41,8 @@ export type NotificationCategory =
   | 'JOIN_REQUEST'
   | 'JOIN_ACCEPTED'
   | 'CHAT_ADDED'
+  /** A traveller's pre-join question, routed to the trip's organizer. */
+  | 'TRIP_ENQUIRY'
   | 'PAYMENT_REQUIRED'
   | 'PAYMENT_SUCCESS'
   | 'HAZARD'
@@ -58,6 +60,8 @@ export interface AppNotification {
   unread: boolean;
   chatRoomId?: string | null;
   tripId?: string | null;
+  /** Set on PAYMENT_REQUIRED — the request the payment screen collects for. */
+  joinRequestId?: string | null;
   category?: NotificationCategory | null;
   createdAt: IsoDateTime;
 }

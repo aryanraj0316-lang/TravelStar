@@ -132,6 +132,10 @@ enum NotificationCategory {
   CHAT_ADDED
   PAYMENT_REQUIRED
   PAYMENT_SUCCESS
+  /// A traveller's pre-join question about a trip, routed to that trip's
+  /// organizer so it surfaces in the organizer portal's Chats & Approvals
+  /// section rather than only as another thread in their chat inbox.
+  TRIP_ENQUIRY
 }
 
 enum MapPinType {
@@ -1191,6 +1195,11 @@ model Notification {
   unread     Boolean               @default(true)
   chatRoomId String?
   tripId     String?
+  /// The join request a PAYMENT_REQUIRED notification is asking payment
+  /// for. Without it the stored notification could not say *which* request
+  /// to pay, so tapping it in the notifications list had nowhere to go —
+  /// only the live socket payload could route, and only until reload.
+  joinRequestId String?
   category   NotificationCategory?
   createdAt  DateTime              @default(now())
   reads      NotificationRead[]

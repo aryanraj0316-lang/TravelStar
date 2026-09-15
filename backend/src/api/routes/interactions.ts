@@ -443,6 +443,10 @@ const handleStatusChange = async (req: Request, res: Response) => {
           content: `Your request to join ${request.trip.name} was approved! Please complete payment to secure your seat.`,
           unread: true,
           tripId: request.tripId,
+          // The one thing the payment screen needs. Without it the in-app
+          // banner's own PAYMENT_REQUIRED branch could not fire and the tap
+          // fell through to the generic trip route.
+          joinRequestId: request.id,
         });
       }
 
@@ -456,6 +460,7 @@ const handleStatusChange = async (req: Request, res: Response) => {
           time: 'Just now',
           unread: true,
           tripId: request.tripId,
+          joinRequestId: request.id,
         },
       });
 

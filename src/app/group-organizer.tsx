@@ -372,7 +372,7 @@ const getTripDisplayImage = (trip: Trip) => {
 export default function GroupOrganizerScreen() {
   const { t } = useTranslation();
   const router = useRouter();
-  const params = useLocalSearchParams<{ tab?: string }>();
+  const params = useLocalSearchParams<{ tab?: string; tripId?: string; sub?: string }>();
   const { profile, addTrip, trips, isLoggedIn, setActiveRoomId, setCurrentRole } = useApp();
 
   useEffect(() => {
@@ -928,6 +928,25 @@ export default function GroupOrganizerScreen() {
       trips.filter((t: Trip) => t.isMyTrip === true || (!!profile?.id && t.creatorId === profile.id)),
     [trips, profile?.id],
   );
+
+  // Arriving from a "new enquiry" notification: open that trip straight on
+  // its Chats & Approvals section instead of dropping the organizer on the
+  // console with no idea which of their trips the notification was about.
+  // Keyed so it runs once per arrival rather than fighting the organizer
+  // every time they navigate away from that tab.
+  const [prevDeepLinkKey, setPrevDeepLinkKey] = useState<string | null>(null);
+  const deepLinkKey = params.tripId ? `${params.tripId}:${params.sub ?? ''}` : null;
+  if (deepLinkKey !== prevDeepLinkKey) {
+    setPrevDeepLinkKey(deepLinkKey);
+    if (deepLinkKey && params.tripId) {
+      const target = myTrips.find((t: Trip) => t.id === params.tripId);
+      if (target) {
+        setSelectedCreation(target);
+        setActiveTab('console');
+        if (params.sub === 'approvals') setCreationSubTab('approvals');
+      }
+    }
+  }
 
   const mappedTours: ActiveTour[] = useMemo(
     () =>
