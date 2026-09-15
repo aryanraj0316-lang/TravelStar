@@ -62,7 +62,6 @@
     "quickNearby": "Nearby",
     "quickBookings": "Bookings",
     "quickBudgetTracker": "Budget Tracker",
-    "quickBudgetTrips": "Trips by Budget",
     "new": "NEW",
     "userSub": "Explore more. Experience better.",
     "loginSignUp": "Login / Sign Up",
@@ -446,6 +445,7 @@
   "budgetTracker": {
     "title": "Budget Tracker",
     "goBack": "Go back",
+    "browseTripsByBudget": "Browse trips by budget",
     "signInRequiredTitle": "Track and split trip expenses",
     "signInRequiredMessage": "Sign in to log shared costs, track who paid for what, and settle balances transparently with your travel group.",
     "signInBenefit1": "Equal cost-splitting calculated in real time",

@@ -1,3 +1,4 @@
+import { FloatingStarField } from '@/components/FloatingStarField';
 import { RouteErrorFallback } from '@/components/route-error-fallback';
 import { Button, Input, ScreenEmpty, ScreenError, ScreenLoading, Sheet } from '@/components/ui';
 import { recordConsent } from '@/lib/consent';
@@ -6,16 +7,15 @@ import { getAppLanguage, setAppLanguage } from '@/lib/i18n';
 import { logger } from '@/lib/logger';
 import { formatINR } from '@/lib/money';
 import { registerForPushNotifications, unregisterPushNotifications } from '@/lib/push';
+import { queryKeys } from '@/lib/query-keys';
 import { uploadFileToUrl } from '@/lib/upload';
 import { apiService, type NotificationPreferences, type SavedDestination } from '@/services/api';
-import { queryKeys } from '@/lib/query-keys';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { eventBus } from '@/services/event-bus';
 import { useApp } from '@/store/AppContext';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useNavigation, useRouter, type ErrorBoundaryProps } from 'expo-router';
-import Award from 'lucide-react-native/icons/award';
 import Bell from 'lucide-react-native/icons/bell';
 import Bookmark from 'lucide-react-native/icons/bookmark';
 import Briefcase from 'lucide-react-native/icons/briefcase';
@@ -23,8 +23,8 @@ import Camera from 'lucide-react-native/icons/camera';
 import Check from 'lucide-react-native/icons/check';
 import ChevronRight from 'lucide-react-native/icons/chevron-right';
 import CheckCircle from 'lucide-react-native/icons/circle-check-big';
-import Compass from 'lucide-react-native/icons/compass';
 import HelpCircle from 'lucide-react-native/icons/circle-question-mark';
+import Compass from 'lucide-react-native/icons/compass';
 import CreditCard from 'lucide-react-native/icons/credit-card';
 import Download from 'lucide-react-native/icons/download';
 import Globe from 'lucide-react-native/icons/globe';
@@ -611,15 +611,46 @@ function ProfileScreen() {
         {/* ════════════════════════════════════════════════
             HERO EXECUTIVE BANNER & PROFILE HEADER
             ════════════════════════════════════════════════ */}
-        <LinearGradient
-          colors={['#06152D', '#0B2347', '#1A4AA8']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0.8, y: 1 }}
-          style={[styles.heroWrap, { paddingTop: Math.max(insets.top, 24) + 12 }]}
-        >
-          {/* Subtle decorative circles for depth */}
-          <View style={styles.heroDecoCircle1} />
-          <View style={styles.heroDecoCircle2} />
+        <View style={[styles.heroWrap, { paddingTop: Math.max(insets.top, 24) + 12 }]}>
+          {/* Deep pitch-black cosmic abyss gradient */}
+          <LinearGradient
+            colors={['#010307', '#020610', '#040B1A', '#07152E']}
+            locations={[0, 0.35, 0.72, 1]}
+            start={{ x: 0.1, y: 0 }}
+            end={{ x: 0.9, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+
+          {/* Floating animated white star dots (crowded, multi-sized, organic drifting) */}
+          <FloatingStarField />
+
+          {/* Gentle soft bottom fade into profile sheet */}
+          <LinearGradient
+            colors={['transparent', 'rgba(3, 7, 18, 0.45)']}
+            locations={[0.7, 1]}
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+          />
+
+          {/* Top-Left Action: Wallet Balance */}
+          <TouchableOpacity
+            style={[styles.topLeftActionWrap, { top: Math.max(insets.top, 16) + 4 }]}
+            activeOpacity={0.8}
+            onPress={() => {
+              if (!isLoggedIn) {
+                router.push('/auth?mode=SIGNUP');
+              } else {
+                router.push('/budget-tracker');
+              }
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={`${t('profile.statWallet')}: ${formatINR(profile.walletBalance ?? 0)}`}
+          >
+            <View style={styles.topWalletPill}>
+              <Wallet size={12.5} color="#86EFAC" strokeWidth={2} />
+              <Text style={styles.topWalletAmount}>{formatINR(profile.walletBalance ?? 0)}</Text>
+            </View>
+          </TouchableOpacity>
 
           {/* Top-Right Action Column: Edit (Pencil), Notifications (Bell) */}
           <View style={[styles.topRightActionCol, { top: Math.max(insets.top, 16) + 4 }]}>
@@ -699,19 +730,30 @@ function ProfileScreen() {
                 </View>
               )}
 
-              {/* Elite Membership Badge */}
-              <View style={styles.badgeRow}>
-                <View style={styles.memberBadge}>
-                  <Compass size={11} color="#BFDBFE" />
-                  <Text style={styles.memberBadgeText}>
-                    {isLoggedIn ? (profile.role || 'EXPLORER') : 'GUEST EXPLORER'}
-                  </Text>
-                </View>
-              </View>
 
-              <Text style={[styles.userBio, !profile.bio && styles.userBioEmpty]}>
-                {profile.bio || (isLoggedIn ? t('profile.bioEmpty') : 'Sign in to access your saved trips, bookings, and rewards.')}
-              </Text>
+
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => {
+                  if (isLoggedIn) {
+                    setShowEditModal(true);
+                  } else {
+                    router.push('/auth?mode=SIGNUP');
+                  }
+                }}
+                style={styles.userBioTouchable}
+                accessibilityRole="button"
+                accessibilityLabel={isLoggedIn ? (profile.bio ? "Edit your bio" : "Add a short bio") : "Sign in to add a bio"}
+              >
+                <Text
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.8}
+                  style={[styles.userBio, !profile.bio && styles.userBioEmpty]}
+                >
+                  {profile.bio || (isLoggedIn ? t('profile.bioEmpty') : 'Sign in to access your saved trips, bookings, and rewards.')}
+                </Text>
+              </TouchableOpacity>
 
               {!isLoggedIn && (
                 <TouchableOpacity
@@ -726,51 +768,13 @@ function ProfileScreen() {
               )}
             </View>
           </View>
-        </LinearGradient>
+        </View>
 
         {/* ════════════════════════════════════════════════
             BODY CONTAINER (FLOATING OVER HERO)
             ════════════════════════════════════════════════ */}
         <View style={styles.bodyContainer}>
-          {/* Quick Stats Ribbon */}
-          <View style={styles.statsCardWrap}>
-            <View style={styles.statsCard}>
-              <View style={styles.statItem}>
-                <View style={[styles.statIconBadge, { backgroundColor: '#EFF6FF' }]}>
-                  <Compass size={16} color="#0B63E5" />
-                </View>
-                <Text style={styles.statValue} numberOfLines={1}>
-                  {(isLoggedIn && profile.travelStyles?.split(',')[0]?.trim()) || t('profile.statStyleFallback')}
-                </Text>
-                <Text style={styles.statLabel}>{t('profile.statStyle')}</Text>
-              </View>
 
-              <View style={styles.statDivider} />
-
-              <View style={styles.statItem}>
-                <View style={[styles.statIconBadge, { backgroundColor: '#F0FDF4' }]}>
-                  <Wallet size={16} color="#16A34A" />
-                </View>
-                {/* formatINR, not an inline `₹` + toLocaleString — currency is
-                    formatted in exactly one place (CONVENTIONS.md §3). */}
-                <Text style={styles.statValue}>{formatINR(profile.walletBalance ?? 0)}</Text>
-                <Text style={styles.statLabel}>{t('profile.statWallet')}</Text>
-              </View>
-
-              <View style={styles.statDivider} />
-
-              <View style={styles.statItem}>
-                <View style={[styles.statIconBadge, { backgroundColor: '#FAF5FF' }]}>
-                  <Award size={16} color="#9333EA" />
-                </View>
-                {/* `?? 0`, not `?? 250`: a missing balance is zero points, not
-                    250 the account never earned. A fabricated rewards figure is
-                    the same class of invention as a fake wallet balance. */}
-                <Text style={styles.statValue}>{(profile.rewardPoints ?? 0).toLocaleString('en-IN')}</Text>
-                <Text style={styles.statLabel}>{t('profile.statPoints')}</Text>
-              </View>
-            </View>
-          </View>
 
           {/* ════════════════════════════════════════════════
               PROFILE SETUP GUIDE BANNER (IF INCOMPLETE)
@@ -788,8 +792,8 @@ function ProfileScreen() {
                       {!profile.avatar && !profile.bio
                         ? 'Add a photo from your device and a bio to connect with travelers.'
                         : !profile.avatar
-                        ? 'Add your profile picture from your device.'
-                        : 'Add a bio to introduce yourself.'}
+                          ? 'Add your profile picture from your device.'
+                          : 'Add a bio to introduce yourself.'}
                     </Text>
                   </View>
                 </View>
@@ -1661,24 +1665,31 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingBottom: 42,
     overflow: 'hidden',
+    backgroundColor: '#010307',
   },
-  heroDecoCircle1: {
+  topLeftActionWrap: {
     position: 'absolute',
-    top: -60,
-    left: -60,
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    left: 16,
+    zIndex: 10,
   },
-  heroDecoCircle2: {
-    position: 'absolute',
-    bottom: -30,
-    right: -40,
-    width: 210,
-    height: 210,
-    borderRadius: 105,
-    backgroundColor: 'rgba(59, 130, 246, 0.08)',
+  topWalletPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
+    paddingVertical: 5,
+    paddingHorizontal: 11,
+    borderRadius: MIN_TOUCH_TARGET / 2,
+    minHeight: MIN_TOUCH_TARGET,
+    opacity: 0.88,
+  },
+  topWalletAmount: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.88)',
+    letterSpacing: -0.2,
   },
   topRightActionCol: {
     position: 'absolute',
@@ -1782,6 +1793,9 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#FFFFFF',
     letterSpacing: -0.3,
+    textShadowColor: 'rgba(0, 0, 0, 0.85)',
+    textShadowOffset: { width: 0, height: 1.5 },
+    textShadowRadius: 6,
   },
   userEmailRow: {
     flexDirection: 'row',
@@ -1819,14 +1833,21 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     letterSpacing: 0.8,
   },
-  userBio: {
-    fontSize: 13,
-    color: 'rgba(255, 255, 255, 0.82)',
+  userBioTouchable: {
     marginTop: 8,
+    maxWidth: '94%',
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  userBio: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.92)',
     textAlign: 'center',
-    lineHeight: 18,
-    paddingHorizontal: 24,
-    maxWidth: 340,
+    lineHeight: 16,
+    textShadowColor: 'rgba(0, 0, 0, 0.85)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 5,
   },
   userBioEmpty: {
     fontStyle: 'italic',
@@ -1862,60 +1883,7 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
   },
 
-  // Stats Ribbon
-  statsCardWrap: {
-    marginHorizontal: 16,
-    marginBottom: 16,
-  },
-  statsCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    paddingVertical: 14,
-    paddingHorizontal: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 3,
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statIconBadge: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 5,
-  },
-  statValue: {
-    fontSize: 14.5,
-    fontWeight: '800',
-    color: '#0F172A',
-    letterSpacing: -0.2,
-    textAlign: 'center',
-  },
-  statLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#64748B',
-    marginTop: 1,
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
-  statDivider: {
-    width: 1,
-    height: 36,
-    backgroundColor: '#F1F5F9',
-  },
+
 
   // Setup banner
   profileSetupBannerWrap: {

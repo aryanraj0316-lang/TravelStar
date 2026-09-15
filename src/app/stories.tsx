@@ -194,6 +194,44 @@ export default function StoriesScreen() {
     setCurrentIdx((prev) => (prev > 0 ? prev - 1 : prev));
   }, []);
 
+  // Press-and-hold to pause. A video story already has its own native
+  // controls (nativeControls on VideoView) for pause/play, so this only
+  // touches the auto-advancing image timer — holding over a video does
+  // nothing here and leaves the native player in charge.
+  const pauseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const didPauseRef = useRef(false);
+
+  const handleTapZonePressIn = () => {
+    if (storyIsVideo) return;
+    didPauseRef.current = false;
+    pauseTimerRef.current = setTimeout(() => {
+      didPauseRef.current = true;
+      progressAnim.stopAnimation();
+    }, 180);
+  };
+
+  const handleTapZonePressOut = () => {
+    if (pauseTimerRef.current) {
+      clearTimeout(pauseTimerRef.current);
+      pauseTimerRef.current = null;
+    }
+    if (didPauseRef.current) {
+      startStoryTimer(progressValueRef.current);
+    }
+  };
+
+  // A held-and-released press must not also navigate — only a genuine
+  // quick tap does. didPauseRef is reset here, after this check, rather
+  // than in handleTapZonePressOut, so this handler (which React fires
+  // after PressOut) can still see whether this press paused.
+  const handleTapZoneTap = (navigate: () => void) => {
+    if (didPauseRef.current) {
+      didPauseRef.current = false;
+      return;
+    }
+    navigate();
+  };
+
   const startStoryTimer = (startFrom = 0) => {
     if (activeStoriesList.length === 0 || isViewerSheetVisible) return;
     progressAnim.setValue(startFrom);
@@ -272,11 +310,21 @@ export default function StoriesScreen() {
     return () => clearTimeout(dwellTimer);
   }, [isLoggedIn, activeStory?.id, isMyStory, fetchInteractions]);
 
+  // Every story's like state and counts are fetched here, not just the
+  // caller's own — GET /stories/:id/interactions already returns
+  // totalViews/totalLikes/viewerHasLiked for any story, withholding only
+  // the detailed per-viewer list to non-owners (returned as an empty
+  // array). Gating this whole fetch on isMyStory meant the like button
+  // never reflected whether *you* had liked someone else's story, and its
+  // like/view counts fell back to the feed's stale snapshot instead of
+  // the live total.
   useEffect(() => {
-    if (isMyStory && activeStory?.id) {
+    if (activeStory?.id) {
       void fetchInteractions();
     } else {
       setInteractions(null);
+    }
+    if (!isMyStory) {
       setIsViewerSheetVisible(false);
     }
   }, [isMyStory, activeStory?.id, fetchInteractions]);
@@ -377,9 +425,7 @@ export default function StoriesScreen() {
       if (res && typeof res.liked === 'boolean') {
         setIsLiked((prev) => ({ ...prev, [activeStory.id]: res.liked }));
       }
-      if (isMyStory) {
-        void fetchInteractions();
-      }
+      void fetchInteractions();
     } catch (e) {
       logger.warn('[Stories] Like failed:', e);
       setIsLiked((prev) => ({ ...prev, [activeStory.id]: wasLiked }));
@@ -586,8 +632,20 @@ export default function StoriesScreen() {
 
       {/* Tap zones */}
       <View style={styles.touchControlsContainer}>
-        <TouchableOpacity style={styles.leftTouchBlock} activeOpacity={1} onPress={handlePrevStory} />
-        <TouchableOpacity style={styles.rightTouchBlock} activeOpacity={1} onPress={handleNextStory} />
+        <TouchableOpacity
+          style={styles.leftTouchBlock}
+          activeOpacity={1}
+          onPressIn={handleTapZonePressIn}
+          onPressOut={handleTapZonePressOut}
+          onPress={() => handleTapZoneTap(handlePrevStory)}
+        />
+        <TouchableOpacity
+          style={styles.rightTouchBlock}
+          activeOpacity={1}
+          onPressIn={handleTapZonePressIn}
+          onPressOut={handleTapZonePressOut}
+          onPress={() => handleTapZoneTap(handleNextStory)}
+        />
       </View>
 
       {/* Bottom: caption + activity button + like */}

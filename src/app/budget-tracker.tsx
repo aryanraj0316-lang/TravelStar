@@ -13,6 +13,7 @@ import ChevronRight from 'lucide-react-native/icons/chevron-right';
 import Hotel from 'lucide-react-native/icons/hotel';
 import Plus from 'lucide-react-native/icons/plus';
 import Receipt from 'lucide-react-native/icons/receipt';
+import Search from 'lucide-react-native/icons/search';
 import ShoppingBag from 'lucide-react-native/icons/shopping-bag';
 import Ticket from 'lucide-react-native/icons/ticket';
 import Trash2 from 'lucide-react-native/icons/trash-2';
@@ -450,6 +451,7 @@ export default function BudgetTrackerScreen() {
 
 function Shell({ title, onBack, children }: { title: string; onBack: () => void; children: React.ReactNode }) {
   const { t } = useTranslation();
+  const router = useRouter();
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={C.bg} />
@@ -464,7 +466,15 @@ function Shell({ title, onBack, children }: { title: string; onBack: () => void;
           <ArrowLeft size={18} color={C.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{title}</Text>
-        <View style={{ width: MIN_TOUCH_TARGET }} />
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => router.push('/budget-trips')}
+          style={styles.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel={t('budgetTracker.browseTripsByBudget')}
+        >
+          <Search size={18} color={C.text} />
+        </TouchableOpacity>
       </View>
       {children}
     </SafeAreaView>

@@ -62,7 +62,6 @@
     "quickNearby": "आस-पास",
     "quickBookings": "बुकिंग्स",
     "quickBudgetTracker": "बजट ट्रैकर",
-    "quickBudgetTrips": "बजट अनुसार ट्रिप्स",
     "new": "नया",
     "userSub": "और एक्सप्लोर करें। बेहतर अनुभव लें।",
     "loginSignUp": "लॉगिन / साइन अप",
@@ -446,6 +445,7 @@
   "budgetTracker": {
     "title": "बजट ट्रैकर",
     "goBack": "वापस जाएं",
+    "browseTripsByBudget": "बजट अनुसार ट्रिप्स ब्राउज़ करें",
     "signInRequiredTitle": "ट्रिप खर्च ट्रैक और साझा करें",
     "signInRequiredMessage": "साझा खर्च दर्ज करने, किसने क्या भुगतान किया यह ट्रैक करने और अपने ग्रुप के साथ आसानी से हिसाब करने के लिए साइन इन करें।",
     "signInBenefit1": "वास्तविक समय में गणना किया गया समान लागत-विभाजन",
