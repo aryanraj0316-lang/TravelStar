@@ -11,6 +11,7 @@ import helmet from 'helmet';
 dotenv.config();
 
 import { env } from './config/env';
+import { logger } from './lib/logger';
 import prisma from './services/db';
 import { authenticateJWT } from './middleware/auth';
 import { requestId } from './middleware/request-id';
@@ -107,8 +108,20 @@ const largeUploadJson = express.json({ limit: '32mb', verify: captureRawBody });
 app.use((req, res, next) => (isLargeUploadPath(req) ? largeUploadJson(req, res, next) : standardJson(req, res, next)));
 app.use(express.urlencoded({ extended: true, limit: '256kb' }));
 
+// This directory backs only the local-disk upload fallback used when
+// object storage isn't configured (see stories.ts's /upload-direct, which
+// already creates it lazily and safely on first use). Failing to create it
+// here must never take the whole server down with it — some container
+// runtimes (Render's Docker deploy included) don't allow writing to the
+// app's own working directory, and previously this threw uncaught at
+// startup before the server ever bound to a port, crashing every route,
+// not just uploads.
 const uploadDir = path.join(process.cwd(), 'uploads');
-if (!fs.existsSync(uploadDir)) { fs.mkdirSync(uploadDir, { recursive: true }); }
+try {
+  if (!fs.existsSync(uploadDir)) { fs.mkdirSync(uploadDir, { recursive: true }); }
+} catch (err) {
+  logger.warn('[App] Could not create local uploads/ directory — the object-storage-unconfigured upload fallback will be unavailable:', err);
+}
 app.use('/uploads', express.static(uploadDir));
 
 // ── Rate limits ─────────────────────────────────────────────────────────────
