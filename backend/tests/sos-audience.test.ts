@@ -213,4 +213,159 @@ describe('SOS', () => {
     });
     expect(safeMsg).toBeTruthy();
   }, 120_000);
+  // ── Reach preference (Profile.sosAudienceMode) ──────────────────────
+  //
+  // Jaipur, and points at known distances from it, so "within 5 km" is
+  // checked against real geography rather than a hand-waved delta.
+  const JAIPUR = { lat: 26.9124, lng: 75.7873 };
+  /** ~2 km north of JAIPUR. */
+  const NEAR = { lat: 26.9304, lng: 75.7873 };
+  /** ~22 km north of JAIPUR — outside a 5 km radius, inside a 25 km one. */
+  const FAR = { lat: 27.1104, lng: 75.7873 };
+
+  async function setLiveLocation(userId: string, at: { lat: number; lng: number }) {
+    await prisma.liveLocation.create({
+      data: { userId, latitude: at.lat, longitude: at.lng, updatedAt: new Date() },
+    });
+  }
+
+  it('keeps an alert to the trip group by default, even with someone standing right there', async () => {
+    const alerting = await registerAndLogin('default-alerting');
+    const bystander = await registerAndLogin('default-bystander');
+    await setLiveLocation(bystander.userId, NEAR);
+
+    const audience = await resolveSosAudience(alerting.userId, JAIPUR);
+
+    // TRIP_GROUP is the default: broadcasting your position to strangers is
+    // something you opt into, not something a deploy signs you up for.
+    expect(audience.reach.mode).toBe('TRIP_GROUP');
+    expect(audience.reach.nearbyCount).toBe(0);
+    expect(audience.userIds).not.toContain(bystander.userId);
+  }, 120_000);
+
+  it('reaches travellers inside the chosen radius and nobody outside it', async () => {
+    const alerting = await registerAndLogin('radius-alerting');
+    const near = await registerAndLogin('radius-near');
+    const far = await registerAndLogin('radius-far');
+    await setLiveLocation(near.userId, NEAR);
+    await setLiveLocation(far.userId, FAR);
+
+    await prisma.profile.update({
+      where: { userId: alerting.userId },
+      data: { sosAudienceMode: 'NEARBY', sosRadiusKm: 5 },
+    });
+
+    const audience = await resolveSosAudience(alerting.userId, JAIPUR);
+    expect(audience.reach.mode).toBe('NEARBY');
+    expect(audience.reach.radiusKm).toBe(5);
+    expect(audience.userIds).toContain(near.userId);
+    // ~22 km away: a bounding box alone would still be deciding this by
+    // corners, which is why the circle is checked exactly.
+    expect(audience.userIds).not.toContain(far.userId);
+
+    // Widening the radius reaches them, so this is really distance-based
+    // and not just "the last person who happened to be inserted".
+    await prisma.profile.update({
+      where: { userId: alerting.userId },
+      data: { sosRadiusKm: 25 },
+    });
+    const wider = await resolveSosAudience(alerting.userId, JAIPUR);
+    expect(wider.userIds).toContain(near.userId);
+    expect(wider.userIds).toContain(far.userId);
+  }, 120_000);
+
+  it('never reaches someone who turned location sharing off, or whose position is stale', async () => {
+    const alerting = await registerAndLogin('privacy-alerting');
+    const optedOut = await registerAndLogin('privacy-optedout');
+    const stale = await registerAndLogin('privacy-stale');
+
+    await setLiveLocation(optedOut.userId, NEAR);
+    await prisma.profile.update({
+      where: { userId: optedOut.userId },
+      data: { locationSharing: false },
+    });
+
+    // Standing in the same place, but the app last reported it hours ago:
+    // that is not where they are now, and waking them helps nobody.
+    await prisma.liveLocation.create({
+      data: {
+        userId: stale.userId,
+        latitude: NEAR.lat,
+        longitude: NEAR.lng,
+        updatedAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
+      },
+    });
+
+    await prisma.profile.update({
+      where: { userId: alerting.userId },
+      data: { sosAudienceMode: 'NEARBY', sosRadiusKm: 25 },
+    });
+
+    const audience = await resolveSosAudience(alerting.userId, JAIPUR);
+    expect(audience.userIds).not.toContain(optedOut.userId);
+    expect(audience.userIds).not.toContain(stale.userId);
+  }, 120_000);
+
+  it('falls back to the trip group when NEARBY has no position to search from', async () => {
+    const alerting = await registerAndLogin('nopos-alerting');
+    const bystander = await registerAndLogin('nopos-bystander');
+    await setLiveLocation(bystander.userId, NEAR);
+    await prisma.profile.update({
+      where: { userId: alerting.userId },
+      data: { sosAudienceMode: 'NEARBY', sosRadiusKm: 25 },
+    });
+
+    // No coordinates means no circle — the alert still goes out, just to
+    // the group, rather than guessing at where the person is.
+    const audience = await resolveSosAudience(alerting.userId, null);
+    expect(audience.userIds).not.toContain(bystander.userId);
+    expect(audience.reach.nearbyCount).toBe(0);
+  }, 120_000);
+
+  it('alerts nearby travellers end to end and says truthfully who was reached', async () => {
+    const alerting = await registerAndLogin('e2e-alerting');
+    const near = await registerAndLogin('e2e-near');
+    await setLiveLocation(near.userId, NEAR);
+    await request(app)
+      .put('/api/v1/auth/profile')
+      .set('Authorization', `Bearer ${alerting.token}`)
+      .send({ sosAudienceMode: 'NEARBY', sosRadiusKm: 5 });
+
+    const sos = await request(app)
+      .post('/api/v1/safety/sos')
+      .set('Authorization', `Bearer ${alerting.token}`)
+      .send({ latitude: JAIPUR.lat, longitude: JAIPUR.lng });
+    expect(sos.status).toBe(201);
+    expect(sos.body.data.reach.mode).toBe('NEARBY');
+    expect(sos.body.data.reach.radiusKm).toBe(5);
+    // Counts are not asserted exactly: this runs against the shared
+    // DATABASE_URL, where other suites leave their own fresh positions
+    // around Jaipur. What matters is that this traveller was reached and
+    // that the confirmation describes the real, wider reach.
+    expect(sos.body.data.reach.nearbyCount).toBeGreaterThanOrEqual(1);
+    expect(sos.body.data.message).toContain('within 5 km');
+    expect(sos.body.data.message).toContain('your trip group');
+
+    // The stranger really is notified, and it survives them being offline.
+    const notified = await prisma.notification.findFirst({
+      where: { userId: near.userId, type: 'HAZARD' },
+    });
+    expect(notified).toBeTruthy();
+  }, 120_000);
+
+  it('refuses a radius beyond the cap rather than silently widening it', async () => {
+    const alerting = await registerAndLogin('cap-alerting');
+    const res = await request(app)
+      .put('/api/v1/auth/profile')
+      .set('Authorization', `Bearer ${alerting.token}`)
+      .send({ sosAudienceMode: 'NEARBY', sosRadiusKm: 500 });
+    expect(res.status).toBe(400);
+
+    const profile = await prisma.profile.findUnique({
+      where: { userId: alerting.userId },
+      select: { sosRadiusKm: true, sosAudienceMode: true },
+    });
+    expect(profile?.sosRadiusKm).toBe(5);
+    expect(profile?.sosAudienceMode).toBe('TRIP_GROUP');
+  }, 120_000);
 });

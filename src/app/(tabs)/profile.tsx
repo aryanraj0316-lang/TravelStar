@@ -166,6 +166,13 @@ function ProfileScreen() {
   const [selectedLanguage, setSelectedLanguage] = useState('English');
   const [pushNotifications, setPushNotifications] = useState(true);
   const [locationSharing, setLocationSharing] = useState(true);
+
+  // How far this user's own SOS reaches. Mirrors Profile.sosAudienceMode /
+  // sosRadiusKm on the server; the trip group is always alerted either way,
+  // so the choice here is only about whether strangers nearby are too.
+  const [showSosReachModal, setShowSosReachModal] = useState(false);
+  const [sosAudienceMode, setSosAudienceMode] = useState<'TRIP_GROUP' | 'NEARBY'>('TRIP_GROUP');
+  const [sosRadiusKm, setSosRadiusKm] = useState(5);
   // Per-category push opt-outs (docs/REMEDIATION.md §8.18). The master
   // switch above used to be the whole story, and it did nothing: no
   // device token was ever registered, so it gated a delivery that could
@@ -356,6 +363,12 @@ function ProfileScreen() {
     }
     if (profile.locationSharing !== undefined) {
       setLocationSharing(profile.locationSharing);
+    }
+    if (profile.sosAudienceMode !== undefined) {
+      setSosAudienceMode(profile.sosAudienceMode);
+    }
+    if (profile.sosRadiusKm !== undefined) {
+      setSosRadiusKm(profile.sosRadiusKm);
     }
   }
 
@@ -1179,6 +1192,39 @@ function ProfileScreen() {
 
               <View style={styles.menuDivider} />
 
+              {/* SOS alert reach */}
+              <TouchableOpacity
+                style={styles.menuItem}
+                activeOpacity={0.7}
+                onPress={() => {
+                  if (!isLoggedIn) {
+                    router.push('/auth?mode=SIGNUP');
+                    return;
+                  }
+                  setShowSosReachModal(true);
+                  setNavbarHidden(true);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={t('profile.sosReach')}
+              >
+                <View style={styles.menuItemLeft}>
+                  <View style={[styles.menuIconBadge, { backgroundColor: '#FEF2F2' }]}>
+                    <ShieldAlert size={16} color="#DC2626" />
+                  </View>
+                  <View style={styles.menuItemTextCol}>
+                    <Text style={styles.menuItemTitle}>{t('profile.sosReach')}</Text>
+                    <Text style={styles.menuItemSub}>
+                      {sosAudienceMode === 'NEARBY'
+                        ? t('profile.sosReachNearbyValue', { km: sosRadiusKm })
+                        : t('profile.sosReachTripGroupValue')}
+                    </Text>
+                  </View>
+                </View>
+                <ChevronRight size={16} color="#94A3B8" />
+              </TouchableOpacity>
+
+              <View style={styles.menuDivider} />
+
               {/* Customer Support */}
               <TouchableOpacity
                 style={styles.menuItem}
@@ -1634,6 +1680,102 @@ function ProfileScreen() {
                   </View>
                 ))
               )}
+            </ScrollView>
+          </View>
+        </View>
+      )}
+
+      {/* ════════════════════════════════════════════════
+          SOS ALERT REACH BOTTOM SHEET OVERLAY
+          ════════════════════════════════════════════════ */}
+      {showSosReachModal && (
+        <View style={styles.bottomSheetOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => {
+              setShowSosReachModal(false);
+              setNavbarHidden(false);
+            }}
+          >
+            <View style={{ flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)' }} />
+          </TouchableOpacity>
+          <View style={styles.bottomSheetContent}>
+            <View style={styles.bottomSheetHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <ShieldAlert size={16} color="#DC2626" />
+                <Text style={styles.bottomSheetTitle}>{t('profile.sosReach')}</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowSosReachModal(false);
+                  setNavbarHidden(false);
+                }}
+                style={styles.bottomSheetCloseBtn}
+                accessibilityRole="button"
+                accessibilityLabel={t('common.close')}
+              >
+                <X size={20} color="#0F172A" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Said plainly, because the alternative is someone believing
+                their trip group was swapped out for strangers. */}
+            <Text style={styles.sosReachExplainer}>{t('profile.sosReachExplainer')}</Text>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 }}>
+              {([
+                { mode: 'TRIP_GROUP' as const, km: 0 },
+                { mode: 'NEARBY' as const, km: 1 },
+                { mode: 'NEARBY' as const, km: 2 },
+                { mode: 'NEARBY' as const, km: 5 },
+                { mode: 'NEARBY' as const, km: 10 },
+                { mode: 'NEARBY' as const, km: 25 },
+              ]).map((option, idx, arr) => {
+                const isSelected =
+                  option.mode === 'TRIP_GROUP'
+                    ? sosAudienceMode === 'TRIP_GROUP'
+                    : sosAudienceMode === 'NEARBY' && sosRadiusKm === option.km;
+                const label =
+                  option.mode === 'TRIP_GROUP'
+                    ? t('profile.sosReachTripGroupValue')
+                    : t('profile.sosReachNearbyValue', { km: option.km });
+                const sub =
+                  option.mode === 'TRIP_GROUP'
+                    ? t('profile.sosReachTripGroupSub')
+                    : t('profile.sosReachNearbySub');
+                return (
+                  <View key={`${option.mode}-${option.km}`}>
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      style={[styles.langRow, isSelected && { backgroundColor: '#FEF2F2' }]}
+                      onPress={() => {
+                        setSosAudienceMode(option.mode);
+                        if (option.mode === 'NEARBY') setSosRadiusKm(option.km);
+                        updateProfile(
+                          option.mode === 'NEARBY'
+                            ? { sosAudienceMode: 'NEARBY', sosRadiusKm: option.km }
+                            : { sosAudienceMode: 'TRIP_GROUP' },
+                        );
+                        setShowSosReachModal(false);
+                        setNavbarHidden(false);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${label}. ${sub}`}
+                      accessibilityState={{ selected: isSelected }}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.langText, isSelected && { color: '#DC2626', fontWeight: '700' }]}>
+                          {label}
+                        </Text>
+                        <Text style={styles.sosReachOptionSub}>{sub}</Text>
+                      </View>
+                      {isSelected && <Check size={16} color="#DC2626" />}
+                    </TouchableOpacity>
+                    {idx < arr.length - 1 && <View style={styles.langDivider} />}
+                  </View>
+                );
+              })}
             </ScrollView>
           </View>
         </View>
@@ -2408,6 +2550,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#0F172A',
+  },
+  sosReachExplainer: {
+    fontSize: 12.5,
+    color: '#64748B',
+    lineHeight: 18,
+    paddingHorizontal: 4,
+    paddingBottom: 10,
+  },
+  sosReachOptionSub: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
   },
   langSubText: {
     fontSize: 13,

@@ -4,11 +4,16 @@ import { formatINR, parseMoney, type Money } from '@/lib/money';
 import { tripCoverImage } from '@/lib/trip-display';
 import { errorToastMessage, showPrompt, toast, useConfirm } from '@/lib/feedback';
 import { logger } from '@/lib/logger';
+import { queryClient } from '@/lib/query-client';
+import { queryKeys } from '@/lib/query-keys';
+import { syncBadgeCount } from '@/lib/push';
 import { apiService, type TripTimelineStop } from '@/services/api';
 import { safeStorage } from '@/services/storage';
 import { useApp, type Trip } from '@/store/AppContext';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
-import type { IncomingJoinRequest, PublicGuide, ReceivedGuideQuote, TripGuideMatches, TripInquiryThread, TripMemberRow } from '@/types/api';
+import { socketService } from '@/services/socket';
+import { eventBus } from '@/services/event-bus';
+import type { AppNotification, ChatMessage, IncomingJoinRequest, PublicGuide, ReceivedGuideQuote, TripGuideMatches, TripInquiryThread, TripMemberRow } from '@/types/api';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Activity from 'lucide-react-native/icons/activity';
@@ -40,7 +45,7 @@ import TrendingUp from 'lucide-react-native/icons/trending-up';
 import Users from 'lucide-react-native/icons/users';
 import Utensils from 'lucide-react-native/icons/utensils';
 import X from 'lucide-react-native/icons/x';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
@@ -60,7 +65,20 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 
-// â”€â”€â”€ Data Interfaces â”€â”€â”€
+export interface TravelerQuestionItem {
+  chatRoomId: string;
+  travelerId?: string | null;
+  travelerName: string;
+  travelerAvatar?: string | null;
+  tripId: string;
+  tripName: string;
+  lastMessage?: string | null;
+  lastMessageAt?: string | null;
+  lastMessageIsMe?: boolean;
+  unreadCount?: number;
+}
+
+// ─── Data Interfaces ───
 export interface ItineraryCheckpoint {
   id: string;
   name: string;
@@ -149,6 +167,9 @@ const INQUIRY_STATUS_LABEL_KEYS: Record<NonNullable<TripInquiryThread['joinReque
 
 export type GroupOrganizerTab = 'console' | 'chat';
 export type CreationSubTab = 'dashboard' | 'approvals' | 'itinerary' | 'roster' | 'overview' | 'checkpoints';
+
+const SEEN_CHATS_KEY = '@seen_inquiry_chat_timestamps';
+const SEEN_APPROVALS_KEY = '@seen_approval_request_ids';
 
 
 // ─── Live Map Geocoding & Road Routing Engine (OpenStreetMap & OSRM) ───
@@ -372,8 +393,8 @@ const getTripDisplayImage = (trip: Trip) => {
 export default function GroupOrganizerScreen() {
   const { t } = useTranslation();
   const router = useRouter();
-  const params = useLocalSearchParams<{ tab?: string; tripId?: string; sub?: string }>();
-  const { profile, addTrip, trips, isLoggedIn, setActiveRoomId, setCurrentRole } = useApp();
+  const params = useLocalSearchParams<{ tab?: string; tripId?: string; sub?: string; subTab?: string; category?: string }>();
+  const { profile, addTrip, trips, isLoggedIn, setActiveRoomId, setCurrentRole, reloadIncomingRequestsCount, checkUnreadNotifications } = useApp();
 
   useEffect(() => {
     return () => {
@@ -441,6 +462,33 @@ export default function GroupOrganizerScreen() {
   const [inquiries, setInquiries] = useState<TripInquiryThread[]>([]);
   const [inquiriesLoading, setInquiriesLoading] = useState(false);
   const [inquiriesError, setInquiriesError] = useState<string | null>(null);
+
+  // Two tabs inside Chats and Approvals: 'chat' | 'approvals'
+  const [chatSubTab, setChatSubTab] = useState<'chat' | 'approvals'>(
+    params.subTab === 'approvals' || params.category === 'JOIN_REQUEST' ? 'approvals' : 'chat',
+  );
+  const [travelerQuestions, setTravelerQuestions] = useState<TravelerQuestionItem[]>([]);
+  const [loadingQuestions, setLoadingQuestions] = useState(false);
+  const [seenChatTimestamps, setSeenChatTimestamps] = useState<Record<string, string>>({});
+  const [seenApprovalIds, setSeenApprovalIds] = useState<Set<string>>(new Set());
+  const [expandedApprovalIds, setExpandedApprovalIds] = useState<Set<string>>(new Set());
+  const [expandedTripIds, setExpandedTripIds] = useState<Set<string>>(new Set());
+  const [inquiriesByTrip, setInquiriesByTrip] = useState<Record<string, TripInquiryThread[]>>({});
+  const [inquiriesLoadingByTrip, setInquiriesLoadingByTrip] = useState<Record<string, boolean>>({});
+  const sentRepliesRef = useRef<Set<string>>(new Set());
+
+  // Interactive inquiry chat modal state
+  const [activeInquiryChat, setActiveInquiryChat] = useState<{
+    chatRoomId: string;
+    tripId: string;
+    tripName: string;
+    travelerName: string;
+    travelerAvatar?: string;
+  } | null>(null);
+  const [inquiryMessages, setInquiryMessages] = useState<ChatMessage[]>([]);
+  const [inquiryMessagesLoading, setInquiryMessagesLoading] = useState(false);
+  const [inquiryReplyText, setInquiryReplyText] = useState('');
+  const [sendingInquiryReply, setSendingInquiryReply] = useState(false);
   const [publicGuides, setPublicGuides] = useState<PublicGuide[]>([]);
   // Which guides' declared service zones actually cover this trip's route.
   const [routeMatches, setRouteMatches] = useState<TripGuideMatches | null>(null);
@@ -935,15 +983,21 @@ export default function GroupOrganizerScreen() {
   // Keyed so it runs once per arrival rather than fighting the organizer
   // every time they navigate away from that tab.
   const [prevDeepLinkKey, setPrevDeepLinkKey] = useState<string | null>(null);
-  const deepLinkKey = params.tripId ? `${params.tripId}:${params.sub ?? ''}` : null;
-  if (deepLinkKey !== prevDeepLinkKey) {
+  const deepLinkKey = `${params.tripId ?? ''}:${params.tab ?? ''}:${params.subTab ?? ''}:${params.category ?? ''}`;
+  if (deepLinkKey && deepLinkKey !== prevDeepLinkKey) {
     setPrevDeepLinkKey(deepLinkKey);
-    if (deepLinkKey && params.tripId) {
+    if (params.tab === 'chat') {
+      setActiveTab('chat');
+      if (params.subTab === 'approvals' || params.category === 'JOIN_REQUEST') {
+        setChatSubTab('approvals');
+      } else if (params.subTab === 'chat' || params.category === 'TRIP_ENQUIRY') {
+        setChatSubTab('chat');
+      }
+    } else if (params.tripId) {
       const target = myTrips.find((t: Trip) => t.id === params.tripId);
       if (target) {
         setSelectedCreation(target);
         setActiveTab('console');
-        if (params.sub === 'approvals') setCreationSubTab('approvals');
       }
     }
   }
@@ -1132,6 +1186,458 @@ export default function GroupOrganizerScreen() {
     [t],
   );
 
+  const fetchAllQuestions = useCallback(async () => {
+    setLoadingQuestions(true);
+    try {
+      const questionMap = new Map<string, TravelerQuestionItem>();
+
+      // 1. Inquiries from /chats endpoint
+      const chats = await apiService.getChats();
+      if (chats) {
+        for (const c of chats) {
+          if (c.inquiryTripId) {
+            const trip = trips.find((t) => t.id === c.inquiryTripId);
+            const tripName = c.inquiryTripName || trip?.name || 'Group Journey';
+            const cleanName = c.name.split(' · ')[0] || c.name;
+
+            questionMap.set(c.id, {
+              chatRoomId: c.id,
+              travelerName: cleanName,
+              travelerAvatar: c.avatar,
+              tripId: c.inquiryTripId,
+              tripName,
+              lastMessage: c.latestMessage || null,
+              lastMessageAt: c.lastMessageAt || c.latestTime,
+              unreadCount: c.unreadCount || 0,
+            });
+          }
+        }
+      }
+
+      // 2. Inquiries from getTripInquiries for each hosted trip
+      const hostedTrips = trips.filter((t: Trip) => t.isMyTrip === true || (!!profile?.id && t.creatorId === profile.id));
+      await Promise.all(
+        hostedTrips.map(async (trip) => {
+          try {
+            const threads = await apiService.getTripInquiries(trip.id);
+            if (threads) {
+              for (const thread of threads) {
+                const existing = questionMap.get(thread.chatRoomId);
+                questionMap.set(thread.chatRoomId, {
+                  chatRoomId: thread.chatRoomId,
+                  travelerId: thread.user?.id,
+                  travelerName: thread.user?.name || existing?.travelerName || 'Traveler',
+                  travelerAvatar: thread.user?.avatar || existing?.travelerAvatar,
+                  tripId: trip.id,
+                  tripName: trip.name,
+                  lastMessage: thread.lastMessage || existing?.lastMessage || null,
+                  lastMessageAt: thread.lastMessageAt || existing?.lastMessageAt,
+                  unreadCount: thread.unreadCount || existing?.unreadCount || 0,
+                });
+              }
+            }
+          } catch {
+            // Ignore single trip inquiry failure
+          }
+        }),
+      );
+
+      // 3. Enrich with actual last message of conversation using getChatMessages
+      const rawList = Array.from(questionMap.values());
+      const enrichedList = await Promise.all(
+        rawList.map(async (item) => {
+          try {
+            const msgs = await apiService.getChatMessages(item.chatRoomId);
+            if (msgs && msgs.length > 0) {
+              const myId = profile?.id;
+              const myName = profile?.name?.trim().toLowerCase();
+              const myFirst = profile?.name?.split(' ')[0]?.trim().toLowerCase();
+
+              const sortedMsgs = [...msgs].sort(
+                (a, b) =>
+                  new Date(a.createdAt || a.timestamp || 0).getTime() -
+                  new Date(b.createdAt || b.timestamp || 0).getTime()
+              );
+
+              const lastMsg = sortedMsgs[sortedMsgs.length - 1];
+              if (lastMsg) {
+                const senderNameLower = (lastMsg.senderName || '').trim().toLowerCase();
+                const isMe =
+                  (myId && lastMsg.senderId === myId) ||
+                  lastMsg.senderRole === 'Organizer' ||
+                  (myName && senderNameLower === myName) ||
+                  (myFirst && senderNameLower === myFirst) ||
+                  sentRepliesRef.current.has(lastMsg.content.trim());
+
+                return {
+                  ...item,
+                  lastMessage: lastMsg.content,
+                  lastMessageAt: lastMsg.createdAt || lastMsg.timestamp || item.lastMessageAt,
+                  lastMessageIsMe: isMe,
+                };
+              }
+            }
+          } catch (e) {
+            // Fall through to fallback
+          }
+
+          // Fallback if getChatMessages failed
+          if (item.lastMessage) {
+            const trimmed = item.lastMessage.trim();
+            const myName = profile?.name;
+            const myFirst = profile?.name?.split(' ')[0];
+            const isMe =
+              trimmed.startsWith('You: ') ||
+              sentRepliesRef.current.has(trimmed) ||
+              (myName && trimmed.startsWith(`${myName}: `)) ||
+              (myFirst && trimmed.startsWith(`${myFirst}: `)) ||
+              trimmed.startsWith('Organizer: ');
+
+            let cleanMsg = trimmed;
+            if (myName && cleanMsg.startsWith(`${myName}: `)) {
+              cleanMsg = cleanMsg.slice(myName.length + 2).trim();
+            } else if (myFirst && cleanMsg.startsWith(`${myFirst}: `)) {
+              cleanMsg = cleanMsg.slice(myFirst.length + 2).trim();
+            } else if (cleanMsg.startsWith('You: ')) {
+              cleanMsg = cleanMsg.slice(5).trim();
+            } else if (cleanMsg.startsWith('Organizer: ')) {
+              cleanMsg = cleanMsg.slice(11).trim();
+            }
+
+            return {
+              ...item,
+              lastMessage: cleanMsg,
+              lastMessageIsMe: isMe,
+            };
+          }
+
+          return item;
+        })
+      );
+
+      setTravelerQuestions(enrichedList);
+    } catch (e) {
+      logger.warn('Failed to load traveler questions:', e);
+    } finally {
+      setLoadingQuestions(false);
+    }
+  }, [trips, profile?.id, profile?.name]);
+
+  const pendingRequests = useMemo(() => {
+    return rawJoinRequests.filter((r) => r.status === 'PENDING');
+  }, [rawJoinRequests]);
+
+  const [deletingChatId, setDeletingChatId] = useState<string | null>(null);
+
+  const handleDeleteChatThread = useCallback(
+    (item: TravelerQuestionItem) => {
+      void (async () => {
+        const ok = await confirm({
+          title: t('groupOrganizer.deleteChat', 'Delete Chat'),
+          message: t(
+            'groupOrganizer.deleteChatMessage',
+            'Delete your conversation with {{name}} about {{trip}}? This cannot be undone.',
+            { name: item.travelerName, trip: item.tripName },
+          ),
+          confirmLabel: t('common.delete', 'Delete'),
+          destructive: true,
+        });
+        if (!ok) return;
+
+        // Removed from the list right away — the trip's organizer no
+        // longer has any use for a thread they just asked to delete, so
+        // there's nothing to wait on the server for here.
+        setTravelerQuestions((prev) => prev.filter((q) => q.chatRoomId !== item.chatRoomId));
+        setDeletingChatId(item.chatRoomId);
+        try {
+          await apiService.deleteChatRoom(item.chatRoomId);
+        } catch (e) {
+          logger.warn('[GroupOrganizer] Failed to delete chat thread:', e);
+          toast(t('groupOrganizer.couldNotDeleteChat', "Couldn't delete this chat."), 'error');
+          void fetchAllQuestions();
+        } finally {
+          setDeletingChatId(null);
+        }
+      })();
+    },
+    [confirm, t, fetchAllQuestions],
+  );
+
+  // Opening an enquiry thread from this list is itself the "read" action —
+  // whether or not the organizer replies. The push-triggered notification
+  // (notifyTripEnquiry on the backend) otherwise sits on the Notifications
+  // page forever, since nothing dismissed it when the thread was opened
+  // from here rather than from the notification itself. This fetches the
+  // live list rather than trusting the notifications query cache, since
+  // that cache may never have been populated this session.
+  const dismissEnquiryNotificationsForChat = useCallback(
+    (chatRoomId: string) => {
+      void (async () => {
+        try {
+          const all = await apiService.getNotifications();
+          const matches = (all || []).filter(
+            (n) => n.chatRoomId === chatRoomId && n.category === 'TRIP_ENQUIRY' && n.unread !== false,
+          );
+          if (matches.length === 0) return;
+
+          queryClient.setQueryData<AppNotification[]>(queryKeys.notifications(), (prev = []) =>
+            prev.filter((n) => !matches.some((m) => m.id === n.id)),
+          );
+
+          await Promise.all(matches.map((n) => apiService.deleteNotification(n.id)));
+          checkUnreadNotifications();
+          void syncBadgeCount();
+        } catch (e) {
+          logger.warn('[GroupOrganizer] Failed to dismiss enquiry notifications:', e);
+        }
+      })();
+    },
+    [checkUnreadNotifications],
+  );
+
+  // ── Unseen / Unclicked Tracking for Chats and Approvals ────────────────
+  const markChatAsSeen = useCallback((chatRoomId: string) => {
+    const now = new Date().toISOString();
+    setSeenChatTimestamps((prev) => {
+      const next = { ...prev, [chatRoomId]: now };
+      void safeStorage.setItem(SEEN_CHATS_KEY, JSON.stringify(next));
+      return next;
+    });
+    // Immediately clear in-memory unreadCount so badge updates instantly
+    setTravelerQuestions((prev) =>
+      prev.map((q) => (q.chatRoomId === chatRoomId ? { ...q, unreadCount: 0 } : q))
+    );
+  }, []);
+
+  const markRequestAsSeen = useCallback((requestId: string) => {
+    const id = String(requestId || '').trim();
+    if (!id) return;
+    setSeenApprovalIds((prev) => {
+      if (prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.add(id);
+      void safeStorage.setItem(SEEN_APPROVALS_KEY, JSON.stringify(Array.from(next)));
+      return next;
+    });
+    reloadIncomingRequestsCount?.();
+  }, [reloadIncomingRequestsCount]);
+
+  const isChatUnseen = useCallback(
+    (item: TravelerQuestionItem) => {
+      // If the last message was sent by me, it can never be unseen/unread!
+      if (item.lastMessageIsMe) {
+        return false;
+      }
+      // If there are unread messages reported by server
+      if ((item.unreadCount ?? 0) > 0) {
+        return true;
+      }
+      const lastSeen = seenChatTimestamps[item.chatRoomId];
+      if (lastSeen) {
+        // Once opened/seen, only unseen if a strictly NEW traveler message arrived after lastSeen
+        if (item.lastMessageAt && item.lastMessage) {
+          return new Date(item.lastMessageAt).getTime() > new Date(lastSeen).getTime();
+        }
+        return false;
+      }
+      return (item.unreadCount ?? 0) > 0 || !!item.lastMessage;
+    },
+    [seenChatTimestamps]
+  );
+
+  const unseenChatsCount = useMemo(() => {
+    return travelerQuestions.filter(isChatUnseen).length;
+  }, [travelerQuestions, isChatUnseen]);
+
+  const isApprovalUnseen = useCallback(
+    (req: IncomingJoinRequest) => {
+      const id = String(req.id || (req as any)._id || '').trim();
+      return !seenApprovalIds.has(id);
+    },
+    [seenApprovalIds]
+  );
+
+  const unseenApprovalsCount = useMemo(() => {
+    return pendingRequests.filter(isApprovalUnseen).length;
+  }, [pendingRequests, isApprovalUnseen]);
+
+  const toggleApprovalDetails = useCallback(
+    (requestId: string) => {
+      const id = String(requestId || '').trim();
+      if (!id) return;
+      markRequestAsSeen(id);
+      setExpandedApprovalIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) {
+          next.delete(id);
+        } else {
+          next.add(id);
+        }
+        return next;
+      });
+    },
+    [markRequestAsSeen]
+  );
+
+  // Load seen states from storage on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const savedChats = await safeStorage.getItem(SEEN_CHATS_KEY);
+        if (savedChats) {
+          setSeenChatTimestamps(JSON.parse(savedChats));
+        }
+        const savedApprovals = await safeStorage.getItem(SEEN_APPROVALS_KEY);
+        if (savedApprovals) {
+          const parsed: string[] = JSON.parse(savedApprovals);
+          if (Array.isArray(parsed)) {
+            setSeenApprovalIds(new Set(parsed));
+          }
+        }
+      } catch (e) {
+        logger.warn('Failed to load seen state for chats/approvals:', e);
+      }
+    })();
+  }, []);
+
+  const fetchTripInquiriesForTrip = useCallback(
+    async (tripId: string) => {
+      setInquiriesLoadingByTrip((prev) => ({ ...prev, [tripId]: true }));
+      try {
+        const data = await apiService.getTripInquiries(tripId);
+        setInquiriesByTrip((prev) => ({ ...prev, [tripId]: data ?? [] }));
+      } catch (e) {
+        logger.warn('Failed to fetch inquiries for trip:', tripId, e);
+        setInquiriesByTrip((prev) => ({ ...prev, [tripId]: [] }));
+      } finally {
+        setInquiriesLoadingByTrip((prev) => ({ ...prev, [tripId]: false }));
+      }
+    },
+    [],
+  );
+
+  // Live message handling for open inquiry conversation
+  useEffect(() => {
+    if (!activeInquiryChat) return;
+    setInquiryMessagesLoading(true);
+    socketService.joinRoom(activeInquiryChat.chatRoomId);
+
+    apiService
+      .getChatMessages(activeInquiryChat.chatRoomId)
+      .then((msgs) => setInquiryMessages(msgs ?? []))
+      .catch((e) => logger.warn('Failed to load inquiry chat messages:', e))
+      .finally(() => setInquiryMessagesLoading(false));
+
+    void apiService.markChatRead(activeInquiryChat.chatRoomId);
+    markChatAsSeen(activeInquiryChat.chatRoomId);
+
+    const unsubMsg = socketService.onMessage(({ roomId, message }) => {
+      if (roomId === activeInquiryChat.chatRoomId) {
+        const timeStr = message.createdAt || new Date().toISOString();
+        const incoming: ChatMessage = {
+          id: message.id,
+          senderId: message.senderId || '',
+          senderName: message.senderName || 'Traveler',
+          senderRole: (message as any).senderRole || 'Tourist',
+          content: message.content,
+          timestamp: timeStr,
+          mediaType: (message.mediaType as any) || 'NONE',
+          createdAt: timeStr,
+        };
+        const isMe =
+          message.senderId === profile?.id ||
+          message.senderName === profile?.name ||
+          message.senderRole === 'Organizer' ||
+          sentRepliesRef.current.has(message.content.trim());
+        setInquiryMessages((prev) => {
+          if (prev.some((m) => m.id === message.id)) return prev;
+          const dupIdx = isMe
+            ? prev.findIndex(
+                (m) =>
+                  (m.id.startsWith('temp-') || m.id.startsWith('msg-')) &&
+                  m.content.trim() === message.content.trim()
+              )
+            : -1;
+
+          if (dupIdx >= 0) {
+            const next = [...prev];
+            next[dupIdx] = incoming;
+            return next;
+          }
+
+          return [...prev, incoming];
+        });
+
+        // Update traveler questions in real time so the last message preview updates immediately
+        setTravelerQuestions((prev) =>
+          prev.map((q) =>
+            q.chatRoomId === activeInquiryChat.chatRoomId
+              ? {
+                  ...q,
+                  lastMessage: message.content,
+                  lastMessageAt: timeStr,
+                  lastMessageIsMe: isMe,
+                  unreadCount: isMe ? 0 : q.unreadCount,
+                }
+              : q
+          )
+        );
+
+        void apiService.markChatRead(activeInquiryChat.chatRoomId);
+      }
+    });
+    return () => {
+      unsubMsg();
+    };
+  }, [activeInquiryChat, profile?.id, profile?.name]);
+
+  const handleSendInquiryReply = useCallback(async () => {
+    if (!activeInquiryChat || !inquiryReplyText.trim() || sendingInquiryReply) return;
+    const text = inquiryReplyText.trim();
+    setSendingInquiryReply(true);
+    setInquiryReplyText('');
+    try {
+      sentRepliesRef.current.add(text);
+      const now = new Date().toISOString();
+      const optimisticMsg: ChatMessage = {
+        id: `temp-${Date.now()}`,
+        senderId: profile?.id || '',
+        senderName: profile?.name || 'Organizer',
+        senderRole: 'Organizer',
+        content: text,
+        timestamp: now,
+        mediaType: 'NONE',
+        createdAt: now,
+      };
+      setInquiryMessages((prev) => [...prev, optimisticMsg]);
+      socketService.sendMessage(activeInquiryChat.chatRoomId, text);
+      markChatAsSeen(activeInquiryChat.chatRoomId);
+
+      // Immediately update travelerQuestions preview in-place so it reflects this sent message as the last message
+      setTravelerQuestions((prev) =>
+        prev.map((q) =>
+          q.chatRoomId === activeInquiryChat.chatRoomId
+            ? {
+                ...q,
+                lastMessage: text,
+                lastMessageAt: now,
+                lastMessageIsMe: true,
+                unreadCount: 0,
+              }
+            : q
+        )
+      );
+
+      void fetchTripInquiriesForTrip(activeInquiryChat.tripId);
+      void fetchAllQuestions();
+    } catch (e) {
+      logger.warn('Failed to send inquiry reply:', e);
+      toast(errorToastMessage(e, 'Failed to send reply'), 'error');
+    } finally {
+      setSendingInquiryReply(false);
+    }
+  }, [activeInquiryChat, inquiryReplyText, sendingInquiryReply, profile, fetchTripInquiriesForTrip, fetchAllQuestions, markChatAsSeen]);
+
   const fetchPublicGuides = useCallback(() => {
     setGuidesLoading(true);
     apiService
@@ -1267,7 +1773,15 @@ export default function GroupOrganizerScreen() {
   useEffect(() => {
     fetchIncoming();
     fetchPaymentSummaries();
-  }, [fetchIncoming, fetchPaymentSummaries]);
+    void fetchAllQuestions();
+  }, [fetchIncoming, fetchPaymentSummaries, fetchAllQuestions]);
+
+  useEffect(() => {
+    if (activeTab === 'chat') {
+      fetchIncoming();
+      void fetchAllQuestions();
+    }
+  }, [activeTab, fetchIncoming, fetchAllQuestions]);
 
   useEffect(() => {
     if (currentTour) {
@@ -1358,6 +1872,7 @@ export default function GroupOrganizerScreen() {
   };
 
   const handleApproveRequest = async (reqId: string, userName: string, avatar?: string) => {
+    markRequestAsSeen(reqId);
     let nextStatus: 'APPROVED' | 'AWAITING_PAYMENT' = 'APPROVED';
     try {
       const res: any = await apiService.updateJoinRequestStatus(reqId, 'APPROVED');
@@ -1391,6 +1906,7 @@ export default function GroupOrganizerScreen() {
   };
 
   const handleRejectRequest = async (reqId: string, userName: string) => {
+    markRequestAsSeen(reqId);
     try {
       await apiService.updateJoinRequestStatus(reqId, 'REJECTED');
     } catch (e) {
@@ -1684,11 +2200,15 @@ export default function GroupOrganizerScreen() {
               ] as const
             ).map((tab) => {
               const isActive = activeTab === tab.key;
-              const pendingCount = rawJoinRequests.filter((r) => r.status === 'PENDING').length + quotes.length;
+              const hasUnseenInTab = tab.key === 'chat' && unseenChatsCount + unseenApprovalsCount > 0;
               return (
                 <TouchableOpacity
                   key={tab.key}
-                  style={[styles.topTabItem, isActive && styles.topTabItemActive]}
+                  style={[
+                    styles.topTabItem,
+                    isActive && styles.topTabItemActive,
+                    { width: '50%', maxWidth: '50%', flex: 1, flexBasis: '50%', flexGrow: 1, flexShrink: 0 },
+                  ]}
                   onPress={() => setActiveTab(tab.key)}
                   activeOpacity={0.85}
                   accessibilityRole="tab"
@@ -1696,10 +2216,30 @@ export default function GroupOrganizerScreen() {
                   accessibilityState={{ selected: isActive }}
                 >
                   <tab.Icon size={15} color={isActive ? C.white : C.textSec} strokeWidth={isActive ? 2.5 : 1.8} />
-                  <Text style={[styles.topTabLabel, { color: isActive ? C.white : C.textSec }]}>{tab.label}</Text>
-                  {tab.key === 'chat' && pendingCount > 0 && (
-                    <View style={styles.chatTabBadge}>
-                      <Text style={styles.chatTabBadgeText}>{pendingCount}</Text>
+                  <Text
+                    style={[styles.topTabLabel, { color: isActive ? C.white : C.textSec }]}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                  >
+                    {tab.label}
+                  </Text>
+                  {hasUnseenInTab && (
+                    <View
+                      style={[
+                        styles.topTabNotificationBadge,
+                        isActive && styles.topTabNotificationBadgeActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.topTabNotificationBadgeText,
+                          isActive && styles.topTabNotificationBadgeTextActive,
+                        ]}
+                      >
+                        {unseenChatsCount + unseenApprovalsCount > 99
+                          ? '99+'
+                          : unseenChatsCount + unseenApprovalsCount}
+                      </Text>
                     </View>
                   )}
                 </TouchableOpacity>
@@ -1707,39 +2247,6 @@ export default function GroupOrganizerScreen() {
             })}
           </View>
         </View>
-
-        {/* Dropdown Trip Selector (shown in Chats & Approvals tab when multiple tours exist) */}
-        {activeTab === 'chat' && tours.length > 1 && (
-          <View style={styles.dropdownTripBar}>
-            <Text style={styles.dropdownLabel}>{t('groupOrganizer.activeRosterLabel')}</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dropdownTripScroll}>
-              {tours.map((tour, idx) => {
-                const isSel = idx === selectedTourIdx;
-                return (
-                  <TouchableOpacity
-                    key={tour.id}
-                    style={[styles.dropdownTripBtn, isSel && styles.dropdownTripBtnActive]}
-                    onPress={() => setSelectedTourIdx(idx)}
-                    accessibilityRole="button"
-                    accessibilityLabel={tour.groupName}
-                    accessibilityState={{ selected: isSel }}
-                  >
-                    <Text style={[styles.dropdownTripText, { color: isSel ? C.blueText : C.textSec }]}>{tour.groupName}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-              <TouchableOpacity
-                style={styles.dropdownTripAddBtn}
-                onPress={() => router.push('/create')}
-                accessibilityRole="button"
-                accessibilityLabel={t('groupOrganizer.launchNewTourGroup')}
-              >
-                <Plus size={12} color={C.blueText} />
-                <Text style={styles.dropdownTripAddText}>{t('common.create')}</Text>
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-        )}
       </View>
 
       {/* Every tab below is scoped to the caller's own trips and writes
@@ -1940,14 +2447,6 @@ export default function GroupOrganizerScreen() {
                       [
                         { key: 'dashboard', label: 'Dashboard', Icon: TrendingUp },
                         { key: 'roster', label: 'Members', Icon: Users },
-                        {
-                          key: 'approvals',
-                          label: t('groupOrganizer.tabChatApprovals'),
-                          Icon: MessageSquare,
-                          badge:
-                            rawJoinRequests.filter((r) => r.tripId === selectedCreation.id && r.status === 'PENDING').length +
-                            inquiries.filter((th) => th.unreadCount > 0).length,
-                        },
                         { key: 'itinerary', label: 'Itinerary', Icon: Calendar },
                         { key: 'checkpoints', label: t('groupOrganizer.tabCheckpointGuides'), Icon: MapPin },
                         { key: 'overview', label: 'Overview', Icon: Compass },
@@ -3540,145 +4039,316 @@ export default function GroupOrganizerScreen() {
                   })()}
                 </View>
               )
-          ) : !currentTour ? (
-            <View style={styles.emptyTourState}>
-              <Users size={40} color={C.textMuted} />
-              <Text style={styles.emptyTourStateTitle}>{t('groupOrganizer.noToursYetTitle')}</Text>
-              <Text style={styles.emptyTourStateDesc}>{t('groupOrganizer.noToursYetDesc')}</Text>
-              <TouchableOpacity
-                style={styles.createTripBtn}
-                onPress={() => setShowCreateModal(true)}
-                accessibilityRole="button"
-                accessibilityLabel={t('groupOrganizer.launchNewTourGroup')}
-              >
-                <Plus size={16} color={C.white} />
-                <Text style={styles.createTripBtnText}>{t('groupOrganizer.launchNewTourGroup')}</Text>
-              </TouchableOpacity>
-            </View>
           ) : (
-            <View>
-              {/* TAB 2: CHATS & APPROVALS */}
-                <View>
-                  {/* Chat Moderation Panel */}
-                  <View style={styles.chatGroupModeratorHeader}>
-                    <View>
-                      <Text style={styles.subTitle}>{t('groupOrganizer.groupChatModeration')}</Text>
-                      <Text style={styles.descSec}>{t('groupOrganizer.approveJoinRequestsDesc')}</Text>
+            <View style={styles.cleanPortalWrap}>
+              {/* Clean Sub-Tab Segment: [ Chats ] [ Approvals ] */}
+              <View style={styles.cleanSubTabBar}>
+                <TouchableOpacity
+                  style={[
+                    styles.cleanSubTabItem,
+                    chatSubTab === 'chat' && styles.cleanSubTabItemActive,
+                    { width: '50%', maxWidth: '50%', flex: 1, flexBasis: '50%', flexGrow: 1, flexShrink: 0 },
+                  ]}
+                  onPress={() => setChatSubTab('chat')}
+                  activeOpacity={0.8}
+                  accessibilityRole="tab"
+                  accessibilityLabel={`Chats${unseenChatsCount > 0 ? `, ${unseenChatsCount} new` : ''}`}
+                  accessibilityState={{ selected: chatSubTab === 'chat' }}
+                >
+                  <MessageSquare size={16} color={chatSubTab === 'chat' ? C.white : C.textSec} />
+                  <Text
+                    style={[styles.cleanSubTabLabel, chatSubTab === 'chat' && styles.cleanSubTabLabelActive]}
+                    numberOfLines={1}
+                  >
+                    Chats
+                  </Text>
+                  {unseenChatsCount > 0 && (
+                    <View
+                      style={[
+                        styles.cleanTabNotificationBadge,
+                        chatSubTab === 'chat' && styles.cleanTabNotificationBadgeActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.cleanTabNotificationBadgeText,
+                          chatSubTab === 'chat' && styles.cleanTabNotificationBadgeTextActive,
+                        ]}
+                      >
+                        {unseenChatsCount > 99 ? '99+' : unseenChatsCount}
+                      </Text>
                     </View>
-                  </View>
+                  )}
+                </TouchableOpacity>
 
-                  {/* Moderation List of Requests */}
-                  <Text style={styles.sectionLabelInline}>{t('groupOrganizer.pendingChatJoinRequests')}</Text>
-                  {joinRequests.filter((r) => r.tourId === currentTour.id).length === 0 ? (
-                    <View style={styles.emptyRequestsCard}>
-                      <CheckCircle size={18} color={C.green} />
-                      <Text style={styles.emptyRequestsText}>{t('groupOrganizer.allRequestsProcessed')}</Text>
+                <TouchableOpacity
+                  style={[
+                    styles.cleanSubTabItem,
+                    chatSubTab === 'approvals' && styles.cleanSubTabItemActive,
+                    { width: '50%', maxWidth: '50%', flex: 1, flexBasis: '50%', flexGrow: 1, flexShrink: 0 },
+                  ]}
+                  onPress={() => setChatSubTab('approvals')}
+                  activeOpacity={0.8}
+                  accessibilityRole="tab"
+                  accessibilityLabel={`Approvals${unseenApprovalsCount > 0 ? `, ${unseenApprovalsCount} new` : ''}`}
+                  accessibilityState={{ selected: chatSubTab === 'approvals' }}
+                >
+                  <Users size={16} color={chatSubTab === 'approvals' ? C.white : C.textSec} />
+                  <Text
+                    style={[styles.cleanSubTabLabel, chatSubTab === 'approvals' && styles.cleanSubTabLabelActive]}
+                    numberOfLines={1}
+                  >
+                    Approvals
+                  </Text>
+                  {unseenApprovalsCount > 0 && (
+                    <View
+                      style={[
+                        styles.cleanTabNotificationBadge,
+                        chatSubTab === 'approvals' && styles.cleanTabNotificationBadgeActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.cleanTabNotificationBadgeText,
+                          chatSubTab === 'approvals' && styles.cleanTabNotificationBadgeTextActive,
+                        ]}
+                      >
+                        {unseenApprovalsCount > 99 ? '99+' : unseenApprovalsCount}
+                      </Text>
                     </View>
-                  ) : (
-                    joinRequests
-                      .filter((r) => r.tourId === currentTour.id)
-                      .map((req) => (
-                        <View key={req.id} style={styles.requestItemCard}>
-                          <View style={styles.requestHeaderRow}>
-                            <Image source={{ uri: req.userAvatar }} style={styles.reqAvatar} />
+                  )}
+                </TouchableOpacity>
+              </View>
+
+              {/* ────────── SUB-TAB 1: CHATS ────────── */}
+              {chatSubTab === 'chat' && (
+                loadingQuestions ? (
+                  <View style={styles.cleanPortalLoadingBox}>
+                    <ActivityIndicator color={C.blue} />
+                  </View>
+                ) : travelerQuestions.length === 0 ? (
+                  <View style={styles.cleanEmptyContainer}>
+                    <View style={styles.cleanEmptyIconBox}>
+                      <MessageSquare size={24} color={C.blue} />
+                    </View>
+                    <Text style={styles.cleanEmptyTitle}>No Pending Chats</Text>
+                    <Text style={styles.cleanEmptyDesc}>
+                      There are no pending traveler questions waiting for reply.
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.cleanListGap}>
+                    {travelerQuestions.map((item) => {
+                      const unseen = isChatUnseen(item);
+                      return (
+                        <TouchableOpacity
+                          key={item.chatRoomId}
+                          style={[styles.chatBoxCard, unseen && styles.chatBoxCardUnread]}
+                          onPress={() => {
+                            markChatAsSeen(item.chatRoomId);
+                            dismissEnquiryNotificationsForChat(item.chatRoomId);
+                            setActiveInquiryChat({
+                              chatRoomId: item.chatRoomId,
+                              tripId: item.tripId,
+                              tripName: item.tripName,
+                              travelerName: item.travelerName,
+                              travelerAvatar: item.travelerAvatar || undefined,
+                            });
+                          }}
+                          onLongPress={() => handleDeleteChatThread(item)}
+                          delayLongPress={400}
+                          disabled={deletingChatId === item.chatRoomId}
+                          activeOpacity={0.72}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Chat with ${item.travelerName}`}
+                          accessibilityHint={t('groupOrganizer.longPressToDelete', 'Long press to delete this chat')}
+                        >
+                          <Avatar uri={item.travelerAvatar || undefined} name={item.travelerName} size={48} />
+                          <View style={styles.chatBoxContent}>
+                            {/* Top row: Traveler Name & Timestamp */}
+                            <View style={styles.chatBoxTopRow}>
+                              <Text
+                                style={[styles.chatBoxName, unseen && styles.chatBoxNameUnread]}
+                                numberOfLines={1}
+                              >
+                                {item.travelerName}
+                              </Text>
+                              {item.lastMessageAt ? (
+                                <Text style={[styles.chatBoxTime, unseen && styles.chatBoxTimeUnread]}>
+                                  {formatRelative(item.lastMessageAt)}
+                                </Text>
+                              ) : null}
+                            </View>
+
+                            {/* Middle row: Trip context tag */}
+                            <View style={styles.chatBoxTripRow}>
+                              <Text style={styles.chatBoxTripTag} numberOfLines={1}>
+                                Trip: {item.tripName}
+                              </Text>
+                            </View>
+
+                            {/* Bottom row: Message preview & Unread badge */}
+                            <View style={styles.chatBoxBottomRow}>
+                              <Text
+                                style={[
+                                  styles.chatBoxPreviewText,
+                                  unseen && styles.chatBoxPreviewTextUnread,
+                                ]}
+                                numberOfLines={1}
+                              >
+                                {item.lastMessage
+                                  ? (item.lastMessageIsMe
+                                      ? (item.lastMessage.startsWith('You: ') ? item.lastMessage : `You: ${item.lastMessage}`)
+                                      : item.lastMessage)
+                                  : 'Tap to start conversation'}
+                              </Text>
+                              {unseen && (
+                                <View style={styles.chatBoxBadge}>
+                                  <Text style={styles.chatBoxBadgeText}>
+                                    {item.unreadCount && item.unreadCount > 1 ? item.unreadCount : 1}
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )
+              )}
+
+              {/* ────────── SUB-TAB 2: APPROVALS ────────── */}
+              {chatSubTab === 'approvals' && (
+                pendingRequests.length === 0 ? (
+                  <View style={styles.cleanEmptyContainer}>
+                    <View style={styles.cleanEmptyIconBox}>
+                      <Users size={24} color={C.blue} />
+                    </View>
+                    <Text style={styles.cleanEmptyTitle}>No Pending Requests</Text>
+                    <Text style={styles.cleanEmptyDesc}>
+                      There are no pending join requests waiting for your approval.
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.cleanListGap}>
+                    {pendingRequests.map((req) => {
+                      const reqId = String(req.id || (req as any)._id || '').trim();
+                      const applicantName = req.applicantName || 'Traveler';
+                      const applicantAvatar = req.applicantAvatar;
+                      const tripName = req.tripName || trips.find((t) => t.id === req.tripId)?.name || 'Group Journey';
+                      const applicantMsg = (req as any).message;
+                      const unseen = isApprovalUnseen(req);
+                      const isExpanded = expandedApprovalIds.has(reqId);
+
+                      return (
+                        <TouchableOpacity
+                          key={reqId}
+                          style={[styles.cleanPortalCard, unseen && styles.cleanPortalCardUnread]}
+                          activeOpacity={0.88}
+                          onPress={() => toggleApprovalDetails(reqId)}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Pending request from ${applicantName}, tap for details`}
+                        >
+                          <View style={styles.cleanCardHeader}>
+                            <Avatar uri={applicantAvatar} name={applicantName} size={42} />
                             <View style={{ flex: 1, marginLeft: 12 }}>
-                              <Text style={styles.reqName}>{req.userName}</Text>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                <Text style={styles.cleanCardName} numberOfLines={1}>
+                                  {applicantName}
+                                </Text>
+                                {unseen && (
+                                  <View style={styles.cleanCardNewPill}>
+                                    <Text style={styles.cleanCardNewPillText}>NEW</Text>
+                                  </View>
+                                )}
+                              </View>
+                              <Text style={styles.cleanCardTripName} numberOfLines={1}>
+                                Trip: {tripName}
+                              </Text>
+                            </View>
+                            <View style={{ alignItems: 'flex-end', gap: 2 }}>
+                              <Text style={styles.cleanCardTime}>
+                                {formatRelative(req.createdAt)}
+                              </Text>
+                              <Text style={styles.cleanDetailsHint}>
+                                {isExpanded ? 'Hide info' : 'View info'}
+                              </Text>
                             </View>
                           </View>
 
-                          <View style={styles.reqActionButtonsRow}>
+                          {applicantMsg ? (
+                            <View style={styles.cleanCardMessageBox}>
+                              <Text style={styles.cleanCardMessageText} numberOfLines={isExpanded ? undefined : 2}>
+                                "{applicantMsg}"
+                              </Text>
+                            </View>
+                          ) : null}
+
+                          {isExpanded && (
+                            <View style={styles.cleanApprovalDetailsBox}>
+                              {req.partySize ? (
+                                <View style={styles.cleanDetailRow}>
+                                  <Text style={styles.cleanDetailLabel}>Party Size:</Text>
+                                  <Text style={styles.cleanDetailValue}>
+                                    {req.partySize} {req.partySize === 1 ? 'person' : 'people'}
+                                  </Text>
+                                </View>
+                              ) : null}
+                              {req.fromCity || req.toCity ? (
+                                <View style={styles.cleanDetailRow}>
+                                  <Text style={styles.cleanDetailLabel}>Boarding / Route:</Text>
+                                  <Text style={styles.cleanDetailValue}>
+                                    {req.fromCity || 'Start'} ➔ {req.toCity || 'End'}
+                                  </Text>
+                                </View>
+                              ) : null}
+                              {req.joiningDate ? (
+                                <View style={styles.cleanDetailRow}>
+                                  <Text style={styles.cleanDetailLabel}>Joining Date:</Text>
+                                  <Text style={styles.cleanDetailValue}>
+                                    {new Date(req.joiningDate).toLocaleDateString()}
+                                  </Text>
+                                </View>
+                              ) : null}
+                            </View>
+                          )}
+
+                          <View style={styles.cleanCardActionRow}>
                             <TouchableOpacity
-                              style={[styles.reqBtn, styles.reqBtnReject]}
-                              onPress={() => handleRejectRequest(req.id, req.userName)}
+                              style={styles.cleanDeclineBtn}
+                              onPress={() => {
+                                markRequestAsSeen(reqId);
+                                handleRejectRequest(reqId, applicantName);
+                              }}
+                              activeOpacity={0.8}
                               accessibilityRole="button"
-                              accessibilityLabel={t('groupOrganizer.reject')}
+                              accessibilityLabel="Decline request"
                             >
-                              <X size={12} color={C.redText} />
-                              <Text style={styles.reqBtnRejectText}>{t('groupOrganizer.reject')}</Text>
+                              <X size={14} color={C.red} />
+                              <Text style={styles.cleanDeclineBtnText}>Decline</Text>
                             </TouchableOpacity>
 
                             <TouchableOpacity
-                              style={[styles.reqBtn, styles.reqBtnApprove]}
-                              onPress={() => handleApproveRequest(req.id, req.userName, req.userAvatar)}
+                              style={styles.cleanAcceptBtn}
+                              onPress={() => {
+                                markRequestAsSeen(reqId);
+                                handleApproveRequest(reqId, applicantName);
+                              }}
+                              activeOpacity={0.8}
                               accessibilityRole="button"
-                              accessibilityLabel={t('groupOrganizer.approveJoin')}
+                              accessibilityLabel="Accept request"
                             >
-                              <Check size={12} color={C.white} />
-                              <Text style={styles.reqBtnApproveText}>{t('groupOrganizer.approveJoin')}</Text>
+                              <Check size={14} color={C.white} />
+                              <Text style={styles.cleanAcceptBtnText}>Accept</Text>
                             </TouchableOpacity>
                           </View>
-                        </View>
-                      ))
-                  )}
-
-                  {/* Announcements Panel */}
-                  <Text style={styles.subTitle}>{t('groupOrganizer.groupAnnouncements')}</Text>
-                  <Text style={styles.descSec}>{t('groupOrganizer.broadcastWarningsDesc')}</Text>
-
-                  {announcements.map((ann) => (
-                    <View key={ann.id} style={styles.announceCard}>
-                      <View style={styles.announceCardHeader}>
-                        <Text style={styles.announceCardTitle}>{ann.title}</Text>
-                        <Text style={styles.announceCardDate}>{formatRelative(ann.createdAt)}</Text>
-                      </View>
-                      <Text style={styles.announceCardContent}>{ann.content}</Text>
-                    </View>
-                  ))}
-
-                  <View style={styles.addAnnounceBox}>
-                    <Text style={styles.formInputLabel}>{t('groupOrganizer.noticeTitle')}</Text>
-                    <TextInput
-                      style={styles.formInput}
-                      placeholder={t('groupOrganizer.noticeTitlePlaceholder')}
-                      placeholderTextColor={C.textMuted}
-                      value={newAnnounceTitle}
-                      onChangeText={setNewAnnounceTitle}
-                    />
-                    <Text style={styles.formInputLabel}>{t('groupOrganizer.noticeDescription')}</Text>
-                    <TextInput
-                      style={[styles.formInput, { height: 50 }]}
-                      placeholder={t('groupOrganizer.noticeDescriptionPlaceholder')}
-                      placeholderTextColor={C.textMuted}
-                      value={newAnnounceDesc}
-                      onChangeText={setNewAnnounceDesc}
-                    />
-                    <TouchableOpacity
-                      style={[styles.announceBtn, publishingAnnouncement && { opacity: 0.6 }]}
-                      onPress={handlePublishAnnouncement}
-                      disabled={publishingAnnouncement}
-                      accessibilityRole="button"
-                      accessibilityLabel={t('groupOrganizer.broadcastNotice')}
-                    >
-                      <Send size={12} color={C.white} />
-                      <Text style={styles.announceBtnText}>
-                        {publishingAnnouncement ? t('groupOrganizer.sending') : t('groupOrganizer.broadcastNotice')}
-                      </Text>
-                    </TouchableOpacity>
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
-                </View>
-
-              {/* docs/REMEDIATION.md §8.6: a "Live GPS & AI Desk" tab used to
-            live here, with three sub-tools:
-            • "GPS Tracking" — a hand-drawn "Mock GPS Map Drawing" (the
-              code's own comment) of fixed-position dots labelled with
-              fabricated first names, not live data, plus a "Trigger
-              Emergency Alarm" button that showed an Alert.alert claiming a
-              real safety warning had been broadcast to every participant's
-              device — nothing was sent. That is dangerous UI to leave in:
-              an organizer could believe they had broadcast a real
-              emergency warning when nothing happened. The app's real live
-              map (with the real SOS system, §3.4/§8.9) is the separate
-              /map screen.
-            • "AI Generator" — a setTimeout("Simulate AI generation lag",
-              the code's own comment) that filled a hardcoded template
-              string with the typed destination name, presented as if a
-              real model had generated it.
-            • "QR Scanner" — a fake scanning animation with a "Simulate
-              Scanned Participant" picker; there was never a real scan or
-              a real ticket to validate.
-            None of these had a real backend or a reasonable one to build
-            in this pass — removed rather than left as decorative or
-            (for the SOS button) actively misleading UI. */}
+                )
+              )}
             </View>
           )}
 
@@ -3746,9 +4416,131 @@ export default function GroupOrganizerScreen() {
         </View>
       </Sheet>
 
-      
+      {/* Interactive Inquiry Chat Modal */}
+      <Modal
+        visible={!!activeInquiryChat}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={() => setActiveInquiryChat(null)}
+      >
+        <SafeAreaView style={styles.inquiryChatModalWrap} edges={['top', 'bottom']}>
+          {/* Header */}
+          <View style={styles.inquiryChatModalHeader}>
+            <TouchableOpacity
+              onPress={() => setActiveInquiryChat(null)}
+              style={styles.inquiryChatCloseBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Close inquiry chat"
+            >
+              <ArrowLeft size={20} color={C.text} />
+            </TouchableOpacity>
 
-      </SafeAreaView>
+            <Avatar
+              uri={activeInquiryChat?.travelerAvatar || undefined}
+              name={activeInquiryChat?.travelerName || 'Traveler'}
+              size={40}
+              style={styles.inquiryChatHeaderAvatar}
+            />
+
+            <View style={styles.inquiryChatHeaderInfo}>
+              <Text style={styles.inquiryChatModalName} numberOfLines={1}>
+                {activeInquiryChat?.travelerName || t('groupOrganizer.unnamedTraveler')}
+              </Text>
+              <Text style={styles.inquiryChatModalTrip} numberOfLines={1}>
+                Trip: {activeInquiryChat?.tripName}
+              </Text>
+            </View>
+          </View>
+
+          {/* Messages */}
+          {inquiryMessagesLoading ? (
+            <View style={styles.inquiryChatLoadingBox}>
+              <ActivityIndicator color={C.blue} />
+              <Text style={styles.inquiryChatLoadingText}>Loading conversation...</Text>
+            </View>
+          ) : (
+            <ScrollView
+              style={styles.inquiryChatMsgList}
+              contentContainerStyle={styles.inquiryChatMsgListContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              {inquiryMessages.length === 0 ? (
+                <View style={styles.cleanEmptyContainer}>
+                  <MessageSquare size={32} color={C.textMuted} />
+                  <Text style={styles.cleanEmptyTitle}>No messages in this inquiry thread yet</Text>
+                </View>
+              ) : (
+                inquiryMessages.map((msg) => {
+                  const isMe = msg.senderId === profile?.id;
+                  return (
+                    <View
+                      key={msg.id}
+                      style={[
+                        styles.inquiryBubbleWrap,
+                        isMe ? styles.inquiryBubbleWrapMe : styles.inquiryBubbleWrapThem,
+                      ]}
+                    >
+                      <View
+                        style={[
+                          styles.inquiryBubble,
+                          isMe ? styles.inquiryBubbleMe : styles.inquiryBubbleThem,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.inquiryBubbleText,
+                            isMe ? styles.inquiryBubbleTextMe : styles.inquiryBubbleTextThem,
+                          ]}
+                        >
+                          {msg.content}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.inquiryBubbleTime,
+                            isMe ? styles.inquiryBubbleTimeMe : styles.inquiryBubbleTimeThem,
+                          ]}
+                        >
+                          {formatRelative(msg.createdAt)}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })
+              )}
+            </ScrollView>
+          )}
+
+          {/* Reply input bar */}
+          <View style={styles.inquiryChatInputBar}>
+            <TextInput
+              style={styles.inquiryChatInput}
+              placeholder={`Reply to ${activeInquiryChat?.travelerName || 'traveler'}...`}
+              placeholderTextColor={C.textMuted}
+              value={inquiryReplyText}
+              onChangeText={setInquiryReplyText}
+              multiline
+            />
+            <TouchableOpacity
+              style={[
+                styles.inquiryChatSendBtn,
+                (!inquiryReplyText.trim() || sendingInquiryReply) && { opacity: 0.5 },
+              ]}
+              onPress={handleSendInquiryReply}
+              disabled={!inquiryReplyText.trim() || sendingInquiryReply}
+              accessibilityRole="button"
+              accessibilityLabel="Send reply"
+            >
+              {sendingInquiryReply ? (
+                <ActivityIndicator size="small" color={C.white} />
+              ) : (
+                <Send size={18} color={C.white} />
+              )}
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </Modal>
+
+    </SafeAreaView>
   );
 }
 
@@ -3756,6 +4548,541 @@ export default function GroupOrganizerScreen() {
 // Stylesheet
 // ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
+  // ── Clean Chats & Approvals Portal Styles ──
+  cleanPortalWrap: {
+    gap: 16,
+  },
+  cleanSubTabBar: {
+    flexDirection: 'row',
+    backgroundColor: C.cardAlt,
+    borderRadius: 14,
+    padding: 4,
+    marginBottom: 8,
+    width: '100%',
+  },
+  cleanSubTabItem: {
+    flex: 1,
+    width: '50%',
+    maxWidth: '50%',
+    flexBasis: '50%',
+    flexGrow: 1,
+    flexShrink: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    borderRadius: 10,
+    gap: 6,
+    minHeight: 44,
+  },
+  cleanSubTabItemActive: {
+    backgroundColor: C.blue,
+    shadowColor: C.blue,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  cleanSubTabLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: C.textSec,
+  },
+  cleanSubTabLabelActive: {
+    color: C.white,
+    fontWeight: '800',
+  },
+  cleanTabNotificationBadge: {
+    backgroundColor: C.blue,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 6,
+  },
+  cleanTabNotificationBadgeActive: {
+    backgroundColor: '#FFFFFF',
+  },
+  cleanTabNotificationBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10.5,
+    fontWeight: '800',
+  },
+  cleanTabNotificationBadgeTextActive: {
+    color: C.blue,
+  },
+  topTabNotificationBadge: {
+    position: 'absolute',
+    top: -8,
+    right: -6,
+    backgroundColor: C.blue,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    zIndex: 999,
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1.5 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+  },
+  topTabNotificationBadgeActive: {
+    backgroundColor: '#FFFFFF',
+    borderColor: C.blue,
+  },
+  topTabNotificationBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10.5,
+    fontWeight: '800',
+  },
+  topTabNotificationBadgeTextActive: {
+    color: C.blue,
+  },
+  cleanPortalLoadingBox: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cleanEmptyContainer: {
+    paddingVertical: 36,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: C.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  cleanEmptyIconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  cleanEmptyTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: C.text,
+  },
+  cleanEmptyDesc: {
+    fontSize: 13,
+    color: C.textMuted,
+    textAlign: 'center',
+    maxWidth: 260,
+  },
+  cleanListGap: {
+    gap: 12,
+  },
+  cleanPortalCard: {
+    backgroundColor: C.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 14,
+    gap: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1.5 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  cleanPortalCardUnread: {
+    borderColor: '#93C5FD',
+    backgroundColor: '#F8FAFC',
+    borderLeftWidth: 3.5,
+    borderLeftColor: C.blue,
+  },
+  cleanCardNewPill: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  cleanCardNewPillText: {
+    color: C.blue,
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  chatBoxCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.card,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  chatBoxCardUnread: {
+    borderColor: '#93C5FD',
+    backgroundColor: '#F8FAFC',
+    borderLeftWidth: 3.5,
+    borderLeftColor: C.blue,
+  },
+  chatBoxContent: {
+    flex: 1,
+    marginLeft: 12,
+    justifyContent: 'center',
+  },
+  chatBoxTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 2,
+  },
+  chatBoxName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: C.text,
+    flex: 1,
+    marginRight: 8,
+  },
+  chatBoxNameUnread: {
+    fontWeight: '800',
+    color: C.text,
+  },
+  chatBoxTime: {
+    fontSize: 11.5,
+    color: C.textMuted,
+  },
+  chatBoxTimeUnread: {
+    color: C.blue,
+    fontWeight: '700',
+  },
+  chatBoxTripRow: {
+    marginBottom: 3,
+  },
+  chatBoxTripTag: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: C.blue,
+  },
+  chatBoxBottomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  chatBoxPreviewText: {
+    fontSize: 13,
+    color: C.textMuted,
+    flex: 1,
+    marginRight: 8,
+  },
+  chatBoxPreviewTextUnread: {
+    color: C.text,
+    fontWeight: '600',
+  },
+  chatBoxBadge: {
+    backgroundColor: C.blue,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 5,
+  },
+  chatBoxBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  cleanReplyBtnFull: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 9,
+    borderRadius: 10,
+    backgroundColor: C.blue,
+  },
+  cleanReplyBtnFullText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: C.white,
+  },
+  cleanDetailsHint: {
+    fontSize: 11,
+    color: C.blue,
+    fontWeight: '600',
+  },
+  cleanApprovalDetailsBox: {
+    backgroundColor: C.cardAlt,
+    borderRadius: 10,
+    padding: 10,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  cleanDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  cleanDetailLabel: {
+    fontSize: 12,
+    color: C.textSec,
+    fontWeight: '600',
+  },
+  cleanDetailValue: {
+    fontSize: 12,
+    color: C.text,
+    fontWeight: '700',
+  },
+  cleanCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  cleanCardName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: C.text,
+  },
+  cleanCardTripName: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: C.blue,
+    marginTop: 2,
+  },
+  cleanCardTime: {
+    fontSize: 11,
+    color: C.textMuted,
+    alignSelf: 'flex-start',
+    marginTop: 2,
+  },
+  cleanCardMessageBox: {
+    backgroundColor: C.cardAlt,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  cleanCardMessageText: {
+    fontSize: 12.5,
+    color: C.text,
+    fontStyle: 'italic',
+    lineHeight: 17,
+  },
+  cleanCardActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 2,
+  },
+  cleanDeclineBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 9,
+    borderRadius: 10,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  cleanDeclineBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: C.red,
+  },
+  cleanAcceptBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 9,
+    borderRadius: 10,
+    backgroundColor: C.blue,
+  },
+  cleanAcceptBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: C.white,
+  },
+  cleanChatPreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: C.border,
+    gap: 10,
+  },
+  cleanChatPreviewText: {
+    flex: 1,
+    fontSize: 12.5,
+    color: C.textSec,
+  },
+  cleanReplyPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  cleanReplyPillText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: C.blue,
+  },
+  inquiryChatModalWrap: {
+    flex: 1,
+    backgroundColor: C.bg,
+  },
+  inquiryChatModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+    backgroundColor: C.card,
+  },
+  inquiryChatCloseBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.cardAlt,
+  },
+  inquiryChatHeaderAvatar: {
+    marginLeft: 10,
+    marginRight: 10,
+  },
+  inquiryChatHeaderInfo: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  inquiryChatModalName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: C.text,
+  },
+  inquiryChatModalTrip: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#2563EB',
+    marginTop: 1,
+  },
+  inquiryChatLoadingBox: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  inquiryChatLoadingText: {
+    fontSize: 12.5,
+    color: C.textMuted,
+  },
+  inquiryChatMsgList: {
+    flex: 1,
+    paddingHorizontal: 16,
+  },
+  inquiryChatMsgListContent: {
+    paddingVertical: 16,
+    gap: 10,
+  },
+  inquiryBubbleWrap: {
+    flexDirection: 'row',
+    width: '100%',
+  },
+  inquiryBubbleWrapMe: {
+    justifyContent: 'flex-end',
+  },
+  inquiryBubbleWrapThem: {
+    justifyContent: 'flex-start',
+  },
+  inquiryBubble: {
+    maxWidth: '78%',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 3,
+  },
+  inquiryBubbleMe: {
+    backgroundColor: C.blue,
+    borderBottomRightRadius: 2,
+  },
+  inquiryBubbleThem: {
+    backgroundColor: C.card,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderBottomLeftRadius: 2,
+  },
+  inquiryBubbleText: {
+    fontSize: 13.5,
+    lineHeight: 18,
+  },
+  inquiryBubbleTextMe: {
+    color: C.white,
+  },
+  inquiryBubbleTextThem: {
+    color: C.text,
+  },
+  inquiryBubbleTime: {
+    fontSize: 10,
+    alignSelf: 'flex-end',
+  },
+  inquiryBubbleTimeMe: {
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+  inquiryBubbleTimeThem: {
+    color: C.textMuted,
+  },
+  inquiryChatInputBar: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: C.border,
+    backgroundColor: C.card,
+    gap: 8,
+  },
+  inquiryChatInput: {
+    flex: 1,
+    maxHeight: 100,
+    minHeight: 40,
+    backgroundColor: C.cardAlt,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    fontSize: 13.5,
+    color: C.text,
+  },
+  inquiryChatSendBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: C.blue,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   // ── Creation Requests Sub-Tab ──
   requestsSection: {
     gap: 12,
@@ -4125,15 +5452,25 @@ const styles = StyleSheet.create({
     padding: 4,
     borderWidth: 1,
     borderColor: C.border,
+    overflow: 'visible',
+    width: '100%',
   },
   topTabItem: {
     flex: 1,
+    width: '50%',
+    maxWidth: '50%',
+    flexBasis: '50%',
+    flexGrow: 1,
+    flexShrink: 0,
+    position: 'relative',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 10,
+    paddingHorizontal: 4,
     borderRadius: 10,
-    gap: 8,
+    gap: 6,
+    overflow: 'visible',
   },
   topTabItemActive: {
     backgroundColor: C.blue,
@@ -4144,7 +5481,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   topTabLabel: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '700',
   },
   chatTabBadge: {
@@ -4781,7 +6118,9 @@ const styles = StyleSheet.create({
   // Tab Selector
   tabBarContainer: {
     paddingHorizontal: 16,
-    marginTop: 6,
+    marginTop: 4,
+    paddingTop: 8,
+    overflow: 'visible',
   },
   tabBarScroll: {
     flexDirection: 'row',

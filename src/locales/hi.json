@@ -602,7 +602,9 @@
     "cityFilterLabel": "शहर के अनुसार फ़िल्टर करें",
     "cityPlaceholder": "शहर का नाम दर्ज करें",
     "stateFilterLabel": "राज्य के अनुसार फ़िल्टर करें",
-    "statePlaceholder": "एक राज्य चुनें"
+    "statePlaceholder": "एक राज्य चुनें",
+    "searchPlaceholder": "गंतव्य या नाम से ट्रिप खोजें…",
+    "radiusPlaceholder": "दायरा किमी में दर्ज करें (उदा. 25, 50)"
   },
   "destinationDetails": {
     "goBack": "वापस जाएं",
@@ -625,7 +627,9 @@
     "couldNotSave": "आपके सहेजे गए डेस्टिनेशन अपडेट नहीं हो सके।"
   },
   "stories": {
-    "noStoriesYetTitle": "अभी तक कोई कहानी नहीं",
+    "allStoriesTitle": "कहानियाँ",
+    "signInTitle": "कहानियाँ देखने के लिए साइन इन करें",
+    "noStoriesYetTitle": "दिखाने के लिए कोई कहानी नहीं।",
     "mediaUnavailable": "यह मीडिया लोड नहीं हो सका",
     "beFirstToShare": "यात्रा कहानी साझा करने वाले पहले व्यक्ति बनें।",
     "goBack": "वापस जाएं",
@@ -815,7 +819,13 @@
     "statPoints": "पॉइंट्स",
     "statStyleFallback": "एक्सप्लोरर",
     "bookingsTripsSub": "सक्रिय बुकिंग और पिछली यात्राएं",
-    "expenseTrackerSub": "खर्च बांटें और ट्रिप खर्च ट्रैक करें"
+    "expenseTrackerSub": "खर्च बांटें और ट्रिप खर्च ट्रैक करें",
+    "sosReach": "SOS अलर्ट की पहुंच",
+    "sosReachExplainer": "आपका ट्रिप ग्रुप, आपके इमरजेंसी संपर्क और हमारी सेफ्टी टीम हमेशा सूचित किए जाते हैं। यह सेटिंग तय करती है कि आपके आस-पास मौजूद अन्य TravelStar यात्रियों को भी सूचित किया जाए या नहीं।",
+    "sosReachTripGroupValue": "केवल ट्रिप ग्रुप",
+    "sosReachTripGroupSub": "केवल वे लोग जिनके साथ आप यात्रा कर रहे हैं",
+    "sosReachNearbyValue": "{{km}} किमी के भीतर के यात्री",
+    "sosReachNearbySub": "आस-पास लोकेशन साझा करने वाला कोई भी व्यक्ति, साथ ही आपका ट्रिप ग्रुप"
   },
   "map": {
     "routeStops": "मार्ग: {{count}} पड़ाव",
@@ -1010,6 +1020,10 @@
     "removeDayMessage": "दिन {{number}} — \"{{title}}\" हटाएं?",
     "remove": "हटाएं",
     "couldNotRemoveDay": "वह दिन हटाया नहीं जा सका।",
+    "deleteChat": "चैट हटाएं",
+    "deleteChatMessage": "{{name}} के साथ {{trip}} के बारे में बातचीत हटाएं? इसे वापस नहीं लाया जा सकता।",
+    "couldNotDeleteChat": "यह चैट हटाई नहीं जा सकी।",
+    "longPressToDelete": "इस चैट को हटाने के लिए दबाकर रखें",
     "pleaseCompleteDayDetails": "कृपया दिन का शीर्षक और अनुसूची विवरण पूरा करें।",
     "couldNotSaveDay": "वह दिन सहेजा नहीं जा सका। कृपया पुनः प्रयास करें।",
     "allocateHotelRoom": "होटल कमरा आवंटित करें",
@@ -1057,6 +1071,7 @@
     "quoteStatusDeclined": "अस्वीकृत",
     "noCoverPhoto": "कोई कवर फोटो नहीं",
     "tabChatApprovals": "चैट और मंज़ूरी",
+    "tabChatsApprovals": "चैट और मंज़ूरी",
     "reviewInApprovalsTab": "चैट और मंज़ूरी में देखें",
     "enquiriesTitle": "पूछताछ",
     "enquiriesSub": "सीट माँगने से पहले यात्रियों ने आपसे जो सवाल पूछे",

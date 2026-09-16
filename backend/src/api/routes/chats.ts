@@ -71,7 +71,7 @@ router.get('/', async (req, res) => {
         chatRoom: {
           include: {
             trip: true,
-            inquiryTrip: { select: { id: true, name: true } },
+            inquiryTrip: { select: { id: true, name: true, creatorId: true } },
             members: {
               include: {
                 user: {
@@ -81,7 +81,7 @@ router.get('/', async (req, res) => {
             },
             messages: {
               orderBy: { createdAt: 'desc' },
-              take: 1,
+              take: 10,
               include: {
                 sender: {
                   include: { profile: true },
@@ -140,18 +140,20 @@ router.get('/', async (req, res) => {
       // Guides as though the organizer were a hired guide — and left the
       // client's own 'DMS' filter permanently empty, since nothing ever
       // returned 'DM'.
-      const roomType = room.isGroup ? 'GROUP' : room.inquiryTripId ? 'DM' : 'GUIDE';
+      const roomType = room.isGroup ? 'GROUP' : (room.inquiryTripId || room.dmUserAId) ? 'DM' : 'GUIDE';
 
-      const lastMsg = room.messages[0];
-      // No message yet means no preview — not an invented "System: Welcome
-      // to the group chat!" line that nobody sent, shown even on a
-      // one-to-one enquiry that is not a group at all.
-      const lastMsgPreview = lastMsg
-        ? `${lastMsg.sender?.profile?.firstName || 'User'}: ${lastMsg.content || ''}`
+      const displayMsg = room.messages[0];
+      const isMe = displayMsg?.senderId === tokenUserId;
+      const lastMsgPreview = displayMsg
+        ? (isMe
+            ? `You: ${displayMsg.content || ''}`
+            : (room.isGroup
+                ? `${displayMsg.sender?.profile?.firstName || 'User'}: ${displayMsg.content || ''}`
+                : (displayMsg.content || '')))
         : '';
 
       const unreadCount = unreadCountByRoom.get(room.id) ?? 0;
-      const sortDate = lastMsg?.createdAt || room.createdAt;
+      const sortDate = room.messages[0]?.createdAt || room.createdAt;
 
       return {
         id: room.id,
@@ -164,7 +166,7 @@ router.get('/', async (req, res) => {
         // there is no message yet, never the literal string 'Just Now',
         // which is not a parseable date and broke every client-side
         // date formatter that touched an empty room.
-        latestTime: (lastMsg?.createdAt ?? room.createdAt).toISOString(),
+        latestTime: (displayMsg?.createdAt ?? room.createdAt).toISOString(),
         unread: unreadCount > 0,
         unreadCount,
         badge: room.isGroup
@@ -176,6 +178,12 @@ router.get('/', async (req, res) => {
         muted: m.muted,
         inquiryTripId: room.inquiryTripId,
         inquiryTripName: room.inquiryTrip?.name ?? null,
+        // True only for the organizer's own side of a pre-join enquiry
+        // thread — that side belongs solely in the organizer portal's
+        // Chats & Approvals tab, never the general chat inbox. The
+        // traveller's side of the same thread has this false, since to
+        // them it is just a DM.
+        isMyOrganizerInquiry: !!(room.inquiryTripId && room.inquiryTrip?.creatorId === tokenUserId),
       };
     });
 
@@ -253,6 +261,7 @@ router.post('/inquiry', async (req, res) => {
       organizerId: trip.creatorId,
       chatRoomId: room.id,
       travellerName,
+      trigger: 'THREAD_OPENED',
       io: req.app.get('socketio'),
     });
 
@@ -260,6 +269,61 @@ router.post('/inquiry', async (req, res) => {
   } catch (err) {
     logger.warn('[Chats] Create inquiry error:', err);
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to open the enquiry.' } });
+  }
+});
+
+/**
+ * Open (or reopen) a plain 1:1 direct-message thread with another user.
+ *
+ * dmUserAId/dmUserBId are stored sorted (smaller id first) so the unique
+ * index catches the thread regardless of which of the two users opens it
+ * first — without the sort, (A,B) and (B,A) would each create a room.
+ */
+router.post('/dm', async (req, res) => {
+  const parsed = z.object({ userId: z.string().uuid() }).safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid user id.' } });
+  }
+  const { userId: otherUserId } = parsed.data;
+  const tokenUserId = requireUserId(req);
+
+  if (otherUserId === tokenUserId) {
+    return res
+      .status(400)
+      .json({ ok: false, error: { code: 'SELF_DM', message: 'You cannot direct message yourself.' } });
+  }
+
+  try {
+    const otherUser = await prisma.user.findUnique({ where: { id: otherUserId }, select: { id: true } });
+    if (!otherUser) {
+      return res.status(404).json({ ok: false, error: { code: 'USER_NOT_FOUND', message: 'User not found.' } });
+    }
+
+    const [dmUserAId, dmUserBId] = [tokenUserId, otherUserId].sort() as [string, string];
+
+    const existing = await prisma.chatRoom.findUnique({
+      where: { dmUserAId_dmUserBId: { dmUserAId, dmUserBId } },
+      select: { id: true },
+    });
+    if (existing) {
+      return res.status(200).json({ ok: true, data: { chatRoomId: existing.id } });
+    }
+
+    const room = await prisma.chatRoom.create({
+      data: {
+        isGroup: false,
+        name: null,
+        dmUserAId,
+        dmUserBId,
+        members: { create: [{ userId: tokenUserId }, { userId: otherUserId }] },
+      },
+      select: { id: true },
+    });
+
+    return res.status(201).json({ ok: true, data: { chatRoomId: room.id } });
+  } catch (err) {
+    logger.warn('[Chats] Create DM error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to open the direct message.' } });
   }
 });
 
@@ -279,6 +343,7 @@ router.get('/:id', async (req, res) => {
       where: { id },
       include: {
         trip: true,
+        inquiryTrip: true,
         members: {
           include: {
             user: {
@@ -293,6 +358,9 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Chat room not found' } });
     }
 
+    const tripObj = room.trip || room.inquiryTrip;
+    const organizerId = tripObj?.creatorId;
+
     const membersList = room.members.map((m) => ({
       id: m.user.id,
       name: m.user.profile
@@ -301,7 +369,7 @@ router.get('/:id', async (req, res) => {
           ? m.user.email.split('@')[0]
           : 'Member',
       avatar: m.user.profile?.avatarUrl ?? null,
-      role: m.user.id === room.trip?.creatorId ? 'Organizer' : 'Member',
+      role: m.user.id === organizerId ? 'Organizer' : 'Member',
     }));
 
     const otherMember = !room.isGroup ? room.members.find((m) => m.user.id !== tokenUserId) : null;
@@ -310,10 +378,10 @@ router.get('/:id', async (req, res) => {
       : otherMember?.user?.email
         ? otherMember.user.email.split('@')[0]
         : null;
-    const roomName = room.name || otherName || room.trip?.name || (room.isGroup ? 'Group Chat' : 'Direct Chat');
+    const roomName = room.name || (room.inquiryTrip ? (otherName ? `${otherName} · ${room.inquiryTrip.name}` : `Enquiry · ${room.inquiryTrip.name}`) : (otherName || room.trip?.name || (room.isGroup ? 'Group Chat' : 'Direct Chat')));
     const roomAvatar = (!room.isGroup && otherMember?.user?.profile?.avatarUrl)
       ? otherMember.user.profile.avatarUrl
-      : (room.trip?.coverImage ?? otherMember?.user?.profile?.avatarUrl ?? null);
+      : (tripObj?.coverImage ?? otherMember?.user?.profile?.avatarUrl ?? null);
 
     const selfMembership = room.members.find((m) => m.user.id === tokenUserId);
 
@@ -321,12 +389,19 @@ router.get('/:id', async (req, res) => {
       ok: true,
       data: {
         id: room.id,
-        tripId: room.trip?.id || null,
+        tripId: tripObj?.id || null,
         name: roomName,
         avatar: roomAvatar,
-        type: room.isGroup ? 'GROUP' : 'GUIDE',
+        type: room.isGroup ? 'GROUP' : (room.inquiryTripId || room.dmUserAId) ? 'DM' : 'GUIDE',
         members: membersList,
         muted: selfMembership?.muted ?? false,
+        // The same two fields GET /chats reports. A client that meets a room
+        // through this endpoint first — a deep link into a thread its inbox
+        // has not listed yet — would otherwise have no way to tell an
+        // enquiry it is the organizer of from an ordinary DM, and would file
+        // it in the chat inbox, which is exactly where it must never appear.
+        inquiryTripId: room.inquiryTripId,
+        isMyOrganizerInquiry: !!(room.inquiryTripId && room.inquiryTrip?.creatorId === tokenUserId),
       },
     });
   } catch (err) {
@@ -360,7 +435,7 @@ router.get('/:id/messages', async (req, res) => {
           include: { profile: true },
         },
         chatRoom: {
-          include: { trip: true },
+          include: { trip: true, inquiryTrip: true },
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -389,7 +464,8 @@ router.get('/:id/messages', async (req, res) => {
             : m.sender?.email
               ? (m.sender.email.split('@')[0] ?? 'Member')
               : 'Member';
-          role = m.senderId === m.chatRoom?.trip?.creatorId ? 'Organizer' : 'Tourist';
+          const tripCreatorId = m.chatRoom?.trip?.creatorId || m.chatRoom?.inquiryTrip?.creatorId;
+          role = m.senderId === tripCreatorId ? 'Organizer' : 'Tourist';
           avatar = m.sender?.profile?.avatarUrl ?? null;
         }
 
@@ -469,6 +545,16 @@ router.post('/:id/read', async (req, res) => {
         ),
       );
     }
+
+    // Dismiss / clear any notification for this chat room once opened / marked read
+    await prisma.notification.deleteMany({
+      where: {
+        userId: tokenUserId,
+        chatRoomId: id,
+      },
+    }).catch((err) => {
+      logger.warn('[Chats] Failed to clear notifications for chat room:', err);
+    });
 
     // One batched event, not one per message: opening a room with 200
     // unread would otherwise fan out 200 socket emits to update ticks.

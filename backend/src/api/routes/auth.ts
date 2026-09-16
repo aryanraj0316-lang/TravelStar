@@ -37,6 +37,8 @@ interface UserWithRelations {
     pushNotifications: boolean;
     locationSharing: boolean;
     selectedLanguage: string;
+    sosAudienceMode: 'TRIP_GROUP' | 'NEARBY';
+    sosRadiusKm: number;
     verifiedBadge: boolean;
   } | null;
   wallet: { balance: number; rewardPoints: number } | null;
@@ -69,6 +71,9 @@ function toClientProfile(user: UserWithRelations) {
     pushNotifications: user.profile?.pushNotifications ?? true,
     locationSharing: user.profile?.locationSharing ?? false,
     selectedLanguage: user.profile?.selectedLanguage ?? 'English',
+    // How far this user's own SOS reaches (Profile.sosAudienceMode).
+    sosAudienceMode: user.profile?.sosAudienceMode ?? 'TRIP_GROUP',
+    sosRadiusKm: user.profile?.sosRadiusKm ?? 5,
   };
 }
 
@@ -442,6 +447,10 @@ const updateProfileSchema = z.object({
   pushNotifications: z.boolean().optional(),
   locationSharing: z.boolean().optional(),
   selectedLanguage: z.string().trim().max(40).optional(),
+  sosAudienceMode: z.enum(['TRIP_GROUP', 'NEARBY']).optional(),
+  // Capped at the same MAX_SOS_RADIUS_KM the resolver enforces, so an
+  // out-of-range value is rejected here rather than silently clamped later.
+  sosRadiusKm: z.coerce.number().int().min(1).max(50).optional(),
 });
 
 function toStringArray(value: string | string[] | undefined): string[] | undefined {
@@ -498,6 +507,8 @@ router.put('/profile', async (req, res) => {
     if (updates.pushNotifications !== undefined) profileData.pushNotifications = updates.pushNotifications;
     if (updates.locationSharing !== undefined) profileData.locationSharing = updates.locationSharing;
     if (updates.selectedLanguage !== undefined) profileData.selectedLanguage = updates.selectedLanguage;
+    if (updates.sosAudienceMode !== undefined) profileData.sosAudienceMode = updates.sosAudienceMode;
+    if (updates.sosRadiusKm !== undefined) profileData.sosRadiusKm = updates.sosRadiusKm;
 
     const languages = toStringArray(updates.languages);
     if (languages) profileData.languages = languages;

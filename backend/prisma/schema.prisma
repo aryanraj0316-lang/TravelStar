@@ -132,6 +132,11 @@ enum NotificationCategory {
   CHAT_ADDED
   PAYMENT_REQUIRED
   PAYMENT_SUCCESS
+  /// A traveller asking for a seat, routed to that trip's organizer. The
+  /// code has always written this category; it was missing from the enum,
+  /// so every join-request notification failed to be created at all and
+  /// the organizer was never told a request was waiting.
+  JOIN_REQUEST
   /// A traveller's pre-join question about a trip, routed to that trip's
   /// organizer so it surfaces in the organizer portal's Chats & Approvals
   /// section rather than only as another thread in their chat inbox.
@@ -251,6 +256,8 @@ model User {
   // Chat Relations
   chatMemberships ChatRoomMember[]
   inquiryRooms    ChatRoom[]           @relation("UserInquiries")
+  dmRoomsAsA      ChatRoom[]           @relation("DirectMessageUserA")
+  dmRoomsAsB      ChatRoom[]           @relation("DirectMessageUserB")
   sentMessages    Message[]            @relation("MessageSender")
   readReceipts    MessageReadReceipt[]
   deliveryReceipts MessageDeliveryReceipt[]
@@ -339,7 +346,30 @@ model Profile {
   pushSeasonal      Boolean  @default(true)
   locationSharing   Boolean  @default(true)
   selectedLanguage  String   @default("English")
+
+  /// How far an SOS this user raises should reach. TRIP_GROUP keeps it to
+  /// the people they are actually travelling with; NEARBY also wakes other
+  /// app users within sosRadiusKm. Emergency contacts and admins are told
+  /// either way — those are not an audience preference.
+  ///
+  /// Defaulting to TRIP_GROUP is deliberate: broadcasting someone's
+  /// position to strangers is an opt-in, not something an existing user
+  /// gets signed up for by a deploy.
+  sosAudienceMode   SosAudienceMode @default(TRIP_GROUP)
+  /// Only meaningful when sosAudienceMode is NEARBY.
+  sosRadiusKm       Int      @default(5)
+
   updatedAt         DateTime @updatedAt
+}
+
+/// Who a user's SOS alert reaches, beyond the emergency contacts and admins
+/// that are always told.
+enum SosAudienceMode {
+  /// Fellow trip members, the organizer, and guides assigned to the trip.
+  TRIP_GROUP
+  /// The above, plus other app users currently within sosRadiusKm who have
+  /// location sharing switched on.
+  NEARBY
 }
 
 model GuideProfile {
@@ -949,6 +979,18 @@ model ChatRoom {
   /// reopens the same conversation instead of spawning duplicates.
   @@unique([inquiryTripId, inquiryUserId])
   @@index([inquiryTripId])
+
+  /// A plain member-to-member DM, independent of any trip or enquiry.
+  /// dmUserAId/dmUserBId always hold the pair's two user ids sorted
+  /// lexicographically (smaller id first) so the unique index catches the
+  /// thread regardless of which of the two users opens it first — without
+  /// the sort, (A,B) and (B,A) would each create their own room.
+  dmUserAId String?
+  dmUserBId String?
+  dmUserA   User?   @relation("DirectMessageUserA", fields: [dmUserAId], references: [id], onDelete: Cascade)
+  dmUserB   User?   @relation("DirectMessageUserB", fields: [dmUserBId], references: [id], onDelete: Cascade)
+
+  @@unique([dmUserAId, dmUserBId])
 }
 
 model ChatRoomMember {

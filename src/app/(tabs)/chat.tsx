@@ -308,6 +308,11 @@ interface ChatRoom {
   lastMessageAt?: string;
   /** This user's own per-room notification mute — see POST /chats/:id/mute. */
   muted?: boolean;
+  /** Non-null on pre-join enquiry threads — these belong in the organizer
+   *  portal's Chats & Approvals tab and should not appear in the inbox. */
+  inquiryTripId?: string | null;
+  /** True only for the organizer's own side of that enquiry thread. */
+  isMyOrganizerInquiry?: boolean;
 }
 
 const SENDER_ROLE_LABEL_KEYS: Record<string, string> = {
@@ -882,6 +887,8 @@ function ChatScreen() {
           myRole: r.badge === 'Organizer' || r.badge === 'Organizer Trip' ? 'Organizer' : 'Member',
           lastMessageAt: r.lastMessageAt || '1970-01-01T00:00:00.000Z',
           muted: !!r.muted,
+          inquiryTripId: r.inquiryTripId ?? null,
+          isMyOrganizerInquiry: !!r.isMyOrganizerInquiry,
         }));
 
         setInboxRooms((prevRooms) => {
@@ -1258,6 +1265,20 @@ function ChatScreen() {
           };
           return [updatedRoom, ...otherRooms];
         } else {
+          // A brand-new pre-join enquiry thread's first-ever message — the
+          // room can't be in inboxRooms yet since GET /chats has never seen
+          // it. Synthesizing a placeholder here would flash it into the
+          // organizer's Chat tab list for the moment before loadInboxRooms'
+          // refetch filters it back out via isMyOrganizerInquiry. The
+          // socket payload carries who the enquiry's organizer is, so this
+          // can be recognized and skipped up front instead.
+          const isMyNewOrganizerInquiry =
+            !!latestMsg.inquiryTripId && !!profile.id && latestMsg.inquiryOrganizerId === profile.id;
+          if (isMyNewOrganizerInquiry) {
+            void loadInboxRooms();
+            return prevRooms;
+          }
+
           const roomType = key.includes('guide') ? 'GUIDE' : key.includes('dm') ? 'DM' : 'GROUP';
           const memberMatch = dbMembers.find(
             (mb) => (latestMsg.senderId && mb.id === latestMsg.senderId) || mb.name === latestMsg.senderName,
@@ -1277,11 +1298,14 @@ function ChatScreen() {
             badge: roomType === 'GUIDE' ? 'Guide' : roomType === 'DM' ? 'Direct' : 'Group Chat',
             lastMessageAt: nowIso,
           };
+          if (!existingRoom) {
+            void loadInboxRooms();
+          }
           return [newRoom, ...otherRooms];
         }
       });
     }
-  }, [messages, activeRoomId, profile.avatar, profile.id, profile.name, selectedTripId, dbMembers]);
+  }, [messages, activeRoomId, profile.avatar, profile.id, profile.name, selectedTripId, dbMembers, loadInboxRooms]);
 
   // Filters for the Inbox List view
   const [inboxFilter, setInboxFilter] = useState<'ALL' | 'GROUPS' | 'GUIDES' | 'DMS'>('ALL');
@@ -1357,6 +1381,31 @@ function ChatScreen() {
               });
               return changed ? updated : prev;
             });
+
+            if (roomDetails && roomDetails.name) {
+              setInboxRooms((prev) => {
+                if (prev.some((r) => r.id === roomDetails.id)) return prev;
+                const newRoom: ChatRoom = {
+                  id: roomDetails.id,
+                  tripId: roomDetails.tripId ?? '',
+                  name: roomDetails.name,
+                  avatar: roomDetails.avatar,
+                  type: roomDetails.type === 'GROUP' ? 'GROUP' : 'DM',
+                  latestMessage: '',
+                  latestTime: new Date().toISOString(),
+                  unreadCount: 0,
+                  badge: roomDetails.type === 'GROUP' ? 'Group Chat' : 'Direct',
+                  lastMessageAt: new Date().toISOString(),
+                  // Carried through, or this endpoint becomes a side door
+                  // that files an enquiry thread in the chat inbox as a
+                  // plain DM — the inbox filter has nothing to go on
+                  // otherwise.
+                  inquiryTripId: roomDetails.inquiryTripId ?? null,
+                  isMyOrganizerInquiry: !!roomDetails.isMyOrganizerInquiry,
+                };
+                return [newRoom, ...prev];
+              });
+            }
           }
         })
         .catch((err) => {
@@ -1739,9 +1788,9 @@ function ChatScreen() {
   const otherParticipant = useMemo(() => groupMembers.find((m) => !m.isMe) ?? null, [groupMembers]);
 
   // Click a member to direct message
-  const handleMemberClick = (member: { name: string; avatar: string }) => {
+  const handleMemberClick = (member: { name: string; avatar: string; id?: string }) => {
     setIsSettingsOpen(false); // Close settings panel
-    handleStartDirectMessage(member.name, member.avatar);
+    handleStartDirectMessage(member.id, member.name);
   };
 
   // Trip Editing Handlers
@@ -2197,19 +2246,20 @@ function ChatScreen() {
     });
   };
 
-  // Start Direct Message with sender
-  // There is no backend support for a traveller-initiated DM with an
-  // arbitrary group member — no room, no messages, nothing reaches the
-  // other person or survives a reload. This used to fabricate a fake local
-  // room id from the name (colliding for two same-named members) and a
-  // fake "beginning of your thread" message attributed to the other
-  // person, who never sent it. Rather than build a whole new DM-creation
-  // feature (new schema, a real create endpoint, socket wiring) as a side
-  // effect of a QA pass, this is an honest "not available yet" instead of
-  // a silent fabrication.
-  const handleStartDirectMessage = (_senderName: string, _avatar: string) => {
-    toast(t('chat.directMessageUnavailable'), 'info');
+  // Start (or reopen) a real 1:1 DM thread with a group member, backed by
+  // POST /chats/dm — the server returns the same room on a repeat tap
+  // instead of spawning duplicates.
+  const handleStartDirectMessage = async (senderId: string | undefined, senderName: string) => {
     setSelectedMessageForOptions(null);
+    if (!senderId || senderId === profile.id) return;
+    try {
+      const thread = await apiService.openDirectMessage(senderId);
+      if (!thread) throw new Error('No thread returned');
+      await loadInboxRooms();
+      setSelectedRoomId(thread.chatRoomId);
+    } catch (e) {
+      toast(errorToastMessage(e, t('chat.directMessageUnavailable')), 'error');
+    }
   };
 
   // Vote in Poll
@@ -2467,10 +2517,32 @@ function ChatScreen() {
     outputRange: [0, 120],
   });
 
+  // A pre-join enquiry thread belongs solely in the organizer portal's
+  // Chats & Approvals tab (group-organizer.tsx) when *this* user is the
+  // trip's organizer being asked — it must never reach the Chat tab. The
+  // traveller on the other end of that same thread still sees it here like
+  // any other DM, since for them it is just a chat.
+  //
+  // Two independent signals, because either one alone has a blind spot:
+  // the server's own `isMyOrganizerInquiry` is absent on a room this client
+  // learned about before that field existed (or from an older server), and
+  // the trips lookup misses a trip the list has not loaded yet. A room only
+  // has to trip one of them to be kept out.
+  const isOrganizerEnquiryRoom = useCallback(
+    (room: Pick<ChatRoom, 'isMyOrganizerInquiry' | 'inquiryTripId'>) => {
+      if (room.isMyOrganizerInquiry) return true;
+      if (!room.inquiryTripId || !profile.id) return false;
+      return trips.some((t) => t.id === room.inquiryTripId && t.creatorId === profile.id);
+    },
+    [trips, profile.id],
+  );
+
   // Filtered and sorted rooms listing (pins at the top!)
   const filteredRooms = useMemo(() => {
     return inboxRooms
       .filter((room) => {
+        if (isOrganizerEnquiryRoom(room)) return false;
+
         const matchesSearch =
           room.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
           room.latestMessage.toLowerCase().includes(searchQuery.toLowerCase());
@@ -2494,7 +2566,7 @@ function ChatScreen() {
         const bTime = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
         return bTime - aTime;
       });
-  }, [inboxRooms, searchQuery, inboxFilter, pinnedRoomIds]);
+  }, [inboxRooms, searchQuery, inboxFilter, pinnedRoomIds, isOrganizerEnquiryRoom]);
 
   // Find Room info of the selected room
   let activeRoom = inboxRooms.find((r) => r.id === selectedRoomId);
@@ -3482,7 +3554,7 @@ function ChatScreen() {
               <TouchableOpacity
                 style={styles.optionsRowBtn}
                 onPress={() =>
-                  handleStartDirectMessage(selectedMessageForOptions.senderName, selectedMessageForOptions.avatar)
+                  handleStartDirectMessage(selectedMessageForOptions.senderId, selectedMessageForOptions.senderName)
                 }
                 accessibilityRole="button"
                 accessibilityLabel={t('chat.directMessageName', { name: selectedMessageForOptions.senderName })}

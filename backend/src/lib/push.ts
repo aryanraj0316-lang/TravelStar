@@ -1,6 +1,7 @@
 import prisma from '../services/db';
 import { env } from '../config/env';
 import { logger } from './logger';
+import { pruneReadEnquiryNotifications } from '../services/enquiry-notification-hygiene';
 
 /**
  * Real push delivery through the Expo push service
@@ -181,6 +182,11 @@ export async function sendPushToUsers(
  * (§5.8).
  */
 export async function unreadCountFor(userId: string): Promise<number> {
+  // Same rule the notifications list applies, so the header dot and the
+  // app-icon badge can never disagree with it: an enquiry alert for a
+  // thread this user has already read does not count.
+  await pruneReadEnquiryNotifications(userId);
+
   const [personal, broadcastTotal, broadcastRead] = await Promise.all([
     prisma.notification.count({ where: { userId, unread: true } }),
     prisma.notification.count({ where: { userId: null } }),

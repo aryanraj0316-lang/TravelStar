@@ -354,6 +354,8 @@ export interface ChatRoomSummary {
    *  it is about instead of showing a bare DM. */
   inquiryTripId?: string | null;
   inquiryTripName?: string | null;
+  /** True only for the organizer's own side of that enquiry thread. */
+  isMyOrganizerInquiry?: boolean;
 }
 
 /** One pre-join enquiry thread, as the trip organizer sees it. */

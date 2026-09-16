@@ -190,6 +190,22 @@ export async function refreshAccessToken(): Promise<string | null> {
   }
 }
 
+/**
+ * What POST /safety/sos answers with. `message` and `reach` describe who was
+ * *actually* reached — the screen shows the server's own wording rather than
+ * a fixed line, because the audience now depends on the user's SOS reach
+ * setting and on who was really found nearby.
+ */
+export interface SosTriggerResult {
+  id: string;
+  alertId: string;
+  latitude: number;
+  longitude: number;
+  notifiedCount: number;
+  reach: { mode: 'TRIP_GROUP' | 'NEARBY'; radiusKm: number; nearbyCount: number };
+  message: string;
+}
+
 // Real map data (docs/REMEDIATION.md §8.8).
 export interface MapPin {
   id: string;
@@ -970,8 +986,8 @@ export const apiService = {
     latitude: number,
     longitude: number,
     fix?: { accuracyMeters?: number | null; capturedAt?: string; isStale?: boolean; message?: string },
-  ) {
-    return request('/safety/sos', {
+  ): Promise<SosTriggerResult | null> {
+    return request<SosTriggerResult>('/safety/sos', {
       method: 'POST',
       // Provenance travels with the coordinates so the alert can say how
       // much to trust them, rather than presenting a remembered position as
@@ -1015,6 +1031,12 @@ export const apiService = {
   async markNotificationRead(id: string): Promise<MessageResponse | null> {
     return request(`/notifications/${id}/read`, {
       method: 'POST',
+    });
+  },
+
+  async deleteNotification(id: string): Promise<MessageResponse | null> {
+    return request(`/notifications/${id}`, {
+      method: 'DELETE',
     });
   },
 
@@ -1288,6 +1310,14 @@ export const apiService = {
   /** Organizer-only: the pre-join enquiry threads for one trip. */
   async getTripInquiries(tripId: string): Promise<TripInquiryThread[] | null> {
     return request<TripInquiryThread[]>(`/trips/${tripId}/inquiries`);
+  },
+
+  /**
+   * Open (or reopen) a plain 1:1 direct-message thread with another user.
+   * Safe to call repeatedly — the server returns the same thread.
+   */
+  async openDirectMessage(userId: string): Promise<{ chatRoomId: string } | null> {
+    return request('/chats/dm', { method: 'POST', body: JSON.stringify({ userId }) });
   },
 
   /**

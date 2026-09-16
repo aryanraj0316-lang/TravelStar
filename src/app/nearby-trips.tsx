@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { apiService } from '@/services/api';
 import { queryKeys } from '@/lib/query-keys';
@@ -6,7 +6,7 @@ import { getCurrentDeviceLocation } from '@/lib/device-location';
 import { formatDateRange } from '@/lib/datetime';
 import TripDetailModal from '@/components/TripDetailModal';
 import { useQuery } from '@tanstack/react-query';
-import { FlatList, RefreshControl, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { FlatList, RefreshControl, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -14,12 +14,14 @@ import { useRouter } from 'expo-router';
 import ArrowLeft from 'lucide-react-native/icons/arrow-left';
 import Check from 'lucide-react-native/icons/check';
 import ChevronDown from 'lucide-react-native/icons/chevron-down';
+import Compass from 'lucide-react-native/icons/compass';
 import MapPin from 'lucide-react-native/icons/map-pin';
 import Navigation from 'lucide-react-native/icons/navigation';
+import Search from 'lucide-react-native/icons/search';
 import Users from 'lucide-react-native/icons/users';
 import X from 'lucide-react-native/icons/x';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
-import { Chip, Input, ScreenEmpty, ScreenError, ScreenLoading, Sheet } from '@/components/ui';
+import { ScreenEmpty, ScreenError, ScreenLoading, Sheet } from '@/components/ui';
 import type { NearbyTrip } from '@/types/api';
 
 // The 28 states + 8 union territories, spelled exactly as
@@ -67,8 +69,6 @@ const INDIAN_STATES = [
   'Lakshadweep',
   'Puducherry',
 ] as const;
-
-const RADIUS_PRESETS_KM = [5, 10, 25, 50, 100, 250] as const;
 
 type FilterMode = 'ALL' | 'RADIUS' | 'CITY' | 'STATE';
 const FILTER_MODES: FilterMode[] = ['ALL', 'RADIUS', 'CITY', 'STATE'];
@@ -156,7 +156,9 @@ export default function NearbyTripsScreen() {
   const [showJoinModal, setShowJoinModal] = useState(false);
 
   const [filterMode, setFilterMode] = useState<FilterMode>('ALL');
+  const [searchQuery, setSearchQuery] = useState('');
   const [radiusKm, setRadiusKm] = useState<number | null>(null);
+  const [radiusInput, setRadiusInput] = useState('');
   const [cityInput, setCityInput] = useState('');
   const [cityQuery, setCityQuery] = useState('');
   const [selectedState, setSelectedState] = useState<string | null>(null);
@@ -171,9 +173,22 @@ export default function NearbyTripsScreen() {
   const clearFilter = () => {
     setFilterMode('ALL');
     setRadiusKm(null);
+    setRadiusInput('');
     setCityInput('');
     setCityQuery('');
     setSelectedState(null);
+    setSearchQuery('');
+  };
+
+  const handleRadiusInput = (text: string) => {
+    const cleaned = text.replace(/[^0-9]/g, '');
+    setRadiusInput(cleaned);
+    const val = parseInt(cleaned, 10);
+    if (!isNaN(val) && val > 0) {
+      setRadiusKm(val);
+    } else {
+      setRadiusKm(null);
+    }
   };
 
   const requestLocation = async () => {
@@ -224,6 +239,20 @@ export default function NearbyTripsScreen() {
       return res ?? [];
     },
   });
+
+  const visibleTrips = useMemo(() => {
+    if (filterMode === 'ALL' && searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      return trips.filter(
+        (t) =>
+          t.name?.toLowerCase().includes(q) ||
+          t.meetingPoint?.toLowerCase().includes(q) ||
+          t.category?.toLowerCase().includes(q) ||
+          t.cities?.some((c) => c.toLowerCase().includes(q))
+      );
+    }
+    return trips;
+  }, [trips, filterMode, searchQuery]);
 
   const openTrip = (trip: NearbyTrip) => {
     setSelectedTrip(trip);
@@ -289,100 +318,214 @@ export default function NearbyTripsScreen() {
         )}
       </View>
 
-      {/* Filters: radius / city / state — independently combinable on the
-          backend, but the UI exposes one at a time via a segmented mode
-          picker for simplicity. */}
-      <View style={styles.filterModeRow}>
-        {FILTER_MODES.map((mode) => (
-          <Chip
-            key={mode}
-            label={t(FILTER_MODE_LABEL_KEYS[mode])}
-            selected={filterMode === mode}
-            onPress={() => setFilterMode(mode)}
-            style={styles.filterModeChip}
-          />
-        ))}
-        {filterMode !== 'ALL' && (
-          <TouchableOpacity
-            style={styles.clearFilterBtn}
-            onPress={clearFilter}
-            accessibilityRole="button"
-            accessibilityLabel={t('nearbyTrips.clearFilter')}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <X size={14} color={C.textMuted} />
-          </TouchableOpacity>
-        )}
+      {/* Filters: segmented top tabs (All, Radius, City, State) — rock-solid, constant positioning */}
+      <View style={styles.topTabsBar} accessibilityRole="tablist">
+        {FILTER_MODES.map((mode) => {
+          const isSelected = filterMode === mode;
+          return (
+            <TouchableOpacity
+              key={mode}
+              onPress={() => {
+                if (mode === 'ALL') {
+                  clearFilter();
+                } else {
+                  setFilterMode(mode);
+                }
+              }}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: isSelected }}
+              accessibilityLabel={t(FILTER_MODE_LABEL_KEYS[mode])}
+              activeOpacity={0.75}
+              style={[styles.topTabItem, isSelected && styles.topTabItemActive]}
+            >
+              <Text
+                numberOfLines={1}
+                ellipsizeMode="tail"
+                style={[styles.topTabLabel, isSelected && styles.topTabLabelActive]}
+              >
+                {t(FILTER_MODE_LABEL_KEYS[mode])}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
-      {filterMode === 'RADIUS' && (
-        <View style={styles.filterPanel}>
-          {coords ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-              {RADIUS_PRESETS_KM.map((km) => (
-                <Chip
-                  key={km}
-                  label={t('nearbyTrips.radiusKmLabel', { km })}
-                  selected={radiusKm === km}
-                  onPress={() => setRadiusKm(km)}
-                />
-              ))}
-            </ScrollView>
-          ) : (
-            <Text style={styles.filterHintText}>{t('nearbyTrips.radiusRequiresLocation')}</Text>
+      {/* Unified, constant-height filter input box below the tabs */}
+      {filterMode === 'STATE' ? (
+        <TouchableOpacity
+          style={styles.filterInputRow}
+          onPress={() => setStateSheetOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel={selectedState ?? t('nearbyTrips.statePlaceholder')}
+          accessibilityHint={t('common.opensChoiceListHint')}
+          activeOpacity={0.8}
+        >
+          <Compass size={18} color={C.blue} />
+          <Text
+            style={[styles.filterStateText, !selectedState && styles.filterPlaceholderText]}
+            numberOfLines={1}
+          >
+            {selectedState ?? t('nearbyTrips.statePlaceholder')}
+          </Text>
+          {selectedState ? (
+            <TouchableOpacity
+              onPress={(e) => {
+                e.stopPropagation();
+                setSelectedState(null);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={t('nearbyTrips.clearFilter')}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={styles.filterClearBtn}
+            >
+              <X size={16} color={C.textMuted} />
+            </TouchableOpacity>
+          ) : null}
+          <ChevronDown size={16} color={C.textMuted} />
+        </TouchableOpacity>
+      ) : (
+        <View style={styles.filterInputRow}>
+          {filterMode === 'ALL' && (
+            <>
+              <Search size={18} color={C.textMuted} />
+              <TextInput
+                style={styles.filterInputText}
+                placeholder={t('nearbyTrips.searchPlaceholder')}
+                placeholderTextColor={C.textMuted}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                accessibilityLabel={t('nearbyTrips.searchPlaceholder')}
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => setSearchQuery('')}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('nearbyTrips.clearFilter')}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={styles.filterClearBtn}
+                >
+                  <X size={16} color={C.textMuted} />
+                </TouchableOpacity>
+              )}
+            </>
+          )}
+
+          {filterMode === 'RADIUS' && (
+            <>
+              <Navigation size={18} color={coords ? C.blue : C.textMuted} />
+              {coords ? (
+                <>
+                  <TextInput
+                    style={styles.filterInputText}
+                    placeholder={t('nearbyTrips.radiusPlaceholder')}
+                    placeholderTextColor={C.textMuted}
+                    value={radiusInput}
+                    onChangeText={handleRadiusInput}
+                    keyboardType="numeric"
+                    accessibilityLabel={t('nearbyTrips.radiusPlaceholder')}
+                  />
+                  {radiusKm !== null && (
+                    <View style={styles.radiusUnitWrap}>
+                      <Text style={styles.radiusUnitText}>km</Text>
+                      <TouchableOpacity
+                        onPress={() => {
+                          setRadiusKm(null);
+                          setRadiusInput('');
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('nearbyTrips.clearFilter')}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        style={styles.filterClearBtn}
+                      >
+                        <X size={16} color={C.textMuted} />
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </>
+              ) : (
+                <>
+                  <Text style={styles.filterDisabledText} numberOfLines={1}>
+                    {t('nearbyTrips.radiusRequiresLocation')}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={requestLocation}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('nearbyTrips.useMyLocationLabel')}
+                    style={styles.inlineLocBtn}
+                  >
+                    <Text style={styles.inlineLocBtnText}>{t('nearbyTrips.useLocation')}</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </>
+          )}
+
+          {filterMode === 'CITY' && (
+            <>
+              <MapPin size={18} color={C.blue} />
+              <TextInput
+                style={styles.filterInputText}
+                placeholder={t('nearbyTrips.cityPlaceholder')}
+                placeholderTextColor={C.textMuted}
+                value={cityInput}
+                onChangeText={setCityInput}
+                accessibilityLabel={t('nearbyTrips.cityFilterLabel')}
+                autoCapitalize="words"
+              />
+              {cityInput.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => {
+                    setCityInput('');
+                    setCityQuery('');
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('nearbyTrips.clearFilter')}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={styles.filterClearBtn}
+                >
+                  <X size={16} color={C.textMuted} />
+                </TouchableOpacity>
+              )}
+            </>
           )}
         </View>
       )}
 
-      {filterMode === 'CITY' && (
-        <View style={styles.filterPanel}>
-          <Input
-            value={cityInput}
-            onChangeText={setCityInput}
-            placeholder={t('nearbyTrips.cityPlaceholder')}
-            accessibilityLabel={t('nearbyTrips.cityFilterLabel')}
-            containerStyle={styles.filterInputWrap}
-          />
-        </View>
-      )}
-
-      {filterMode === 'STATE' && (
-        <View style={styles.filterPanel}>
-          <TouchableOpacity
-            style={styles.stateTrigger}
-            onPress={() => setStateSheetOpen(true)}
-            accessibilityRole="button"
-            accessibilityLabel={selectedState ?? t('nearbyTrips.statePlaceholder')}
-            accessibilityHint={t('common.opensChoiceListHint')}
-          >
-            <Text style={[styles.stateTriggerText, !selectedState && styles.stateTriggerPlaceholder]}>
-              {selectedState ?? t('nearbyTrips.statePlaceholder')}
-            </Text>
-            <ChevronDown size={16} color={C.textMuted} />
-          </TouchableOpacity>
-          <Sheet visible={stateSheetOpen} onClose={() => setStateSheetOpen(false)} title={t('nearbyTrips.stateFilterLabel')}>
-            {INDIAN_STATES.map((s) => {
-              const isSelected = selectedState === s;
-              return (
-                <TouchableOpacity
-                  key={s}
-                  style={styles.stateOption}
-                  onPress={() => {
-                    setSelectedState(s);
-                    setStateSheetOpen(false);
-                  }}
-                  accessibilityRole="button"
-                  accessibilityLabel={s}
-                  accessibilityState={{ selected: isSelected }}
-                >
-                  <Text style={[styles.stateOptionText, isSelected && styles.stateOptionTextSelected]}>{s}</Text>
-                  {isSelected ? <Check size={16} color={C.blueText} /> : null}
-                </TouchableOpacity>
-              );
-            })}
-          </Sheet>
-        </View>
-      )}
+      <Sheet visible={stateSheetOpen} onClose={() => setStateSheetOpen(false)} title={t('nearbyTrips.stateFilterLabel')}>
+        <TouchableOpacity
+          style={styles.stateOption}
+          onPress={() => {
+            setSelectedState(null);
+            setStateSheetOpen(false);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={t('nearbyTrips.filterAll')}
+        >
+          <Text style={[styles.stateOptionText, !selectedState && styles.stateOptionTextSelected]}>
+            {t('nearbyTrips.filterAll')}
+          </Text>
+          {!selectedState ? <Check size={16} color={C.blueText} /> : null}
+        </TouchableOpacity>
+        {INDIAN_STATES.map((s) => {
+          const isSelected = selectedState === s;
+          return (
+            <TouchableOpacity
+              key={s}
+              style={styles.stateOption}
+              onPress={() => {
+                setSelectedState(isSelected ? null : s);
+                setStateSheetOpen(false);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={s}
+              accessibilityState={{ selected: isSelected }}
+            >
+              <Text style={[styles.stateOptionText, isSelected && styles.stateOptionTextSelected]}>{s}</Text>
+              {isSelected ? <Check size={16} color={C.blueText} /> : null}
+            </TouchableOpacity>
+          );
+        })}
+      </Sheet>
 
       {isLoading ? (
         <ScreenLoading label={t('nearbyTrips.findingTrips')} />
@@ -391,11 +534,11 @@ export default function NearbyTripsScreen() {
           message={error instanceof Error ? error.message : t('nearbyTrips.couldNotLoadNearbyTrips')}
           onRetry={() => refetch()}
         />
-      ) : trips.length === 0 ? (
+      ) : visibleTrips.length === 0 ? (
         <ScreenEmpty title={t('nearbyTrips.noTripsNearbyTitle')} message={t('nearbyTrips.noTripsNearbyMessage')} />
       ) : (
         <FlatList
-          data={trips}
+          data={visibleTrips}
           keyExtractor={keyExtractor}
           renderItem={({ item }) => <NearbyTripCard trip={item} onPress={openTrip} />}
           showsVerticalScrollIndicator={false}
@@ -475,41 +618,109 @@ const styles = StyleSheet.create({
     minHeight: MIN_TOUCH_TARGET,
   },
   locBtnText: { fontSize: 12, fontWeight: '700', color: C.blue },
-  filterModeRow: {
+  topTabsBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginHorizontal: 16,
-    marginBottom: 8,
-  },
-  filterModeChip: { flex: 1 },
-  clearFilterBtn: {
-    width: MIN_TOUCH_TARGET,
-    height: MIN_TOUCH_TARGET,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: MIN_TOUCH_TARGET / 2,
-    backgroundColor: C.cardAlt,
+    backgroundColor: C.card,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: C.border,
+    padding: 4,
+    marginHorizontal: 16,
+    marginBottom: 10,
   },
-  filterPanel: { marginHorizontal: 16, marginBottom: 8 },
-  chipRow: { flexDirection: 'row', gap: 8, paddingVertical: 2 },
-  filterHintText: { fontSize: 12, color: C.textMuted, fontStyle: 'italic' },
-  filterInputWrap: { gap: 0 },
-  stateTrigger: {
-    minHeight: MIN_TOUCH_TARGET,
+  topTabItem: {
+    flex: 1,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    paddingHorizontal: 4,
+  },
+  topTabItemActive: {
+    backgroundColor: C.blue,
+    shadowColor: C.blue,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  topTabLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: C.textSec,
+    textAlign: 'center',
+  },
+  topTabLabelActive: {
+    color: C.white,
+    fontWeight: '700',
+  },
+  filterInputRow: {
+    minHeight: 48,
+    height: 48,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     backgroundColor: C.card,
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: C.border,
     paddingHorizontal: 14,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    gap: 10,
   },
-  stateTriggerText: { fontSize: 14, fontWeight: '600', color: C.text },
-  stateTriggerPlaceholder: { color: C.textMuted, fontWeight: '400' },
+  filterInputText: {
+    flex: 1,
+    fontSize: 14,
+    color: C.text,
+    paddingVertical: 0,
+    height: '100%',
+  },
+  filterStateText: {
+    flex: 1,
+    fontSize: 14,
+    color: C.text,
+    textAlignVertical: 'center',
+  },
+  filterPlaceholderText: {
+    color: C.textMuted,
+  },
+  filterClearBtn: {
+    padding: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterDisabledText: {
+    flex: 1,
+    fontSize: 13,
+    color: C.textMuted,
+  },
+  inlineLocBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(59,130,246,0.12)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(59,130,246,0.3)',
+  },
+  inlineLocBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: C.blue,
+  },
+  radiusUnitWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  radiusUnitText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: C.blueText,
+  },
   stateOption: {
     minHeight: MIN_TOUCH_TARGET,
     flexDirection: 'row',

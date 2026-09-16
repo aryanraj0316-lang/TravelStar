@@ -1,122 +1,346 @@
-import { eventBus, type InAppNotif } from '@/services/event-bus';
-import { useApp } from '@/store/AppContext';
-import { useRouter } from 'expo-router';
-import CheckCheck from 'lucide-react-native/icons/check-check';
-import MessageSquare from 'lucide-react-native/icons/message-square';
-import ChevronRight from 'lucide-react-native/icons/chevron-right';
-import X from 'lucide-react-native/icons/x';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Animated,
+  Dimensions,
+  PanResponder,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import Bell from 'lucide-react-native/icons/bell';
+import CheckCheck from 'lucide-react-native/icons/check-check';
+import ChevronRight from 'lucide-react-native/icons/chevron-right';
+import CreditCard from 'lucide-react-native/icons/credit-card';
+import MessageSquare from 'lucide-react-native/icons/message-square';
+import X from 'lucide-react-native/icons/x';
+
+import { eventBus, type InAppNotif } from '@/services/event-bus';
+import { useApp } from '@/store/AppContext';
 import { C } from '@/theme/tokens';
+import { apiService } from '@/services/api';
+import { logger } from '@/lib/logger';
+import { queryClient } from '@/lib/query-client';
+import { queryKeys } from '@/lib/query-keys';
+import { syncBadgeCount } from '@/lib/push';
+import type { AppNotification } from '@/types/api';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export const InAppNotificationBanner: React.FC = () => {
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const [notif, setNotif] = useState<InAppNotif | null>(null);
-  const translateY = useState(() => new Animated.Value(-100))[0];
-  const opacity = useState(() => new Animated.Value(0))[0];
+
+  const translateY = useRef(new Animated.Value(-140)).current;
+  const translateX = useRef(new Animated.Value(0)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
   const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { setActiveRoomId } = useApp();
+
+  const { setActiveRoomId, checkUnreadNotifications } = useApp();
   const router = useRouter();
 
   const dismiss = useCallback(() => {
     if (dismissTimer.current) clearTimeout(dismissTimer.current);
     Animated.parallel([
-      Animated.timing(translateY, { toValue: -120, duration: 250, useNativeDriver: true }),
+      Animated.timing(translateY, { toValue: -140, duration: 250, useNativeDriver: true }),
       Animated.timing(opacity, { toValue: 0, duration: 250, useNativeDriver: true }),
-    ]).start(() => setNotif(null));
-  }, [translateY, opacity]);
+    ]).start(() => {
+      setNotif(null);
+      translateX.setValue(0);
+    });
+  }, [translateY, translateX, opacity]);
+
+  // PanResponder to make notification slideable & removable horizontally or vertically
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        // Capture gesture if horizontal swipe > 8px or vertical swipe up < -8px
+        return Math.abs(gestureState.dx) > 8 || gestureState.dy < -8;
+      },
+      onPanResponderGrant: () => {
+        if (dismissTimer.current) clearTimeout(dismissTimer.current);
+      },
+      onPanResponderMove: (_, gestureState) => {
+        translateX.setValue(gestureState.dx);
+        if (gestureState.dy < 0) {
+          translateY.setValue(gestureState.dy);
+        }
+        // Subtle opacity reduction as card is swiped far to left or right
+        const progress = Math.min(Math.abs(gestureState.dx) / (SCREEN_WIDTH * 0.7), 1);
+        opacity.setValue(1 - progress * 0.4);
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        const isSwipeRight = gestureState.dx > 60 || gestureState.vx > 0.4;
+        const isSwipeLeft = gestureState.dx < -60 || gestureState.vx < -0.4;
+        const isSwipeUp = gestureState.dy < -35 || gestureState.vy < -0.4;
+
+        if (isSwipeRight) {
+          if (dismissTimer.current) clearTimeout(dismissTimer.current);
+          Animated.parallel([
+            Animated.timing(translateX, {
+              toValue: SCREEN_WIDTH + 80,
+              duration: 200,
+              useNativeDriver: true,
+            }),
+            Animated.timing(opacity, {
+              toValue: 0,
+              duration: 200,
+              useNativeDriver: true,
+            }),
+          ]).start(() => {
+            setNotif(null);
+            translateX.setValue(0);
+            translateY.setValue(-140);
+          });
+        } else if (isSwipeLeft) {
+          if (dismissTimer.current) clearTimeout(dismissTimer.current);
+          Animated.parallel([
+            Animated.timing(translateX, {
+              toValue: -(SCREEN_WIDTH + 80),
+              duration: 200,
+              useNativeDriver: true,
+            }),
+            Animated.timing(opacity, {
+              toValue: 0,
+              duration: 200,
+              useNativeDriver: true,
+            }),
+          ]).start(() => {
+            setNotif(null);
+            translateX.setValue(0);
+            translateY.setValue(-140);
+          });
+        } else if (isSwipeUp) {
+          if (dismissTimer.current) clearTimeout(dismissTimer.current);
+          Animated.parallel([
+            Animated.timing(translateY, {
+              toValue: -140,
+              duration: 200,
+              useNativeDriver: true,
+            }),
+            Animated.timing(opacity, {
+              toValue: 0,
+              duration: 200,
+              useNativeDriver: true,
+            }),
+          ]).start(() => {
+            setNotif(null);
+            translateX.setValue(0);
+          });
+        } else {
+          // Snap back to original position
+          Animated.parallel([
+            Animated.spring(translateX, {
+              toValue: 0,
+              bounciness: 6,
+              useNativeDriver: true,
+            }),
+            Animated.spring(translateY, {
+              toValue: 0,
+              bounciness: 6,
+              useNativeDriver: true,
+            }),
+            Animated.timing(opacity, {
+              toValue: 1,
+              duration: 150,
+              useNativeDriver: true,
+            }),
+          ]).start(() => {
+            dismissTimer.current = setTimeout(dismiss, 5000);
+          });
+        }
+      },
+      onPanResponderTerminate: () => {
+        Animated.parallel([
+          Animated.spring(translateX, { toValue: 0, bounciness: 6, useNativeDriver: true }),
+          Animated.spring(translateY, { toValue: 0, bounciness: 6, useNativeDriver: true }),
+          Animated.timing(opacity, { toValue: 1, duration: 150, useNativeDriver: true }),
+        ]).start(() => {
+          dismissTimer.current = setTimeout(dismiss, 5000);
+        });
+      },
+    })
+  ).current;
 
   useEffect(() => {
     const unsub = eventBus.on('inAppNotification', (data: InAppNotif) => {
       if (dismissTimer.current) clearTimeout(dismissTimer.current);
-      translateY.setValue(-120);
+      translateX.setValue(0);
+      translateY.setValue(-140);
       opacity.setValue(0);
       setNotif(data);
 
       Animated.parallel([
-        Animated.timing(translateY, { toValue: 0, duration: 350, useNativeDriver: true }),
-        Animated.timing(opacity, { toValue: 1, duration: 350, useNativeDriver: true }),
+        Animated.spring(translateY, {
+          toValue: 0,
+          bounciness: 6,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacity, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
       ]).start(() => {
         dismissTimer.current = setTimeout(dismiss, 5000);
       });
     });
+
     return () => {
       unsub();
       if (dismissTimer.current) clearTimeout(dismissTimer.current);
     };
-  }, [dismiss, translateY, opacity]);
+  }, [dismiss, translateX, translateY, opacity]);
 
   const handleTap = () => {
-    if (notif?.category === 'PAYMENT_REQUIRED' && notif?.joinRequestId) {
+    if (!notif) return;
+
+    // Every category here except CHAT_MESSAGE is backed by a real,
+    // persisted Notification row (its `id` came from the server's
+    // `notificationReceived` socket event, unlike CHAT_MESSAGE's banner,
+    // which reuses the chat message's own id). Opening the thing this
+    // banner points at is the read action — without dismissing the
+    // underlying row here too, tapping the banner only slid it away
+    // visually: the Notifications page still showed it as unread on next
+    // load, and the header's unread dot never cleared, since nothing ever
+    // told the server it had been seen.
+    if (notif.category && notif.category !== 'CHAT_MESSAGE') {
+      const notifId = notif.id;
+      queryClient.setQueryData<AppNotification[]>(queryKeys.notifications(), (prev = []) =>
+        prev.filter((n) => n.id !== notifId),
+      );
+      apiService
+        .deleteNotification(notifId)
+        .then(() => {
+          checkUnreadNotifications();
+          void syncBadgeCount();
+        })
+        .catch((e) => logger.warn('[InAppNotificationBanner] Failed to dismiss notification:', e));
+    }
+
+    if (notif.category === 'PAYMENT_REQUIRED' && notif.joinRequestId) {
       router.push({
         pathname: '/trip-payment',
         params: { joinRequestId: notif.joinRequestId },
       });
-    } else if (notif?.chatRoomId) {
+    } else if (notif.category === 'TRIP_ENQUIRY') {
+      router.push({
+        pathname: '/group-organizer',
+        params: {
+          ...(notif.tripId ? { tripId: notif.tripId } : {}),
+          tab: 'chat',
+          subTab: 'chat',
+        },
+      });
+    } else if (notif.chatRoomId) {
       setActiveRoomId(notif.chatRoomId);
       router.navigate('/chat');
+    } else if (notif.tripId) {
+      router.navigate('/bookings');
     }
     dismiss();
   };
 
   if (!notif) return null;
 
+  const isChatMessage = notif.category === 'CHAT_MESSAGE';
+  const isPayment = notif.category === 'PAYMENT_REQUIRED';
+  const isEnquiry = notif.category === 'TRIP_ENQUIRY';
+
+  const iconBg = isChatMessage || isEnquiry ? '#2563EB' : isPayment ? '#D97706' : C.green;
+  const borderColor = isChatMessage || isEnquiry
+    ? 'rgba(37, 99, 235, 0.4)'
+    : isPayment
+      ? 'rgba(217, 119, 6, 0.4)'
+      : 'rgba(16, 185, 129, 0.35)';
+
+  const Icon = isChatMessage || isEnquiry
+    ? MessageSquare
+    : isPayment
+      ? CreditCard
+      : notif.chatRoomId
+        ? CheckCheck
+        : Bell;
+
   return (
     <Animated.View
       style={[
         styles.container,
-        { transform: [{ translateY }], opacity },
+        { paddingTop: Math.max(insets.top, 16) + 8 },
       ]}
       pointerEvents="box-none"
     >
-      <TouchableOpacity
-        style={styles.banner}
-        activeOpacity={0.92}
-        onPress={handleTap}
-        accessibilityRole="button"
-        accessibilityLabel={notif.title}
-        accessibilityHint={notif.chatRoomId ? t('notifications.tapToOpenGroupChat') : undefined}
+      <Animated.View
+        {...panResponder.panHandlers}
+        style={[
+          styles.bannerWrap,
+          {
+            transform: [{ translateY }, { translateX }],
+            opacity,
+          },
+        ]}
       >
-        {/* Left icon */}
-        <View style={[styles.iconWrap, notif.category === 'CHAT_MESSAGE' && { backgroundColor: C.blue }]}>
-          {notif.category === 'CHAT_MESSAGE' ? (
-            <MessageSquare size={20} color="#fff" />
-          ) : (
-            <CheckCheck size={20} color="#fff" />
-          )}
-        </View>
-
-        {/* Text body */}
-        <View style={styles.textWrap}>
-          <Text style={styles.title} numberOfLines={1}>{notif.title}</Text>
-          <Text style={styles.content} numberOfLines={2}>{notif.content}</Text>
-          {notif.chatRoomId && (
-            <View style={styles.tapRow}>
-              <Text style={[styles.tapHint, notif.category === 'CHAT_MESSAGE' && { color: '#60A5FA' }]}>
-                {notif.category === 'CHAT_MESSAGE' ? t('chat.tapToOpen', 'Tap to open chat') : t('notifications.tapToOpenGroupChat')}
-              </Text>
-              <ChevronRight size={11} color={notif.category === 'CHAT_MESSAGE' ? '#60A5FA' : '#10B981'} />
-            </View>
-          )}
-        </View>
-
-        {/* Dismiss */}
         <TouchableOpacity
-          onPress={dismiss}
-          hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
+          style={[styles.banner, { borderColor }]}
+          activeOpacity={0.92}
+          onPress={handleTap}
           accessibilityRole="button"
-          accessibilityLabel={t('common.dismiss')}
+          accessibilityLabel={notif.title}
+          accessibilityHint={notif.chatRoomId ? t('notifications.tapToOpenGroupChat') : undefined}
         >
-          <X size={16} color="rgba(255,255,255,0.5)" />
+          {/* Left Icon Badge */}
+          <View style={[styles.iconWrap, { backgroundColor: iconBg }]}>
+            <Icon size={19} color="#FFFFFF" strokeWidth={2.2} />
+          </View>
+
+          {/* Text Details */}
+          <View style={styles.textWrap}>
+            <Text style={styles.title} numberOfLines={1}>
+              {notif.title}
+            </Text>
+            <Text style={styles.content} numberOfLines={2}>
+              {notif.content}
+            </Text>
+            {notif.chatRoomId && (
+              <View style={styles.tapRow}>
+                <Text
+                  style={[
+                    styles.tapHint,
+                    (isChatMessage || isEnquiry) && { color: '#60A5FA' },
+                    isPayment && { color: '#FBBF24' },
+                  ]}
+                >
+                  {isChatMessage
+                    ? t('chat.tapToOpen', 'Tap to open chat')
+                    : isEnquiry
+                      ? 'Tap to reply'
+                      : t('notifications.tapToOpenGroupChat')}
+                </Text>
+                <ChevronRight
+                  size={11}
+                  color={isChatMessage || isEnquiry ? '#60A5FA' : isPayment ? '#FBBF24' : '#10B981'}
+                />
+              </View>
+            )}
+          </View>
+
+          {/* Direct Dismiss Button */}
+          <TouchableOpacity
+            style={styles.closeBtn}
+            onPress={dismiss}
+            hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
+            accessibilityRole="button"
+            accessibilityLabel={t('common.dismiss')}
+          >
+            <X size={15} color="rgba(255,255,255,0.6)" strokeWidth={2.2} />
+          </TouchableOpacity>
         </TouchableOpacity>
-      </TouchableOpacity>
+      </Animated.View>
     </Animated.View>
   );
 };
@@ -129,29 +353,29 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 9999,
     paddingHorizontal: 12,
-    paddingTop: 52, // below status bar / safe area
+  },
+  bannerWrap: {
+    width: '100%',
   },
   banner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#131A30',
+    backgroundColor: '#0F172A',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.35)',
-    paddingVertical: 14,
-    paddingHorizontal: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 13,
     gap: 12,
-    shadowColor: C.green,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 8,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.28,
+    shadowRadius: 14,
+    elevation: 10,
   },
   iconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: C.green,
+    width: 38,
+    height: 38,
+    borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
@@ -160,13 +384,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   title: {
-    color: C.white,
-    fontSize: 14,
+    color: '#FFFFFF',
+    fontSize: 13.5,
     fontWeight: '700',
-    letterSpacing: 0.1,
+    letterSpacing: -0.2,
   },
   content: {
-    color: 'rgba(255,255,255,0.65)',
+    color: 'rgba(255,255,255,0.7)',
     fontSize: 12,
     marginTop: 2,
     lineHeight: 16,
@@ -174,12 +398,21 @@ const styles = StyleSheet.create({
   tapRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
+    marginTop: 3,
     gap: 3,
   },
   tapHint: {
-    color: C.green,
-    fontSize: 12,
+    color: '#10B981',
+    fontSize: 11.5,
     fontWeight: '700',
+  },
+  closeBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 2,
   },
 });

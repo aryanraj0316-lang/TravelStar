@@ -837,6 +837,12 @@ function MapScreen() {
   const [mapFilter, setMapFilter] = useState<MapFilter>('ALL');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [sosTriggered, setSosTriggered] = useState(false);
+  // The server's own account of who was actually reached. Shown in place of
+  // a fixed line, because the audience now depends on this user's SOS reach
+  // setting and on who was really found nearby — telling someone in danger
+  // that only their trip group was alerted, when strangers were too (or the
+  // reverse), is exactly the kind of claim this screen must not invent.
+  const [sosReachMessage, setSosReachMessage] = useState<string | null>(null);
   // docs/REMEDIATION.md §8.8: the confirmation card used to state a
   // hardcoded "28.6139° N, 77.2090° E" — New Delhi — as the coordinates
   // that had been sent, whatever the user's real position was, and claimed
@@ -1014,10 +1020,13 @@ function MapScreen() {
       toast(message, 'error');
       return;
     }
-    triggerSOS(location.latitude, location.longitude, {
+    setSosReachMessage(null);
+    void triggerSOS(location.latitude, location.longitude, {
       accuracyMeters: location.accuracyMeters ?? null,
       capturedAt: location.capturedAt,
       isStale: location.isStale ?? false,
+    }).then((result) => {
+      if (result?.message) setSosReachMessage(result.message);
     });
     if (location.isStale) toast(t('map.sosSentWithLastKnown'), 'info');
     setSosCoords({ latitude: location.latitude, longitude: location.longitude });
@@ -1798,12 +1807,14 @@ function MapScreen() {
                 <AlertCircle size={44} color="#EF4444" />
                 <Text style={styles.sosModalTitle}>{t('map.emergencyAlertTriggered')}</Text>
                 <Text style={styles.sosModalSub}>
-                  {sosCoords
-                    ? t('map.sosMessageWithCoords', {
-                        lat: sosCoords.latitude.toFixed(4),
-                        lng: sosCoords.longitude.toFixed(4),
-                      })
-                    : t('map.sosMessageNoCoords')}
+                  {sosReachMessage
+                    ? sosReachMessage
+                    : sosCoords
+                      ? t('map.sosMessageWithCoords', {
+                          lat: sosCoords.latitude.toFixed(4),
+                          lng: sosCoords.longitude.toFixed(4),
+                        })
+                      : t('map.sosMessageNoCoords')}
                 </Text>
 
                 <TouchableOpacity

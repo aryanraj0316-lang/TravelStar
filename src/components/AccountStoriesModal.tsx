@@ -185,7 +185,7 @@ export default function AccountStoriesModal({
 
   const handleBrowseCommunityStories = useCallback(() => {
     onClose();
-    router.push('/stories');
+    router.push('/all-stories');
   }, [onClose, router]);
 
   if (!visible) return null;

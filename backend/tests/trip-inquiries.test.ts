@@ -1,6 +1,7 @@
 import request from 'supertest';
 import app from '../src/app';
 import prisma from '../src/services/db';
+import { notifyTripEnquiry } from '../src/services/trip-enquiry-notifications';
 
 /**
  * Pre-join enquiry threads.
@@ -144,6 +145,164 @@ describe('Trip enquiries', () => {
     }
   }, 90_000);
 
+  it('drops the enquiry alert once the organizer has read that thread, however it was opened', async () => {
+    const organizer = await registerAndLogin('read-org');
+    const tourist = await registerAndLogin('read-tourist');
+    const tripId = await createTrip(organizer.token, `Read Enquiry ${runId}`);
+
+    const opened = await request(app)
+      .post('/api/v1/chats/inquiry')
+      .set('Authorization', `Bearer ${tourist.token}`)
+      .send({ tripId });
+    const chatRoomId = opened.body.data.chatRoomId;
+
+    await prisma.message.create({
+      data: { chatRoomId, senderId: tourist.userId, content: 'Any seats left?' },
+    });
+    await notifyTripEnquiry({
+      tripId,
+      tripName: `Read Enquiry ${runId}`,
+      organizerId: organizer.userId,
+      chatRoomId,
+      travellerName: 'Inquiry read-tourist',
+      preview: 'Any seats left?',
+    });
+    expect(
+      await prisma.notification.count({ where: { userId: organizer.userId, category: 'TRIP_ENQUIRY', chatRoomId } })
+    ).toBe(1);
+
+    // The organizer opens the thread themselves, straight from Chats &
+    // Approvals — no notification tapped. Every entry point marks the room
+    // read, which is what makes this the one reliable signal to hang the
+    // dismissal on.
+    const read = await request(app)
+      .post(`/api/v1/chats/${chatRoomId}/read`)
+      .set('Authorization', `Bearer ${organizer.token}`);
+    expect(read.status).toBe(200);
+
+    const list = await request(app)
+      .get('/api/v1/notifications')
+      .set('Authorization', `Bearer ${organizer.token}`);
+    expect(list.status).toBe(200);
+    expect(list.body.data.filter((n: { chatRoomId: string | null }) => n.chatRoomId === chatRoomId)).toHaveLength(0);
+
+    // ...and the header dot / app badge agree with the list, rather than
+    // staying lit over a row the page no longer shows.
+    const count = await request(app)
+      .get('/api/v1/notifications/unread-count')
+      .set('Authorization', `Bearer ${organizer.token}`);
+    expect(count.body.data.count).toBe(0);
+  }, 90_000);
+
+  it('does not resurrect the alert when the notify write loses the race with the read', async () => {
+    const organizer = await registerAndLogin('race-org');
+    const tourist = await registerAndLogin('race-tourist');
+    const tripId = await createTrip(organizer.token, `Race Enquiry ${runId}`);
+
+    const opened = await request(app)
+      .post('/api/v1/chats/inquiry')
+      .set('Authorization', `Bearer ${tourist.token}`)
+      .send({ tripId });
+    const chatRoomId = opened.body.data.chatRoomId;
+
+    await prisma.message.create({
+      data: { chatRoomId, senderId: tourist.userId, content: 'Still open?' },
+    });
+
+    // The organizer reads it with the chat already open on screen, before
+    // the socket handler's fire-and-forget notify call gets its turn.
+    await request(app)
+      .post(`/api/v1/chats/${chatRoomId}/read`)
+      .set('Authorization', `Bearer ${organizer.token}`);
+
+    await notifyTripEnquiry({
+      tripId,
+      tripName: `Race Enquiry ${runId}`,
+      organizerId: organizer.userId,
+      chatRoomId,
+      travellerName: 'Inquiry race-tourist',
+      preview: 'Still open?',
+    });
+
+    // Nothing to nudge them about: they are already looking at it. This is
+    // the row that used to survive every dismissal — it was written after
+    // the read, so only re-opening the thread could ever clear it.
+    expect(
+      await prisma.notification.count({ where: { userId: organizer.userId, category: 'TRIP_ENQUIRY', chatRoomId } })
+    ).toBe(0);
+
+    const list = await request(app)
+      .get('/api/v1/notifications')
+      .set('Authorization', `Bearer ${organizer.token}`);
+    expect(list.body.data.filter((n: { chatRoomId: string | null }) => n.chatRoomId === chatRoomId)).toHaveLength(0);
+  }, 90_000);
+
+  it('still nudges the organizer about a message they have not read', async () => {
+    const organizer = await registerAndLogin('unread-org');
+    const tourist = await registerAndLogin('unread-tourist');
+    const tripId = await createTrip(organizer.token, `Unread Enquiry ${runId}`);
+
+    const opened = await request(app)
+      .post('/api/v1/chats/inquiry')
+      .set('Authorization', `Bearer ${tourist.token}`)
+      .send({ tripId });
+    const chatRoomId = opened.body.data.chatRoomId;
+
+    // Read the thread first, then a genuinely new question arrives.
+    await request(app)
+      .post(`/api/v1/chats/${chatRoomId}/read`)
+      .set('Authorization', `Bearer ${organizer.token}`);
+    await prisma.message.create({
+      data: { chatRoomId, senderId: tourist.userId, content: 'One more thing —' },
+    });
+    await notifyTripEnquiry({
+      tripId,
+      tripName: `Unread Enquiry ${runId}`,
+      organizerId: organizer.userId,
+      chatRoomId,
+      travellerName: 'Inquiry unread-tourist',
+      preview: 'One more thing —',
+    });
+
+    const list = await request(app)
+      .get('/api/v1/notifications')
+      .set('Authorization', `Bearer ${organizer.token}`);
+    expect(list.body.data.filter((n: { chatRoomId: string | null }) => n.chatRoomId === chatRoomId)).toHaveLength(1);
+  }, 90_000);
+
+  it('marks the organizer side of the thread so it can be kept out of their chat inbox', async () => {
+    const organizer = await registerAndLogin('flag-org');
+    const tourist = await registerAndLogin('flag-tourist');
+    const tripId = await createTrip(organizer.token, `Flag Enquiry ${runId}`);
+
+    const opened = await request(app)
+      .post('/api/v1/chats/inquiry')
+      .set('Authorization', `Bearer ${tourist.token}`)
+      .send({ tripId });
+    const chatRoomId = opened.body.data.chatRoomId;
+
+    await prisma.message.create({
+      data: { chatRoomId, senderId: tourist.userId, content: 'Is the trek beginner friendly?' },
+    });
+
+    const organizerInbox = await request(app)
+      .get('/api/v1/chats')
+      .set('Authorization', `Bearer ${organizer.token}`);
+    const organizerRoom = organizerInbox.body.data.find((r: { id: string }) => r.id === chatRoomId);
+    expect(organizerRoom).toBeTruthy();
+    // The organizer answers this in the portal's Chats & Approvals tab, so
+    // their chat inbox must be able to tell this room apart and drop it.
+    expect(organizerRoom.isMyOrganizerInquiry).toBe(true);
+    expect(organizerRoom.inquiryTripId).toBe(tripId);
+
+    const touristInbox = await request(app)
+      .get('/api/v1/chats')
+      .set('Authorization', `Bearer ${tourist.token}`);
+    const touristRoom = touristInbox.body.data.find((r: { id: string }) => r.id === chatRoomId);
+    // For the traveller who asked, the very same thread is just a chat.
+    expect(touristRoom.isMyOrganizerInquiry).toBe(false);
+  }, 90_000);
+
   it('refuses an organizer opening an enquiry with themselves', async () => {
     const organizer = await registerAndLogin('selforganizer');
     const tripId = await createTrip(organizer.token, `Self Enquiry ${runId}`);
@@ -208,6 +367,15 @@ describe('Trip enquiries', () => {
     expect(list.status).toBe(200);
     expect(list.body.data[0].hasJoinRequest).toBe(true);
     expect(list.body.data[0].joinRequestStatus).toBe('PENDING');
+
+    // JOIN_REQUEST was missing from the NotificationCategory enum, so this
+    // write threw on every single join request and the organizer was never
+    // told anyone had asked for a seat.
+    const joinNotifs = await prisma.notification.findMany({
+      where: { userId: organizer.userId, tripId, category: 'JOIN_REQUEST' },
+    });
+    expect(joinNotifs).toHaveLength(1);
+    expect(joinNotifs[0]!.joinRequestId).toBeTruthy();
   }, 90_000);
 
   it('summarizes pending enquiries across every trip the organizer runs, for the home-screen badge', async () => {

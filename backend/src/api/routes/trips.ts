@@ -561,7 +561,7 @@ router.get('/:id/inquiries', async (req, res) => {
       where: { inquiryTripId: tripId },
       include: {
         inquiryUser: { include: { profile: true } },
-        messages: { orderBy: { createdAt: 'desc' }, take: 1 },
+        messages: { orderBy: { createdAt: 'desc' }, take: 10 },
       },
     });
     if (rooms.length === 0) {
@@ -593,7 +593,8 @@ router.get('/:id/inquiries', async (req, res) => {
     const data = rooms
       .map((room) => {
         const profile = room.inquiryUser?.profile;
-        const lastMessage = room.messages[0];
+        const lastMsg = room.messages[0];
+        const isMe = lastMsg?.senderId === userId;
         return {
           chatRoomId: room.id,
           user: {
@@ -603,8 +604,10 @@ router.get('/:id/inquiries', async (req, res) => {
               : (room.inquiryUser?.email?.split('@')[0] ?? 'Traveller'),
             avatar: profile?.avatarUrl ?? null,
           },
-          lastMessage: lastMessage?.content ?? null,
-          lastMessageAt: (lastMessage?.createdAt ?? room.createdAt).toISOString(),
+          lastMessage: lastMsg?.content ?? null,
+          lastMessageSenderId: lastMsg?.senderId ?? null,
+          lastMessageIsMe: isMe,
+          lastMessageAt: (lastMsg?.createdAt ?? room.createdAt).toISOString(),
           unreadCount: unreadByRoom.get(room.id) ?? 0,
           // So a traveller who asked a question but has not requested a seat
           // is still visible, and one who has shows their status inline.

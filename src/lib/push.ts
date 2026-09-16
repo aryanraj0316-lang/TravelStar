@@ -162,11 +162,11 @@ export function routeForNotificationData(data: Record<string, unknown> | undefin
         ? `/trip-payment?joinRequestId=${encodeURIComponent(joinRequestId)}`
         : '/bookings';
     // A trip enquiry is organizer work, so it opens that trip's Chats &
-    // Approvals section in the organizer portal rather than the chat inbox.
+    // Approvals tab in the organizer portal rather than the chat inbox.
     case 'group-organizer':
       return tripId
-        ? `/group-organizer?tripId=${encodeURIComponent(tripId)}&sub=approvals`
-        : '/group-organizer';
+        ? `/group-organizer?tripId=${encodeURIComponent(tripId)}&tab=chat`
+        : '/group-organizer?tab=chat';
     default:
       return '/notifications';
   }

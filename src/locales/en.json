@@ -612,7 +612,9 @@
     "cityFilterLabel": "Filter by city",
     "cityPlaceholder": "Enter a city name",
     "stateFilterLabel": "Filter by state",
-    "statePlaceholder": "Select a state"
+    "statePlaceholder": "Select a state",
+    "searchPlaceholder": "Search trips by destination or name…",
+    "radiusPlaceholder": "Enter radius in km (e.g. 25, 50)"
   },
   "destinationDetails": {
     "goBack": "Go back",
@@ -635,7 +637,9 @@
     "couldNotSave": "Could not update your saved destinations."
   },
   "stories": {
-    "noStoriesYetTitle": "No stories yet",
+    "allStoriesTitle": "Stories",
+    "signInTitle": "Sign In to View Stories",
+    "noStoriesYetTitle": "No story to show.",
     "mediaUnavailable": "Couldn't load this media",
     "beFirstToShare": "Be the first to share a travel story.",
     "goBack": "Go back",
@@ -825,7 +829,13 @@
     "statPoints": "Points",
     "statStyleFallback": "Explorer",
     "bookingsTripsSub": "Active reservations & past itineraries",
-    "expenseTrackerSub": "Split costs and track trip expenses"
+    "expenseTrackerSub": "Split costs and track trip expenses",
+    "sosReach": "SOS alert reach",
+    "sosReachExplainer": "Your trip group, your emergency contacts, and our safety team are always alerted. This controls whether other TravelStar travellers near you are woken too.",
+    "sosReachTripGroupValue": "Trip group only",
+    "sosReachTripGroupSub": "Only the people you are travelling with",
+    "sosReachNearbyValue": "Travellers within {{km}} km",
+    "sosReachNearbySub": "Anyone sharing their location nearby, plus your trip group"
   },
   "map": {
     "routeStops": "ROUTE: {{count}} STOPS",
@@ -1020,6 +1030,10 @@
     "removeDayMessage": "Remove Day {{number}} — \"{{title}}\"?",
     "remove": "Remove",
     "couldNotRemoveDay": "Could not remove that day.",
+    "deleteChat": "Delete Chat",
+    "deleteChatMessage": "Delete your conversation with {{name}} about {{trip}}? This cannot be undone.",
+    "couldNotDeleteChat": "Could not delete this chat.",
+    "longPressToDelete": "Long press to delete this chat",
     "pleaseCompleteDayDetails": "Please complete day title and schedule details.",
     "couldNotSaveDay": "Could not save that day. Please try again.",
     "allocateHotelRoom": "Allocate Hotel Room",
@@ -1067,6 +1081,7 @@
     "quoteStatusDeclined": "Declined",
     "noCoverPhoto": "No cover photo",
     "tabChatApprovals": "Chat & Approvals",
+    "tabChatsApprovals": "Chats and Approvals",
     "reviewInApprovalsTab": "Review in Chat & Approvals",
     "enquiriesTitle": "Enquiries",
     "enquiriesSub": "Questions travellers sent you before requesting a seat",

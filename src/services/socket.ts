@@ -6,7 +6,15 @@ import { logger } from '@/lib/logger';
 import type { Message, SOSAlert } from '@/store/AppContext';
 import type { NotificationCategory } from '@/types/api';
 
-type MessageListener = (data: { roomId: string; message: Message }) => void;
+type MessageListener = (data: {
+  roomId: string;
+  message: Message;
+  /** Set when this room is a pre-join enquiry thread. */
+  inquiryTripId?: string | null;
+  /** The enquiry's trip organizer — compare against the viewer's own id to
+   *  tell whether *this* client is the organizer's side of the thread. */
+  inquiryOrganizerId?: string | null;
+}) => void;
 type SOSListener = (data: SOSAlert) => void;
 type SOSResolvedListener = (data: { id: string }) => void;
 type LocationListener = (data: { userId: string; tripId: string; latitude: number; longitude: number }) => void;
@@ -77,9 +85,17 @@ class SocketService {
 
       this.socket.on('connect', () => {});
 
-      this.socket.on('messageReceived', (data: { roomId: string; message: Message }) => {
-        this.messageListeners.forEach((l) => l(data));
-      });
+      this.socket.on(
+        'messageReceived',
+        (data: {
+          roomId: string;
+          message: Message;
+          inquiryTripId?: string | null;
+          inquiryOrganizerId?: string | null;
+        }) => {
+          this.messageListeners.forEach((l) => l(data));
+        },
+      );
 
       this.socket.on('addedToChat', (data: { tripId: string; chatRoomId: string; tripName: string }) => {
         this.addedToChatListeners.forEach((l) => l(data));

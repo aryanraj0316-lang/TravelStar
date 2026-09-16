@@ -58,7 +58,7 @@ export default function TripDetailModal({
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { joinTrip, cancelJoinRequest, profile, isLoggedIn, requestedTrips, joinRequestStatuses } = useApp();
+  const { joinTrip, cancelJoinRequest, profile, isLoggedIn, requestedTrips, joinRequestStatuses, setActiveRoomId } = useApp();
 
   const [midwayJoin, setMidwayJoin] = useState(false);
   const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
@@ -236,6 +236,7 @@ export default function TripDetailModal({
       const thread = await apiService.openTripInquiry(trip.id);
       if (!thread) throw new Error('No thread returned');
       onClose();
+      setActiveRoomId(thread.chatRoomId);
       router.push({ pathname: '/(tabs)/chat', params: { roomId: thread.chatRoomId } });
     } catch (e) {
       toast(errorToastMessage(e, t('tripDetailModal.couldNotOpenChat')), 'error');

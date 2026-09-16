@@ -146,7 +146,8 @@ export function createSocketServer(httpServer: HttpServer): Server {
         const senderName = sender?.profile
           ? `${sender.profile.firstName} ${sender.profile.lastName}`.trim()
           : (sender?.email?.split('@')[0] ?? 'Member');
-        const senderRole = userId === chatRoom?.trip?.creatorId ? 'Organizer' : 'Tourist';
+        const creatorId = chatRoom?.trip?.creatorId || chatRoom?.inquiryTrip?.creatorId;
+        const senderRole = userId === creatorId ? 'Organizer' : 'Tourist';
         const senderAvatar = sender?.profile?.avatarUrl ?? null;
 
         const newMsg = {
@@ -165,7 +166,23 @@ export function createSocketServer(httpServer: HttpServer): Server {
           longitude: savedMsg.longitude,
         };
 
-        io.to(chatRoomId).emit('messageReceived', { roomId: chatRoomId, message: newMsg });
+        // Carried on every real-time message so a receiving client can tell,
+        // the instant a brand-new enquiry thread's first message arrives,
+        // whether *it* is the organizer being asked — without waiting on a
+        // GET /chats round trip. Without this, chat.tsx's live-message
+        // handler had no way to know a just-created room was an enquiry
+        // thread, and synthesized a placeholder room that briefly showed up
+        // in the organizer's Chat tab before the next refetch filtered it
+        // back out.
+        const inquiryTripId = chatRoom?.inquiryTripId ?? null;
+        const inquiryOrganizerId = chatRoom?.inquiryTrip?.creatorId ?? null;
+
+        io.to(chatRoomId).emit('messageReceived', {
+          roomId: chatRoomId,
+          message: newMsg,
+          inquiryTripId,
+          inquiryOrganizerId,
+        });
 
         // Also emit directly to every room member's personal user room (`userId`),
         // ensuring every active socket belonging to room members receives the message
@@ -178,7 +195,12 @@ export function createSocketServer(httpServer: HttpServer): Server {
           .then((members) => {
             members.forEach((m) => {
               if (m.userId !== userId) {
-                io.to(m.userId).emit('messageReceived', { roomId: chatRoomId, message: newMsg });
+                io.to(m.userId).emit('messageReceived', {
+                  roomId: chatRoomId,
+                  message: newMsg,
+                  inquiryTripId,
+                  inquiryOrganizerId,
+                });
               }
             });
           })
@@ -344,7 +366,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
           status: 'ACTIVE',
         };
 
-        const audience = await getSosAudienceUserIds(userId);
+        const audience = await getSosAudienceUserIds(userId, { lat: latitude, lng: longitude });
         await emitToUsers(audience, 'sosReceived', alert);
       } catch (e) {
         logger.error('[Socket] triggerSOS failed:', e);
@@ -360,7 +382,10 @@ export function createSocketServer(httpServer: HttpServer): Server {
       const { id } = parsed.data;
 
       try {
-        const alert = await prisma.sOSAlert.findUnique({ where: { id }, select: { userId: true } });
+        const alert = await prisma.sOSAlert.findUnique({
+          where: { id },
+          select: { userId: true, latitude: true, longitude: true },
+        });
         if (!alert) return;
 
         const isOwner = alert.userId === userId;
@@ -372,7 +397,12 @@ export function createSocketServer(httpServer: HttpServer): Server {
 
         await prisma.sOSAlert.update({ where: { id }, data: { status: 'RESOLVED' } });
 
-        const audience = await getSosAudienceUserIds(alert.userId);
+        // Same reach the alert itself had, so nobody it woke is left
+        // thinking the emergency is still running.
+        const audience = await getSosAudienceUserIds(alert.userId, {
+          lat: alert.latitude,
+          lng: alert.longitude,
+        });
         await emitToUsers(audience, 'sosResolved', { id });
       } catch (e) {
         logger.error('[Socket] resolveSOS failed:', e);

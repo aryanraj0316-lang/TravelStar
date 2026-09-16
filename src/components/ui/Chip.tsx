@@ -1,7 +1,7 @@
 // docs/REMEDIATION.md §9.1 — selectable filter pill (Chip) and static
 // status label (Badge) share this file because they share the same shape.
 import React from 'react';
-import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Pressable, StyleSheet, Text, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
 import { C, MIN_TOUCH_TARGET, fontSize, fontWeight, radii, space } from '@/theme/tokens';
 
 export interface ChipProps {
@@ -10,11 +10,22 @@ export interface ChipProps {
   onPress?: () => void;
   accessibilityHint?: string;
   style?: StyleProp<ViewStyle>;
+  textStyle?: StyleProp<TextStyle>;
+  numberOfLines?: number;
   /** Rendered before the label — e.g. a lucide icon. */
   icon?: React.ReactNode;
 }
 
-export function Chip({ label, selected = false, onPress, accessibilityHint, style, icon }: ChipProps) {
+export function Chip({
+  label,
+  selected = false,
+  onPress,
+  accessibilityHint,
+  style,
+  textStyle,
+  numberOfLines = 1,
+  icon,
+}: ChipProps) {
   return (
     <Pressable
       onPress={onPress}
@@ -26,7 +37,9 @@ export function Chip({ label, selected = false, onPress, accessibilityHint, styl
       style={[styles.chip, !!icon && styles.chipWithIcon, selected && styles.chipSelected, style]}
     >
       {icon}
-      <Text style={[styles.label, selected && styles.labelSelected]}>{label}</Text>
+      <Text numberOfLines={numberOfLines} ellipsizeMode="tail" style={[styles.label, selected && styles.labelSelected, textStyle]}>
+        {label}
+      </Text>
     </Pressable>
   );
 }
@@ -53,6 +66,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    alignSelf: 'flex-start',
     paddingHorizontal: space[4],
     borderRadius: radii.pill,
     borderWidth: 1,

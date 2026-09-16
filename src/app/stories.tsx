@@ -539,7 +539,6 @@ export default function StoriesScreen() {
       <SafeAreaView style={styles.emptyContainer}>
         <StatusBar barStyle="light-content" backgroundColor="#000" />
         <Text style={styles.emptyTitle}>{t('stories.noStoriesYetTitle')}</Text>
-        <Text style={styles.emptyText}>{t('stories.beFirstToShare')}</Text>
         <TouchableOpacity
           style={styles.emptyBtn}
           onPress={goBackOrHome}

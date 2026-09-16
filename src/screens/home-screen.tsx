@@ -16,7 +16,7 @@ import type { FeedItem, HazardAlert, TrendingWeatherDestination } from '@/types/
 import { useQuery } from '@tanstack/react-query';
 import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useNavigation, useRouter, type Href } from 'expo-router';
+import { useFocusEffect, useNavigation, useRouter, type Href } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import * as ImagePicker from 'expo-image-picker';
 import Activity from 'lucide-react-native/icons/activity';
@@ -152,7 +152,7 @@ const HEADER_THEMES = {
   evening: {
     source: require('@/assets/images/evening.png'),
     statusBarStyle: 'light-content' as const,
-    greetingColor: '#2563EB',
+    greetingColor: '#93C5FD',
     userNameColor: '#FFFFFF',
     userSubColor: '#FFFFFF',
     textShadow: {
@@ -160,7 +160,11 @@ const HEADER_THEMES = {
       textShadowOffset: { width: 0, height: 1 },
       textShadowRadius: 3,
     },
-    greetingShadow: undefined,
+    greetingShadow: {
+      textShadowColor: 'rgba(0, 0, 0, 0.60)',
+      textShadowOffset: { width: 0, height: 1 },
+      textShadowRadius: 2,
+    },
     userSubShadow: {
       textShadowColor: 'rgba(0, 0, 0, 0.50)',
       textShadowOffset: { width: 0, height: 1 },
@@ -1732,6 +1736,13 @@ function HomeScreen() {
     [router, setCurrentRole],
   );
 
+  // Re-check unread notifications whenever the home screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      checkUnreadNotifications();
+    }, [checkUnreadNotifications])
+  );
+
   useEffect(() => {
     // One source for the badge. This used to fetch GET /notifications here
     // and then call checkUnreadNotifications(), which fetches the same
@@ -1796,38 +1807,29 @@ function HomeScreen() {
           resizeMode="cover"
         >
           <View style={styles.topHeader}>
-            <View style={{ flex: 1 }}>
-              <AppleMultilingualGreeting
-                isFocused={isFocused}
-                color={headerTheme.greetingColor}
-                textShadow={headerTheme.greetingShadow ?? headerTheme.textShadow}
-              />
-              {identityResolved ? (
-                <Text
-                  style={[
-                    styles.userName,
-                    { color: headerTheme.userNameColor },
-                    headerTheme.textShadow,
-                  ]}
-                  numberOfLines={1}
-                >
-                  {displayName}
-                </Text>
-              ) : (
-                <Skeleton width={140} height={20} style={styles.userNameSkeleton} />
-              )}
-              <Text
-                style={[
-                  styles.userSub,
-                  { color: headerTheme.userSubColor },
-                  headerTheme.userSubShadow ?? headerTheme.textShadow,
-                ]}
-                numberOfLines={1}
-              >
-                {t('home.userSub')}
-              </Text>
-            </View>
-            <View style={styles.headerRight}>
+            <View style={styles.topHeaderRow}>
+              <View style={styles.headerLeftCol}>
+                <AppleMultilingualGreeting
+                  isFocused={isFocused}
+                  color={headerTheme.greetingColor}
+                  textShadow={headerTheme.greetingShadow ?? headerTheme.textShadow}
+                />
+                {identityResolved ? (
+                  <Text
+                    style={[
+                      styles.userName,
+                      { color: headerTheme.userNameColor },
+                      headerTheme.textShadow,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {displayName}
+                  </Text>
+                ) : (
+                  <Skeleton width={140} height={20} style={styles.userNameSkeleton} />
+                )}
+              </View>
+              <View style={styles.headerRight}>
               <View style={styles.headerIconsRow}>
                 {/* Time Simulation Dropdown Trigger Pill */}
                 <TouchableOpacity
@@ -1929,7 +1931,19 @@ function HomeScreen() {
               )}
             </View>
           </View>
-        </ImageBackground>
+
+          <Text
+            style={[
+              styles.userSub,
+              { color: headerTheme.userSubColor },
+              headerTheme.userSubShadow ?? headerTheme.textShadow,
+            ]}
+            numberOfLines={1}
+          >
+            {t('home.userSub')}
+          </Text>
+        </View>
+      </ImageBackground>
 
         {/* Time Simulation Dropdown Modal */}
         <Modal
@@ -2002,8 +2016,6 @@ function HomeScreen() {
                   ? C.greenText
                   : C.amberText;
 
-            const showEnquiryBadge = role.value === 'ORGANIZER' && pendingEnquiriesCount > 0;
-
             return (
               <TouchableOpacity
                 key={role.value}
@@ -2011,28 +2023,12 @@ function HomeScreen() {
                 onPress={() => handleRoleSelect(role.value)}
                 style={[styles.roleCard, isActive && styles.roleCardActive]}
                 accessibilityRole="button"
-                accessibilityLabel={
-                  showEnquiryBadge
-                    ? `${t(role.labelKey)}, ${t(role.subKey)}, ${t('home.organizerPendingChatHint', { count: pendingEnquiriesCount })}`
-                    : `${t(role.labelKey)}, ${t(role.subKey)}`
-                }
+                accessibilityLabel={`${t(role.labelKey)}, ${t(role.subKey)}`}
                 accessibilityHint={t('home.roleSelectHint')}
                 accessibilityState={{ selected: isActive }}
               >
-                <View style={{ position: 'relative' }}>
-                  <View style={[styles.roleIconCircle, { backgroundColor: iconBg }]}>
-                    <role.Icon size={18} color={iconColor} strokeWidth={2.2} />
-                  </View>
-                  {/* A trip's organizer has a traveller waiting on an
-                      answer in the portal's Chats & Approvals tab — this
-                      is the only place that was visible before opening it. */}
-                  {showEnquiryBadge && (
-                    <View style={styles.roleEnquiryBadge}>
-                      <Text style={styles.roleEnquiryBadgeText}>
-                        {pendingEnquiriesCount > 9 ? '9+' : pendingEnquiriesCount}
-                      </Text>
-                    </View>
-                  )}
+                <View style={[styles.roleIconCircle, { backgroundColor: iconBg }]}>
+                  <role.Icon size={18} color={iconColor} strokeWidth={2.2} />
                 </View>
                 <Text style={styles.roleLabel}>{t(role.labelKey)}</Text>
                 <Text style={styles.roleSub}>{t(role.subKey)}</Text>
@@ -2054,7 +2050,7 @@ function HomeScreen() {
               if (!isLoggedIn) {
                 setAuthReason('STORY');
               } else {
-                setShowMyStoriesModal(true);
+                router.push('/all-stories');
               }
             }}
             accessibilityRole="button"
@@ -2072,8 +2068,8 @@ function HomeScreen() {
             ════════════════════════════════════════════════ */}
         <View style={styles.quickAccessRow}>
           {quickAccessItems.map((item, index) => {
-            const iconBg = index === 0 ? '#EFF6FF' : index === 1 ? '#ECFDF5' : '#FFF7ED';
-            const iconCol = index === 0 ? C.blueText : index === 1 ? C.greenText : C.amberText;
+            const iconBg = index === 0 ? '#EFF6FF' : index === 1 ? '#F5F3FF' : index === 2 ? '#FFF7ED' : '#ECFDF5';
+            const iconCol = index === 0 ? '#2563EB' : index === 1 ? '#7C3AED' : index === 2 ? '#D97706' : '#059669';
 
             return (
               <TouchableOpacity
@@ -2515,11 +2511,17 @@ const styles = StyleSheet.create({
 
   // ── Top Header (Inside ImageBackground) ─────────────
   topHeader: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+  },
+  topHeaderRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 10,
+  },
+  headerLeftCol: {
+    flex: 1,
+    paddingRight: 8,
   },
   appleGreetingContainer: {
     height: 22,
@@ -2545,9 +2547,10 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   userSub: {
-    fontSize: 13,
+    fontSize: 12.5,
     color: '#475569',
     fontWeight: '700',
+    marginTop: 2,
   },
   headerRight: {
     flexDirection: 'column',
@@ -2818,9 +2821,9 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   quickIconCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 22,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 6,

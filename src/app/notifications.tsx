@@ -9,7 +9,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import ArrowLeft from 'lucide-react-native/icons/arrow-left';
 import Bell from 'lucide-react-native/icons/bell';
-import CheckCheck from 'lucide-react-native/icons/check-check';
 import ChevronRight from 'lucide-react-native/icons/chevron-right';
 import Compass from 'lucide-react-native/icons/compass';
 import CreditCard from 'lucide-react-native/icons/credit-card';
@@ -44,6 +43,16 @@ interface NotificationConfig {
 function getNotificationConfig(n: AppNotification): NotificationConfig {
   const cat = (n.category || '').toUpperCase();
   const type = (n.type || '').toUpperCase();
+
+  if (cat === 'TRIP_ENQUIRY') {
+    return {
+      icon: MessageSquare,
+      iconColor: '#2563EB',
+      iconBg: '#EFF6FF',
+      accentColor: '#3B82F6',
+      badgeLabel: 'Enquiry',
+    };
+  }
 
   if (cat === 'JOIN_ACCEPTED' || cat === 'CHAT_ADDED' || n.chatRoomId) {
     return {
@@ -239,7 +248,7 @@ export default function NotificationsScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { setActiveRoomId, checkUnreadNotifications, isLoggedIn } = useApp();
+  const { setActiveRoomId, checkUnreadNotifications, setHasUnreadNotification, isLoggedIn } = useApp();
 
   const notifQ = useQuery({
     queryKey: queryKeys.notifications(),
@@ -249,13 +258,21 @@ export default function NotificationsScreen() {
   const { data: notifications = [], refetch: refetchNotifs, isRefetching } = notifQ;
   const notifState = sectionState(notifQ, notifQ.data != null);
 
-  const unread = notifications.filter((n) => n.unread).length;
-
-  // Unified chronological sort (newest first) with smart merge for join acceptance + group chat
+  // Unified chronological sort (newest first) with smart merge and comprehensive deduplication
   const sortedNotifications = useMemo(() => {
-    // Identify trips with JOIN_ACCEPTED
-    const joinAcceptedByTrip = new Map<string, AppNotification>();
+    // 1. First pass: Deduplicate by exact ID and only retain active unread alerts
+    const uniqueById = new Map<string, AppNotification>();
     for (const n of notifications) {
+      if (!n || !n.id || n.unread === false) continue;
+      if (!uniqueById.has(n.id)) {
+        uniqueById.set(n.id, n);
+      }
+    }
+    const notifs = Array.from(uniqueById.values());
+
+    // 2. Identify trips with JOIN_ACCEPTED
+    const joinAcceptedByTrip = new Map<string, AppNotification>();
+    for (const n of notifs) {
       if (n.category === 'JOIN_ACCEPTED' && n.tripId) {
         joinAcceptedByTrip.set(n.tripId, n);
       }
@@ -263,16 +280,16 @@ export default function NotificationsScreen() {
 
     const skippedChatAddedIds = new Set<string>();
     const companionChatMap = new Map<string, AppNotification>();
-    for (const n of notifications) {
+    for (const n of notifs) {
       if (n.category === 'CHAT_ADDED' && n.tripId && joinAcceptedByTrip.has(n.tripId)) {
         skippedChatAddedIds.add(n.id);
         companionChatMap.set(n.tripId, n);
       }
     }
 
-    const mergedList: MergedNotificationItem[] = [];
-
-    for (const n of notifications) {
+    // 3. Merge companion notifications and normalize
+    const rawMergedList: MergedNotificationItem[] = [];
+    for (const n of notifs) {
       if (skippedChatAddedIds.has(n.id)) continue;
 
       if (n.category === 'JOIN_ACCEPTED' && n.tripId) {
@@ -283,7 +300,7 @@ export default function NotificationsScreen() {
           ? n.content
           : `${n.content.replace(/[!🎉]/g, '').trim()} and you have been added to the group chat.`;
 
-        mergedList.push({
+        rawMergedList.push({
           ...n,
           title: cleanTitle,
           content: mergedContent,
@@ -294,14 +311,80 @@ export default function NotificationsScreen() {
         continue;
       }
 
-      mergedList.push({
+      if (n.category === 'TRIP_ENQUIRY' || (n.title && n.title.toLowerCase().startsWith('new enquiry'))) {
+        let tripName = '';
+        if (n.title.includes('—')) {
+          tripName = n.title.split('—').slice(1).join('—').trim();
+        } else if (n.title.includes('-')) {
+          tripName = n.title.split('-').slice(1).join('-').trim();
+        } else if (n.title.includes(':')) {
+          tripName = n.title.split(':').slice(1).join(':').trim();
+        }
+
+        const cleanTripName = tripName.replace(/[^\w\s-]/g, '').trim();
+        const displayTitle = cleanTripName ? `New enquiry — ${cleanTripName}` : 'New enquiry';
+        const displayContent = cleanTripName
+          ? `New enquiry received for ${cleanTripName}.`
+          : 'New enquiry received for this trip.';
+
+        rawMergedList.push({
+          ...n,
+          title: displayTitle,
+          content: displayContent,
+        });
+        continue;
+      }
+
+      rawMergedList.push({
         ...n,
         title: n.title.replace(/[^\w\s-]/g, '').trim() || n.title,
       });
     }
 
-    return mergedList.sort((a, b) => getTimestampMs(b) - getTimestampMs(a));
+    // Sort newest first
+    rawMergedList.sort((a, b) => getTimestampMs(b) - getTimestampMs(a));
+
+    // 4. Semantic Deduplication: eliminate duplicate notifications for the same event
+    const finalMergedList: MergedNotificationItem[] = [];
+    const seenEventKeys = new Set<string>();
+
+    for (const item of rawMergedList) {
+      const cleanTitle = (item.title || '').trim().toLowerCase();
+      const cleanContent = (item.content || '').trim().toLowerCase();
+
+      // Key based on exact title and content
+      const contentKey = `exact:${cleanTitle}|${cleanContent}`;
+
+      // Key based on joinRequestId
+      const joinReqKey = item.joinRequestId ? `joinReq:${item.joinRequestId}|${item.category || ''}` : null;
+
+      // Key based on inquiry chatRoomId
+      const inquiryKey = (item.category === 'TRIP_ENQUIRY' && item.chatRoomId)
+        ? `inquiry:${item.chatRoomId}`
+        : null;
+
+      // Key based on trip + category (for join requests / approvals)
+      const tripCategoryKey = (item.tripId && (item.category === 'JOIN_REQUEST' || item.category === 'JOIN_ACCEPTED' || item.category === 'PAYMENT_REQUIRED'))
+        ? `tripCat:${item.tripId}|${item.category}|${cleanTitle}`
+        : null;
+
+      if (seenEventKeys.has(contentKey)) continue;
+      if (joinReqKey && seenEventKeys.has(joinReqKey)) continue;
+      if (inquiryKey && seenEventKeys.has(inquiryKey)) continue;
+      if (tripCategoryKey && seenEventKeys.has(tripCategoryKey)) continue;
+
+      seenEventKeys.add(contentKey);
+      if (joinReqKey) seenEventKeys.add(joinReqKey);
+      if (inquiryKey) seenEventKeys.add(inquiryKey);
+      if (tripCategoryKey) seenEventKeys.add(tripCategoryKey);
+
+      finalMergedList.push(item);
+    }
+
+    return finalMergedList;
   }, [notifications]);
+
+  const unread = useMemo(() => sortedNotifications.filter((n) => n.unread).length, [sortedNotifications]);
 
   // Group notifications chronologically
   const groupedNotifications = useMemo(() => {
@@ -330,40 +413,40 @@ export default function NotificationsScreen() {
     return groups;
   }, [sortedNotifications, t]);
 
-  const handleMarkAllRead = async () => {
-    try {
-      await apiService.markNotificationsRead();
-      queryClient.setQueryData(queryKeys.notifications(), (prev: AppNotification[] = []) =>
-        prev.map((n) => ({ ...n, unread: false })),
-      );
-      await refetchNotifs();
-      checkUnreadNotifications();
-      await syncBadgeCount();
-    } catch (e) {
-      logger.warn('[Notifications] Mark-all-read failed:', e);
-      toast(errorToastMessage(e, t('notifications.couldNotMarkRead')), 'error');
+  // Keep the home/profile notification dot in sync with actual displayed notifications
+  React.useEffect(() => {
+    if (sortedNotifications.length === 0) {
+      setHasUnreadNotification(false);
+    } else {
+      const anyUnread = sortedNotifications.some((n) => n.unread !== false);
+      setHasUnreadNotification(anyUnread);
     }
-  };
+  }, [sortedNotifications, setHasUnreadNotification]);
 
   const handlePressNotification = async (n: MergedNotificationItem) => {
-    if (n.unread) {
-      try {
-        await apiService.markNotificationRead(n.id);
-        if (n.secondaryNotificationId) {
-          void apiService.markNotificationRead(n.secondaryNotificationId);
-        }
-        queryClient.setQueryData(queryKeys.notifications(), (prev: AppNotification[] = []) =>
-          prev.map((item) =>
-            item.id === n.id || item.id === n.secondaryNotificationId
-              ? { ...item, unread: false }
-              : item,
-          ),
-        );
-        checkUnreadNotifications();
-        void syncBadgeCount();
-      } catch (e) {
-        logger.warn('[Notifications] Mark-read failed:', e);
+    // 1. Immediately remove this notification from state so it vanishes instantly
+    queryClient.setQueryData(queryKeys.notifications(), (prev: AppNotification[] = []) =>
+      prev.filter((item) => item.id !== n.id && item.id !== n.secondaryNotificationId),
+    );
+
+    // If no notifications remain, extinguish the notification dot immediately
+    const remaining = (queryClient.getQueryData<AppNotification[]>(queryKeys.notifications()) || []).filter(
+      (item) => item.id !== n.id && item.id !== n.secondaryNotificationId && item.unread !== false,
+    );
+    if (remaining.length === 0) {
+      setHasUnreadNotification(false);
+    }
+
+    // 2. Dismiss from backend so it never reappears on refetch
+    try {
+      await apiService.deleteNotification(n.id);
+      if (n.secondaryNotificationId) {
+        void apiService.deleteNotification(n.secondaryNotificationId);
       }
+      checkUnreadNotifications();
+      void syncBadgeCount();
+    } catch (e) {
+      logger.warn('[Notifications] Dismiss failed:', e);
     }
 
     // joinRequestId is stored on the notification itself now, so this works
@@ -377,14 +460,17 @@ export default function NotificationsScreen() {
       return;
     }
 
-    // A pre-join enquiry belongs to the organizer portal's Chats &
-    // Approvals section, not the generic chat inbox — answering one
-    // usually means approving or declining that traveller's join request,
-    // which lives in the same place.
-    if (n.category === 'TRIP_ENQUIRY' && n.tripId) {
+    // A pre-join enquiry or join request belongs to the organizer portal's Chats &
+    // Approvals tab, not the generic chat inbox — answering or reviewing
+    // usually means approving or declining that traveller's join request or answering inquiries.
+    if (n.category === 'TRIP_ENQUIRY' || n.category === 'JOIN_REQUEST') {
       router.push({
         pathname: '/group-organizer',
-        params: { tripId: n.tripId, sub: 'approvals' },
+        params: {
+          ...(n.tripId ? { tripId: n.tripId } : {}),
+          tab: 'chat',
+          subTab: n.category === 'JOIN_REQUEST' ? 'approvals' : 'chat',
+        },
       });
       return;
     }
@@ -421,19 +507,6 @@ export default function NotificationsScreen() {
             </View>
           )}
         </View>
-
-        {unread > 0 && (
-          <TouchableOpacity
-            style={st.markReadBtn}
-            activeOpacity={0.75}
-            onPress={handleMarkAllRead}
-            accessibilityRole="button"
-            accessibilityLabel={t('notifications.markAllRead', 'Mark all read')}
-          >
-            <CheckCheck size={14} color="#2563EB" strokeWidth={2.5} />
-            <Text style={st.markReadText}>{t('notifications.markAllRead', 'Mark read')}</Text>
-          </TouchableOpacity>
-        )}
       </View>
 
       {/* ── CONTENT ── */}
@@ -554,22 +627,6 @@ const st = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     color: '#FFFFFF',
-  },
-  markReadBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  markReadText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#2563EB',
   },
 
   // Scroll

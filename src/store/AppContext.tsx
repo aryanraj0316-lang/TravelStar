@@ -11,7 +11,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import { AppState } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/query-keys';
-import { apiService, clearTokens, ApiError, type CreateTripInput } from '../services/api';
+import { apiService, clearTokens, ApiError, type CreateTripInput, type SosTriggerResult } from '../services/api';
 import { socketService } from '../services/socket';
 import { eventBus } from '../services/event-bus';
 import type { JoinRequestSummary, JoinRequestStatus, IncomingJoinRequest, AppNotification, ChatRoomSummary, StoryPayload } from '@/types/api';
@@ -79,6 +79,10 @@ export interface UserProfile {
   selectedLanguage?: string;
   pushNotifications?: boolean;
   locationSharing?: boolean;
+  /** How far this user's own SOS reaches — see Profile.sosAudienceMode. */
+  sosAudienceMode?: 'TRIP_GROUP' | 'NEARBY';
+  /** Only meaningful when sosAudienceMode is NEARBY. */
+  sosRadiusKm?: number;
 }
 
 export interface Trip {
@@ -168,6 +172,12 @@ export interface Message {
   roomId?: string;
   senderId?: string;
   isSystem?: boolean;
+  /** Set when this message's room is a pre-join enquiry thread — carried
+   *  through from the socket payload so chat.tsx can tell, on a brand-new
+   *  thread's very first message, whether it belongs to the organizer's
+   *  own side without waiting on a GET /chats refetch. */
+  inquiryTripId?: string | null;
+  inquiryOrganizerId?: string | null;
 }
 
 export interface SOSAlert {
@@ -251,7 +261,13 @@ interface AppContextType {
   setTyping: (isTyping: boolean) => void;
   typingUser: { roomId: string; userId: string; userName: string; userAvatar?: string | null; isTyping: boolean } | null;
   sosAlerts: SOSAlert[];
-  triggerSOS: (lat: number, lng: number, fix?: { accuracyMeters?: number | null; capturedAt?: string; isStale?: boolean; message?: string }) => void;
+  /**
+   * Resolves with what the server says actually happened — who was reached,
+   * and its own wording for it — or null when the alert could not be
+   * delivered (offline, queued, or failed). Callers that only want to fire
+   * it can ignore the result.
+   */
+  triggerSOS: (lat: number, lng: number, fix?: { accuracyMeters?: number | null; capturedAt?: string; isStale?: boolean; message?: string }) => Promise<SosTriggerResult | null>;
   resolveSOS: (id: string) => void;
   activeRoomId: string | null;
   setActiveRoomId: (id: string | null) => void;
@@ -280,6 +296,8 @@ interface AppContextType {
   checkUnreadChats: () => void;
   checkUnreadNotifications: () => void;
   hasUnreadNotification: boolean;
+  setHasUnreadNotification: (hasUnread: boolean) => void;
+  clearNotificationUnread: () => void;
   dataStatus: DataStatus;
 }
 
@@ -304,6 +322,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [joinRequestStatuses, setJoinRequestStatuses] = useState<Map<string, JoinRequestSummary>>(new Map());
   const [pendingRequestsCount, setPendingRequestsCount] = useState<number>(0);
   const [hasUnreadChat, setHasUnreadChat] = useState<boolean>(false);
+  // Room ids of this user's own-organizer side of a pre-join enquiry
+  // thread — populated whenever chat rooms are fetched, and consulted by
+  // the real-time message/addedToChat handlers below so those threads
+  // never light up the Chat tab's unread dot, matching checkUnreadChats
+  // and chat.tsx's own inbox filter.
+  const organizerInquiryRoomIdsRef = useRef<Set<string>>(new Set());
+  // Read by the socket handlers, which are subscribed once per login and so
+  // cannot close over `trips`/`profile.id` without going stale.
+  const tripsRef = useRef<Trip[]>([]);
+  const profileIdRef = useRef<string>('');
+
+  /**
+   * Whether a chat room is the organizer's own side of a pre-join enquiry.
+   * `isMyOrganizerInquiry` is the server's answer; the trips lookup is the
+   * fallback for a server that predates that field, using `inquiryTripId`,
+   * which GET /chats has always returned.
+   */
+  const isOrganizerEnquiry = useCallback(
+    (room: { isMyOrganizerInquiry?: boolean; inquiryTripId?: string | null }) => {
+      if (room.isMyOrganizerInquiry) return true;
+      const myId = profileIdRef.current;
+      if (!room.inquiryTripId || !myId) return false;
+      return tripsRef.current.some((t) => t.id === room.inquiryTripId && t.creatorId === myId);
+    },
+    [],
+  );
   // docs/REMEDIATION.md §8.7 — the last 'userTyping' event received, for
   // whichever room it was in. chat.tsx filters this down to the room it
   // currently has open; null once that room's typing indicator has cleared.
@@ -435,6 +479,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // trip id that does not exist in any database.
   const [trips, setTrips] = useState<Trip[]>([]);
 
+  // Mirrored into refs so the socket handlers — subscribed once per login —
+  // can answer "is this room my own enquiry thread?" against current data
+  // instead of whatever was loaded when they were wired up.
+  useEffect(() => {
+    tripsRef.current = trips;
+  }, [trips]);
+  useEffect(() => {
+    profileIdRef.current = profile.id ?? '';
+  }, [profile.id]);
+
   // No hardcoded seed (docs/REMEDIATION.md §0.2 rule 4). This used to hold
   // three fabricated guides — invented names, Unsplash avatars, invented
   // ratings and rates, and `verified: true` on all three. "Verified Guide"
@@ -555,10 +609,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!isLoggedIn) return;
     apiService
       .getIncomingRequests()
-      .then((reqs) => {
+      .then(async (reqs) => {
         if (reqs && reqs.length > 0) {
-          const pending = reqs.filter((r: IncomingJoinRequest) => r.status === 'PENDING').length;
-          setPendingRequestsCount(pending);
+          try {
+            const savedApprovals = await safeStorage.getItem('@seen_approvals');
+            const seenSet = new Set(savedApprovals ? JSON.parse(savedApprovals) : []);
+            const pending = reqs.filter(
+              (r: IncomingJoinRequest) =>
+                r.status === 'PENDING' && !seenSet.has(String(r.id || (r as any)._id || '').trim()),
+            ).length;
+            setPendingRequestsCount(pending);
+          } catch {
+            const pending = reqs.filter((r: IncomingJoinRequest) => r.status === 'PENDING').length;
+            setPendingRequestsCount(pending);
+          }
         } else {
           setPendingRequestsCount(0);
         }
@@ -572,8 +636,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setHasUnreadChat(false);
   }, []);
 
+  const clearNotificationUnread = useCallback(() => {
+    setHasUnreadNotification(false);
+  }, []);
+
   const checkUnreadNotifications = useCallback(() => {
-    if (!isLoggedIn) return;
+    if (!isLoggedIn) {
+      setHasUnreadNotification(false);
+      return;
+    }
     apiService
       .getNotifications()
       .then((notifs) => {
@@ -593,14 +664,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .getChats()
       .then((rooms) => {
         if (rooms && rooms.length > 0) {
-          const hasUnread = rooms.some((r: ChatRoomSummary) => r.unreadCount > 0 && r.id !== activeRoomId);
+          organizerInquiryRoomIdsRef.current = new Set(
+            rooms.filter((r) => isOrganizerEnquiry(r)).map((r) => r.id),
+          );
+          // A pre-join enquiry thread where *this* user is the trip's
+          // organizer never surfaces in the Chat tab (it lives in the
+          // organizer portal's Chats & Approvals tab instead), so it must
+          // not light up the Chat tab's unread badge either — otherwise the
+          // badge would point at a room the tab never shows.
+          const hasUnread = rooms.some(
+            (r: ChatRoomSummary) => r.unreadCount > 0 && r.id !== activeRoomId && !isOrganizerEnquiry(r),
+          );
           setHasUnreadChat(hasUnread);
         } else {
           setHasUnreadChat(false);
         }
       })
       .catch((e) => logger.warn('[Chats] Unread check failed:', e));
-  }, [isLoggedIn, activeRoomId]);
+  }, [isLoggedIn, activeRoomId, isOrganizerEnquiry]);
 
   useEffect(() => {
     const unsub = eventBus.on('tabChanged', (name: string) => {
@@ -750,7 +831,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .then((rooms) => {
         if (rooms && rooms.length > 0) {
           rooms.forEach((r) => socketService.joinRoom(r.id));
-          const hasUnread = rooms.some((r) => r.unreadCount > 0);
+          organizerInquiryRoomIdsRef.current = new Set(
+            rooms.filter((r) => isOrganizerEnquiry(r)).map((r) => r.id),
+          );
+          const hasUnread = rooms.some((r) => r.unreadCount > 0 && !isOrganizerEnquiry(r));
           if (hasUnread) {
             setHasUnreadChat(true);
           }
@@ -768,6 +852,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const msgWithRoom = {
           ...data.message,
           roomId: data.roomId,
+          inquiryTripId: data.inquiryTripId ?? null,
+          inquiryOrganizerId: data.inquiryOrganizerId ?? null,
         };
         setMessages((prev) => {
           if (prev.some((m) => m.id === msgWithRoom.id)) return prev;
@@ -778,7 +864,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // only when a real person (not me and not system) messages
         const isOwn = profile?.id && data.message.senderId === profile.id;
         const isSystem = !!(data.message.isSystem || data.message.senderRole === 'SYSTEM' || data.message.senderName === 'System');
-        if (!isOwn && !isSystem) {
+        // The organizer's own side of a pre-join enquiry thread never
+        // surfaces in the Chat tab, so a traveller's message into it must
+        // not light up that tab's dot or banner either — that pipeline
+        // already runs separately, through notifyTripEnquiry's own
+        // notification/push deep-linking into the organizer portal. The
+        // socket payload itself now carries inquiryOrganizerId, so a
+        // brand-new thread's very first message is recognized immediately
+        // rather than only after organizerInquiryRoomIdsRef next catches up
+        // from a GET /chats refetch.
+        const isMyOrganizerInquiryRoom =
+          (!!data.inquiryTripId && !!profile?.id && data.inquiryOrganizerId === profile.id) ||
+          isOrganizerEnquiry({ inquiryTripId: data.inquiryTripId }) ||
+          organizerInquiryRoomIdsRef.current.has(data.roomId);
+        if (isMyOrganizerInquiryRoom) {
+          organizerInquiryRoomIdsRef.current.add(data.roomId);
+        }
+        if (!isOwn && !isSystem && !isMyOrganizerInquiryRoom) {
           if (data.roomId !== activeRoomId || activeTabNameRef.current !== 'chat') {
             setHasUnreadChat(true);
 
@@ -1078,7 +1180,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   );
 
   const triggerSOS = useCallback(
-    (lat: number, lng: number, fix?: { accuracyMeters?: number | null; capturedAt?: string; isStale?: boolean; message?: string }) => {
+    async (lat: number, lng: number, fix?: { accuracyMeters?: number | null; capturedAt?: string; isStale?: boolean; message?: string }): Promise<SosTriggerResult | null> => {
       const newAlert: SOSAlert = {
         id: `sos-${Date.now()}`,
         userName: profile.name,
@@ -1091,7 +1193,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // Fire over both transports: the socket delta reaches connected devices
       // immediately, the REST call is the durable, retried-by-nothing-else
       // write to SOSAlert. A user in distress must see a failure, not silence.
-      apiService.triggerSOS(profile.name, lat, lng, fix).catch((e) => {
+      socketService.triggerSOS(profile.name, lat, lng);
+
+      return apiService.triggerSOS(profile.name, lat, lng, fix).catch((e) => {
         if (isOfflineFailure(e)) {
           logger.error('[Safety] SOS trigger offline, queued for retry the moment connectivity returns:', e);
           enqueueMutation('sos', { userName: profile.name, lat, lng }).catch((qe) =>
@@ -1101,7 +1205,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             'No connection — your SOS will be sent the instant you reconnect. Call local emergency services directly if you can.',
             'error',
           );
-          return;
+          return null;
         }
         logger.error('[Safety] SOS trigger failed to reach the server:', e);
         toast(
@@ -1111,8 +1215,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ),
           'error',
         );
+        return null;
       });
-      socketService.triggerSOS(profile.name, lat, lng);
     },
     [profile.name],
   );
@@ -1374,6 +1478,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       checkUnreadChats,
       checkUnreadNotifications,
       hasUnreadNotification,
+      setHasUnreadNotification,
+      clearNotificationUnread,
       dataStatus: combinedDataStatus,
     }),
     [
@@ -1413,6 +1519,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       checkUnreadChats,
       checkUnreadNotifications,
       hasUnreadNotification,
+      setHasUnreadNotification,
+      clearNotificationUnread,
       combinedDataStatus,
     ],
   );

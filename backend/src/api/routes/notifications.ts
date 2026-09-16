@@ -5,6 +5,7 @@ import { logger } from '../../lib/logger';
 import { cursorFilter, cursorPageQuerySchema, takeWithLookahead } from '../../lib/pagination';
 import { requireUserId } from '../../lib/auth-context';
 import { unreadCountFor } from '../../lib/push';
+import { pruneReadEnquiryNotifications } from '../../services/enquiry-notification-hygiene';
 
 const router = Router();
 
@@ -49,6 +50,11 @@ router.get('/', async (req, res) => {
   const pageFilter = cursorFilter(cursor);
 
   try {
+    // An enquiry alert whose thread the caller has already read is stale by
+    // definition — clear those before reading, so refreshing this page can
+    // never resurrect one the organizer has already dealt with.
+    await pruneReadEnquiryNotifications(tokenUserId);
+
     // Both streams are filtered by the same `createdAt < cursor` and each
     // over-fetches limit+1, so the newest `limit` of the union is correct:
     // anything dropped from a stream's top limit+1 is older than that
@@ -60,7 +66,7 @@ router.get('/', async (req, res) => {
     const [personal, broadcasts, reads] = await queryWithRetry(() =>
       Promise.all([
         prisma.notification.findMany({
-          where: { userId: tokenUserId, ...pageFilter },
+          where: { userId: tokenUserId, unread: true, ...pageFilter },
           orderBy: { createdAt: 'desc' },
           take: takeWithLookahead(limit),
         }),
@@ -74,7 +80,9 @@ router.get('/', async (req, res) => {
     );
 
     const readIds = new Set(reads.map((r) => r.notificationId));
-    const mappedBroadcasts = broadcasts.map((n) => ({ ...n, unread: !readIds.has(n.id) }));
+    const mappedBroadcasts = broadcasts
+      .filter((n) => !readIds.has(n.id))
+      .map((n) => ({ ...n, unread: true }));
 
     const merged = [...personal, ...mappedBroadcasts].sort(
       (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
@@ -303,7 +311,7 @@ router.post('/:id/read', async (req, res) => {
   const { id } = parsedParams.data;
   const userId = requireUserId(req);
   try {
-    const notification = await prisma.notification.findUnique({ where: { id }, select: { userId: true } });
+    const notification = await prisma.notification.findUnique({ where: { id } });
     if (!notification) {
       return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Notification not found.' } });
     }
@@ -321,11 +329,72 @@ router.post('/:id/read', async (req, res) => {
       return res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'Not your notification.' } });
     }
 
-    await prisma.notification.update({ where: { id }, data: { unread: false } });
+    await prisma.notification.delete({ where: { id } }).catch(async () => {
+      await prisma.notification.update({ where: { id }, data: { unread: false } });
+    });
+
+    // Also delete any companion / duplicate notifications for the same event
+    if (notification.chatRoomId) {
+      await prisma.notification.deleteMany({ where: { userId, chatRoomId: notification.chatRoomId } }).catch(() => {});
+    }
+    if (notification.joinRequestId) {
+      await prisma.notification.deleteMany({ where: { userId, joinRequestId: notification.joinRequestId } }).catch(() => {});
+    }
+    if (notification.tripId && notification.category) {
+      await prisma.notification.deleteMany({ where: { userId, tripId: notification.tripId, category: notification.category } }).catch(() => {});
+    }
+
     res.status(200).json({ ok: true, data: { message: 'Notification marked as read' } });
   } catch (err) {
     logger.warn('[Postgres DB Warn] Mark notification read failed:', err);
     res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to mark notification read' } });
+  }
+});
+
+// Delete / dismiss a single notification so it disappears permanently
+router.delete('/:id', async (req, res) => {
+  const parsedParams = idParamSchema.safeParse(req.params);
+  if (!parsedParams.success) {
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid notification id.' } });
+  }
+  const { id } = parsedParams.data;
+  const userId = requireUserId(req);
+  try {
+    const notification = await prisma.notification.findUnique({ where: { id } });
+    if (!notification) {
+      return res.status(200).json({ ok: true, data: { message: 'Notification already deleted' } });
+    }
+
+    if (notification.userId === null) {
+      await prisma.notificationRead.upsert({
+        where: { notificationId_userId: { notificationId: id, userId } },
+        create: { notificationId: id, userId },
+        update: {},
+      });
+      return res.status(200).json({ ok: true, data: { message: 'Broadcast notification dismissed' } });
+    }
+
+    if (notification.userId !== userId) {
+      return res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'Not your notification.' } });
+    }
+
+    await prisma.notification.delete({ where: { id } });
+
+    // Also delete any companion / duplicate notifications for the same event
+    if (notification.chatRoomId) {
+      await prisma.notification.deleteMany({ where: { userId, chatRoomId: notification.chatRoomId } }).catch(() => {});
+    }
+    if (notification.joinRequestId) {
+      await prisma.notification.deleteMany({ where: { userId, joinRequestId: notification.joinRequestId } }).catch(() => {});
+    }
+    if (notification.tripId && notification.category) {
+      await prisma.notification.deleteMany({ where: { userId, tripId: notification.tripId, category: notification.category } }).catch(() => {});
+    }
+
+    res.status(200).json({ ok: true, data: { message: 'Notification deleted' } });
+  } catch (err) {
+    logger.warn('[Postgres DB Warn] Delete notification failed:', err);
+    res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to delete notification' } });
   }
 });
 

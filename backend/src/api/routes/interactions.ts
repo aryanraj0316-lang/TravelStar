@@ -185,6 +185,56 @@ router.post('/join-request', async (req, res) => {
       update: requestData,
     });
 
+    // Notify trip organizer about the submitted join request so it lands in their
+    // Notification & Alerts feed on the home screen
+    try {
+      const traveller = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { profile: true },
+      });
+      const travellerName = traveller?.profile
+        ? `${traveller.profile.firstName} ${traveller.profile.lastName}`.trim()
+        : (traveller?.email?.split('@')[0] ?? 'A traveler');
+
+      const notifTitle = `New join request — ${trip.name}`;
+      const notifContent = `${travellerName} requested to join ${trip.name}.`;
+      const io = req.app.get('socketio');
+
+      const createdNotif = await prisma.notification.create({
+        data: {
+          userId: trip.creatorId,
+          type: 'TRIP',
+          category: 'JOIN_REQUEST',
+          title: notifTitle,
+          content: notifContent,
+          time: 'Just now',
+          tripId: trip.id,
+          joinRequestId: joinReq.id,
+        },
+      });
+
+      io?.to(trip.creatorId).emit('notificationReceived', {
+        id: createdNotif.id,
+        userId: trip.creatorId,
+        type: 'TRIP',
+        category: 'JOIN_REQUEST',
+        title: notifTitle,
+        content: notifContent,
+        unread: true,
+        tripId: trip.id,
+        joinRequestId: joinReq.id,
+      });
+
+      await sendPushToUsers([trip.creatorId], 'TRIP', {
+        title: notifTitle,
+        body: notifContent,
+        data: { screen: 'group-organizer', tripId: trip.id, tab: 'chat' },
+        badge: await unreadCountFor(trip.creatorId),
+      });
+    } catch (notifErr) {
+      logger.warn('[Interactions] Failed to send join request notification to organizer:', notifErr);
+    }
+
     return res.status(201).json({ ok: true, data: joinReq });
   } catch (err) {
     logger.warn('[Interactions] Join request error:', err);
@@ -292,11 +342,23 @@ router.get('/incoming-requests', async (req, res) => {
   }
 
   try {
+    const organizerId = requireUserId(req);
+
+    // Dismiss join request notifications once the organizer opens / views incoming requests
+    await prisma.notification.deleteMany({
+      where: {
+        userId: organizerId,
+        joinRequestId: { not: null },
+      },
+    }).catch((err) => {
+      logger.warn('[Interactions] Failed to clear join request notifications:', err);
+    });
+
     const requests = await prisma.joinRequest.findMany({
       take: parsedQuery.data.limit,
       where: {
         trip: {
-          creatorId: requireUserId(req),
+          creatorId: organizerId,
         },
       },
       include: {

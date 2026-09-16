@@ -88,7 +88,7 @@ router.post('/sos', async (req, res) => {
         ? `${alerting.profile.firstName} ${alerting.profile.lastName || ''}`.trim()
         : (alerting?.email?.split('@')[0] ?? 'A traveller'));
 
-    const audience = await resolveSosAudience(userId);
+    const audience = await resolveSosAudience(userId, { lat: latitude, lng: longitude });
     const recipients = audience.userIds.filter((uid) => uid !== userId);
 
     const alertPayload = {
@@ -186,19 +186,26 @@ router.post('/sos', async (req, res) => {
       });
     }
 
+    // docs/REMEDIATION.md §8.8/§8.9: this used to claim "police, and
+    // emergency support notified". No police force is integrated with
+    // this app and none is contacted — the real audience is exactly
+    // what resolveSosAudience returns. Telling someone in danger that
+    // police are coming when they are not is the worst kind of fake
+    // message this codebase can carry. For the same reason the reach is
+    // described from what actually resolved, not from the setting alone:
+    // "nearby travellers" is only claimed when someone was really found.
+    const reachedNearby = audience.reach.mode === 'NEARBY' && audience.reach.nearbyCount > 0;
+    const whoWasTold = reachedNearby
+      ? `your trip group, ${audience.reach.nearbyCount} traveller${audience.reach.nearbyCount === 1 ? '' : 's'} within ${audience.reach.radiusKm} km`
+      : 'your trip group';
+
     res.status(201).json({
       ok: true,
       data: {
         ...alertPayload,
         notifiedCount: recipients.length,
-        // docs/REMEDIATION.md §8.8/§8.9: this used to claim "police, and
-        // emergency support notified". No police force is integrated with
-        // this app and none is contacted — the real audience is exactly
-        // what resolveSosAudience returns. Telling someone in danger that
-        // police are coming when they are not is the worst kind of fake
-        // message this codebase can carry.
-        message:
-          'SOS sent to your trip group, your emergency contacts on TravelStar, and our safety team. For police, fire, or ambulance, call 112.',
+        reach: audience.reach,
+        message: `SOS sent to ${whoWasTold}, your emergency contacts on TravelStar, and our safety team. For police, fire, or ambulance, call 112.`,
       },
     });
   } catch (err) {
@@ -213,7 +220,9 @@ router.post('/sos/:id/resolve', async (req, res) => {
   try {
     const alert = await prisma.sOSAlert.findUnique({
       where: { id },
-      select: { userId: true },
+      // Coordinates included so the stand-down can reach the same nearby
+      // audience the alert itself did.
+      select: { userId: true, latitude: true, longitude: true },
     });
 
     if (!alert) {
@@ -253,7 +262,14 @@ router.post('/sos/:id/resolve', async (req, res) => {
     // stand the alert down in the group chats it was posted into — the SOS
     // card there is what people are looking at.
     const io = req.app.get('socketio');
-    const audience = await resolveSosAudience(alert.userId);
+    // Resolved from the alert's own position, so that the nearby people who
+    // were woken by it are the same ones told it is over. Standing the
+    // alert down for a narrower audience than raised it would leave
+    // strangers believing someone is still in trouble.
+    const audience = await resolveSosAudience(alert.userId, {
+      lat: alert.latitude,
+      lng: alert.longitude,
+    });
     audience.userIds.forEach((uid: string) => io?.to(uid).emit('sosResolved', { id }));
 
     const resolver = await prisma.user.findUnique({ where: { id: userId }, include: { profile: true } });

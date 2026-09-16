@@ -75,6 +75,7 @@ export default function RootLayout() {
                 <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
                 <Stack.Screen name="auth" options={{ presentation: 'modal' }} />
                 <Stack.Screen name="stories" options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
+                <Stack.Screen name="all-stories" />
               </Stack>
             </ThemeProvider>
           </AppProvider>
