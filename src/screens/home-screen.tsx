@@ -10,6 +10,7 @@ import { formatTripDuration, tripCoverImage, tripTransportLabel } from '@/lib/tr
 import { weatherGlyph } from '@/lib/weather-display';
 import { apiService } from '@/services/api';
 import { eventBus } from '@/services/event-bus';
+import { queryClient } from '@/lib/query-client';
 import { useApp, UserRole, type Trip } from '@/store/AppContext';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import type { FeedItem, HazardAlert, TrendingWeatherDestination } from '@/types/api';
@@ -25,7 +26,6 @@ import CalendarCheck from 'lucide-react-native/icons/calendar-check';
 import Camera from 'lucide-react-native/icons/camera';
 import Car from 'lucide-react-native/icons/car';
 import Check from 'lucide-react-native/icons/check';
-import ChevronDown from 'lucide-react-native/icons/chevron-down';
 import ChevronRight from 'lucide-react-native/icons/chevron-right';
 import ArrowRight from 'lucide-react-native/icons/arrow-right';
 import Clock from 'lucide-react-native/icons/clock';
@@ -39,7 +39,6 @@ import Flame from 'lucide-react-native/icons/flame';
 import Globe from 'lucide-react-native/icons/globe';
 import Map from 'lucide-react-native/icons/map';
 import MapPin from 'lucide-react-native/icons/map-pin';
-import Moon from 'lucide-react-native/icons/moon';
 import Mountain from 'lucide-react-native/icons/mountain';
 import Plane from 'lucide-react-native/icons/plane';
 import Plus from 'lucide-react-native/icons/plus';
@@ -72,7 +71,8 @@ import {
   TouchableOpacity,
   TextInput,
   KeyboardAvoidingView,
-  View
+  View,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -98,39 +98,6 @@ export const getTimeOfDay = (date: Date = new Date()): TimeOfDay => {
   return 'day';
 };
 
-const TIME_SIM_OPTIONS: {
-  value: TimeOfDay;
-  label: string;
-  sub: string;
-  Icon: typeof Sun;
-  iconColor: string;
-  badgeBg: string;
-}[] = [
-  {
-    value: 'day',
-    label: 'Morning',
-    sub: '5:00 AM – 4:00 PM',
-    Icon: Sun,
-    iconColor: '#D97706',
-    badgeBg: '#FEF3C7',
-  },
-  {
-    value: 'evening',
-    label: 'Evening',
-    sub: '4:00 PM – 8:00 PM',
-    Icon: CloudSun,
-    iconColor: '#EA580C',
-    badgeBg: '#FFEDD5',
-  },
-  {
-    value: 'night',
-    label: 'Night',
-    sub: '8:00 PM – 5:00 AM',
-    Icon: Moon,
-    iconColor: '#6366F1',
-    badgeBg: '#EEF2FF',
-  },
-];
 
 const HEADER_THEMES = {
   day: {
@@ -1398,10 +1365,12 @@ function StoriesRailBase({
       .filter((item) => !deletedStoryIds?.has(item.id))
       .map((item) => {
         const local = storiesList.find((s) => s.id === item.id || (s.authorName === item.authorName && s.content === item.content));
-        if (local?.coverImg && (!item.coverImg || item.coverImg.length === 0)) {
-          return { ...item, coverImg: local.coverImg };
-        }
-        return item;
+        return {
+          ...item,
+          coverImg: item.coverImg || local?.coverImg,
+          mediaUrl: item.mediaUrl || local?.mediaUrl,
+          mediaType: item.mediaType || local?.mediaType,
+        };
       });
 
     for (const local of storiesList) {
@@ -1413,6 +1382,8 @@ function StoriesRailBase({
           title: local.title,
           content: local.content,
           coverImg: local.coverImg,
+          mediaUrl: local.mediaUrl,
+          mediaType: local.mediaType,
           authorName: local.authorName,
           authorAvatar: local.authorAvatar,
           location: local.location,
@@ -1437,8 +1408,14 @@ function StoriesRailBase({
     return false;
   }, [profile.id, profile.name]);
 
-  const myStory = React.useMemo(() => mergedFeed.find(isUserStory) ?? null, [mergedFeed, isUserStory]);
-  const otherStories = React.useMemo(() => mergedFeed.filter((item) => !isUserStory(item)), [mergedFeed, isUserStory]);
+  const myStory = React.useMemo(
+    () => mergedFeed.find((item) => item.sourceType === 'STORY' && isUserStory(item)) ?? null,
+    [mergedFeed, isUserStory],
+  );
+  const otherStories = React.useMemo(
+    () => mergedFeed.filter((item) => item.sourceType === 'STORY' && !isUserStory(item)),
+    [mergedFeed, isUserStory],
+  );
 
   // A signed-out visitor sees the same "no stories yet, tap + to share"
   // nudge a signed-in user with zero stories used to see — it just points
@@ -1649,9 +1626,38 @@ function HomeScreen() {
     hasUnreadNotification,
     checkUnreadNotifications,
     addStory,
+    refreshTrips,
+    sosAlerts,
+    resolveSOS,
   } = useApp();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+
+  const activeSOS = sosAlerts?.find((sos) => sos.status === 'ACTIVE');
+
+  const handleResolveSOSEvent = useCallback(() => {
+    if (activeSOS) {
+      resolveSOS(activeSOS.id);
+    }
+  }, [activeSOS, resolveSOS]);
+
+  // Pull-to-refresh. Refetches every query mounted on this screen right now
+  // (weather, alerts, destinations, stories feed, enquiry summary) rather than
+  // a hand-kept list that would drift as sections change, plus the trips list
+  // and notification dot, which live outside react-query.
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.allSettled([
+        queryClient.refetchQueries({ type: 'active' }),
+        Promise.resolve(refreshTrips()),
+        Promise.resolve(checkUnreadNotifications()),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshTrips, checkUnreadNotifications]);
 
   // A pending enquiry is invisible until the organizer is already inside
   // the portal, on the right trip's Chats & Approvals tab — this is the
@@ -1678,8 +1684,6 @@ function HomeScreen() {
   }, [isLoggedIn, enquiriesSummaryQuery]);
 
   const [authReason, setAuthReason] = useState<AuthReason | null>(null);
-  const [simulatedTime, setSimulatedTime] = useState<TimeOfDay | null>('evening');
-  const [showTimeDropdown, setShowTimeDropdown] = useState(false);
   const [realTimeOfDay, setRealTimeOfDay] = useState<TimeOfDay>(() => getTimeOfDay());
 
   useEffect(() => {
@@ -1690,7 +1694,10 @@ function HomeScreen() {
     return () => clearInterval(interval);
   }, [isFocused]);
 
-  const timeOfDay = simulatedTime ?? realTimeOfDay;
+  // Driven by the device clock alone, re-checked every minute by the effect
+  // above. A simulation override used to sit in front of this, defaulting to
+  // 'evening', so the header art never matched the actual time of day.
+  const timeOfDay = realTimeOfDay;
   const headerTheme = HEADER_THEMES[timeOfDay];
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
   const [storyComposerMedia, setStoryComposerMedia] = useState<{ uri: string; type: 'image' | 'video' } | null>(null);
@@ -1773,6 +1780,15 @@ function HomeScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
         scrollEventThrottle={16}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => void onRefresh()}
+            tintColor="#2563EB"
+            colors={['#2563EB']}
+            progressViewOffset={insets.top}
+          />
+        }
         onScroll={(e) => {
           const y = e.nativeEvent.contentOffset.y;
           const diff = y - lastScrollYRef.current;
@@ -1831,42 +1847,6 @@ function HomeScreen() {
               </View>
               <View style={styles.headerRight}>
               <View style={styles.headerIconsRow}>
-                {/* Time Simulation Dropdown Trigger Pill */}
-                <TouchableOpacity
-                  style={[
-                    styles.timeSimPill,
-                    {
-                      backgroundColor: headerTheme.bellWrapBg,
-                      borderColor: headerTheme.bellBorderColor,
-                    },
-                  ]}
-                  activeOpacity={0.75}
-                  onPress={() => setShowTimeDropdown(true)}
-                  accessibilityRole="button"
-                  accessibilityLabel="Simulate timing"
-                >
-                  {timeOfDay === 'day' ? (
-                    <Sun size={13} color="#F59E0B" strokeWidth={2.2} />
-                  ) : timeOfDay === 'evening' ? (
-                    <CloudSun size={13} color="#EA580C" strokeWidth={2.2} />
-                  ) : (
-                    <Moon size={13} color="#818CF8" strokeWidth={2.2} />
-                  )}
-                  <Text
-                    style={[
-                      styles.timeSimPillText,
-                      { color: timeOfDay === 'night' ? '#FFFFFF' : '#1E293B' },
-                    ]}
-                  >
-                    {timeOfDay === 'day' ? 'Morning' : timeOfDay === 'evening' ? 'Evening' : 'Night'}
-                  </Text>
-                  <ChevronDown
-                    size={11}
-                    color={timeOfDay === 'night' ? '#CBD5E1' : '#64748B'}
-                    strokeWidth={2.2}
-                  />
-                </TouchableOpacity>
-
                 <TouchableOpacity
                   style={[
                     styles.bellWrap,
@@ -1945,58 +1925,6 @@ function HomeScreen() {
         </View>
       </ImageBackground>
 
-        {/* Time Simulation Dropdown Modal */}
-        <Modal
-          transparent
-          visible={showTimeDropdown}
-          animationType="fade"
-          onRequestClose={() => setShowTimeDropdown(false)}
-        >
-          <Pressable
-            style={styles.timeDropdownOverlay}
-            onPress={() => setShowTimeDropdown(false)}
-          >
-            <View style={[styles.timeDropdownCard, { top: insets.top + 46 }]}>
-              <Text style={styles.timeDropdownHeaderTitle}>Simulate Time</Text>
-
-              {TIME_SIM_OPTIONS.map((opt) => {
-                const isSelected = timeOfDay === opt.value;
-                const Icon = opt.Icon;
-                return (
-                  <TouchableOpacity
-                    key={opt.value}
-                    style={[
-                      styles.timeDropdownItem,
-                      isSelected && styles.timeDropdownItemActive,
-                    ]}
-                    activeOpacity={0.7}
-                    onPress={() => {
-                      setSimulatedTime(opt.value);
-                      setShowTimeDropdown(false);
-                    }}
-                  >
-                    <View style={[styles.timeOptionIconWrap, { backgroundColor: opt.badgeBg }]}>
-                      <Icon size={15} color={opt.iconColor} strokeWidth={2.2} />
-                    </View>
-                    <View style={styles.timeOptionTextCol}>
-                      <Text
-                        style={[
-                          styles.timeOptionLabel,
-                          isSelected && styles.timeOptionLabelActive,
-                        ]}
-                      >
-                        {opt.label}
-                      </Text>
-                      <Text style={styles.timeOptionSub}>{opt.sub}</Text>
-                    </View>
-                    {isSelected && <Check size={16} color="#2563EB" strokeWidth={2.5} />}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </Pressable>
-        </Modal>
-
         {/* ════════════════════════════════════════════════
             ROLE CARDS — Overlapping Lower Half of Hero Image Banner
             ════════════════════════════════════════════════ */}
@@ -2037,6 +1965,61 @@ function HomeScreen() {
             );
           })}
         </View>
+
+        {/* ════════════════════════════════════════════════
+            CRITICAL SOS ALERT TICKER (Matches Chat Tab)
+            ════════════════════════════════════════════════ */}
+        {activeSOS && (
+          <TouchableOpacity
+            style={styles.safetyTickerBanner}
+            onPress={() => router.push('/chat')}
+            accessibilityRole="button"
+            accessibilityLabel={
+              activeSOS.message
+                ? `${activeSOS.userName}: ${activeSOS.message}`
+                : t('chat.sosLocateHint', { name: activeSOS.userName })
+            }
+          >
+            <View style={styles.safetyTickerLeft}>
+              <View style={styles.safetyTickerIconCircle}>
+                <AlertTriangle size={15} color="#FFF" />
+              </View>
+              <View style={styles.safetyTickerTextWrap}>
+                <View style={styles.safetyTickerHeaderRow}>
+                  <Text style={styles.safetyTickerBadgeText}>
+                    {t('chat.criticalSosAlert', 'CRITICAL SOS ALERT')}
+                  </Text>
+                  <Text style={styles.safetyTickerUserText} numberOfLines={1}>
+                    • {activeSOS.userName}
+                  </Text>
+                </View>
+                {activeSOS.message ? (
+                  <Text style={styles.safetyTickerReasonText} numberOfLines={1}>
+                    {t('chat.issueLabel', 'Issue')}: {activeSOS.message}
+                  </Text>
+                ) : (
+                  <Text style={styles.safetyTickerReasonText} numberOfLines={1}>
+                    {t('chat.sosLocateHint', { name: activeSOS.userName })}
+                  </Text>
+                )}
+              </View>
+            </View>
+            {((activeSOS.userId && profile?.id && activeSOS.userId === profile.id) ||
+              (!activeSOS.userId && profile?.name && activeSOS.userName === profile.name) ||
+              activeSOS.userName === profile?.name) && (
+              <TouchableOpacity
+                style={styles.safetyTickerSafeBtn}
+                onPress={handleResolveSOSEvent}
+                accessibilityRole="button"
+                accessibilityLabel={t('chat.markAsSafe', "I'm safe")}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <ShieldCheck size={13} color="#065F46" strokeWidth={2.6} />
+                <Text style={styles.safetyTickerSafeText}>{t('chat.safe', "I'm safe")}</Text>
+              </TouchableOpacity>
+            )}
+          </TouchableOpacity>
+        )}
 
         {/* ════════════════════════════════════════════════
             TRAVEL REELS & STORIES
@@ -2586,27 +2569,6 @@ const styles = StyleSheet.create({
     color: '#2563EB',
     marginRight: 4,
   },
-  timeSimPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 16,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  timeSimPillText: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#1E293B',
-  },
   timeDropdownOverlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.28)',
@@ -2736,6 +2698,82 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     marginTop: -18,
     zIndex: 10,
+  },
+
+  // ── SOS Alert Ticker ────────────────────────────────
+  safetyTickerBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 52,
+    backgroundColor: '#B91C1C',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#EF4444',
+    marginHorizontal: 20,
+    marginBottom: 14,
+    paddingVertical: 9,
+    paddingHorizontal: 14,
+    shadowColor: '#B91C1C',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.22,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  safetyTickerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 8,
+    gap: 10,
+  },
+  safetyTickerIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  safetyTickerTextWrap: {
+    flex: 1,
+  },
+  safetyTickerHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  safetyTickerBadgeText: {
+    color: '#FEE2E2',
+    fontSize: 10.5,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  safetyTickerUserText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+    flexShrink: 1,
+  },
+  safetyTickerReasonText: {
+    color: 'rgba(255, 255, 255, 0.95)',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  safetyTickerSafeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#ECFDF5',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  safetyTickerSafeText: {
+    color: '#065F46',
+    fontSize: 11.5,
+    fontWeight: '800',
   },
   roleCard: {
     flex: 1,
@@ -3639,6 +3677,7 @@ interface StoryComposerModalProps {
 
 function StoryComposerModal({ media, onClose, onPublish }: StoryComposerModalProps) {
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const [caption, setCaption] = useState('');
   const [location, setLocation] = useState('');
   const [showLocationPicker, setShowLocationPicker] = useState(false);
@@ -3665,26 +3704,51 @@ function StoryComposerModal({ media, onClose, onPublish }: StoryComposerModalPro
       onRequestClose={onClose}
       statusBarTranslucent
     >
-      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1 }}
+      >
         <View style={storyStyles.backdrop}>
-          {/* Media preview */}
-          {media &&
-            (media.type === 'video' ? (
-              <VideoView player={previewPlayer} style={storyStyles.previewImage} contentFit="cover" nativeControls={false} />
-            ) : (
-              <Image
-                source={{ uri: media.uri }}
-                style={storyStyles.previewImage}
-                resizeMode="cover"
-              />
-            ))}
+          {/* Media preview - Fully visible without stretching (contain, like WhatsApp) */}
+          <View style={storyStyles.previewContainer}>
+            {media &&
+              (media.type === 'video' ? (
+                <VideoView
+                  player={previewPlayer}
+                  style={storyStyles.previewImage}
+                  contentFit="contain"
+                  nativeControls={false}
+                />
+              ) : (
+                <Image
+                  source={{ uri: media.uri }}
+                  style={storyStyles.previewImage}
+                  resizeMode="contain"
+                />
+              ))}
+          </View>
 
-          {/* Dark overlay */}
-          <View style={storyStyles.overlay} />
+          {/* Top & Bottom Subtle Gradients for contrast without obscuring media */}
+          <LinearGradient
+            colors={['rgba(0,0,0,0.65)', 'transparent']}
+            style={storyStyles.topGradient}
+            pointerEvents="none"
+          />
+          <LinearGradient
+            colors={['transparent', 'rgba(0,0,0,0.8)']}
+            style={storyStyles.bottomGradient}
+            pointerEvents="none"
+          />
 
           {/* Header */}
-          <View style={storyStyles.header}>
-            <TouchableOpacity onPress={onClose} style={storyStyles.closeBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <View style={[storyStyles.header, { paddingTop: Math.max(insets.top + 8, 48) }]}>
+            <TouchableOpacity
+              onPress={onClose}
+              style={storyStyles.closeBtn}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityRole="button"
+              accessibilityLabel="Close"
+            >
               <X size={20} color="#FFF" />
             </TouchableOpacity>
             <Text style={storyStyles.headerTitle}>New Story</Text>
@@ -3692,30 +3756,49 @@ function StoryComposerModal({ media, onClose, onPublish }: StoryComposerModalPro
               onPress={handlePublish}
               style={[storyStyles.publishBtn, !caption.trim() && storyStyles.publishBtnDim]}
               activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Share"
             >
               <Text style={storyStyles.publishBtnText}>Share</Text>
             </TouchableOpacity>
           </View>
 
-          {/* Bottom composer */}
-          <View style={storyStyles.composer}>
-            {/* Caption input */}
-            <View style={storyStyles.captionRow}>
-              <TextInput
-                ref={inputRef}
-                style={storyStyles.captionInput}
-                placeholder="Write a caption…"
-                placeholderTextColor="rgba(255,255,255,0.45)"
-                value={caption}
-                onChangeText={setCaption}
-                multiline
-                maxLength={280}
-                returnKeyType="default"
-              />
-              <Text style={storyStyles.charCount}>{caption.length}/280</Text>
-            </View>
+          {/* Bottom composer floating over media */}
+          <View style={[storyStyles.bottomComposer, { paddingBottom: Math.max(insets.bottom + 8, 16) }]}>
+            {/* Location picker dropdown */}
+            {showLocationPicker && (
+              <View style={storyStyles.locationPicker}>
+                <ScrollView style={{ maxHeight: 160 }} keyboardShouldPersistTaps="always">
+                  {STORY_LOCATIONS.map((loc) => (
+                    <TouchableOpacity
+                      key={loc}
+                      style={[storyStyles.locationOption, location === loc && storyStyles.locationOptionActive]}
+                      onPress={() => {
+                        setLocation(loc);
+                        setShowLocationPicker(false);
+                      }}
+                    >
+                      <Text style={[storyStyles.locationOptionText, location === loc && storyStyles.locationOptionTextActive]}>
+                        {loc}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
 
-            {/* Emoji row */}
+            {/* Centered Location badge */}
+            <TouchableOpacity
+              style={storyStyles.locationChip}
+              onPress={() => setShowLocationPicker((v) => !v)}
+              activeOpacity={0.8}
+            >
+              <MapPin size={13} color="#38BDF8" strokeWidth={2.2} />
+              <Text style={storyStyles.locationChipText}>{location || 'Add Location'}</Text>
+              <ChevronRight size={13} color="rgba(255,255,255,0.6)" />
+            </TouchableOpacity>
+
+            {/* Quick emoji row */}
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -3734,38 +3817,23 @@ function StoryComposerModal({ media, onClose, onPublish }: StoryComposerModalPro
               ))}
             </ScrollView>
 
-            {/* Location row */}
-            <TouchableOpacity
-              style={storyStyles.locationRow}
-              onPress={() => setShowLocationPicker((v) => !v)}
-              activeOpacity={0.8}
-            >
-              <MapPin size={16} color="rgba(255,255,255,0.75)" strokeWidth={2} />
-              <Text style={storyStyles.locationText}>{location || 'Add Location'}</Text>
-              <ChevronRight size={14} color="rgba(255,255,255,0.5)" style={{ marginLeft: 'auto' }} />
-            </TouchableOpacity>
-
-            {/* Location picker dropdown */}
-            {showLocationPicker && (
-              <View style={storyStyles.locationPicker}>
-                <ScrollView style={{ maxHeight: 180 }} keyboardShouldPersistTaps="always">
-                  {STORY_LOCATIONS.map((loc) => (
-                    <TouchableOpacity
-                      key={loc}
-                      style={[storyStyles.locationOption, location === loc && storyStyles.locationOptionActive]}
-                      onPress={() => {
-                        setLocation(loc);
-                        setShowLocationPicker(false);
-                      }}
-                    >
-                      <Text style={[storyStyles.locationOptionText, location === loc && storyStyles.locationOptionTextActive]}>
-                        {loc}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
+            {/* WhatsApp-style Bottom-Center Caption Pill Bar */}
+            <View style={storyStyles.captionCenterContainer}>
+              <View style={storyStyles.captionPill}>
+                <TextInput
+                  ref={inputRef}
+                  style={storyStyles.captionInput}
+                  placeholder="Add a caption…"
+                  placeholderTextColor="rgba(255,255,255,0.6)"
+                  value={caption}
+                  onChangeText={setCaption}
+                  multiline
+                  maxLength={280}
+                  textAlign="center"
+                  returnKeyType="done"
+                />
               </View>
-            )}
+            </View>
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -3776,27 +3844,50 @@ function StoryComposerModal({ media, onClose, onPublish }: StoryComposerModalPro
 const storyStyles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: '#000000',
+  },
+  previewContainer: {
+    ...StyleSheet.absoluteFill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#000000',
   },
   previewImage: {
-    ...StyleSheet.absoluteFill,
+    width: '100%',
+    height: '100%',
   },
-  overlay: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(0,0,0,0.38)',
+  topGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 120,
+    zIndex: 1,
+  },
+  bottomGradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 220,
+    zIndex: 1,
   },
   header: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: 54,
     paddingHorizontal: 20,
     paddingBottom: 12,
+    zIndex: 10,
   },
   closeBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(0,0,0,0.5)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -3812,6 +3903,11 @@ const storyStyles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 8,
     borderRadius: 20,
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 4,
+    elevation: 3,
   },
   publishBtnDim: {
     opacity: 0.6,
@@ -3819,92 +3915,107 @@ const storyStyles = StyleSheet.create({
   publishBtnText: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#FFF',
+    color: '#FFFFFF',
   },
-  composer: {
+  bottomComposer: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'rgba(10, 10, 20, 0.88)',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingBottom: 36,
-    paddingTop: 16,
+    alignItems: 'center',
+    zIndex: 10,
   },
-  captionRow: {
-    paddingHorizontal: 20,
+  locationChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
     marginBottom: 10,
   },
-  captionInput: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    lineHeight: 22,
-    minHeight: 60,
-    maxHeight: 110,
-    textAlignVertical: 'top',
+  locationChipText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.9)',
   },
-  charCount: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.4)',
-    textAlign: 'right',
-    marginTop: 4,
+  locationPicker: {
+    width: SCREEN_WIDTH - 48,
+    maxWidth: 360,
+    backgroundColor: 'rgba(20, 25, 40, 0.95)',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+    overflow: 'hidden',
+    marginBottom: 10,
+  },
+  locationOption: {
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  locationOptionActive: {
+    backgroundColor: 'rgba(37, 99, 235, 0.35)',
+  },
+  locationOptionText: {
+    fontSize: 13.5,
+    color: 'rgba(255,255,255,0.85)',
+  },
+  locationOptionTextActive: {
+    color: '#60A5FA',
+    fontWeight: '700',
   },
   emojiRow: {
     paddingHorizontal: 16,
-    gap: 4,
-    paddingBottom: 12,
+    gap: 6,
+    paddingBottom: 8,
+    alignItems: 'center',
   },
   emojiBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.12)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   emojiText: {
-    fontSize: 22,
+    fontSize: 20,
   },
-  locationRow: {
-    flexDirection: 'row',
+  captionCenterContainer: {
+    width: '100%',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.08)',
-  },
-  locationText: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.75)',
-    fontWeight: '500',
-  },
-  locationPicker: {
-    marginHorizontal: 20,
-    backgroundColor: 'rgba(20, 25, 40, 0.97)',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    overflow: 'hidden',
-    marginBottom: 8,
-  },
-  locationOption: {
+    justifyContent: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255,255,255,0.06)',
+    marginTop: 2,
   },
-  locationOptionActive: {
-    backgroundColor: 'rgba(37, 99, 235, 0.3)',
+  captionPill: {
+    width: '100%',
+    maxWidth: 440,
+    backgroundColor: 'rgba(15, 23, 42, 0.82)',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
+    paddingHorizontal: 18,
+    paddingVertical: Platform.OS === 'ios' ? 10 : 6,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 3,
   },
-  locationOptionText: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.8)',
-  },
-  locationOptionTextActive: {
-    color: '#60A5FA',
-    fontWeight: '600',
+  captionInput: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '500',
+    textAlign: 'center',
+    minHeight: 24,
+    maxHeight: 80,
+    padding: 0,
   },
 });
 

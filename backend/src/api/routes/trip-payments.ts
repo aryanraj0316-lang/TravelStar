@@ -132,6 +132,7 @@ router.post('/verify', async (req: Request, res: Response) => {
     razorpayOrderId,
     razorpayPaymentId,
     signatureVerified: true,
+    io: req.app.get('socketio'),
   });
 
   if (!result.ok) {
@@ -172,7 +173,7 @@ router.post('/wallet-pay', async (req: Request, res: Response) => {
   const { joinRequestId } = parsed.data;
   const userId = requireUserId(req);
 
-  const result = await payFromWallet(joinRequestId, userId);
+  const result = await payFromWallet(joinRequestId, userId, req.app.get('socketio'));
 
   if (!result.ok) {
     if (result.reason === 'INSUFFICIENT_BALANCE') {
@@ -220,7 +221,7 @@ router.post('/pay', async (req: Request, res: Response) => {
   const { joinRequestId } = parsed.data;
   const userId = requireUserId(req);
 
-  const result = await payDirect(joinRequestId, userId);
+  const result = await payDirect(joinRequestId, userId, req.app.get('socketio'));
 
   if (!result.ok) {
     if (result.reason === 'ORDER_NOT_FOUND') {
@@ -392,6 +393,7 @@ router.post('/webhook', async (req: Request, res: Response) => {
         razorpayOrderId: rzpOrderId,
         razorpayPaymentId: rzpPaymentId,
         signatureVerified: true,
+        io: req.app.get('socketio'),
       });
     }
   } else if (event === 'payment.failed' && paymentEntity) {

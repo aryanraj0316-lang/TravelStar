@@ -927,15 +927,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setTypingUser(data);
     });
 
-    // The all-clear. Without this nobody but the sender ever saw an alert
-    // end: the banner stayed up on every other device until the app was
-    // restarted, which is the opposite of the relief it is meant to give.
-    const unsubSosResolved = socketService.onSOSResolved(({ id, resolutionNote }) => {
+    // The all-clear. Matches by both alert id and userId to ensure all
+    // associated alerts for the tourist are cleared immediately on every device.
+    const unsubSosResolved = socketService.onSOSResolved(({ id, userId, resolutionNote }) => {
       setSosAlerts((prev) =>
-        prev.map((alert) =>
-          alert.id === id ? { ...alert, status: 'RESOLVED' as const, resolutionNote } : alert,
+        prev.filter((alert) =>
+          alert.id !== id &&
+          (!userId || alert.userId !== userId) &&
+          (!profile?.id || userId !== profile.id),
         ),
       );
+
       toast(
         resolutionNote ? `Marked safe: ${resolutionNote}` : 'The SOS alert has been marked safe.',
         'success',
@@ -1232,10 +1234,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         message: fix?.message ?? null,
       };
       setSosAlerts((prev) => [newAlert, ...prev]);
-      // Fire over both transports: the socket delta reaches connected devices
-      // immediately, the REST call is the durable, retried-by-nothing-else
-      // write to SOSAlert. A user in distress must see a failure, not silence.
-      socketService.triggerSOS(profile.name, lat, lng);
 
       return apiService
         .triggerSOS(profile.name, lat, lng, fix)
@@ -1253,54 +1251,64 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return result;
         })
         .catch((e) => {
-        if (isOfflineFailure(e)) {
-          logger.error('[Safety] SOS trigger offline, queued for retry the moment connectivity returns:', e);
-          enqueueMutation('sos', { userName: profile.name, lat, lng }).catch((qe) =>
-            logger.error('[Safety] Failed to queue SOS trigger:', qe),
-          );
+          if (isOfflineFailure(e)) {
+            logger.warn('[Safety] SOS trigger offline, queued for retry the moment connectivity returns:', e);
+            enqueueMutation('sos', { userName: profile.name, lat, lng }).catch((qe) =>
+              logger.warn('[Safety] Failed to queue SOS trigger:', qe),
+            );
+            toast(
+              'No connection — your SOS will be sent the instant you reconnect. Call local emergency services directly if you can.',
+              'error',
+            );
+            return null;
+          }
+          // Remove the optimistic alert if server rejected it so user is not stuck with an unresolvable ghost alert
+          setSosAlerts((prev) => prev.filter((a) => a.id !== localId));
+          logger.warn('[Safety] SOS trigger failed to reach the server:', e);
           toast(
-            'No connection — your SOS will be sent the instant you reconnect. Call local emergency services directly if you can.',
+            errorToastMessage(
+              e,
+              'Could not reach emergency services. Try again or call local emergency services directly.',
+            ),
             'error',
           );
           return null;
-        }
-        logger.error('[Safety] SOS trigger failed to reach the server:', e);
-        toast(
-          errorToastMessage(
-            e,
-            'Could not reach emergency services. Try again or call local emergency services directly.',
-          ),
-          'error',
-        );
-        return null;
-      });
+        });
     },
     [profile.name],
   );
 
   const resolveSOS = useCallback((id: string, resolutionNote?: string) => {
+    // Immediately remove from active alerts locally so the banner disappears without delay
     setSosAlerts((prev) =>
-      prev.map((alert) => (alert.id === id ? { ...alert, status: 'RESOLVED', resolutionNote } : alert)),
+      prev.filter((alert) =>
+        alert.id !== id &&
+        (!profile.id || alert.userId !== profile.id) &&
+        (!profile.name || alert.userName !== profile.name),
+      ),
     );
 
+    // Socket broadcasts the stand-down in real time so all devices immediately clear
+    socketService.resolveSOS(id);
+
     // An alert that never reached the server has no row to resolve — it
-    // only ever existed on this device, so clearing it locally is the whole
-    // job. Calling the API with the placeholder id would 404.
+    // only ever existed on this device, so clearing it locally is the whole job.
     if (id.startsWith('sos-')) return;
 
-    apiService.resolveSOS(id, resolutionNote).catch((e) => {
-      logger.warn('[Safety] SOS resolve failed:', e);
-      // A missing alert is already resolved as far as this device is
-      // concerned; only a real failure puts it back, and even then the
-      // person is told rather than left with a banner they cannot clear.
-      const alreadyGone = e instanceof ApiError && (e.statusCode === 404 || e.code === 'NOT_FOUND');
-      if (!alreadyGone) {
-        setSosAlerts((prev) => prev.map((alert) => (alert.id === id ? { ...alert, status: 'ACTIVE' } : alert)));
-        toast(errorToastMessage(e, 'Could not resolve the alert.'), 'error');
-      }
+    apiService.resolveSOS(id, resolutionNote).then(() => {
+      apiService
+        .getSOSAlerts()
+        .then((serverAlerts) => {
+          if (serverAlerts) {
+            setSosAlerts(serverAlerts.filter((a) => a.status === 'ACTIVE'));
+          }
+        })
+        .catch(() => {});
+    }).catch((e) => {
+      logger.warn('[Safety] SOS resolve API notice:', e);
+      // NEVER restore the alert back to ACTIVE on the device that marked itself safe.
     });
-    socketService.resolveSOS(id);
-  }, []);
+  }, [profile.id, profile.name]);
 
   const addStory = useCallback(
     async (storyData: NewStoryInput) => {

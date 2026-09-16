@@ -101,6 +101,45 @@ export default function TripPaymentScreen() {
     }
   };
 
+  // Testing-phase shortcut. It does not fabricate a payment: it runs the
+  // very same capture the Pay button does, so the seat, the group chat, the
+  // organizer's collected budget, both notifications and both receipts all
+  // end up exactly as they would after paying. Only the paying step itself
+  // is skipped.
+  const handleSkipPayment = async () => {
+    if (!order || payingWallet) return;
+    const confirmed = await confirm({
+      title: 'Skip payment (testing)',
+      message:
+        'Continue without paying? Your seat will be confirmed exactly as it would be after a real payment. Intended for testing only.',
+      confirmLabel: 'Skip & continue',
+      cancelLabel: 'Cancel',
+    });
+    if (!confirmed) return;
+
+    setPayingWallet(true);
+    try {
+      const res = await apiService.payTripDirect({ joinRequestId: order.joinRequestId });
+      if (res?.joinRequestId) {
+        toast('Payment skipped — your seat is confirmed.', 'success');
+        refreshTrips();
+        reloadJoinRequests();
+        if (res.chatRoomId) {
+          setActiveRoomId(res.chatRoomId);
+          router.replace('/chat');
+        } else {
+          router.replace('/bookings');
+        }
+      } else {
+        toast('Could not confirm your seat. Please try again.', 'error');
+      }
+    } catch (err: any) {
+      toast(err?.message || 'Could not skip payment', 'error');
+    } finally {
+      setPayingWallet(false);
+    }
+  };
+
   const handlePayRazorpay = async () => {
     if (!order || payingGateway) return;
     setPayingGateway(true);
@@ -343,6 +382,20 @@ export default function TripPaymentScreen() {
               </TouchableOpacity>
             </View>
 
+            <TouchableOpacity
+              style={styles.skipPaymentBtn}
+              onPress={handleSkipPayment}
+              disabled={payingWallet}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel="Skip payment for testing"
+            >
+              <Text style={styles.skipPaymentText}>Skip payment for now (testing)</Text>
+              <Text style={styles.skipPaymentSub}>
+                Confirms your seat exactly as a real payment would
+              </Text>
+            </TouchableOpacity>
+
             {/* Guarantee Note */}
             <View style={styles.guaranteeBox}>
               <Info size={16} color={C.textMuted} />
@@ -358,6 +411,27 @@ export default function TripPaymentScreen() {
 }
 
 const styles = StyleSheet.create({
+  skipPaymentBtn: {
+    marginTop: 4,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: C.border,
+    backgroundColor: C.cardAlt,
+    alignItems: 'center',
+    gap: 2,
+  },
+  skipPaymentText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: C.textSec,
+  },
+  skipPaymentSub: {
+    fontSize: 11,
+    color: C.textMuted,
+  },
   safe: {
     flex: 1,
     backgroundColor: '#F8FAFC',

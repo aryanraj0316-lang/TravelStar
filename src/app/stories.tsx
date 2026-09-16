@@ -80,16 +80,18 @@ export default function StoriesScreen() {
   const { data: feed, refetch } = feedQuery;
   const feedState = sectionState(feedQuery, feed != null);
 
-  const activeStoriesList: FeedItem[] = useMemo(() => {
+  const allStories: FeedItem[] = useMemo(() => {
     if (!isLoggedIn) return [];
     const feedItems: FeedItem[] = (feed ?? [])
-      .filter((item) => !deletedStoryIds?.has(item.id))
+      .filter((item) => item.sourceType === 'STORY' && !deletedStoryIds?.has(item.id))
       .map((item) => {
         const local = storiesList.find((s) => s.id === item.id || (s.authorName === item.authorName && s.content === item.content));
-        if (local?.coverImg && (!item.coverImg || item.coverImg.length === 0)) {
-          return { ...item, coverImg: local.coverImg };
-        }
-        return item;
+        return {
+          ...item,
+          coverImg: item.coverImg || local?.coverImg,
+          mediaUrl: item.mediaUrl || local?.mediaUrl,
+          mediaType: item.mediaType || local?.mediaType,
+        };
       });
 
     for (const local of storiesList) {
@@ -101,6 +103,8 @@ export default function StoriesScreen() {
           title: local.title,
           content: local.content,
           coverImg: local.coverImg,
+          mediaUrl: local.mediaUrl,
+          mediaType: local.mediaType,
           authorName: local.authorName,
           authorAvatar: local.authorAvatar,
           location: local.location,
@@ -110,21 +114,18 @@ export default function StoriesScreen() {
       }
     }
     return feedItems;
-  }, [feed, storiesList, profile.id, deletedStoryIds]);
+  }, [feed, storiesList, profile.id, deletedStoryIds, isLoggedIn]);
 
-  const initialIdx = useMemo(() => {
-    if (!idParam) return 0;
-    const found = activeStoriesList.findIndex((s) => s.id === idParam);
-    return found === -1 ? 0 : found;
-  }, [idParam, activeStoriesList]);
-
-  const [currentIdx, setCurrentIdx] = useState(initialIdx);
-
-  useEffect(() => {
-    if (initialIdx >= 0) {
-      setCurrentIdx(initialIdx);
+  // Only the story that was tapped — never a playlist of everyone else's.
+  // Falling back to index 0 used to open a different story (or a reel)
+  // the moment this screen mounted, then auto-advance the rest.
+  const activeStory = useMemo(() => {
+    if (allStories.length === 0) return undefined;
+    if (idParam) {
+      return allStories.find((s) => s.id === idParam);
     }
-  }, [initialIdx]);
+    return allStories[0];
+  }, [allStories, idParam]);
 
   const [isLiked, setIsLiked] = useState<Record<string, boolean>>({});
   const [interactions, setInteractions] = useState<StoryInteractionsResponse | null>(null);
@@ -134,35 +135,33 @@ export default function StoriesScreen() {
   // Media resolution, declared above the slide timer because that timer's
   // behaviour depends on whether this slide is a video.
   //
-  // Video can arrive two ways: a REEL item carries `videoUrl`, and a STORY
-  // item carries `mediaUrl` with mediaType 'VIDEO'. `coverImg` is the poster
-  // frame in both cases, and is the image itself on story rows that predate
+  // A STORY item carries `mediaUrl` with mediaType 'VIDEO'. `coverImg` is
+  // the poster frame, and is the image itself on story rows that predate
   // video support — so no single field can be assumed to be the media.
-  const activeSlide = activeStoriesList[Math.min(currentIdx, Math.max(0, activeStoriesList.length - 1))];
   const slideVideoUrl =
-    activeSlide?.videoUrl || (activeSlide?.mediaType === 'VIDEO' ? activeSlide?.mediaUrl ?? null : null) || null;
+    activeStory?.mediaType === 'VIDEO' ? activeStory?.mediaUrl ?? null : null;
   const storyIsVideo = !!slideVideoUrl;
-  const storyMediaUrl = activeSlide?.mediaUrl || activeSlide?.coverImg || null;
+  const storyMediaUrl = activeStory?.mediaUrl || activeStory?.coverImg || null;
 
   // An asset that 404s or is otherwise unplayable falls through to the
   // placeholder rather than leaving the slide blank forever.
   const [failedMediaIds, setFailedMediaIds] = useState<Record<string, boolean>>({});
-  const mediaFailed = activeSlide ? !!failedMediaIds[activeSlide.id] : false;
+  const mediaFailed = activeStory ? !!failedMediaIds[activeStory.id] : false;
   const [mediaLoaded, setMediaLoaded] = useState<Record<string, boolean>>({});
-  const slideReady = activeSlide ? !!mediaLoaded[activeSlide.id] : false;
+  const slideReady = activeStory ? !!mediaLoaded[activeStory.id] : false;
 
   // A spinner that never resolves is the worst outcome: the slide looks
   // broken with no explanation and no way forward. If the asset has not
   // loaded within this window, it is treated as failed so the placeholder
   // and its "couldn't load" line take over.
   useEffect(() => {
-    if (!activeSlide || slideReady || mediaFailed) return;
-    const slideId = activeSlide.id;
+    if (!activeStory || slideReady || mediaFailed) return;
+    const slideId = activeStory.id;
     const timer = setTimeout(() => {
       setFailedMediaIds((prev) => (prev[slideId] ? prev : { ...prev, [slideId]: true }));
     }, 10000);
     return () => clearTimeout(timer);
-  }, [activeSlide, slideReady, mediaFailed]);
+  }, [activeStory, slideReady, mediaFailed]);
 
   const videoPlayer = useVideoPlayer(slideVideoUrl, (player) => {
     player.loop = false;
@@ -186,30 +185,47 @@ export default function StoriesScreen() {
   }, [router]);
 
   const handleNextStory = useCallback(() => {
-    if (currentIdx < activeStoriesList.length - 1) {
-      setCurrentIdx((prev) => prev + 1);
-    } else {
-      goBackOrHome();
-    }
-  }, [currentIdx, activeStoriesList.length, goBackOrHome]);
+    goBackOrHome();
+  }, [goBackOrHome]);
 
-  const handlePrevStory = useCallback(() => {
-    setCurrentIdx((prev) => (prev > 0 ? prev - 1 : prev));
-  }, []);
-
-  // Press-and-hold to pause. A video story already has its own native
-  // controls (nativeControls on VideoView) for pause/play, so this only
-  // touches the auto-advancing image timer — holding over a video does
-  // nothing here and leaves the native player in charge.
+  // Press-and-hold pauses the slide and fades every overlay so only the
+  // media remains. Releasing restores chrome and resumes the timer / video.
   const pauseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didPauseRef = useRef(false);
+  const chromeOpacity = useState(() => new Animated.Value(1))[0];
+  const [chromeHidden, setChromeHidden] = useState(false);
+
+  const hideChrome = () => {
+    setChromeHidden(true);
+    Animated.timing(chromeOpacity, {
+      toValue: 0,
+      duration: 160,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const showChrome = () => {
+    setChromeHidden(false);
+    Animated.timing(chromeOpacity, {
+      toValue: 1,
+      duration: 160,
+      useNativeDriver: true,
+    }).start();
+  };
 
   const handleTapZonePressIn = () => {
-    if (storyIsVideo) return;
     didPauseRef.current = false;
     pauseTimerRef.current = setTimeout(() => {
       didPauseRef.current = true;
       progressAnim.stopAnimation();
+      if (storyIsVideo) {
+        try {
+          videoPlayer.pause();
+        } catch {
+          // Player may not be ready yet; chrome hide still applies.
+        }
+      }
+      hideChrome();
     }, 180);
   };
 
@@ -219,7 +235,16 @@ export default function StoriesScreen() {
       pauseTimerRef.current = null;
     }
     if (didPauseRef.current) {
-      startStoryTimer(progressValueRef.current);
+      showChrome();
+      if (storyIsVideo) {
+        try {
+          videoPlayer.play();
+        } catch {
+          // Ignore — overlay restore is the important part.
+        }
+      } else {
+        startStoryTimer(progressValueRef.current);
+      }
     }
   };
 
@@ -236,7 +261,7 @@ export default function StoriesScreen() {
   };
 
   const startStoryTimer = (startFrom = 0) => {
-    if (activeStoriesList.length === 0 || isViewerSheetVisible) return;
+    if (!activeStory || isViewerSheetVisible) return;
     progressAnim.setValue(startFrom);
     Animated.timing(progressAnim, {
       toValue: 1,
@@ -251,16 +276,19 @@ export default function StoriesScreen() {
     // A video story is not advanced by the 5s slide timer — it would cut
     // playback off mid-clip. The viewer taps through those themselves,
     // using the player's own native controls.
-    if (activeStoriesList.length > 0 && !isViewerSheetVisible && !storyIsVideo) {
+    if (activeStory && !isViewerSheetVisible && !storyIsVideo) {
       startStoryTimer(0);
     }
     return () => {
       progressAnim.stopAnimation();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentIdx, activeStoriesList, isViewerSheetVisible, storyIsVideo]);
+  }, [activeStory?.id, isViewerSheetVisible, storyIsVideo]);
 
-  const activeStory = activeSlide;
+  const handlePrevStory = () => {
+    if (storyIsVideo) return;
+    startStoryTimer(0);
+  };
 
   // Determine if active story is created by the current user
   const isMyStory = useMemo(() => {
@@ -409,10 +437,6 @@ export default function StoriesScreen() {
               const storyIdToDelete = activeStory.id;
               setIsViewerSheetVisible(false);
 
-              // 1. Calculate remaining stories excluding this one
-              const remaining = activeStoriesList.filter((s) => s.id !== storyIdToDelete);
-
-              // 2. Perform deletion (updates deletedStoryIds & local storage & query cache).
               // A false result means the server delete failed and deleteStory already
               // restored the story and toasted the error — navigating away as if it
               // succeeded would strand the user outside a viewer for a story that is
@@ -425,19 +449,7 @@ export default function StoriesScreen() {
                 return;
               }
 
-              // 3. If no stories remain, immediately close viewer and return home
-              if (remaining.length === 0) {
-                goBackOrHome();
-              } else {
-                if (currentIdx >= remaining.length) {
-                  setCurrentIdx(Math.max(0, remaining.length - 1));
-                }
-                progressAnim.setValue(0);
-                progressValueRef.current = 0;
-                if (!storyIsVideo) {
-                  startStoryTimer(0);
-                }
-              }
+              goBackOrHome();
             } catch (err) {
               logger.warn('[Stories] Delete failed:', err);
             } finally {
@@ -463,7 +475,7 @@ export default function StoriesScreen() {
   };
 
   const handleToggleLike = async () => {
-    if (!activeStory) return;
+    if (!activeStory || isMyStory) return;
     const wasLiked = !!isLiked[activeStory.id];
     setIsLiked((prev) => ({ ...prev, [activeStory.id]: !wasLiked }));
     try {
@@ -508,7 +520,7 @@ export default function StoriesScreen() {
     );
   }
 
-  if (feedState.kind === 'loading') {
+  if (feedState.kind === 'loading' && !activeStory) {
     return (
       <SafeAreaView style={styles.emptyContainer}>
         <StatusBar barStyle="light-content" backgroundColor="#000" />
@@ -517,7 +529,7 @@ export default function StoriesScreen() {
     );
   }
 
-  if (feedState.kind === 'error' || !feed) {
+  if ((feedState.kind === 'error' || !feed) && !activeStory) {
     return (
       <SafeAreaView style={styles.emptyContainer}>
         <StatusBar barStyle="light-content" backgroundColor="#000" />
@@ -534,7 +546,7 @@ export default function StoriesScreen() {
     );
   }
 
-  if (activeStoriesList.length === 0 || !activeStory) {
+  if (!activeStory) {
     return (
       <SafeAreaView style={styles.emptyContainer}>
         <StatusBar barStyle="light-content" backgroundColor="#000" />
@@ -564,14 +576,14 @@ export default function StoriesScreen() {
     <SafeAreaView edges={['top', 'bottom']} style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
 
-      <View style={styles.storyImageContainer}>
+      <View style={styles.storyImageContainer} pointerEvents="none">
         {storyIsVideo && !mediaFailed ? (
-          <VideoView player={videoPlayer} style={styles.storyImg} contentFit="cover" nativeControls />
+          <VideoView player={videoPlayer} style={styles.storyImg} contentFit="contain" nativeControls={false} />
         ) : storyImage && !mediaFailed ? (
           <Image
             source={{ uri: storyImage }}
             style={styles.storyImg}
-            resizeMode="cover"
+            resizeMode="contain"
             onLoad={() => setMediaLoaded((prev) => ({ ...prev, [activeStory.id]: true }))}
             onError={() => setFailedMediaIds((prev) => ({ ...prev, [activeStory.id]: true }))}
           />
@@ -597,142 +609,161 @@ export default function StoriesScreen() {
             <ActivityIndicator color="#FFF" />
           </View>
         ) : null}
+      </View>
+
+      {/* Caption on the story — stays visible on long press, positioned bottom-center slightly upward */}
+      {storyCaption.length > 0 && (
+        <View
+          style={[styles.captionContainer, { bottom: Math.max(insets.bottom, 16) + 72 }]}
+          pointerEvents="none"
+        >
+          <Text style={styles.captionPlainText}>{storyCaption}</Text>
+        </View>
+      )}
+
+      <Animated.View
+        style={[styles.chromeLayer, { opacity: chromeOpacity }]}
+        pointerEvents="box-none"
+      >
         <LinearGradient
-          colors={['rgba(0,0,0,0.6)', 'transparent', 'rgba(0,0,0,0.75)']}
-          style={StyleSheet.absoluteFill}
+          colors={['rgba(0,0,0,0.65)', 'transparent']}
+          style={styles.topScrim}
+          pointerEvents="none"
         />
-      </View>
+        <LinearGradient
+          colors={['transparent', 'rgba(0,0,0,0.8)']}
+          style={styles.bottomScrim}
+          pointerEvents="none"
+        />
 
-      {/* Progress bars */}
-      <View style={styles.progressBarWrapper}>
-        {activeStoriesList.map((story, index) => {
-          if (index === currentIdx) {
-            return (
-              <View key={story.id} style={styles.progressBarTrack}>
-                <Animated.View
-                  style={[
-                    styles.progressBarFill,
-                    {
-                      width: progressAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: ['0%', '100%'],
-                      }),
-                    },
-                  ]}
-                />
-              </View>
-            );
-          }
-          return (
-            <View key={story.id} style={styles.progressBarTrack}>
-              <View style={[styles.progressBarFill, { width: index < currentIdx ? '100%' : '0%' }]} />
-            </View>
-          );
-        })}
-      </View>
-
-      {/* Header */}
-      <View style={styles.storyHeader}>
-        <View style={styles.creatorMeta}>
-          {storyCreatorAvatar ? (
-            <Image source={{ uri: storyCreatorAvatar }} style={styles.creatorAvatar} />
-          ) : (
-            <View style={[styles.creatorAvatar, styles.creatorAvatarFallback]}>
-              <User size={16} color="rgba(255,255,255,0.7)" strokeWidth={2} />
-            </View>
-          )}
-          <View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={styles.creatorName}>{storyCreator}</Text>
-              {isMyStory && (
-                <View style={styles.youBadge}>
-                  <Text style={styles.youBadgeText}>You</Text>
-                </View>
-              )}
-            </View>
-            {storyLocation ? <Text style={styles.locationText}>{storyLocation}</Text> : null}
-          </View>
-        </View>
-        <View style={styles.headerRightActions}>
+        {/* Full screen tap & hold zones inside chrome, behind header and bottom actions */}
+        <View style={styles.touchControlsContainer} pointerEvents="box-none">
           <TouchableOpacity
-            style={styles.headerMoreBtn}
-            onPress={openOptionsMenu}
-            accessibilityRole="button"
-            accessibilityLabel={t('stories.moreOptions')}
-          >
-            <MoreHorizontal size={20} color="#FFF" strokeWidth={2.2} />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.closeBtn} onPress={goBackOrHome} accessibilityRole="button" accessibilityLabel={t('stories.closeStories')}>
-            <X size={20} color="#FFF" />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Tap zones */}
-      <View style={styles.touchControlsContainer}>
-        <TouchableOpacity
-          style={styles.leftTouchBlock}
-          activeOpacity={1}
-          onPressIn={handleTapZonePressIn}
-          onPressOut={handleTapZonePressOut}
-          onPress={() => handleTapZoneTap(handlePrevStory)}
-        />
-        <TouchableOpacity
-          style={styles.rightTouchBlock}
-          activeOpacity={1}
-          onPressIn={handleTapZonePressIn}
-          onPressOut={handleTapZonePressOut}
-          onPress={() => handleTapZoneTap(handleNextStory)}
-        />
-      </View>
-
-      {/* Bottom: caption + activity button + like */}
-      <View style={[styles.bottomController, { bottom: Math.max(insets.bottom, 16) }]}>
-        {storyCaption.length > 0 && (
-          <View style={styles.captionPanel}>
-            <Text style={styles.captionText}>{storyCaption}</Text>
-          </View>
-        )}
-        <View style={styles.actionRow}>
-          {isMyStory ? (
-            <TouchableOpacity
-              style={styles.viewersPill}
-              onPress={openViewerSheet}
-              activeOpacity={0.8}
-              accessibilityRole="button"
-              accessibilityLabel="View story interactions"
-            >
-              <Eye size={15} color="#FFF" strokeWidth={2.2} />
-              <Text style={styles.viewersPillText}>
-                {totalViewsDisplay} {totalViewsDisplay === 1 ? 'view' : 'views'}
-              </Text>
-              {totalLikesDisplay > 0 && (
-                <>
-                  <View style={styles.pillDivider} />
-                  <Heart size={13} color="#EF4444" fill="#EF4444" />
-                  <Text style={styles.viewersPillText}>{totalLikesDisplay}</Text>
-                </>
-              )}
-              <ChevronUp size={15} color="rgba(255,255,255,0.7)" style={{ marginLeft: 2 }} />
-            </TouchableOpacity>
-          ) : (
-            <View style={{ flex: 1 }} />
-          )}
-
+            style={styles.leftTouchBlock}
+            activeOpacity={1}
+            pressRetentionOffset={{ top: 200, bottom: 200, left: 200, right: 200 }}
+            onPressIn={handleTapZonePressIn}
+            onPressOut={handleTapZonePressOut}
+            onPress={() => handleTapZoneTap(handlePrevStory)}
+          />
           <TouchableOpacity
-            style={styles.controlIconCircle}
-            onPress={handleToggleLike}
-            accessibilityRole="button"
-            accessibilityLabel={isLiked[activeStory.id] ? t('stories.unlikeStory') : t('stories.likeStory')}
-          >
-            <Heart
-              size={20}
-              color={isLiked[activeStory.id] ? '#EF4444' : '#FFF'}
-              fill={isLiked[activeStory.id] ? '#EF4444' : 'transparent'}
+            style={styles.rightTouchBlock}
+            activeOpacity={1}
+            pressRetentionOffset={{ top: 200, bottom: 200, left: 200, right: 200 }}
+            onPressIn={handleTapZonePressIn}
+            onPressOut={handleTapZonePressOut}
+            onPress={() => handleTapZoneTap(handleNextStory)}
+          />
+        </View>
+
+        {/* Progress bar — only the story that was opened */}
+        <View style={styles.progressBarWrapper} pointerEvents="none">
+          <View style={styles.progressBarTrack}>
+            <Animated.View
+              style={[
+                styles.progressBarFill,
+                {
+                  width: progressAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ['0%', '100%'],
+                  }),
+                },
+              ]}
             />
-          </TouchableOpacity>
+          </View>
         </View>
-      </View>
+
+        {/* Header */}
+        <View style={styles.storyHeader} pointerEvents="box-none">
+          <View style={styles.creatorMeta} pointerEvents="box-none">
+            {storyCreatorAvatar ? (
+              <Image source={{ uri: storyCreatorAvatar }} style={styles.creatorAvatar} />
+            ) : (
+              <View style={[styles.creatorAvatar, styles.creatorAvatarFallback]}>
+                <User size={16} color="rgba(255,255,255,0.7)" strokeWidth={2} />
+              </View>
+            )}
+            <View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={styles.creatorName}>{storyCreator}</Text>
+                {isMyStory && (
+                  <View style={styles.youBadge}>
+                    <Text style={styles.youBadgeText}>You</Text>
+                  </View>
+                )}
+              </View>
+              {storyLocation ? <Text style={styles.locationText}>{storyLocation}</Text> : null}
+            </View>
+          </View>
+          <View style={styles.headerRightActions} pointerEvents="box-none">
+            <TouchableOpacity
+              style={styles.headerMoreBtn}
+              onPress={openOptionsMenu}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              accessibilityRole="button"
+              accessibilityLabel={t('stories.moreOptions')}
+            >
+              <MoreHorizontal size={20} color="#FFF" strokeWidth={2.2} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.closeBtn}
+              onPress={goBackOrHome}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel={t('stories.closeStories')}
+            >
+              <X size={20} color="#FFF" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Bottom: activity / like controls */}
+        <View style={[styles.bottomController, { bottom: Math.max(insets.bottom, 16) }]} pointerEvents="box-none">
+          <View style={styles.actionRow} pointerEvents="box-none">
+            {isMyStory ? (
+              <TouchableOpacity
+                style={styles.viewersPill}
+                onPress={openViewerSheet}
+                activeOpacity={0.8}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                accessibilityRole="button"
+                accessibilityLabel="View story interactions"
+              >
+                <Eye size={15} color="#FFF" strokeWidth={2.2} />
+                <Text style={styles.viewersPillText}>
+                  {totalViewsDisplay} {totalViewsDisplay === 1 ? 'view' : 'views'}
+                </Text>
+                {totalLikesDisplay > 0 && (
+                  <>
+                    <View style={styles.pillDivider} />
+                    <Heart size={13} color="#EF4444" fill="#EF4444" />
+                    <Text style={styles.viewersPillText}>{totalLikesDisplay}</Text>
+                  </>
+                )}
+                <ChevronUp size={15} color="rgba(255,255,255,0.7)" style={{ marginLeft: 2 }} />
+              </TouchableOpacity>
+            ) : (
+              <View style={{ flex: 1 }} />
+            )}
+
+            {!isMyStory && (
+              <TouchableOpacity
+                style={styles.controlIconCircle}
+                onPress={handleToggleLike}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                accessibilityRole="button"
+                accessibilityLabel={isLiked[activeStory.id] ? t('stories.unlikeStory') : t('stories.likeStory')}
+              >
+                <Heart
+                  size={20}
+                  color={isLiked[activeStory.id] ? '#EF4444' : '#FFF'}
+                  fill={isLiked[activeStory.id] ? '#EF4444' : 'transparent'}
+                />
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </Animated.View>
 
       {/* Viewer & Likes Bottom Sheet */}
       <Modal
@@ -933,9 +964,27 @@ const styles = StyleSheet.create({
   },
   storyImageContainer: {
     ...StyleSheet.absoluteFill,
+    backgroundColor: '#000',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   storyImg: {
-    ...StyleSheet.absoluteFill,
+    width: '100%',
+    height: '100%',
+  },
+  topScrim: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 120,
+  },
+  bottomScrim: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 220,
   },
   storyImgFallback: {
     backgroundColor: '#111827',
@@ -1062,41 +1111,52 @@ const styles = StyleSheet.create({
   closeBtn: {
     padding: 12,
   },
+  chromeLayer: {
+    ...StyleSheet.absoluteFill,
+    zIndex: 50,
+  },
   touchControlsContainer: {
-    position: 'absolute',
-    top: 120,
-    bottom: 120,
-    left: 0,
-    right: 0,
+    ...StyleSheet.absoluteFill,
     flexDirection: 'row',
-    zIndex: 10,
+    zIndex: 1,
   },
   leftTouchBlock: {
     flex: 3,
+    height: '100%',
   },
   rightTouchBlock: {
     flex: 7,
+    height: '100%',
   },
   bottomController: {
     position: 'absolute',
     left: 14,
     right: 14,
     zIndex: 80,
-    gap: 10,
+    alignItems: 'center',
   },
-  captionPanel: {
-    paddingHorizontal: 6,
+  captionContainer: {
+    position: 'absolute',
+    left: 14,
+    right: 14,
+    zIndex: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
   },
-  captionText: {
-    color: '#FFF',
-    fontSize: 13.5,
+  captionPlainText: {
+    color: '#FFFFFF',
+    fontSize: 15,
     fontWeight: '600',
-    lineHeight: 18,
-    textShadowColor: 'rgba(0,0,0,0.8)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+    lineHeight: 22,
+    textAlign: 'center',
+    textShadowColor: 'rgba(0, 0, 0, 0.95)',
+    textShadowOffset: { width: 0, height: 1.5 },
+    textShadowRadius: 6,
+    maxWidth: '92%',
   },
   actionRow: {
+    width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',

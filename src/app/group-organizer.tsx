@@ -4,6 +4,7 @@ import { formatINR, parseMoney, type Money } from '@/lib/money';
 import { tripCoverImage } from '@/lib/trip-display';
 import { errorToastMessage, showPrompt, toast, useConfirm } from '@/lib/feedback';
 import { logger } from '@/lib/logger';
+import { uploadFileToUrl } from '@/lib/upload';
 import { queryClient } from '@/lib/query-client';
 import { queryKeys } from '@/lib/query-keys';
 import { syncBadgeCount } from '@/lib/push';
@@ -40,6 +41,8 @@ import MapPin from 'lucide-react-native/icons/map-pin';
 import Navigation from 'lucide-react-native/icons/navigation';
 import Plus from 'lucide-react-native/icons/plus';
 import Send from 'lucide-react-native/icons/send';
+import Smile from 'lucide-react-native/icons/smile';
+import Paperclip from 'lucide-react-native/icons/paperclip';
 import ShieldCheck from 'lucide-react-native/icons/shield-check';
 import TrendingUp from 'lucide-react-native/icons/trending-up';
 import Users from 'lucide-react-native/icons/users';
@@ -63,6 +66,23 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// Loaded the same guarded way the chat tab does — the native module is not
+// always present (Expo Go variations), and a missing picker must degrade to
+// a clear message rather than crashing the portal.
+let ImagePicker: typeof import('expo-image-picker') | null = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  ImagePicker = require('expo-image-picker');
+} catch {
+  ImagePicker = null;
+}
+
+// Same compact set the chat composer offers.
+const INQUIRY_EMOJIS = [
+  '😀','😅','😊','😍','😎','🤝','👍','👏','🙏','🎉',
+  '✅','❌','❓','❗','📍','🗓️','⏰','💰','🚌','🏨',
+];
 
 
 export interface TravelerQuestionItem {
@@ -493,6 +513,16 @@ export default function GroupOrganizerScreen() {
   const [inquiryMessagesLoading, setInquiryMessagesLoading] = useState(false);
   const [inquiryReplyText, setInquiryReplyText] = useState('');
   const [sendingInquiryReply, setSendingInquiryReply] = useState(false);
+  // Brought to parity with the Chat tab: this thread had no emoji picker, no
+  // attachment and never scrolled to the newest message.
+  const inquiryScrollRef = useRef<ScrollView>(null);
+  const [inquiryEmojiOpen, setInquiryEmojiOpen] = useState(false);
+  const [inquiryPhotoUploading, setInquiryPhotoUploading] = useState(false);
+
+  const scrollInquiryToEnd = useCallback((animated = true) => {
+    // A beat for the new row to lay out before scrolling to it.
+    setTimeout(() => inquiryScrollRef.current?.scrollToEnd({ animated }), 60);
+  }, []);
   const [publicGuides, setPublicGuides] = useState<PublicGuide[]>([]);
   // Which guides' declared service zones actually cover this trip's route.
   const [routeMatches, setRouteMatches] = useState<TripGuideMatches | null>(null);
@@ -1594,6 +1624,57 @@ export default function GroupOrganizerScreen() {
       unsubMsg();
     };
   }, [activeInquiryChat, profile?.id, profile?.name]);
+
+  // Photo attachment, mirroring the chat tab's flow: presigned upload when
+  // object storage is configured, otherwise the inline data URI so the
+  // message still sends.
+  const handleSendInquiryPhoto = useCallback(async () => {
+    if (!activeInquiryChat || inquiryPhotoUploading) return;
+    setInquiryEmojiOpen(false);
+    try {
+      if (!ImagePicker || typeof ImagePicker.requestMediaLibraryPermissionsAsync !== 'function') {
+        toast('The photo gallery is still starting up. Try again shortly.', 'error');
+        return;
+      }
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission?.granted) {
+        toast('Allow photo access to send a picture in this conversation.', 'error');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        quality: 0.7,
+        base64: true,
+      });
+      if (result.canceled || !result.assets?.length) return;
+      const asset = result.assets[0];
+      if (!asset) return;
+
+      const contentType =
+        asset.mimeType === 'image/png' || asset.mimeType === 'image/webp' ? asset.mimeType : 'image/jpeg';
+
+      setInquiryPhotoUploading(true);
+      let mediaUrl = asset.uri;
+      try {
+        const { uploadUrl, publicUrl } = await apiService.getChatMediaUploadUrl(contentType);
+        await uploadFileToUrl(asset.uri, uploadUrl, contentType);
+        if (publicUrl) mediaUrl = publicUrl;
+      } catch (uploadErr) {
+        logger.warn('[GroupOrganizer] Chat media upload unavailable; sending inline:', uploadErr);
+        if (asset.base64) mediaUrl = `data:${contentType};base64,${asset.base64}`;
+      }
+
+      socketService.sendMessage(activeInquiryChat.chatRoomId, '', 'IMAGE', mediaUrl);
+      scrollInquiryToEnd();
+    } catch (err) {
+      logger.warn('[GroupOrganizer] Photo send failed:', err);
+      toast(errorToastMessage(err, 'Could not send that photo. Please try again.'), 'error');
+    } finally {
+      setInquiryPhotoUploading(false);
+    }
+  }, [activeInquiryChat, inquiryPhotoUploading, scrollInquiryToEnd]);
 
   const handleSendInquiryReply = useCallback(async () => {
     if (!activeInquiryChat || !inquiryReplyText.trim() || sendingInquiryReply) return;
@@ -4484,9 +4565,14 @@ export default function GroupOrganizerScreen() {
             </View>
           ) : (
             <ScrollView
+              ref={inquiryScrollRef}
               style={styles.inquiryChatMsgList}
               contentContainerStyle={styles.inquiryChatMsgListContent}
               keyboardShouldPersistTaps="handled"
+              // Keeps the newest message in view as the thread grows and as
+              // the keyboard opens — this list previously stayed wherever it
+              // was, so a reply could be typed against an off-screen thread.
+              onContentSizeChange={() => inquiryScrollRef.current?.scrollToEnd({ animated: true })}
             >
               {inquiryMessages.length === 0 ? (
                 <View style={styles.cleanEmptyContainer}>
@@ -4510,14 +4596,25 @@ export default function GroupOrganizerScreen() {
                           isMe ? styles.inquiryBubbleMe : styles.inquiryBubbleThem,
                         ]}
                       >
-                        <Text
-                          style={[
-                            styles.inquiryBubbleText,
-                            isMe ? styles.inquiryBubbleTextMe : styles.inquiryBubbleTextThem,
-                          ]}
-                        >
-                          {msg.content}
-                        </Text>
+                        {msg.mediaType === 'IMAGE' && msg.mediaUrl ? (
+                          // Without this an attachment arrived as an empty
+                          // bubble — the text-only renderer had nothing to show.
+                          <Image
+                            source={{ uri: msg.mediaUrl }}
+                            style={styles.inquiryBubbleImage}
+                            resizeMode="cover"
+                          />
+                        ) : null}
+                        {msg.content ? (
+                          <Text
+                            style={[
+                              styles.inquiryBubbleText,
+                              isMe ? styles.inquiryBubbleTextMe : styles.inquiryBubbleTextThem,
+                            ]}
+                          >
+                            {msg.content}
+                          </Text>
+                        ) : null}
                         <Text
                           style={[
                             styles.inquiryBubbleTime,
@@ -4534,14 +4631,54 @@ export default function GroupOrganizerScreen() {
             </ScrollView>
           )}
 
+          {inquiryEmojiOpen && (
+            <View style={styles.inquiryEmojiPanel}>
+              {INQUIRY_EMOJIS.map((emoji) => (
+                <TouchableOpacity
+                  key={emoji}
+                  style={styles.inquiryEmojiBtn}
+                  onPress={() => setInquiryReplyText((prev) => prev + emoji)}
+                  accessibilityRole="button"
+                  accessibilityLabel={emoji}
+                >
+                  <Text style={styles.inquiryEmojiText}>{emoji}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
           {/* Reply input bar */}
           <View style={styles.inquiryChatInputBar}>
+            <TouchableOpacity
+              style={styles.inquiryComposerBtn}
+              onPress={() => setInquiryEmojiOpen((v) => !v)}
+              accessibilityRole="button"
+              accessibilityLabel={t('chat.emoji', 'Emoji')}
+            >
+              <Smile size={20} color={inquiryEmojiOpen ? C.blue : C.textMuted} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.inquiryComposerBtn}
+              onPress={handleSendInquiryPhoto}
+              disabled={inquiryPhotoUploading}
+              accessibilityRole="button"
+              accessibilityLabel={t('chat.attachPhoto', 'Attach photo')}
+            >
+              {inquiryPhotoUploading ? (
+                <ActivityIndicator size="small" color={C.blue} />
+              ) : (
+                <Paperclip size={19} color={C.textMuted} />
+              )}
+            </TouchableOpacity>
+
             <TextInput
               style={styles.inquiryChatInput}
               placeholder={`Reply to ${activeInquiryChat?.travelerName || 'traveler'}...`}
               placeholderTextColor={C.textMuted}
               value={inquiryReplyText}
               onChangeText={setInquiryReplyText}
+              onFocus={() => scrollInquiryToEnd()}
               multiline
             />
             <TouchableOpacity
@@ -4572,6 +4709,39 @@ export default function GroupOrganizerScreen() {
 // Stylesheet
 // ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
+  inquiryBubbleImage: {
+    width: 200,
+    height: 150,
+    borderRadius: 10,
+    marginBottom: 4,
+    backgroundColor: C.cardAlt,
+  },
+  inquiryComposerBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inquiryEmojiPanel: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 10,
+    paddingTop: 8,
+    paddingBottom: 2,
+    backgroundColor: C.cardAlt,
+    borderTopWidth: 1,
+    borderTopColor: C.border,
+  },
+  inquiryEmojiBtn: {
+    width: '10%',
+    aspectRatio: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inquiryEmojiText: {
+    fontSize: 20,
+  },
   // ── Clean Chats & Approvals Portal Styles ──
   cleanPortalWrap: {
     gap: 16,

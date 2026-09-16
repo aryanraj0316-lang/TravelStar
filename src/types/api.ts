@@ -410,6 +410,7 @@ export interface ChatMessage {
   latitude?: number | null;
   longitude?: number | null;
   createdAt: IsoDateTime;
+  isSystem?: boolean;
 }
 
 // GET /trips/nearby (docs/REMEDIATION.md §8.13) — a real Trip row plus the

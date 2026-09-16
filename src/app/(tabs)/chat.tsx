@@ -40,8 +40,8 @@ import Pin from 'lucide-react-native/icons/pin';
 import Plus from 'lucide-react-native/icons/plus';
 import Search from 'lucide-react-native/icons/search';
 import Send from 'lucide-react-native/icons/send';
-import Settings from 'lucide-react-native/icons/settings';
 import ShieldAlert from 'lucide-react-native/icons/shield-alert';
+import ShieldCheck from 'lucide-react-native/icons/shield-check';
 import Smile from 'lucide-react-native/icons/smile';
 import Trash2 from 'lucide-react-native/icons/trash-2';
 import AlertTriangle from 'lucide-react-native/icons/triangle-alert';
@@ -114,6 +114,9 @@ interface CustomMessage {
   status?: MessageStatus | null;
   sosId?: string;
   resolved?: boolean;
+  sosReason?: string;
+  sosRequester?: string;
+  isSystem?: boolean;
   replyTo?: {
     id: string;
     senderName: string;
@@ -393,6 +396,46 @@ function formatChatTime(rawTime: string | number | Date | null | undefined): str
 // which is why there is no hand-written React.memo here. A busy trip group is
 // the app's only truly unbounded list, and it previously mounted every message
 // it had ever loaded, all at once (docs/REMEDIATION.md Phase 10).
+function extractSosDetails(content: string, explicitReason?: string) {
+  let issue = explicitReason?.trim() || '';
+  let requester = '';
+  const isStale = content.toLowerCase().includes('last known location');
+
+  if (!issue) {
+    const reasonMatch = content.match(/(?:Reason|Issue|Details):\s*([^\n\r]+)/i);
+    if (reasonMatch && reasonMatch[1]) {
+      issue = reasonMatch[1].trim();
+    }
+  }
+
+  if (!issue) {
+    const backendMatch = content.match(/Emergency alert\s*[—–-]\s*([^\.\n]+)\s+has requested assistance(?:[^\.\n]*\.)(?:\s*Showing their Last known location[^\.\n]*\.)?\s*(.*)$/i);
+    if (backendMatch) {
+      if (backendMatch[1]) requester = backendMatch[1].trim();
+      if (backendMatch[2]) issue = backendMatch[2].trim();
+    }
+  }
+
+  if (!requester) {
+    const reqMatch = content.match(/(?:by|alert\s*[—–-])\s*([A-Za-z0-9 _]+?)(?:\s*has|\s*!|\s*needs|\s*has requested)/i);
+    if (reqMatch && reqMatch[1]) {
+      requester = reqMatch[1].trim();
+    }
+  }
+
+  return {
+    issue: issue || null,
+    requester: requester || null,
+    isStale,
+  };
+}
+
+// One chat message. Extracted from an inline `.map()` so the message list can
+// be virtualized (the FlatList below) and so the React Compiler
+// (app.json > experiments.reactCompiler) can memoize bubbles independently —
+// which is why there is no hand-written React.memo here. A busy trip group is
+// the app's only truly unbounded list, and it previously mounted every message
+// it had ever loaded, all at once (docs/REMEDIATION.md Phase 10).
 function MessageBubble({
   msg,
   isConsecutive: isConsecutiveProp,
@@ -431,9 +474,129 @@ function MessageBubble({
   const { t } = useTranslation();
   const hasTranslation = isTranslated;
   const displayedContent = hasTranslation && msg.translations?.hindi ? msg.translations.hindi : msg.content;
-  const isSOS = msg.type === 'sos';
+  const isSOS =
+    msg.type === 'sos' ||
+    ((msg.isSystem || msg.locationCoords) &&
+      (msg.content?.includes('Emergency alert') ||
+       msg.content?.includes('Emergency assistance') ||
+       msg.content?.includes('requested assistance') ||
+       msg.content?.includes('SOS PANIC') ||
+       msg.content?.includes('CRITICAL EMERGENCY')));
   const isSystem = msg.senderRole === 'SYSTEM' || msg.senderName === 'System';
   const senderAvatar = msg.avatar || findMemberAvatar(msg.senderId, msg.senderName, msg.senderRole, members || []);
+
+  if (isSOS) {
+    const { issue, requester, isStale } = extractSosDetails(msg.content, msg.sosReason);
+    const displayName = requester || (msg.isMe ? t('chat.you', 'You') : msg.senderName) || t('common.traveller', 'Traveller');
+    const lat = msg.locationCoords?.latitude;
+    const lng = msg.locationCoords?.longitude;
+    const hasCoords = lat != null && lng != null;
+
+    return (
+      <View style={styles.sosBroadcastRow}>
+        <View style={styles.sosCardAlert}>
+          {/* Header Badge & Alert Level */}
+          <View style={styles.sosCardTopRow}>
+            <View style={styles.sosBadgePill}>
+              <ShieldAlert size={14} color="#EF4444" strokeWidth={2.4} />
+              <Text style={styles.sosBadgePillText}>
+                {t('chat.criticalSosDispatch', 'CRITICAL SOS ALERT')}
+              </Text>
+            </View>
+            <Text style={styles.sosCardTimestamp}>
+              {formatChatTime(msg.createdAt || msg.timestamp)}
+            </Text>
+          </View>
+
+          {/* Requester Identity Row */}
+          <View style={styles.sosRequesterRow}>
+            <View style={styles.sosRequesterIconCircle}>
+              <AlertTriangle size={18} color="#FFFFFF" strokeWidth={2.4} />
+            </View>
+            <View style={styles.sosRequesterMeta}>
+              <Text style={styles.sosRequesterTitle} numberOfLines={1}>
+                {displayName}
+              </Text>
+              <Text style={styles.sosRequesterSub}>
+                {t('chat.sosAssistanceRequested', 'Emergency assistance requested')}
+              </Text>
+            </View>
+          </View>
+
+          {/* Reported Issue Box */}
+          <View style={styles.sosIssueCard}>
+            <View style={styles.sosIssueLabelRow}>
+              <AlertCircle size={13} color="#F87171" strokeWidth={2.2} />
+              <Text style={styles.sosIssueLabelText}>
+                {t('chat.reportedIssueLabel', 'REPORTED ISSUE / REASON')}
+              </Text>
+            </View>
+            <Text style={styles.sosIssueMainText}>
+              {issue ? issue : t('chat.sosImmediateHelpNeeded', 'Immediate emergency assistance required at current position.')}
+            </Text>
+          </View>
+
+          {/* Location and Telemetry Strip */}
+          {hasCoords && (
+            <View style={styles.sosLocationStrip}>
+              <View style={styles.sosLocationCoordsRow}>
+                <MapPin size={13} color="#FCA5A5" />
+                <Text style={styles.sosLocationCoordsText}>
+                  {lat.toFixed(4)}° N, {lng.toFixed(4)}° E
+                </Text>
+              </View>
+              {isStale && (
+                <View style={styles.sosStaleBadge}>
+                  <Text style={styles.sosStaleBadgeText}>
+                    {t('chat.lastKnownPosition', 'Last Known Position')}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* Action Controls */}
+          <View style={styles.sosAlertBtnRow}>
+            {hasCoords && (
+              <TouchableOpacity
+                style={styles.sosPrimaryBtn}
+                onPress={() => onOpenMap(msg)}
+                accessibilityRole="button"
+                accessibilityLabel={t('chat.showOnMap', 'View on Map')}
+              >
+                <MapPin size={13} color="#FFFFFF" strokeWidth={2.4} />
+                <Text style={styles.sosPrimaryBtnText}>{t('chat.showOnMap', 'View on Map')}</Text>
+              </TouchableOpacity>
+            )}
+
+            {hasCoords && (
+              <TouchableOpacity
+                style={styles.sosSecondaryBtn}
+                onPress={() => onOpenExternalMaps(msg)}
+                accessibilityRole="button"
+                accessibilityLabel={t('chat.openInMaps', 'Navigate')}
+              >
+                <CornerUpLeft size={13} color="#E2E8F0" strokeWidth={2.4} />
+                <Text style={styles.sosSecondaryBtnText}>{t('chat.navigate', 'Navigate')}</Text>
+              </TouchableOpacity>
+            )}
+
+            {(canResolveSOS || msg.isMe) && (
+              <TouchableOpacity
+                style={styles.sosResolveBtn}
+                onPress={onResolveSOS}
+                accessibilityRole="button"
+                accessibilityLabel={t('chat.markAsSafe', "I'm safe")}
+              >
+                <ShieldCheck size={13} color="#FFFFFF" strokeWidth={2.4} />
+                <Text style={styles.sosResolveBtnText}>{t('chat.safe', "I'm safe")}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </View>
+    );
+  }
 
   if (isSystem) {
     return (
@@ -654,48 +817,6 @@ function MessageBubble({
                   </Text>
                 </View>
               ) : null}
-            </View>
-          ) : msg.type === 'sos' ? (
-            <View style={styles.sosCardAlert}>
-              <View style={styles.sosAlertHeader}>
-                <AlertCircle size={18} color="#FFF" />
-                <Text style={styles.sosAlertHeaderTitle}>{t('chat.criticalEmergencyWarning')}</Text>
-              </View>
-              <Text style={styles.sosAlertDesc}>{msg.content}</Text>
-              <Text style={styles.sosAlertCoords}>
-                {t('chat.coordinates', {
-                  lat: msg.locationCoords?.latitude.toFixed(4),
-                  lng: msg.locationCoords?.longitude.toFixed(4),
-                })}
-              </Text>
-              <View style={styles.sosAlertBtnRow}>
-                <TouchableOpacity
-                  style={[styles.sosAlertBtn, { backgroundColor: 'rgba(255,255,255,0.15)' }]}
-                  onPress={() => onOpenMap(msg)}
-                  accessibilityRole="button"
-                  accessibilityLabel={t('chat.showOnMap')}
-                >
-                  <Text style={styles.sosAlertBtnText}>{t('chat.showOnMap')}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.sosAlertBtn, { backgroundColor: 'rgba(255,255,255,0.15)' }]}
-                  onPress={() => onOpenExternalMaps(msg)}
-                  accessibilityRole="button"
-                  accessibilityLabel={t('chat.openInMaps')}
-                >
-                  <Text style={styles.sosAlertBtnText}>{t('chat.openInMaps')}</Text>
-                </TouchableOpacity>
-                {canResolveSOS ? (
-                  <TouchableOpacity
-                    style={[styles.sosAlertBtn, { backgroundColor: C.green }]}
-                    onPress={onResolveSOS}
-                    accessibilityRole="button"
-                    accessibilityLabel={t('chat.markAsSafe')}
-                  >
-                    <Text style={styles.sosAlertBtnText}>{t('chat.markAsSafe')}</Text>
-                  </TouchableOpacity>
-                ) : null}
-              </View>
             </View>
           ) : (
             <View style={[msg.isMe ? styles.bubbleContainerMe : styles.bubbleContainerOther]}>
@@ -982,17 +1103,17 @@ function ChatScreen() {
       setIsChatContentReady(true);
 
       // Optimistically clear unread on current room immediately so badges disappear
+      let noneUnreadLeft = false;
       setInboxRooms((prevRooms) => {
         const updated = prevRooms.map((room) =>
           room.id === selectedRoomId || `room-${room.id}` === selectedRoomId || room.id === `room-${selectedRoomId}`
             ? { ...room, unreadCount: 0 }
             : room,
         );
-        if (!updated.some((r) => r.unreadCount > 0)) {
-          clearChatUnread();
-        }
+        if (!updated.some((r) => r.unreadCount > 0)) noneUnreadLeft = true;
         return updated;
       });
+      if (noneUnreadLeft) clearChatUnread();
 
       apiService
         .markChatRead(selectedRoomId)
@@ -1015,8 +1136,22 @@ function ChatScreen() {
               const isMe = m.senderId === profile.id || !!(profile.name && m.senderName === profile.name);
               const messageAvatar = m.senderAvatar || m.avatar || findMemberAvatar(m.senderId, m.senderName, m.senderRole, dbMembers);
               const hasCoords = m.latitude != null && m.longitude != null;
+              const isSos =
+                (m.isSystem || m.mediaType === 'LOCATION') &&
+                (m.content?.includes('Emergency alert') ||
+                 m.content?.includes('Emergency assistance') ||
+                 m.content?.includes('requested assistance') ||
+                 m.content?.includes('SOS'));
               const type: CustomMessage['type'] =
-                m.mediaType === 'IMAGE' ? 'image' : m.mediaType === 'VOICE' ? 'voice' : m.mediaType === 'LOCATION' && hasCoords ? 'location' : 'text';
+                isSos
+                  ? 'sos'
+                  : m.mediaType === 'IMAGE'
+                    ? 'image'
+                    : m.mediaType === 'VOICE'
+                      ? 'voice'
+                      : m.mediaType === 'LOCATION' && hasCoords
+                        ? 'location'
+                        : 'text';
               return {
                 id: m.id,
                 senderId: m.senderId,
@@ -1209,14 +1344,23 @@ function ChatScreen() {
         );
         const incomingAvatar = latestMsg.senderAvatar || latestMsg.avatar || memberMatch?.avatar || '';
 
+        const isSos =
+          (latestMsg.isSystem || latestMsg.mediaType === 'LOCATION') &&
+          (latestMsg.content?.includes('Emergency alert') ||
+           latestMsg.content?.includes('Emergency assistance') ||
+           latestMsg.content?.includes('requested assistance') ||
+           latestMsg.content?.includes('SOS'));
+
         const newMsgType: CustomMessage['type'] =
-          latestMsg.mediaType === 'IMAGE'
-            ? 'image'
-            : latestMsg.mediaType === 'VOICE'
-              ? 'voice'
-              : latestMsgLoc.mediaType === 'LOCATION' && latestMsgHasCoords
-                ? 'location'
-                : 'text';
+          isSos
+            ? 'sos'
+            : latestMsg.mediaType === 'IMAGE'
+              ? 'image'
+              : latestMsg.mediaType === 'VOICE'
+                ? 'voice'
+                : latestMsgLoc.mediaType === 'LOCATION' && latestMsgHasCoords
+                  ? 'location'
+                  : 'text';
 
         const newMsg: CustomMessage = {
           id: latestMsg.id,
@@ -1623,17 +1767,17 @@ function ChatScreen() {
         // 7. If inside a particular chat screen, return to the chat list screen
         if (selectedRoomId) {
           const leavingRoomId = selectedRoomId;
+          let noneUnreadLeft = false;
           setInboxRooms((prev) => {
             const updated = prev.map((r) =>
               r.id === leavingRoomId || `room-${r.id}` === leavingRoomId || r.id === `room-${leavingRoomId}`
                 ? { ...r, unreadCount: 0 }
                 : r,
             );
-            if (!updated.some((r) => r.unreadCount > 0)) {
-              clearChatUnread();
-            }
+            if (!updated.some((r) => r.unreadCount > 0)) noneUnreadLeft = true;
             return updated;
           });
+          if (noneUnreadLeft) clearChatUnread();
           setSelectedRoomId(null);
           setUnreadSessionCount(0);
           return true;
@@ -2512,10 +2656,14 @@ function ChatScreen() {
       toast(t('chat.sosSentWithLastKnown'), 'info');
     }
 
+    const issueText = detail?.trim();
     const sosMessage: CustomMessage = {
       id: `sos-gen-${Date.now()}`,
       type: 'sos',
-      content: `🚨 SOS PANIC TRIGGERED by ${profile.name}! Needs immediate assistance.`,
+      content: issueText
+        ? `Emergency assistance requested by ${profile.name}. Reason: ${issueText}`
+        : `Emergency assistance requested by ${profile.name}. Immediate assistance required.`,
+      sosReason: issueText || undefined,
       locationCoords: { latitude: lat, longitude: lng },
       resolved: false,
       senderId: profile.id,
@@ -2540,7 +2688,9 @@ function ChatScreen() {
         if (room.tripId === selectedTripId) {
           return {
             ...room,
-            latestMessage: `🚨 SOS Alert Triggered!`,
+            latestMessage: issueText
+              ? `Emergency SOS: ${profile.name} — ${issueText}`
+              : `Emergency SOS: ${profile.name}`,
             latestTime: 'Now',
             lastMessageAt: new Date().toISOString(),
           };
@@ -2744,12 +2894,50 @@ function ChatScreen() {
             style={styles.safetyTickerBanner}
             onPress={() => router.navigate('/map')}
             accessibilityRole="button"
-            accessibilityLabel={t('chat.sosLocateHint', { name: activeSOS.userName })}
+            accessibilityLabel={
+              activeSOS.message
+                ? `${activeSOS.userName}: ${activeSOS.message}`
+                : t('chat.sosLocateHint', { name: activeSOS.userName })
+            }
           >
-            <AlertTriangle size={15} color="#FFF" style={styles.sosFlash} />
-            <Text style={styles.safetyTickerText} numberOfLines={1}>
-              {t('chat.sosLocateHint', { name: activeSOS.userName })}
-            </Text>
+            <View style={styles.safetyTickerLeft}>
+              <View style={styles.safetyTickerIconCircle}>
+                <AlertTriangle size={15} color="#FFF" />
+              </View>
+              <View style={styles.safetyTickerTextWrap}>
+                <View style={styles.safetyTickerHeaderRow}>
+                  <Text style={styles.safetyTickerBadgeText}>
+                    {t('chat.criticalSosAlert', 'CRITICAL SOS ALERT')}
+                  </Text>
+                  <Text style={styles.safetyTickerUserText} numberOfLines={1}>
+                    • {activeSOS.userName}
+                  </Text>
+                </View>
+                {activeSOS.message ? (
+                  <Text style={styles.safetyTickerReasonText} numberOfLines={1}>
+                    {t('chat.issueLabel', 'Issue')}: {activeSOS.message}
+                  </Text>
+                ) : (
+                  <Text style={styles.safetyTickerReasonText} numberOfLines={1}>
+                    {t('chat.sosLocateHint', { name: activeSOS.userName })}
+                  </Text>
+                )}
+              </View>
+            </View>
+            {((activeSOS.userId && profile.id && activeSOS.userId === profile.id) ||
+              (!activeSOS.userId && profile.name && activeSOS.userName === profile.name) ||
+              activeSOS.userName === profile.name) && (
+              <TouchableOpacity
+                style={styles.safetyTickerSafeBtn}
+                onPress={handleResolveSOSEvent}
+                accessibilityRole="button"
+                accessibilityLabel={t('chat.markAsSafe', "I'm safe")}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <ShieldCheck size={13} color="#065F46" strokeWidth={2.6} />
+                <Text style={styles.safetyTickerSafeText}>{t('chat.safe', "I'm safe")}</Text>
+              </TouchableOpacity>
+            )}
           </TouchableOpacity>
         )}
 
@@ -2795,17 +2983,17 @@ function ChatScreen() {
                     setUnreadSessionCount(room.unreadCount || 0);
                     setIsChatContentReady(true);
                     initialScrollDoneRoomRef.current = null;
+                    let noneUnreadLeft = false;
                     setInboxRooms((prev) => {
                       const updated = prev.map((r) =>
                         r.id === room.id || `room-${r.id}` === room.id || r.id === `room-${room.id}` || (room.tripId && r.tripId === room.tripId)
                           ? { ...r, unreadCount: 0 }
                           : r,
                       );
-                      if (!updated.some((r) => r.unreadCount > 0)) {
-                        clearChatUnread();
-                      }
+                      if (!updated.some((r) => r.unreadCount > 0)) noneUnreadLeft = true;
                       return updated;
                     });
+                    if (noneUnreadLeft) clearChatUnread();
                     setSelectedRoomId(room.id);
                     setSelectedTripId(room.tripId);
                   }}
@@ -3070,17 +3258,17 @@ function ChatScreen() {
             onPress={() => {
               if (selectedRoomId) {
                 const leavingRoomId = selectedRoomId;
+                let noneUnreadLeft = false;
                 setInboxRooms((prev) => {
                   const updated = prev.map((r) =>
                     r.id === leavingRoomId || `room-${r.id}` === leavingRoomId || r.id === `room-${leavingRoomId}`
                       ? { ...r, unreadCount: 0 }
                       : r,
                   );
-                  if (!updated.some((r) => r.unreadCount > 0)) {
-                    clearChatUnread();
-                  }
+                  if (!updated.some((r) => r.unreadCount > 0)) noneUnreadLeft = true;
                   return updated;
                 });
+                if (noneUnreadLeft) clearChatUnread();
               }
               setSelectedRoomId(null);
               setIsSettingsOpen(false);
@@ -3137,7 +3325,17 @@ function ChatScreen() {
         <View style={styles.headerRightActions}>
           <TouchableOpacity
             style={styles.actionRoundBtn}
-            onPress={() => router.navigate('/map')}
+            onPress={() => {
+              // Carry the room's trip through, or the map opens generically
+              // with no route to draw — which is why this button showed the
+              // plain search map instead of the group's itinerary.
+              const roomTripId = activeRoom?.tripId || selectedTripId;
+              if (roomTripId) {
+                router.push({ pathname: '/map', params: { tripId: roomTripId } });
+              } else {
+                router.navigate('/map');
+              }
+            }}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             activeOpacity={0.7}
             accessibilityRole="button"
@@ -3146,51 +3344,13 @@ function ChatScreen() {
             <MapPin size={17} color={C.text} />
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.actionRoundBtn}
-            onPress={() => setIsSettingsOpen(true)}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel={t('chat.openRoomSettings')}
-          >
-            <Settings size={17} color={C.text} />
-          </TouchableOpacity>
+          {/* The settings gear is gone from the header. The same drawer is
+              still reachable by tapping the room's name/member line above,
+              which already opens it. */}
         </View>
       </View>
 
-      {/* ─── SOS ACTIVE BANNER ─────────────────────────────────── */}
-      {activeSOS && (
-        <LinearGradient
-          colors={['#7A0010', '#D32F2F']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.sosAlertBanner}
-        >
-          <View style={styles.sosBannerLeft}>
-            <AlertTriangle size={18} color="#FFF" style={styles.sosPulse} />
-            <Text style={styles.sosBannerText}>{t('chat.sosAlertNeedsHelp', { name: activeSOS.userName })}</Text>
-          </View>
-          <View style={styles.sosBannerRight}>
-            <TouchableOpacity
-              style={styles.sosBannerActionBtn}
-              onPress={() => router.navigate('/map')}
-              accessibilityRole="button"
-              accessibilityLabel={t('chat.showOnMap')}
-            >
-              <Text style={styles.sosBannerBtnText}>{t('chat.locate')}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.sosBannerActionBtn, { backgroundColor: '#FFF' }]}
-              onPress={handleResolveSOSEvent}
-              accessibilityRole="button"
-              accessibilityLabel={t('chat.markAsSafe')}
-            >
-              <Text style={[styles.sosBannerBtnText, { color: '#D32F2F' }]}>{t('chat.safe')}</Text>
-            </TouchableOpacity>
-          </View>
-        </LinearGradient>
-      )}
+      {/* ─── SOS ACTIVE BANNER (explicit in-room banner removed per user specification) ───── */}
 
       {/* ─── WORKSPACE CONTENT AREA (CLEAN CONVERSATION FEED) ───── */}
       <View style={{ flex: 1 }}>
@@ -4473,17 +4633,67 @@ const styles = StyleSheet.create({
   safetyTickerBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: MIN_TOUCH_TARGET,
-    backgroundColor: C.red,
+    justifyContent: 'space-between',
+    minHeight: 52,
+    backgroundColor: '#B91C1C',
+    borderBottomWidth: 1,
+    borderBottomColor: '#EF4444',
     paddingVertical: 8,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
   },
-  sosFlash: {
+  safetyTickerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
     marginRight: 8,
+    gap: 10,
   },
-  safetyTickerText: {
-    color: '#FFF',
+  safetyTickerIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  safetyTickerTextWrap: {
+    flex: 1,
+  },
+  safetyTickerHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  safetyTickerBadgeText: {
+    color: '#FEE2E2',
+    fontSize: 10.5,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  safetyTickerUserText: {
+    color: '#FFFFFF',
     fontSize: 12,
+    fontWeight: '800',
+    flexShrink: 1,
+  },
+  safetyTickerReasonText: {
+    color: 'rgba(255, 255, 255, 0.95)',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  safetyTickerSafeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#ECFDF5',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  safetyTickerSafeText: {
+    color: '#065F46',
+    fontSize: 11.5,
     fontWeight: '800',
   },
 
@@ -5814,54 +6024,199 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // SOS Card Alert
-  sosCardAlert: {
-    backgroundColor: '#8B0000',
-    borderWidth: 1.5,
-    borderColor: C.red,
-    borderRadius: 14,
-    padding: 12,
-    maxWidth: '95%',
+  // SOS Card Alert - Professional Emergency Dispatch Standard
+  sosBroadcastRow: {
+    width: '100%',
+    alignItems: 'center',
+    marginVertical: 10,
+    paddingHorizontal: 6,
   },
-  sosAlertHeader: {
+  sosCardAlert: {
+    width: '100%',
+    backgroundColor: '#1C0B0E',
+    borderWidth: 1.5,
+    borderColor: '#EF4444',
+    borderRadius: 16,
+    padding: 14,
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  sosCardTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    justifyContent: 'space-between',
+    marginBottom: 10,
   },
-  sosAlertHeaderTitle: {
-    color: '#FFF',
+  sosBadgePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(239, 68, 68, 0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.4)',
+    borderRadius: 20,
+    paddingHorizontal: 9,
+    paddingVertical: 3.5,
+  },
+  sosBadgePillText: {
+    color: '#F87171',
+    fontSize: 10.5,
     fontWeight: '900',
-    fontSize: 12,
-    marginLeft: 6,
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
-  sosAlertDesc: {
-    color: '#FFCDD2',
-    fontSize: 12.5,
-    fontWeight: '700',
-    lineHeight: 18,
+  sosCardTimestamp: {
+    color: '#94A3B8',
+    fontSize: 11,
+    fontWeight: '600',
   },
-  sosAlertCoords: {
-    color: 'rgba(255,255,255,0.7)',
+  sosRequesterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 10,
+  },
+  sosRequesterIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#DC2626',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sosRequesterMeta: {
+    flex: 1,
+  },
+  sosRequesterTitle: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  sosRequesterSub: {
+    color: '#FCA5A5',
     fontSize: 12,
     fontWeight: '600',
-    marginTop: 6,
+    marginTop: 1,
+  },
+  sosIssueCard: {
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 10,
+  },
+  sosIssueLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginBottom: 4,
+  },
+  sosIssueLabelText: {
+    color: '#F87171',
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  sosIssueMainText: {
+    color: '#FFFFFF',
+    fontSize: 13.5,
+    fontWeight: '600',
+    lineHeight: 19,
+  },
+  sosLocationStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  sosLocationCoordsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  sosLocationCoordsText: {
+    color: '#F1F5F9',
+    fontSize: 12,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+  },
+  sosStaleBadge: {
+    backgroundColor: '#78350F',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  sosStaleBadgeText: {
+    color: '#FDE68A',
+    fontSize: 10,
+    fontWeight: '700',
   },
   sosAlertBtnRow: {
     flexDirection: 'row',
     gap: 8,
-    marginTop: 10,
   },
-  sosAlertBtn: {
+  sosPrimaryBtn: {
     flex: 1,
-    minHeight: MIN_TOUCH_TARGET,
-    paddingVertical: 7,
-    borderRadius: 8,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 5,
+    minHeight: MIN_TOUCH_TARGET,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: '#DC2626',
   },
-  sosAlertBtnText: {
-    color: '#FFF',
+  sosPrimaryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  sosSecondaryBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    minHeight: MIN_TOUCH_TARGET,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
+  },
+  sosSecondaryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  sosResolveBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    minHeight: MIN_TOUCH_TARGET,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: '#059669',
+  },
+  sosResolveBtnText: {
+    color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '800',
   },

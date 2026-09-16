@@ -6,6 +6,7 @@ import { logger } from '../lib/logger';
 import { claimSeatAndJoin } from './trip-membership';
 import { sendPushToUsers, unreadCountFor } from '../lib/push';
 import { Decimal } from '@prisma/client/runtime/library';
+import type { Server as SocketIOServer } from 'socket.io';
 
 // ── Razorpay client (lazy singleton) ──────────────────────────────────────
 
@@ -132,6 +133,7 @@ export async function captureAndClaimSeat(opts: {
   razorpayOrderId: string;
   razorpayPaymentId: string;
   signatureVerified: true;
+  io?: SocketIOServer | null | undefined;
 }): Promise<CaptureResult> {
   const { razorpayOrderId, razorpayPaymentId } = opts;
 
@@ -174,7 +176,7 @@ export async function captureAndClaimSeat(opts: {
   });
 
   await _dispatchJoinNotifications(
-    joinRequest.userId, joinRequest.tripId, joinRequest.trip.name, claim.chatRoomId ?? null,
+    joinRequest.userId, joinRequest.tripId, joinRequest.trip.name, claim.chatRoomId ?? null, opts.io,
   );
 
   return { ok: true, joinRequestId: joinRequest.id, chatRoomId: claim.chatRoomId ?? null };
@@ -192,7 +194,11 @@ export type WalletPayResult =
  * cannot both succeed. An idempotency key on WalletTransaction prevents
  * double-deduction on retry.
  */
-export async function payFromWallet(joinRequestId: string, userId: string): Promise<WalletPayResult> {
+export async function payFromWallet(
+  joinRequestId: string,
+  userId: string,
+  io?: SocketIOServer | null | undefined,
+): Promise<WalletPayResult> {
   let order = await prisma.tripPaymentOrder.findUnique({
     where: { joinRequestId },
     include: { joinRequest: { include: { trip: true } } },
@@ -282,7 +288,7 @@ export async function payFromWallet(joinRequestId: string, userId: string): Prom
 
   await _dispatchJoinNotifications(
     order.joinRequest.userId, order.joinRequest.tripId,
-    order.joinRequest.trip.name, claim.chatRoomId ?? null,
+    order.joinRequest.trip.name, claim.chatRoomId ?? null, io,
   );
 
   return { ok: true, joinRequestId, chatRoomId: claim.chatRoomId ?? null };
@@ -309,7 +315,11 @@ export type DirectPayResult =
  * adding gateway credentials later changes how the money is collected without
  * changing anything downstream of it.
  */
-export async function payDirect(joinRequestId: string, userId: string): Promise<DirectPayResult> {
+export async function payDirect(
+  joinRequestId: string,
+  userId: string,
+  io?: SocketIOServer | null | undefined,
+): Promise<DirectPayResult> {
   const jr = await prisma.joinRequest.findUnique({
     where: { id: joinRequestId },
     include: { trip: true, paymentOrder: true },
@@ -369,7 +379,7 @@ export async function payDirect(joinRequestId: string, userId: string): Promise<
   });
 
   await _dispatchJoinNotifications(
-    jr.userId, jr.tripId, jr.trip.name, claim.chatRoomId ?? null,
+    jr.userId, jr.tripId, jr.trip.name, claim.chatRoomId ?? null, io,
   );
 
   return {
@@ -437,12 +447,71 @@ async function _refundWalletInternal(
   });
 }
 
+/**
+ * The "X has joined the group" line in a trip's group chat. Same wording,
+ * same system flag and same live event as the free-trip approval path in
+ * interactions.ts, so a paid join reads identically to a free one.
+ */
+export async function announceMemberJoined(opts: {
+  chatRoomId: string;
+  userId: string;
+  tripId: string;
+  io?: SocketIOServer | null | undefined;
+}): Promise<void> {
+  const { chatRoomId, userId, tripId, io } = opts;
+
+  const [member, trip] = await Promise.all([
+    prisma.user.findUnique({ where: { id: userId }, include: { profile: true } }),
+    prisma.trip.findUnique({ where: { id: tripId }, select: { creatorId: true } }),
+  ]);
+  const memberName = member?.profile
+    ? `${member.profile.firstName} ${member.profile.lastName ?? ''}`.trim()
+    : (member?.email ? member.email.split('@')[0] : 'Traveler');
+  const content = `${memberName} has joined the group`;
+
+  const saved = await prisma.message.create({
+    data: {
+      chatRoomId,
+      // Attributed to the organizer, matching interactions.ts; isSystem is
+      // what every client actually renders on.
+      senderId: trip?.creatorId ?? userId,
+      content,
+      mediaType: 'NONE',
+      isSystem: true,
+    },
+  });
+
+  io?.to(chatRoomId).emit('messageReceived', {
+    roomId: chatRoomId,
+    message: {
+      id: saved.id,
+      senderName: 'System',
+      senderRole: 'SYSTEM',
+      content,
+      timestamp: saved.createdAt.toISOString(),
+      createdAt: saved.createdAt.toISOString(),
+      mediaType: 'NONE',
+      isSystem: true,
+    },
+  });
+}
+
 async function _dispatchJoinNotifications(
   userId: string,
   tripId: string,
   tripName: string,
   chatRoomId: string | null,
+  io?: SocketIOServer | null | undefined,
 ) {
+  // Tell the group someone new is in. Only the free-trip approval path ever
+  // posted this, so once paid trips moved to seating on payment, a traveller
+  // who paid joined the chat silently and nobody there knew.
+  if (chatRoomId) {
+    await announceMemberJoined({ chatRoomId, userId, tripId, io }).catch((err) =>
+      logger.warn('[TripPayments] Join announcement failed (non-fatal):', err),
+    );
+  }
+
   try {
     // Both notifications quote the actual figures rather than "payment
     // confirmed", so each side has the receipt in hand without opening

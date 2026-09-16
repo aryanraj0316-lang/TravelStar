@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
@@ -7,6 +8,20 @@ import { getSosAudienceUserIds, resolveSosAudience } from '../../services/sos-au
 import { sendPushToUsers } from '../../lib/push';
 
 const router = Router();
+
+const sosLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: (req) => (req as any).user?.id ?? req.ip ?? 'unknown',
+  message: {
+    ok: false,
+    error: {
+      code: 'RATE_LIMITED',
+      message: 'Too many SOS alerts raised. Please wait a few minutes before raising another alert.',
+    },
+  },
+});
 
 function validationError(res: Response, issues: z.ZodIssue[]) {
   return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Please check the submitted data.', details: issues.map((i) => ({ path: i.path.join('.'), message: i.message })) } });
@@ -76,18 +91,28 @@ const sosSchema = z.object({
 });
 
 // POST /safety/sos — Trigger a new SOS alert (Prisma-backed + socket broadcast)
-router.post('/sos', async (req, res) => {
+router.post('/sos', sosLimiter, async (req, res) => {
   const userId = requireUserId(req);
   const parsed = sosSchema.safeParse(req.body);
   if (!parsed.success) return validationError(res, parsed.error.issues);
   const { userName, latitude, longitude, message, accuracyMeters, capturedAt, isStale } = parsed.data;
 
   try {
-    const newAlert = await prisma.sOSAlert.create({
-      // The reason is stored, not just broadcast, so it is still there for
-      // anyone who opens the app after the alert fired.
-      data: { userId, latitude, longitude, message: message ?? null },
+    const existingAlert = await prisma.sOSAlert.findFirst({
+      where: {
+        userId,
+        status: 'ACTIVE',
+        alertTime: { gte: new Date(Date.now() - 15000) },
+      },
     });
+
+    const newAlert =
+      existingAlert ??
+      (await prisma.sOSAlert.create({
+        // The reason is stored, not just broadcast, so it is still there for
+        // anyone who opens the app after the alert fired.
+        data: { userId, latitude, longitude, message: message ?? null },
+      }));
 
     const alerting = await prisma.user.findUnique({ where: { id: userId }, include: { profile: true } });
     const displayName =
@@ -113,6 +138,8 @@ router.post('/sos', async (req, res) => {
       timestamp: newAlert.alertTime.toISOString(),
       status: newAlert.status,
       message: message ?? null,
+      chatRoomId: audience.chatRooms[0]?.chatRoomId ?? null,
+      tripId: audience.tripIds[0] ?? null,
     };
 
     // The alert is written into each trip's group chat as a real LOCATION
@@ -121,8 +148,8 @@ router.post('/sos', async (req, res) => {
     // for anyone who was offline when it fired.
     for (const room of audience.chatRooms) {
       const body = isStale
-        ? `🆘 ${displayName} needs help. Last known location (not a live fix).`
-        : `🆘 ${displayName} needs help.`;
+        ? `Emergency alert — ${displayName} has requested assistance. Showing their Last known location, which may not be current.`
+        : `Emergency alert — ${displayName} has requested assistance at the location below.`;
       const saved = await prisma.message.create({
         data: {
           chatRoomId: room.chatRoomId,
@@ -164,10 +191,12 @@ router.post('/sos', async (req, res) => {
     }
 
     if (recipients.length > 0) {
-      const title = `🆘 ${displayName} needs help`;
+      const title = `Emergency alert — ${displayName}`;
       const content = audience.chatRooms.length > 0
         ? `Emergency alert from ${displayName} on ${audience.chatRooms[0]!.tripName}.`
         : `Emergency alert from ${displayName}.`;
+      const chatRoomId = audience.chatRooms[0]?.chatRoomId ?? null;
+      const tripId = audience.tripIds[0] ?? null;
 
       // Persisted per recipient: socket delivery alone loses the alert for
       // anyone who was not connected at that moment, which is precisely the
@@ -269,24 +298,21 @@ router.post('/sos/:id/resolve', async (req, res) => {
         ? req.body.resolutionNote.trim().slice(0, 300)
         : null;
 
-    await prisma.sOSAlert.update({
-      where: { id },
+    // Resolve all active alerts for this user to ensure no orphaned active records remain
+    await prisma.sOSAlert.updateMany({
+      where: { userId: alert.userId, status: 'ACTIVE' },
       data: { status: 'RESOLVED', resolutionNote, resolvedAt: new Date() },
     });
 
     // Notify the same scoped audience that received the original alert, and
-    // stand the alert down in the group chats it was posted into — the SOS
-    // card there is what people are looking at.
+    // broadcast globally to all connected clients so every device dismisses the alert immediately
     const io = req.app.get('socketio');
-    // Resolved from the alert's own position, so that the nearby people who
-    // were woken by it are the same ones told it is over. Standing the
-    // alert down for a narrower audience than raised it would leave
-    // strangers believing someone is still in trouble.
     const audience = await resolveSosAudience(alert.userId, {
       lat: alert.latitude,
       lng: alert.longitude,
     });
-    audience.userIds.forEach((uid: string) => io?.to(uid).emit('sosResolved', { id, resolutionNote }));
+    audience.userIds.forEach((uid: string) => io?.to(uid).emit('sosResolved', { id, userId: alert.userId, resolutionNote }));
+    io?.emit('sosResolved', { id, userId: alert.userId, resolutionNote });
 
     const resolver = await prisma.user.findUnique({ where: { id: userId }, include: { profile: true } });
     const resolverName = resolver?.profile
@@ -299,8 +325,8 @@ router.post('/sos/:id/resolve', async (req, res) => {
           chatRoomId: room.chatRoomId,
           senderId: userId,
           content: resolutionNote
-            ? `✅ Marked safe by ${resolverName}: ${resolutionNote}`
-            : `✅ Marked safe by ${resolverName}.`,
+            ? `Emergency resolved — Marked safe by ${resolverName}. ${resolutionNote}`
+            : `Emergency resolved — Marked safe by ${resolverName}.`,
           mediaType: 'NONE',
           isSystem: true,
         },
@@ -322,7 +348,7 @@ router.post('/sos/:id/resolve', async (req, res) => {
           createdAt: saved.createdAt.toISOString(),
         },
       });
-      io?.to(room.chatRoomId).emit('sosResolved', { id, tripId: room.tripId });
+      io?.to(room.chatRoomId).emit('sosResolved', { id, userId: alert.userId, resolutionNote, tripId: room.tripId });
     }
 
     res.status(200).json({ ok: true, data: { message: `SOS Alert ${id} marked as resolved` } });

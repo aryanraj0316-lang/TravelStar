@@ -8,7 +8,7 @@ import prisma from './services/db';
 import { logger } from './lib/logger';
 import { env } from './config/env';
 import { socketAuthMiddleware, getSocketUserId } from './lib/socket-auth';
-import { getSosAudienceUserIds } from './services/sos-audience';
+import { getSosAudienceUserIds, resolveSosAudience } from './services/sos-audience';
 import { notifyTripEnquiry } from './services/trip-enquiry-notifications';
 
 /**
@@ -374,6 +374,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
       userName: z.string().optional(),
       latitude: z.number(),
       longitude: z.number(),
+      message: z.string().nullable().optional(),
     });
 
     // Trigger SOS — persist to DB and notify only the scoped audience (see
@@ -381,32 +382,36 @@ export function createSocketServer(httpServer: HttpServer): Server {
     socket.on('triggerSOS', async (raw: unknown) => {
       const parsed = sosSchema.safeParse(raw);
       if (!parsed.success) return;
-      const { userName, latitude, longitude } = parsed.data;
+      const { userName, latitude, longitude, message } = parsed.data;
 
       try {
         const dbAlert = await prisma.sOSAlert.create({
-          data: { userId, latitude, longitude },
+          data: { userId, latitude, longitude, message: message ?? null },
         });
 
+        const audience = await resolveSosAudience(userId, { lat: latitude, lng: longitude });
         const alert = {
           id: dbAlert.id,
+          userId,
           userName: userName || `User ${userId.slice(0, 8)}`,
           latitude,
           longitude,
           timestamp: new Date().toLocaleTimeString(),
           status: 'ACTIVE',
+          message: message ?? null,
+          chatRoomId: audience.chatRooms[0]?.chatRoomId ?? null,
+          tripId: audience.tripIds[0] ?? null,
         };
 
-        const audience = await getSosAudienceUserIds(userId, { lat: latitude, lng: longitude });
-        await emitToUsers(audience, 'sosReceived', alert);
+        await emitToUsers(audience.userIds, 'sosReceived', alert);
       } catch (e) {
         logger.error('[Socket] triggerSOS failed:', e);
       }
     });
 
     // Resolve SOS — only the alert owner or an admin, mirroring
-    // POST /safety/sos/:id/resolve. Notified to the same scoped audience that
-    // received the original alert.
+    // POST /safety/sos/:id/resolve. Notified to the scoped audience and broadcast
+    // globally so no device is left with a stale emergency banner.
     socket.on('resolveSOS', async (raw: unknown) => {
       const parsed = z.object({ id: z.string().min(1) }).safeParse(raw);
       if (!parsed.success) return;
@@ -426,15 +431,17 @@ export function createSocketServer(httpServer: HttpServer): Server {
           return;
         }
 
-        await prisma.sOSAlert.update({ where: { id }, data: { status: 'RESOLVED' } });
+        await prisma.sOSAlert.updateMany({
+          where: { userId: alert.userId, status: 'ACTIVE' },
+          data: { status: 'RESOLVED', resolvedAt: new Date() },
+        });
 
-        // Same reach the alert itself had, so nobody it woke is left
-        // thinking the emergency is still running.
         const audience = await getSosAudienceUserIds(alert.userId, {
           lat: alert.latitude,
           lng: alert.longitude,
         });
-        await emitToUsers(audience, 'sosResolved', { id });
+        await emitToUsers(audience, 'sosResolved', { id, userId: alert.userId });
+        io.emit('sosResolved', { id, userId: alert.userId });
       } catch (e) {
         logger.error('[Socket] resolveSOS failed:', e);
       }

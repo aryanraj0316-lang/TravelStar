@@ -16,7 +16,7 @@ type MessageListener = (data: {
   inquiryOrganizerId?: string | null;
 }) => void;
 type SOSListener = (data: SOSAlert) => void;
-type SOSResolvedListener = (data: { id: string; resolutionNote?: string | null }) => void;
+type SOSResolvedListener = (data: { id: string; userId?: string; resolutionNote?: string | null }) => void;
 type LocationListener = (data: { userId: string; tripId: string; latitude: number; longitude: number }) => void;
 type AddedToChatListener = (data: { tripId: string; chatRoomId: string; tripName: string }) => void;
 type NotificationListener = (data: {
@@ -124,7 +124,7 @@ class SocketService {
         this.sosListeners.forEach((l) => l(data));
       });
 
-      this.socket.on('sosResolved', (data: { id: string; resolutionNote?: string | null }) => {
+      this.socket.on('sosResolved', (data: { id: string; userId?: string; resolutionNote?: string | null }) => {
         this.sosResolvedListeners.forEach((l) => l(data));
       });
 
@@ -209,12 +209,13 @@ class SocketService {
     }
   }
 
-  triggerSOS(userName: string, latitude: number, longitude: number) {
+  triggerSOS(userName: string, latitude: number, longitude: number, message?: string | null) {
     if (this.socket) {
       this.socket.emit('triggerSOS', {
         userName,
         latitude,
         longitude,
+        message: message ?? null,
       });
     }
   }

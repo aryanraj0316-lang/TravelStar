@@ -166,6 +166,10 @@ export default function AuthScreen() {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  // How far the window shrank. Android runs adjustResize, so anything
+  // anchored to the bottom is lifted by exactly this much when the keyboard
+  // opens — which is what dragged the bookmark up over the form.
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const keyboardOpen = isKeyboardVisible;
 
   const scrollViewRef = useRef<ScrollView>(null);
@@ -177,8 +181,9 @@ export default function AuthScreen() {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
 
-    const showSub = Keyboard.addListener(showEvent, () => {
+    const showSub = Keyboard.addListener(showEvent, (e) => {
       setIsKeyboardVisible(true);
+      setKeyboardHeight(e?.endCoordinates?.height ?? 0);
       if (passwordInputRef.current?.isFocused?.()) {
         setTimeout(() => {
           scrollViewRef.current?.scrollToEnd({ animated: true });
@@ -195,6 +200,7 @@ export default function AuthScreen() {
     });
     const hideSub = Keyboard.addListener(hideEvent, () => {
       setIsKeyboardVisible(false);
+      setKeyboardHeight(0);
       scrollViewRef.current?.scrollTo({ y: 0, animated: true });
     });
 
@@ -789,8 +795,13 @@ export default function AuthScreen() {
           }}
           style={[
             styles.screenBookmarkTab,
-            { bottom: Math.max(insets.bottom, 14) + 14 },
+            {
+              bottom: Math.max(insets.bottom, 14) + 14 - (keyboardOpen ? keyboardHeight : 0),
+            },
           ]}
+          // Not tappable while it sits behind the keyboard — a tap there is
+          // aimed at the keyboard, not at switching mode.
+          disabled={keyboardOpen}
           activeOpacity={0.88}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           accessibilityRole="button"

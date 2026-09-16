@@ -350,6 +350,17 @@ describe('Trip Payments & Payment-Gated Join Flow (CONVENTIONS.md §3, REMEDIATI
     expect(
       await prisma.tripMember.count({ where: { tripId: paidTripId, userId: traveler.userId } })
     ).toBe(1);
+
+    // The group is told someone new joined. Only the free-trip approval path
+    // ever posted this, so paid joins used to arrive in the chat silently.
+    const chatRoomId = paid.body.data.chatRoomId as string | null;
+    expect(chatRoomId).toBeTruthy();
+    const joinedLine = await prisma.message.findFirst({
+      where: { chatRoomId: chatRoomId!, isSystem: true, content: { endsWith: 'has joined the group' } },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(joinedLine).toBeTruthy();
+    expect(joinedLine!.content).toBe('Direct Payer has joined the group');
     const after = await request(app)
       .get('/api/v1/trips/mine/payment-summaries')
       .set(auth(organizer.token));

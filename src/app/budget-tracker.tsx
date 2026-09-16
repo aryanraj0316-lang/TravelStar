@@ -20,6 +20,7 @@ import Car from 'lucide-react-native/icons/car';
 import Check from 'lucide-react-native/icons/check';
 import ChevronRight from 'lucide-react-native/icons/chevron-right';
 import Hotel from 'lucide-react-native/icons/hotel';
+import MapPin from 'lucide-react-native/icons/map-pin';
 import Plus from 'lucide-react-native/icons/plus';
 import Receipt from 'lucide-react-native/icons/receipt';
 import ShoppingBag from 'lucide-react-native/icons/shopping-bag';
@@ -278,35 +279,44 @@ export default function BudgetTrackerScreen() {
   const owes = yourNetNum < 0;
 
   return (
-    <Shell
-      title={t('budgetTracker.title')}
-      onBack={handleBack}
-      onAdd={() => setShowAdd(true)}
-      showAddBtn={!!budget}
-    >
-      {/* Trip Switcher Pills */}
+    <Shell title={t('budgetTracker.title')} onBack={handleBack}>
+      {/* Trip Switcher Bar */}
       {myTrips.length > 1 && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.tripSelectorScroll}
-        >
-          {myTrips.map((tItem) => {
-            const isSelected = tItem.id === activeTripId;
-            return (
-              <TouchableOpacity
-                key={tItem.id}
-                style={[styles.tripPill, isSelected && styles.tripPillActive]}
-                activeOpacity={0.7}
-                onPress={() => setTripId(tItem.id)}
-              >
-                <Text style={[styles.tripPillText, isSelected && styles.tripPillTextActive]}>
-                  {tItem.name}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
+        <View style={styles.tripSelectorBar}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.tripSelectorScroll}
+          >
+            {myTrips.map((tItem) => {
+              const isSelected = tItem.id === activeTripId;
+              return (
+                <TouchableOpacity
+                  key={tItem.id}
+                  style={[styles.tripPill, isSelected && styles.tripPillActive]}
+                  activeOpacity={0.75}
+                  onPress={() => setTripId(tItem.id)}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: isSelected }}
+                  accessibilityLabel={tItem.name}
+                >
+                  <MapPin
+                    size={13}
+                    color={isSelected ? '#38BDF8' : '#64748B'}
+                    strokeWidth={2.2}
+                  />
+                  <Text
+                    style={[styles.tripPillText, isSelected && styles.tripPillTextActive]}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                  >
+                    {tItem.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
       )}
 
       {budgetLoading ? (
@@ -339,18 +349,27 @@ export default function BudgetTrackerScreen() {
           removeClippedSubviews
           ListHeaderComponent={
             <>
-              {/* Trip Name & Members Header */}
+              {/* Active Trip Header */}
               {activeTrip && (
-                <View style={styles.activeTripMeta}>
+                <View style={styles.activeTripHeader}>
+                  <View style={styles.activeTripBadgeRow}>
+                    {activeTrip.category && (
+                      <View style={styles.activeTripCategoryBadge}>
+                        <Text style={styles.activeTripCategoryText}>
+                          {activeTrip.category}
+                        </Text>
+                      </View>
+                    )}
+                    <View style={styles.activeTripMembersBadge}>
+                      <Users size={11} color="#2563EB" strokeWidth={2.2} />
+                      <Text style={styles.activeTripMembersText}>
+                        {budget.headCount} {budget.headCount === 1 ? 'member' : 'members'}
+                      </Text>
+                    </View>
+                  </View>
                   <Text style={styles.activeTripTitle} numberOfLines={1}>
                     {activeTrip.name}
                   </Text>
-                  <View style={styles.activeTripMembersPill}>
-                    <Users size={12} color="#64748B" />
-                    <Text style={styles.activeTripMembersText}>
-                      {budget.headCount} {budget.headCount === 1 ? 'member' : 'members'}
-                    </Text>
-                  </View>
                 </View>
               )}
 
@@ -608,14 +627,10 @@ export default function BudgetTrackerScreen() {
 function Shell({
   title,
   onBack,
-  onAdd,
-  showAddBtn,
   children,
 }: {
   title: string;
   onBack: () => void;
-  onAdd?: () => void;
-  showAddBtn?: boolean;
   children: React.ReactNode;
 }) {
   const { t } = useTranslation();
@@ -635,20 +650,7 @@ function Shell({
 
         <Text style={styles.headerTitle}>{title}</Text>
 
-        {showAddBtn && onAdd ? (
-          <TouchableOpacity
-            activeOpacity={0.75}
-            onPress={onAdd}
-            style={styles.headerAddBtn}
-            accessibilityRole="button"
-            accessibilityLabel={t('budgetTracker.addExpense')}
-          >
-            <Plus size={16} color="#2563EB" strokeWidth={2.5} />
-            <Text style={styles.headerAddText}>Add</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={{ width: 38 }} />
-        )}
+        <View style={styles.headerSpacer} />
       </View>
       {children}
     </SafeAreaView>
@@ -688,52 +690,51 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     letterSpacing: -0.3,
   },
-  headerAddBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-  },
-  headerAddText: {
-    fontSize: 12.5,
-    fontWeight: '700',
-    color: '#2563EB',
+  headerSpacer: {
+    width: 38,
   },
 
-  // Trip selector pills
-  tripSelectorScroll: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    gap: 8,
+  // Trip selector bar
+  tripSelectorBar: {
     backgroundColor: '#FFFFFF',
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#E2E8F0',
   },
+  tripSelectorScroll: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 8,
+    alignItems: 'center',
+  },
   tripPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: '#F1F5F9',
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 38,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
     borderColor: '#E2E8F0',
+    gap: 6,
+    maxWidth: 220,
   },
   tripPillActive: {
     backgroundColor: '#0F172A',
     borderColor: '#0F172A',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 3,
+    elevation: 2,
   },
   tripPillText: {
-    fontSize: 12.5,
+    fontSize: 13,
     fontWeight: '600',
     color: '#475569',
   },
   tripPillTextActive: {
     color: '#FFFFFF',
-    fontWeight: '700',
+    fontWeight: '600',
   },
 
   // List layout
@@ -742,26 +743,36 @@ const styles = StyleSheet.create({
     paddingTop: 14,
   },
 
-  // Active trip meta
-  activeTripMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 10,
+  // Active trip header
+  activeTripHeader: {
+    marginBottom: 12,
     paddingHorizontal: 2,
+    gap: 6,
   },
-  activeTripTitle: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#0F172A',
-    letterSpacing: -0.2,
-    marginRight: 8,
-  },
-  activeTripMembersPill: {
+  activeTripBadgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 8,
+  },
+  activeTripCategoryBadge: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+  },
+  activeTripCategoryText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#2563EB',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  activeTripMembersBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 8,
     paddingVertical: 3,
@@ -772,7 +783,13 @@ const styles = StyleSheet.create({
   activeTripMembersText: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#64748B',
+    color: '#475569',
+  },
+  activeTripTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.3,
   },
 
   // ── Clean Summary Card ──

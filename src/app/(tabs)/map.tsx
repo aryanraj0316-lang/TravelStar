@@ -47,8 +47,9 @@ import {
   LayoutAnimation,
   Linking,
   TextInput,
+  Keyboard,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 
 // Coordinates registry for dynamic routes mapping
@@ -799,6 +800,7 @@ function MapScreen() {
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
   const [isDismissed, setIsDismissed] = useState(false);
 
+
   useEffect(() => {
     logger.log('Screen mounted: MapScreen');
     const unsub = eventBus.on('focusTripOnMap', (id: string) => {
@@ -872,7 +874,6 @@ function MapScreen() {
 
   const webViewRef = useRef<WebView>(null);
   const sosPulse = useState(() => new Animated.Value(1))[0];
-  const insets = useSafeAreaInsets();
 
   // Plain map-use search. Matches the pins the server already returned, so
   // a result always has real coordinates behind it.
@@ -896,6 +897,14 @@ function MapScreen() {
   // one past the first page found nothing here — and with no activeTrip the
   // route query never ran, which is why the line, the checkpoints and the
   // legs all silently disappeared.
+  // Arriving with a trip is a fresh request to see that trip. Without this
+  // the dismissal stuck for the life of the tab: close the route panel once
+  // and every later "open this trip on the map" silently showed the plain
+  // map instead.
+  useEffect(() => {
+    if (tripId) setIsDismissed(false);
+  }, [tripId]);
+
   const requestedTripId = isDismissed ? undefined : (selectedTripId || tripId) || undefined;
   const listedTrip = requestedTripId ? trips.find((t) => t.id === requestedTripId) : undefined;
 
@@ -1095,13 +1104,97 @@ function MapScreen() {
     webViewRef.current?.postMessage(JSON.stringify({ type: 'SET_PINS', pins: mapPins }));
   }, [mapPins]);
 
-  const placeResults = useMemo(() => {
+  // Pins the server already returned that match what is being typed —
+  // guides, groups and attractions the app itself knows about.
+  const matchingPins = useMemo(() => {
     const q = placeQuery.trim().toLowerCase();
     if (q.length < 2 || !mapPins) return [];
     return mapPins
       .filter((pin) => pin.name.toLowerCase().includes(q) || (pin.detail ?? '').toLowerCase().includes(q))
-      .slice(0, 6);
+      .slice(0, 3)
+      .map((pin) => ({
+        id: `pin-${pin.id}`,
+        name: pin.name,
+        detail: pin.detail ?? '',
+        latitude: pin.latitude,
+        longitude: pin.longitude,
+      }));
   }, [placeQuery, mapPins]);
+
+  // Real places, geocoded. Searching only the app's own pins meant typing a
+  // city name found nothing at all — the map could not take you anywhere it
+  // did not already have a pin for. This is the same OpenStreetMap lookup
+  // the create screen uses for trip cities, so a result always carries real
+  // coordinates rather than an invented point.
+  const [geoResults, setGeoResults] = useState<
+    { id: string; name: string; detail: string; latitude: number; longitude: number }[]
+  >([]);
+  const [searching, setSearching] = useState(false);
+
+  useEffect(() => {
+    const q = placeQuery.trim();
+    if (q.length < 3) {
+      setGeoResults([]);
+      setSearching(false);
+      return;
+    }
+
+    let cancelled = false;
+    setSearching(true);
+    // Debounced: Nominatim asks callers not to fire a request per keystroke.
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&limit=6&q=${encodeURIComponent(q)}`,
+          { headers: { 'User-Agent': 'TravelStarApp/1.0' } },
+        );
+        const rows = (await res.json()) as {
+          place_id: number;
+          display_name: string;
+          lat: string;
+          lon: string;
+          name?: string;
+        }[];
+        if (cancelled) return;
+        setGeoResults(
+          (rows ?? [])
+            .map((r) => {
+              const lat = parseFloat(r.lat);
+              const lng = parseFloat(r.lon);
+              if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+              const parts = r.display_name.split(',').map((x) => x.trim());
+              return {
+                id: `osm-${r.place_id}`,
+                name: r.name || parts[0] || r.display_name,
+                detail: parts.slice(1).join(', '),
+                latitude: lat,
+                longitude: lng,
+              };
+            })
+            .filter((x): x is NonNullable<typeof x> => x !== null),
+        );
+      } catch (e) {
+        if (!cancelled) {
+          // A failed lookup leaves the list empty rather than showing a
+          // guessed location.
+          logger.warn('[Map] Place search failed:', e);
+          setGeoResults([]);
+        }
+      } finally {
+        if (!cancelled) setSearching(false);
+      }
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [placeQuery]);
+
+  const placeResults = useMemo(
+    () => [...matchingPins, ...geoResults].slice(0, 7),
+    [matchingPins, geoResults],
+  );
 
   useEffect(() => {
     if (!mapHazards) return;
@@ -1237,6 +1330,79 @@ function MapScreen() {
             </TouchableOpacity>
 
             {/* OPTION 1: ROUTE ITINERARY SELECTOR DROPDOWN */}
+            {!activeTrip ? (
+              /* Plain map use: the search takes the route selector's place —
+                 the route picker has nothing to pick when no trip is open.
+                 It occupies that slot only, so the back button and the map
+                 selector beside it stay visible and clickable. */
+              <View style={styles.dropdownContainer}>
+                <View style={styles.mapSearchBar}>
+                  <SearchIcon size={15} color="#8B949E" />
+                  <TextInput
+                    style={styles.mapSearchInput}
+                    value={placeQuery}
+                    onChangeText={setPlaceQuery}
+                    placeholder={t('map.searchPlaceholder', 'Search places on the map')}
+                    placeholderTextColor="#8B949E"
+                    returnKeyType="search"
+                  />
+                  {placeQuery.length > 0 && (
+                    <TouchableOpacity
+                      onPress={() => setPlaceQuery('')}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('common.clear', 'Clear')}
+                    >
+                      <X size={14} color="#8B949E" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {placeQuery.trim().length >= 3 && placeResults.length === 0 && (
+                  <View style={styles.mapSearchResults}>
+                    <View style={styles.mapSearchResultRow}>
+                      <Text style={styles.mapSearchResultDetail}>
+                        {searching
+                          ? t('map.searching', 'Searching...')
+                          : t('map.noPlacesFound', 'No matching place found')}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
+                {placeResults.length > 0 && (
+                  <View style={styles.mapSearchResults}>
+                    {placeResults.map((pin) => (
+                      <TouchableOpacity
+                        key={pin.id}
+                        style={styles.mapSearchResultRow}
+                        onPress={() => {
+                          Keyboard.dismiss();
+                          setPlaceQuery('');
+                          setGeoResults([]);
+                          // Same FLY_TO the SOS banner and trip deep links
+                          // use: drops a labelled marker and zooms to it.
+                          webViewRef.current?.postMessage(
+                            JSON.stringify({ type: 'FLY_TO', lat: pin.latitude, lng: pin.longitude, label: pin.name }),
+                          );
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel={pin.name}
+                      >
+                        <MapPinIcon size={13} color="#0066FF" />
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.mapSearchResultName} numberOfLines={1}>{pin.name}</Text>
+                          {!!pin.detail && (
+                            <Text style={styles.mapSearchResultDetail} numberOfLines={1}>{pin.detail}</Text>
+                          )}
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
+            ) : (
+              <>
             <View style={styles.dropdownContainer}>
               <TouchableOpacity
                 style={styles.dropdownTrigger}
@@ -1320,6 +1486,9 @@ function MapScreen() {
                 </View>
               )}
             </View>
+
+              </>
+            )}
 
             {/* OPTION 2: FLOATING MAP SELECTOR DROPDOWN */}
             <View style={styles.dropdownContainer}>
@@ -1468,64 +1637,6 @@ function MapScreen() {
         )}
 
 
-
-        {/* Plain map use: a place search across the real pins already on the
-            map. Only when no trip is being shown, so it never competes with
-            the trip route panel. Nothing is geocoded here — it matches pins
-            the server actually returned, so it can never fly somewhere
-            invented. */}
-        {!activeTrip && (
-          <View style={[styles.mapSearchWrap, { top: insets.top + 10 }]} pointerEvents="box-none">
-            <View style={styles.mapSearchBar}>
-              <SearchIcon size={17} color="#64748B" />
-              <TextInput
-                style={styles.mapSearchInput}
-                value={placeQuery}
-                onChangeText={setPlaceQuery}
-                placeholder={t('map.searchPlaceholder', 'Search places on the map')}
-                placeholderTextColor="#94A3B8"
-                returnKeyType="search"
-              />
-              {placeQuery.length > 0 && (
-                <TouchableOpacity
-                  onPress={() => setPlaceQuery('')}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  accessibilityRole="button"
-                  accessibilityLabel={t('common.clear', 'Clear')}
-                >
-                  <X size={16} color="#64748B" />
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {placeResults.length > 0 && (
-              <View style={styles.mapSearchResults}>
-                {placeResults.map((pin) => (
-                  <TouchableOpacity
-                    key={pin.id}
-                    style={styles.mapSearchResultRow}
-                    onPress={() => {
-                      setPlaceQuery('');
-                      webViewRef.current?.postMessage(
-                        JSON.stringify({ type: 'FLY_TO', lat: pin.latitude, lng: pin.longitude, label: pin.name }),
-                      );
-                    }}
-                    accessibilityRole="button"
-                    accessibilityLabel={pin.name}
-                  >
-                    <MapPinIcon size={14} color="#2563EB" />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.mapSearchResultName} numberOfLines={1}>{pin.name}</Text>
-                      {!!pin.detail && (
-                        <Text style={styles.mapSearchResultDetail} numberOfLines={1}>{pin.detail}</Text>
-                      )}
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-          </View>
-        )}
 
         {activeTrip && (
           <>
@@ -1949,54 +2060,56 @@ function MapScreen() {
 }
 
 const styles = StyleSheet.create({
-  mapSearchWrap: {
-    position: 'absolute',
-    left: 12,
-    right: 12,
-    zIndex: 50,
-  },
+  // Sits inside the top row, in the route selector's slot — same dark
+  // treatment and height as the dropdown beside it, so the row reads as one
+  // bar rather than a card floating over it.
   mapSearchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.16,
-    shadowRadius: 8,
+    gap: 7,
+    backgroundColor: 'rgba(13, 17, 23, 0.95)',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    minHeight: MIN_TOUCH_TARGET,
+    borderWidth: 1,
+    borderColor: 'rgba(48, 54, 61, 0.6)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
     elevation: 6,
   },
   mapSearchInput: {
     flex: 1,
-    fontSize: 14,
-    color: '#0F172A',
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: C.white,
     padding: 0,
   },
   mapSearchResults: {
-    marginTop: 6,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    position: 'absolute',
+    top: 46,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(13, 17, 23, 0.98)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(48, 54, 61, 0.8)',
     overflow: 'hidden',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.16,
-    shadowRadius: 8,
-    elevation: 6,
+    zIndex: 1000,
+    elevation: 12,
   },
   mapSearchResultRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 11,
+    gap: 9,
+    paddingHorizontal: 11,
+    paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#E2E8F0',
+    borderBottomColor: 'rgba(48, 54, 61, 0.8)',
   },
-  mapSearchResultName: { fontSize: 13.5, fontWeight: '700', color: '#0F172A' },
-  mapSearchResultDetail: { fontSize: 11.5, color: '#64748B', marginTop: 1 },
+  mapSearchResultName: { fontSize: 12.5, fontWeight: '700', color: C.white },
+  mapSearchResultDetail: { fontSize: 11, color: '#8B949E', marginTop: 1 },
   screenRoot: {
     flex: 1,
     backgroundColor: '#0D1117',

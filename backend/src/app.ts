@@ -167,14 +167,6 @@ const passwordResetLimiter = rateLimit({
   message: { ok: false, error: { code: 'RATE_LIMITED', message: 'Too many reset requests. Please try again later.' } },
 });
 
-const sosLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  max: 10,
-  skip: skipInTest,
-  keyGenerator: (req) => req.user?.id ?? req.ip ?? 'unknown',
-  message: { ok: false, error: { code: 'RATE_LIMITED', message: 'Too many SOS alerts raised.' } },
-});
-
 const writeLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 60,
@@ -194,7 +186,6 @@ app.use('/api/v1/auth/reset-password', passwordResetLimiter);
 // in the middleware itself, so no route can silently opt out of auth.
 app.use('/api/v1', authenticateJWT);
 
-app.use('/api/v1/safety/sos', sosLimiter);
 app.use('/api/v1', writeLimiter);
 
 // ── Routes ──────────────────────────────────────────────────────────────────
