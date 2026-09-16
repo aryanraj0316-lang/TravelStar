@@ -3,7 +3,7 @@ import { Avatar, Button, Input, ScreenEmpty } from '@/components/ui';
 import { recordConsent } from '@/lib/consent';
 import { formatDateRange, formatMessageTimestamp, formatTime } from '@/lib/datetime';
 import { getCurrentDeviceLocation, getEmergencyDeviceLocation } from '@/lib/device-location';
-import { errorToastMessage, showAlert, toast, useConfirm } from '@/lib/feedback';
+import { errorToastMessage, showAlert, showPrompt, toast, useConfirm } from '@/lib/feedback';
 import { logger } from '@/lib/logger';
 import { formatINR } from '@/lib/money';
 import { uploadFileToUrl } from '@/lib/upload';
@@ -829,6 +829,7 @@ function ChatScreen() {
   const navbarHiddenRef = useRef(false);
   const {
     trips,
+    onlineUserIds,
     profile,
     sosAlerts,
     triggerSOS,
@@ -849,7 +850,9 @@ function ChatScreen() {
   const [selectedTripId, setSelectedTripId] = useState<string>('');
 
   // Dynamic database members state
-  const [dbMembers, setDbMembers] = useState<{ name: string; avatar: string; role: string; id?: string }[]>([]);
+  const [dbMembers, setDbMembers] = useState<
+    { name: string; avatar: string; role: string; id?: string; isPendingCompanion?: boolean }[]
+  >([]);
 
   // Stateful Chat Data — starts empty; populated exclusively from
   // apiService.getChats()/getChatMessages() (loadInboxRooms below and the
@@ -1319,10 +1322,13 @@ function ChatScreen() {
         .then((membersData) => {
           if (membersData && Array.isArray(membersData)) {
             const mapped = membersData.map((m) => ({
-              id: m.userId,
+              // A pending companion has no account, so no id to match a
+              // message sender against.
+              id: m.userId ?? undefined,
               name: (m.name || '').replace(/\s*\((Creator|Organizer)\)\s*$/i, '').trim(),
               avatar: m.avatar || '',
               role: m.isCreator ? 'Organizer' : 'Tourist',
+              isPendingCompanion: !!m.isPendingCompanion,
             }));
             setDbMembers(mapped);
 
@@ -1661,6 +1667,29 @@ function ChatScreen() {
   // this room's actual trip details (docs/REMEDIATION.md §0.2 rule 4).
   const activeTrip = trips.find((t) => t.id === selectedTripId) ?? null;
 
+  // People actually in this group, which is not the same as seats taken.
+  // The header used to prefer `activeTrip.membersCount`, which the server
+  // derives as totalSeats - availableSeats — so a Family Connect booking for
+  // three consumed three seats and the header claimed five members when only
+  // three people were here. The unjoined companions of a party booking are
+  // listed separately, and are not counted as present.
+  const joinedMembers = useMemo(
+    () => dbMembers.filter((m) => !m.isPendingCompanion),
+    [dbMembers],
+  );
+  const pendingCompanions = useMemo(
+    () => dbMembers.filter((m) => m.isPendingCompanion),
+    [dbMembers],
+  );
+  const joinedMemberCount = joinedMembers.length || activeTrip?.membersCount || 1;
+
+  // Of those people, the ones with a live connection right now. Always at
+  // least 1, since the person reading this is by definition connected.
+  const onlineMemberCount = useMemo(() => {
+    const online = joinedMembers.filter((m) => m.id && onlineUserIds.has(m.id)).length;
+    return Math.max(1, online);
+  }, [joinedMembers, onlineUserIds]);
+
   // Real per-trip day itinerary (docs/REMEDIATION.md §9.3/§9.4 follow-up).
   // The "Vertical Itinerary Roadmap" below used to render a hardcoded
   // getTripItineraryHighlights() function — a full fake day-by-day plan for
@@ -1725,7 +1754,10 @@ function ChatScreen() {
 
   // Dynamically extract group members from message history in this room/trip
   const groupMembers = useMemo(() => {
-    const membersMap = new Map<string, { name: string; avatar: string; role: string; id?: string; isMe?: boolean }>();
+    const membersMap = new Map<
+      string,
+      { name: string; avatar: string; role: string; id?: string; isMe?: boolean; isPendingCompanion?: boolean }
+    >();
 
     // Add database/real-time members
     if (dbMembers && dbMembers.length > 0) {
@@ -1748,6 +1780,7 @@ function ChatScreen() {
           role: roleName,
           id: m.id,
           isMe: !!isMe,
+          isPendingCompanion: !!m.isPendingCompanion,
         });
       });
     }
@@ -2459,10 +2492,21 @@ function ChatScreen() {
     }
     const { latitude: lat, longitude: lng } = location;
 
+    // A bare "needs help" tells responders nothing. Optional on purpose:
+    // dismissing this still sends the alert, because an emergency must not
+    // hinge on someone completing a dialog.
+    const detail = await showPrompt({
+      title: t('sos.whatsWrongTitle', "What's wrong?"),
+      message: t('sos.whatsWrongMessage', 'This shows in the alert everyone receives. You can skip it.'),
+      placeholder: t('sos.whatsWrongPlaceholder', 'e.g. Injured, need help near the ridge'),
+      confirmLabel: t('sos.sendAlert', 'Send alert'),
+    });
+
     triggerSOS(lat, lng, {
       accuracyMeters: location.accuracyMeters ?? null,
       capturedAt: location.capturedAt,
       isStale: location.isStale ?? false,
+      message: detail?.trim() || undefined,
     });
     if (location.isStale) {
       toast(t('chat.sosSentWithLastKnown'), 'info');
@@ -3079,7 +3123,11 @@ function ChatScreen() {
                 <Text style={styles.roomHeaderStatusText} numberOfLines={1}>
                   {isDM
                     ? t('chat.directMessage', 'Direct Message')
-                    : t('chat.memberCount', { count: activeTrip?.membersCount ?? (dbMembers.length || 1) })}
+                    : t('chat.membersOnline', {
+                        online: onlineMemberCount,
+                        total: joinedMemberCount,
+                        defaultValue: '{{online}} of {{total}} online',
+                      })}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -4006,7 +4054,9 @@ function ChatScreen() {
                   <View style={styles.sectionHeader}>
                     <UsersIcon size={16} color={C.blue} style={{ marginRight: 6 }} />
                     <Text style={styles.sectionHeaderTitle}>
-                      {t('chat.groupMembersCount', { count: groupMembers.length })}
+                      {t('chat.groupMembersCount', {
+                        count: groupMembers.filter((m) => !m.isPendingCompanion).length,
+                      })}
                     </Text>
                   </View>
                   <Text style={styles.settingsSubInfo}>{t('chat.tapMemberToStartChat')}</Text>
@@ -4034,7 +4084,15 @@ function ChatScreen() {
                               </Text>
                               {isMe && <Text style={styles.memberYouTag}> ({t('chat.you')})</Text>}
                             </View>
-                            {member.role === 'Organizer' ? (
+                            {member.isPendingCompanion ? (
+                              // An extra seat from a party booking: paid for
+                              // and expected, but nobody has joined on it yet.
+                              <View style={styles.memberPendingBadge}>
+                                <Text style={styles.memberPendingText}>
+                                  {t('chat.yetToJoin', 'Yet to join')}
+                                </Text>
+                              </View>
+                            ) : member.role === 'Organizer' ? (
                               <View style={styles.memberRoleOrganizerBadge}>
                                 <Text style={styles.memberRoleOrganizerText}>
                                   {SENDER_ROLE_LABEL_KEYS[member.role] ? t(SENDER_ROLE_LABEL_KEYS[member.role]) : member.role}
@@ -4049,7 +4107,7 @@ function ChatScreen() {
 
 
 
-                          {!isMe && (
+                          {!isMe && !member.isPendingCompanion && (
                             <TouchableOpacity
                               style={styles.dmMemberBtn}
                               onPress={() => handleMemberClick(member)}
@@ -6461,6 +6519,21 @@ const styles = StyleSheet.create({
     color: C.textMuted,
     fontSize: 12,
     marginTop: 2,
+  },
+  memberPendingBadge: {
+    alignSelf: 'flex-start',
+    marginTop: 3,
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    borderRadius: 5,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  memberPendingText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#C2410C',
   },
   memberRoleOrganizerBadge: {
     alignSelf: 'flex-start',

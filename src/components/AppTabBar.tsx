@@ -124,7 +124,6 @@ export function AppTabBar({ state, navigation }: AppTabBarProps) {
     setActiveRoomId,
     navbarHidden,
     setNavbarHidden,
-    pendingRequestsCount,
     hasUnreadChat,
     isLoggedIn,
   } = useApp();
@@ -221,10 +220,10 @@ export function AppTabBar({ state, navigation }: AppTabBarProps) {
                 isFocused={isFocused}
                 onPress={onPress}
                 isDark={isDark}
-                showDot={
-                  (route.name === 'create' && pendingRequestsCount > 0) ||
-                  (route.name === 'chat' && hasUnreadChat)
-                }
+                // Pending join requests belong to the organizer portal, not
+                // to Create — that tab has nothing to do with them, so a dot
+                // there pointed at a screen with nothing to show.
+                showDot={route.name === 'chat' && hasUnreadChat}
               />
             </View>
           );

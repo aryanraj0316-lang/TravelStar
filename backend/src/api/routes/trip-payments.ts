@@ -11,6 +11,7 @@ import {
   verifyWebhookSignature,
   captureAndClaimSeat,
   payFromWallet,
+  payDirect,
 } from '../../services/trip-payments';
 import { Decimal } from '@prisma/client/runtime/library';
 
@@ -200,6 +201,118 @@ router.post('/wallet-pay', async (req: Request, res: Response) => {
       chatRoomId: result.chatRoomId,
     },
   });
+});
+
+// ── POST /trip-payments/pay ───────────────────────────────────────────────
+// Captures the seat fee the traveller has paid, for the exact amount this
+// trip charges, and seats them. No stored balance is involved: the captured
+// order IS the money — every "collected" figure in the organizer's portal is
+// summed from these rows, and they are never deleted, so they double as the
+// permanent receipt for both sides (GET /trip-payments/receipts below).
+const directPaySchema = z.object({
+  joinRequestId: z.string().uuid(),
+});
+
+router.post('/pay', async (req: Request, res: Response) => {
+  const parsed = directPaySchema.safeParse(req.body);
+  if (!parsed.success) return validationError(res, parsed.error.issues);
+
+  const { joinRequestId } = parsed.data;
+  const userId = requireUserId(req);
+
+  const result = await payDirect(joinRequestId, userId);
+
+  if (!result.ok) {
+    if (result.reason === 'ORDER_NOT_FOUND') {
+      return res
+        .status(404)
+        .json({ ok: false, error: { code: 'NOT_FOUND', message: 'Join request not found, or it is not awaiting payment.' } });
+    }
+    if (result.reason === 'TRIP_FULL') {
+      return res.status(409).json({ ok: false, error: { code: 'TRIP_FULL', message: 'Trip is full' } });
+    }
+    if (result.reason === 'BUSY') {
+      res.setHeader('Retry-After', '2');
+      return res.status(503).json({ ok: false, error: { code: 'SERVICE_BUSY', message: 'Service busy, please retry' } });
+    }
+    return res.status(400).json({ ok: false, error: { code: 'PAYMENT_FAILED', message: result.reason } });
+  }
+
+  return res.status(200).json({
+    ok: true,
+    data: {
+      joinRequestId: result.joinRequestId,
+      chatRoomId: result.chatRoomId,
+      amount: result.amount,
+    },
+  });
+});
+
+// ── GET /trip-payments/receipts ───────────────────────────────────────────
+// Every payment this user was a party to, kept for good: the ones they paid
+// as a traveller, and the ones they received as the organizer of the trip.
+// Read straight off TripPaymentOrder, so a receipt cannot drift from the
+// money it records, and nothing extra has to be written when a payment lands.
+router.get('/receipts', async (req: Request, res: Response) => {
+  const userId = requireUserId(req);
+
+  try {
+    const orders = await prisma.tripPaymentOrder.findMany({
+      where: {
+        status: 'CAPTURED',
+        OR: [{ userId }, { joinRequest: { trip: { creatorId: userId } } }],
+      },
+      orderBy: { updatedAt: 'desc' },
+      include: {
+        user: { include: { profile: true } },
+        joinRequest: {
+          include: {
+            trip: {
+              select: {
+                id: true,
+                name: true,
+                creatorId: true,
+                startDate: true,
+                cities: true,
+                creator: { include: { profile: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const nameOf = (u: { email: string | null; profile: { firstName: string; lastName: string | null } | null } | null) =>
+      u?.profile ? `${u.profile.firstName} ${u.profile.lastName ?? ''}`.trim() : (u?.email?.split('@')[0] ?? 'Traveller');
+
+    const data = orders.map((o) => {
+      const trip = o.joinRequest.trip;
+      const paidByMe = o.userId === userId;
+      return {
+        id: o.id,
+        reference: o.id.slice(0, 8).toUpperCase(),
+        // 'PAID' = money this user sent; 'RECEIVED' = money their trip took in.
+        direction: paidByMe ? 'PAID' : 'RECEIVED',
+        amount: o.amount.toString(),
+        gateway: o.gateway,
+        seats: o.joinRequest.partySize,
+        paidAt: o.updatedAt.toISOString(),
+        tripId: trip.id,
+        tripName: trip.name,
+        tripStartDate: trip.startDate.toISOString(),
+        tripCities: trip.cities,
+        counterpartyName: paidByMe ? nameOf(trip.creator) : nameOf(o.user),
+        counterpartyRole: paidByMe ? 'Organizer' : 'Traveller',
+      };
+    });
+
+    return res.status(200).json({ ok: true, data });
+  } catch (err) {
+    logger.warn('[TripPayments] Receipts list failed:', err);
+    return res
+      .status(500)
+      .json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to load receipts' } });
+  }
 });
 
 // ── GET /trip-payments/order/:joinRequestId ───────────────────────────────

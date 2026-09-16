@@ -1081,6 +1081,13 @@ model SOSAlert {
   longitude Float
   alertTime DateTime       @default(now())
   status    SOSAlertStatus @default(ACTIVE)
+  /// What the person said was wrong when they raised it. Was accepted by
+  /// the API and broadcast live, but never stored — so anyone who opened
+  /// the app after the alert fired saw a bare "needs help" with no reason.
+  message        String?
+  /// What they said when standing it down ("found my group", "all fine").
+  resolutionNote String?
+  resolvedAt     DateTime?
 
   @@index([userId])
   @@index([status])

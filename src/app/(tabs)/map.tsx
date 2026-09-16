@@ -1,7 +1,7 @@
 import { useApp } from '@/store/AppContext';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { logger } from '@/lib/logger';
-import { toast } from '@/lib/feedback';
+import { showPrompt, toast } from '@/lib/feedback';
 import { getCurrentDeviceLocation, getEmergencyDeviceLocation } from '@/lib/device-location';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
@@ -32,6 +32,8 @@ import Check from 'lucide-react-native/icons/check';
 import User from 'lucide-react-native/icons/user';
 import Users from 'lucide-react-native/icons/users';
 import X from 'lucide-react-native/icons/x';
+import SearchIcon from 'lucide-react-native/icons/search';
+import MapPinIcon from 'lucide-react-native/icons/map-pin';
 import React, { useEffect, useMemo, useRef, useState, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -44,8 +46,9 @@ import {
   StatusBar,
   LayoutAnimation,
   Linking,
+  TextInput,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 
 // Coordinates registry for dynamic routes mapping
@@ -869,6 +872,11 @@ function MapScreen() {
 
   const webViewRef = useRef<WebView>(null);
   const sosPulse = useState(() => new Animated.Value(1))[0];
+  const insets = useSafeAreaInsets();
+
+  // Plain map-use search. Matches the pins the server already returned, so
+  // a result always has real coordinates behind it.
+  const [placeQuery, setPlaceQuery] = useState('');
 
   useEffect(() => {
     void (async () => {
@@ -880,8 +888,27 @@ function MapScreen() {
     })();
   }, []);
 
-  // Resolve dynamic route coords from the active trip or nearby place
-  let activeTrip = isDismissed ? undefined : trips.find((t) => t.id === (selectedTripId || tripId));
+  // Resolve dynamic route coords from the active trip or nearby place.
+  //
+  // The id being asked for is the source of truth, NOT whether it happens to
+  // be in the loaded `trips` list. That list is a paginated page of public
+  // trips, so opening the map for a private trip, one of your own, or simply
+  // one past the first page found nothing here — and with no activeTrip the
+  // route query never ran, which is why the line, the checkpoints and the
+  // legs all silently disappeared.
+  const requestedTripId = isDismissed ? undefined : (selectedTripId || tripId) || undefined;
+  const listedTrip = requestedTripId ? trips.find((t) => t.id === requestedTripId) : undefined;
+
+  // Only fetched when the list does not already have it, so the common case
+  // costs nothing extra.
+  const { data: fetchedTrip } = useQuery({
+    queryKey: ['map', 'trip', requestedTripId],
+    queryFn: () => apiService.getTripDetail(requestedTripId!),
+    enabled: !!requestedTripId && !listedTrip,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const activeTrip = listedTrip ?? (fetchedTrip as typeof listedTrip | undefined);
 
   useEffect(() => {
     setNavbarHidden(!!activeTrip);
@@ -953,10 +980,14 @@ function MapScreen() {
   // trip's real route. Fabricated geodata rendered as fact. The server now
   // resolves the route from the trip's real cities and simply omits the
   // ones it cannot place, reporting how many it dropped.
+  // Keyed off the requested id rather than the resolved trip object: the
+  // route is drawable as soon as the id is known, and no longer waits on the
+  // trips list to happen to contain it.
+  const routeTripId = requestedTripId ?? activeTrip?.id;
   const { data: tripRoute } = useQuery({
-    queryKey: ['map', 'route', activeTrip?.id],
-    queryFn: () => apiService.getTripRoute(activeTrip!.id),
-    enabled: !!activeTrip?.id,
+    queryKey: ['map', 'route', routeTripId],
+    queryFn: () => apiService.getTripRoute(routeTripId!),
+    enabled: !!routeTripId,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -1021,10 +1052,17 @@ function MapScreen() {
       return;
     }
     setSosReachMessage(null);
+    const detail = await showPrompt({
+      title: t('sos.whatsWrongTitle', "What's wrong?"),
+      message: t('sos.whatsWrongMessage', 'This shows in the alert everyone receives. You can skip it.'),
+      placeholder: t('sos.whatsWrongPlaceholder', 'e.g. Injured, need help near the ridge'),
+      confirmLabel: t('sos.sendAlert', 'Send alert'),
+    });
     void triggerSOS(location.latitude, location.longitude, {
       accuracyMeters: location.accuracyMeters ?? null,
       capturedAt: location.capturedAt,
       isStale: location.isStale ?? false,
+      message: detail?.trim() || undefined,
     }).then((result) => {
       if (result?.message) setSosReachMessage(result.message);
     });
@@ -1056,6 +1094,14 @@ function MapScreen() {
     if (!mapPins) return;
     webViewRef.current?.postMessage(JSON.stringify({ type: 'SET_PINS', pins: mapPins }));
   }, [mapPins]);
+
+  const placeResults = useMemo(() => {
+    const q = placeQuery.trim().toLowerCase();
+    if (q.length < 2 || !mapPins) return [];
+    return mapPins
+      .filter((pin) => pin.name.toLowerCase().includes(q) || (pin.detail ?? '').toLowerCase().includes(q))
+      .slice(0, 6);
+  }, [placeQuery, mapPins]);
 
   useEffect(() => {
     if (!mapHazards) return;
@@ -1422,6 +1468,64 @@ function MapScreen() {
         )}
 
 
+
+        {/* Plain map use: a place search across the real pins already on the
+            map. Only when no trip is being shown, so it never competes with
+            the trip route panel. Nothing is geocoded here — it matches pins
+            the server actually returned, so it can never fly somewhere
+            invented. */}
+        {!activeTrip && (
+          <View style={[styles.mapSearchWrap, { top: insets.top + 10 }]} pointerEvents="box-none">
+            <View style={styles.mapSearchBar}>
+              <SearchIcon size={17} color="#64748B" />
+              <TextInput
+                style={styles.mapSearchInput}
+                value={placeQuery}
+                onChangeText={setPlaceQuery}
+                placeholder={t('map.searchPlaceholder', 'Search places on the map')}
+                placeholderTextColor="#94A3B8"
+                returnKeyType="search"
+              />
+              {placeQuery.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => setPlaceQuery('')}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('common.clear', 'Clear')}
+                >
+                  <X size={16} color="#64748B" />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {placeResults.length > 0 && (
+              <View style={styles.mapSearchResults}>
+                {placeResults.map((pin) => (
+                  <TouchableOpacity
+                    key={pin.id}
+                    style={styles.mapSearchResultRow}
+                    onPress={() => {
+                      setPlaceQuery('');
+                      webViewRef.current?.postMessage(
+                        JSON.stringify({ type: 'FLY_TO', lat: pin.latitude, lng: pin.longitude, label: pin.name }),
+                      );
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={pin.name}
+                  >
+                    <MapPinIcon size={14} color="#2563EB" />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.mapSearchResultName} numberOfLines={1}>{pin.name}</Text>
+                      {!!pin.detail && (
+                        <Text style={styles.mapSearchResultDetail} numberOfLines={1}>{pin.detail}</Text>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
 
         {activeTrip && (
           <>
@@ -1845,6 +1949,54 @@ function MapScreen() {
 }
 
 const styles = StyleSheet.create({
+  mapSearchWrap: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    zIndex: 50,
+  },
+  mapSearchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.16,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  mapSearchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#0F172A',
+    padding: 0,
+  },
+  mapSearchResults: {
+    marginTop: 6,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    overflow: 'hidden',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.16,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  mapSearchResultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E2E8F0',
+  },
+  mapSearchResultName: { fontSize: 13.5, fontWeight: '700', color: '#0F172A' },
+  mapSearchResultDetail: { fontSize: 11.5, color: '#64748B', marginTop: 1 },
   screenRoot: {
     flex: 1,
     backgroundColor: '#0D1117',

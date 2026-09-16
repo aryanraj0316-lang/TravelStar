@@ -16,7 +16,7 @@ type MessageListener = (data: {
   inquiryOrganizerId?: string | null;
 }) => void;
 type SOSListener = (data: SOSAlert) => void;
-type SOSResolvedListener = (data: { id: string }) => void;
+type SOSResolvedListener = (data: { id: string; resolutionNote?: string | null }) => void;
 type LocationListener = (data: { userId: string; tripId: string; latitude: number; longitude: number }) => void;
 type AddedToChatListener = (data: { tripId: string; chatRoomId: string; tripName: string }) => void;
 type NotificationListener = (data: {
@@ -33,6 +33,8 @@ type NotificationListener = (data: {
   category?: NotificationCategory | null;
 }) => void;
 type TypingListener = (data: { roomId: string; userId: string; userName: string; isTyping: boolean }) => void;
+/** Who is connected right now — a snapshot on connect, then deltas. */
+type PresenceListener = (data: { userIds: string[] } | { userId: string; online: boolean }) => void;
 
 class SocketService {
   private socket: Socket | null = null;
@@ -46,6 +48,7 @@ class SocketService {
   private addedToChatListeners: AddedToChatListener[] = [];
   private notificationListeners: NotificationListener[] = [];
   private typingListeners: TypingListener[] = [];
+  private presenceListeners: PresenceListener[] = [];
 
   async connect() {
     if (this.socket && this.socket.connected) return;
@@ -109,11 +112,19 @@ class SocketService {
         this.typingListeners.forEach((l) => l(data));
       });
 
+      this.socket.on('presenceSnapshot', (data: { userIds: string[] }) => {
+        this.presenceListeners.forEach((l) => l(data));
+      });
+
+      this.socket.on('presenceChanged', (data: { userId: string; online: boolean }) => {
+        this.presenceListeners.forEach((l) => l(data));
+      });
+
       this.socket.on('sosReceived', (data: SOSAlert) => {
         this.sosListeners.forEach((l) => l(data));
       });
 
-      this.socket.on('sosResolved', (data: { id: string }) => {
+      this.socket.on('sosResolved', (data: { id: string; resolutionNote?: string | null }) => {
         this.sosResolvedListeners.forEach((l) => l(data));
       });
 
@@ -351,6 +362,13 @@ class SocketService {
     this.typingListeners.push(listener);
     return () => {
       this.typingListeners = this.typingListeners.filter((l) => l !== listener);
+    };
+  }
+
+  onPresence(listener: PresenceListener) {
+    this.presenceListeners.push(listener);
+    return () => {
+      this.presenceListeners = this.presenceListeners.filter((l) => l !== listener);
     };
   }
 }

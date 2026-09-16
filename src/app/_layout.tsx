@@ -7,6 +7,7 @@ import { useEffect } from 'react';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { OfflineBanner } from '@/components/OfflineBanner';
+import { GlobalSosBanner } from '@/components/GlobalSosBanner';
 import { RouteErrorFallback } from '@/components/route-error-fallback';
 import { AppProvider } from '@/store/AppContext';
 import { FeedbackProvider } from '@/lib/feedback';
@@ -69,6 +70,7 @@ export default function RootLayout() {
           <AppProvider>
             <ThemeProvider value={AppTheme}>
               <AnimatedSplashOverlay />
+              <GlobalSosBanner />
               <OfflineBanner />
               <Stack screenOptions={{ headerShown: false }}>
                 <Stack.Screen name="(tabs)" />

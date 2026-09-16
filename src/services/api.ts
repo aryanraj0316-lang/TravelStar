@@ -57,6 +57,8 @@ import type {
   TripPaymentOrder,
   InitiatePaymentResult,
   VerifyPaymentResult,
+  DirectPayResult,
+  TripReceipt,
 } from '@/types/api';
 
 // Request-ID / idempotency-key generation only needs uniqueness, not
@@ -1004,9 +1006,12 @@ export const apiService = {
     });
   },
 
-  async resolveSOS(id: string) {
+  async resolveSOS(id: string, resolutionNote?: string) {
     return request(`/safety/sos/${id}/resolve`, {
       method: 'POST',
+      // What the person says when standing down is the all-clear everyone
+      // who was woken by the alert actually reads.
+      body: JSON.stringify({ resolutionNote }),
     });
   },
 
@@ -1550,5 +1555,23 @@ export const apiService = {
       method: 'POST',
       body: JSON.stringify(input),
     });
+  },
+
+  /**
+   * Pays a trip's seat fee for the exact amount owed. No balance is funded
+   * first and nothing is deducted from a stored credit — the amount itself is
+   * captured, and that captured order is what the organizer's trip budget is
+   * summed from.
+   */
+  async payTripDirect(input: { joinRequestId: string }): Promise<DirectPayResult | null> {
+    return request<DirectPayResult>('/trip-payments/pay', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+
+  /** Every payment this user was a party to — as payer and as organizer. */
+  async getTripReceipts(): Promise<TripReceipt[] | null> {
+    return request<TripReceipt[]>('/trip-payments/receipts');
   },
 };

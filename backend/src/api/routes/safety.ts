@@ -39,6 +39,9 @@ router.get('/sos', async (req, res) => {
 
     const mapped = alerts.map((a) => ({
       id: a.id,
+      // Needed so a client can tell whether this is its own alert — only
+      // the person who raised it gets the stand-down control.
+      userId: a.userId,
       userName: a.user?.profile
         ? `${a.user.profile.firstName} ${a.user.profile.lastName || ''}`.trim()
         : `User ${a.userId.slice(0, 8)}`,
@@ -46,6 +49,9 @@ router.get('/sos', async (req, res) => {
       longitude: a.longitude,
       timestamp: a.alertTime.toLocaleTimeString(),
       status: a.status,
+      // What they said was wrong, so a banner raised ten minutes ago still
+      // explains itself.
+      message: a.message,
     }));
 
     res.status(200).json({ ok: true, data: mapped });
@@ -78,7 +84,9 @@ router.post('/sos', async (req, res) => {
 
   try {
     const newAlert = await prisma.sOSAlert.create({
-      data: { userId, latitude, longitude },
+      // The reason is stored, not just broadcast, so it is still there for
+      // anyone who opens the app after the alert fired.
+      data: { userId, latitude, longitude, message: message ?? null },
     });
 
     const alerting = await prisma.user.findUnique({ where: { id: userId }, include: { profile: true } });
@@ -253,9 +261,17 @@ router.post('/sos/:id/resolve', async (req, res) => {
       return res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'You are not authorised to resolve this alert.' } });
     }
 
+    // What the person says when standing down ("found my group", "all
+    // fine now") is the whole point of the all-clear for everyone who was
+    // woken by the alert, so it is stored and broadcast with it.
+    const resolutionNote =
+      typeof req.body?.resolutionNote === 'string' && req.body.resolutionNote.trim()
+        ? req.body.resolutionNote.trim().slice(0, 300)
+        : null;
+
     await prisma.sOSAlert.update({
       where: { id },
-      data: { status: 'RESOLVED' },
+      data: { status: 'RESOLVED', resolutionNote, resolvedAt: new Date() },
     });
 
     // Notify the same scoped audience that received the original alert, and
@@ -270,7 +286,7 @@ router.post('/sos/:id/resolve', async (req, res) => {
       lat: alert.latitude,
       lng: alert.longitude,
     });
-    audience.userIds.forEach((uid: string) => io?.to(uid).emit('sosResolved', { id }));
+    audience.userIds.forEach((uid: string) => io?.to(uid).emit('sosResolved', { id, resolutionNote }));
 
     const resolver = await prisma.user.findUnique({ where: { id: userId }, include: { profile: true } });
     const resolverName = resolver?.profile
@@ -282,7 +298,9 @@ router.post('/sos/:id/resolve', async (req, res) => {
         data: {
           chatRoomId: room.chatRoomId,
           senderId: userId,
-          content: `✅ Marked safe by ${resolverName}.`,
+          content: resolutionNote
+            ? `✅ Marked safe by ${resolverName}: ${resolutionNote}`
+            : `✅ Marked safe by ${resolverName}.`,
           mediaType: 'NONE',
           isSystem: true,
         },

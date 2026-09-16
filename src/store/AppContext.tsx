@@ -182,11 +182,17 @@ export interface Message {
 
 export interface SOSAlert {
   id: string;
+  /** Who raised it — only they get the stand-down control. */
+  userId?: string;
   userName: string;
   latitude: number;
   longitude: number;
   timestamp: string;
   status: 'ACTIVE' | 'RESOLVED';
+  /** What they said was wrong when they raised it. */
+  message?: string | null;
+  /** What they said when standing it down. */
+  resolutionNote?: string | null;
 }
 
 export type StoryMediaType = 'IMAGE' | 'VIDEO';
@@ -268,7 +274,7 @@ interface AppContextType {
    * it can ignore the result.
    */
   triggerSOS: (lat: number, lng: number, fix?: { accuracyMeters?: number | null; capturedAt?: string; isStale?: boolean; message?: string }) => Promise<SosTriggerResult | null>;
-  resolveSOS: (id: string) => void;
+  resolveSOS: (id: string, resolutionNote?: string) => void;
   activeRoomId: string | null;
   setActiveRoomId: (id: string | null) => void;
   navbarHidden: boolean;
@@ -292,6 +298,8 @@ interface AppContextType {
   pendingRequestsCount: number;
   reloadIncomingRequestsCount: () => void;
   hasUnreadChat: boolean;
+  /** User ids with a live connection right now. */
+  onlineUserIds: Set<string>;
   clearChatUnread: () => void;
   checkUnreadChats: () => void;
   checkUnreadNotifications: () => void;
@@ -322,6 +330,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [joinRequestStatuses, setJoinRequestStatuses] = useState<Map<string, JoinRequestSummary>>(new Map());
   const [pendingRequestsCount, setPendingRequestsCount] = useState<number>(0);
   const [hasUnreadChat, setHasUnreadChat] = useState<boolean>(false);
+  // User ids with a live socket connection right now. Fed by a snapshot on
+  // connect plus deltas, so "online" means actually connected rather than
+  // being inferred from a seat count.
+  const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
   // Room ids of this user's own-organizer side of a pre-join enquiry
   // thread — populated whenever chat rooms are fetched, and consulted by
   // the real-time message/addedToChat handlers below so those threads
@@ -915,6 +927,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setTypingUser(data);
     });
 
+    // The all-clear. Without this nobody but the sender ever saw an alert
+    // end: the banner stayed up on every other device until the app was
+    // restarted, which is the opposite of the relief it is meant to give.
+    const unsubSosResolved = socketService.onSOSResolved(({ id, resolutionNote }) => {
+      setSosAlerts((prev) =>
+        prev.map((alert) =>
+          alert.id === id ? { ...alert, status: 'RESOLVED' as const, resolutionNote } : alert,
+        ),
+      );
+      toast(
+        resolutionNote ? `Marked safe: ${resolutionNote}` : 'The SOS alert has been marked safe.',
+        'success',
+      );
+    });
+
+    const unsubPresence = socketService.onPresence((data) => {
+      setOnlineUserIds((prev) => {
+        if ('userIds' in data) return new Set(data.userIds);
+        const next = new Set(prev);
+        if (data.online) next.add(data.userId);
+        else next.delete(data.userId);
+        return next;
+      });
+    });
+
     const unsubAddedToChat = socketService.onAddedToChat((data) => {
       setHasUnreadChat(true);
       refreshTrips();
@@ -971,6 +1008,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsubMsg();
       unsubSOS();
       unsubTyping();
+      unsubPresence();
+      unsubSosResolved();
       unsubAddedToChat();
       unsubNotification();
       unsubBookingStatus();
@@ -1181,13 +1220,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const triggerSOS = useCallback(
     async (lat: number, lng: number, fix?: { accuracyMeters?: number | null; capturedAt?: string; isStale?: boolean; message?: string }): Promise<SosTriggerResult | null> => {
+      const localId = `sos-${Date.now()}`;
       const newAlert: SOSAlert = {
-        id: `sos-${Date.now()}`,
+        id: localId,
+        userId: profile.id,
         userName: profile.name,
         latitude: lat,
         longitude: lng,
         timestamp: new Date().toLocaleTimeString(),
         status: 'ACTIVE',
+        message: fix?.message ?? null,
       };
       setSosAlerts((prev) => [newAlert, ...prev]);
       // Fire over both transports: the socket delta reaches connected devices
@@ -1195,7 +1237,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // write to SOSAlert. A user in distress must see a failure, not silence.
       socketService.triggerSOS(profile.name, lat, lng);
 
-      return apiService.triggerSOS(profile.name, lat, lng, fix).catch((e) => {
+      return apiService
+        .triggerSOS(profile.name, lat, lng, fix)
+        .then((result) => {
+          // Adopt the server's id. Without this the banner kept the local
+          // placeholder id, so "I am safe" resolved an alert the server had
+          // never heard of: it 404'd, the failure path flipped the alert
+          // back to ACTIVE, and the banner could never be dismissed.
+          const realId = result?.alertId ?? result?.id;
+          if (realId) {
+            setSosAlerts((prev) =>
+              prev.map((a) => (a.id === localId ? { ...a, id: realId } : a)),
+            );
+          }
+          return result;
+        })
+        .catch((e) => {
         if (isOfflineFailure(e)) {
           logger.error('[Safety] SOS trigger offline, queued for retry the moment connectivity returns:', e);
           enqueueMutation('sos', { userName: profile.name, lat, lng }).catch((qe) =>
@@ -1221,12 +1278,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [profile.name],
   );
 
-  const resolveSOS = useCallback((id: string) => {
-    setSosAlerts((prev) => prev.map((alert) => (alert.id === id ? { ...alert, status: 'RESOLVED' } : alert)));
-    apiService.resolveSOS(id).catch((e) => {
+  const resolveSOS = useCallback((id: string, resolutionNote?: string) => {
+    setSosAlerts((prev) =>
+      prev.map((alert) => (alert.id === id ? { ...alert, status: 'RESOLVED', resolutionNote } : alert)),
+    );
+
+    // An alert that never reached the server has no row to resolve — it
+    // only ever existed on this device, so clearing it locally is the whole
+    // job. Calling the API with the placeholder id would 404.
+    if (id.startsWith('sos-')) return;
+
+    apiService.resolveSOS(id, resolutionNote).catch((e) => {
       logger.warn('[Safety] SOS resolve failed:', e);
-      setSosAlerts((prev) => prev.map((alert) => (alert.id === id ? { ...alert, status: 'ACTIVE' } : alert)));
-      toast(errorToastMessage(e, 'Could not resolve the alert.'), 'error');
+      // A missing alert is already resolved as far as this device is
+      // concerned; only a real failure puts it back, and even then the
+      // person is told rather than left with a banner they cannot clear.
+      const alreadyGone = e instanceof ApiError && (e.statusCode === 404 || e.code === 'NOT_FOUND');
+      if (!alreadyGone) {
+        setSosAlerts((prev) => prev.map((alert) => (alert.id === id ? { ...alert, status: 'ACTIVE' } : alert)));
+        toast(errorToastMessage(e, 'Could not resolve the alert.'), 'error');
+      }
     });
     socketService.resolveSOS(id);
   }, []);
@@ -1474,6 +1545,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       pendingRequestsCount,
       reloadIncomingRequestsCount,
       hasUnreadChat,
+      onlineUserIds,
       clearChatUnread,
       checkUnreadChats,
       checkUnreadNotifications,
@@ -1515,6 +1587,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       pendingRequestsCount,
       reloadIncomingRequestsCount,
       hasUnreadChat,
+      onlineUserIds,
       clearChatUnread,
       checkUnreadChats,
       checkUnreadNotifications,

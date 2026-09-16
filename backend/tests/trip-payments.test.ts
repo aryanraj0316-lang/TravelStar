@@ -228,6 +228,176 @@ describe('Trip Payments & Payment-Gated Join Flow (CONVENTIONS.md §3, REMEDIATI
     expect(order?.gateway).toBe('WALLET');
   });
 
+  it('7. End-to-end: approval demands payment with no gateway configured, and paying seats the traveller, tells both sides, and moves the organizer\'s collected total', async () => {
+    const traveler = await registerUser('E2E Payer');
+    createdUserIds.push(traveler.userId);
+
+    // 1. Traveller asks for a seat.
+    const asked = await request(app)
+      .post('/api/v1/interactions/join-request')
+      .set(auth(traveler.token))
+      .send({ tripId: paidTripId });
+    expect(asked.status).toBe(201);
+    const joinRequestId = asked.body.data.id;
+
+    // 2. Organizer accepts. This is the step that used to seat the traveller
+    //    for free on a deployment with no Razorpay keys — no payment screen,
+    //    no order, nothing collected.
+    const accepted = await request(app)
+      .post(`/api/v1/interactions/join-request/${joinRequestId}/status`)
+      .set(auth(organizer.token))
+      .send({ status: 'APPROVED' });
+    expect(accepted.status).toBe(200);
+    expect(accepted.body.data.status).toBe('AWAITING_PAYMENT');
+
+    // Not seated yet — the seat is only held once it is paid for.
+    expect(
+      await prisma.tripMember.count({ where: { tripId: paidTripId, userId: traveler.userId } })
+    ).toBe(0);
+
+    // 3. The traveller is told to pay, and the notification carries the one
+    //    field the payment screen needs to open itself.
+    const payNotif = await prisma.notification.findFirst({
+      where: { userId: traveler.userId, category: 'PAYMENT_REQUIRED', tripId: paidTripId },
+    });
+    expect(payNotif).toBeTruthy();
+    expect(payNotif!.joinRequestId).toBe(joinRequestId);
+
+    // 4. The payment screen can price it without any gateway credentials.
+    const order = await request(app)
+      .get(`/api/v1/trip-payments/order/${joinRequestId}`)
+      .set(auth(traveler.token));
+    expect(order.status).toBe(200);
+    expect(Number(order.body.data.amount)).toBe(1500);
+
+    // 5. Pay with virtual money.
+    await prisma.wallet.upsert({
+      where: { userId: traveler.userId },
+      create: { userId: traveler.userId, balance: 2000 },
+      update: { balance: 2000 },
+    });
+    const paid = await request(app)
+      .post('/api/v1/trip-payments/wallet-pay')
+      .set(auth(traveler.token))
+      .send({ joinRequestId });
+    expect(paid.status).toBe(200);
+
+    // 6. Seat claimed and the traveller is now a real member.
+    expect(
+      await prisma.tripMember.count({ where: { tripId: paidTripId, userId: traveler.userId } })
+    ).toBe(1);
+    expect((await prisma.joinRequest.findUnique({ where: { id: joinRequestId } }))?.status).toBe('APPROVED');
+    expect(Number((await prisma.wallet.findUnique({ where: { userId: traveler.userId } }))?.balance)).toBe(500);
+
+    // 7. Both sides are told. The organizer half is new — previously only the
+    //    traveller heard anything, so a seat silently became paid.
+    expect(
+      await prisma.notification.count({
+        where: { userId: traveler.userId, category: 'PAYMENT_SUCCESS', tripId: paidTripId },
+      })
+    ).toBeGreaterThan(0);
+    const organizerNotif = await prisma.notification.findFirst({
+      where: { userId: organizer.userId, category: 'PAYMENT_SUCCESS', tripId: paidTripId },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(organizerNotif).toBeTruthy();
+    expect(organizerNotif!.title).toContain('Payment received');
+
+    // 8. The money shows up in the organizer's own "Money Collected" figure,
+    //    which is what the console reads per trip.
+    const summaries = await request(app)
+      .get('/api/v1/trips/mine/payment-summaries')
+      .set(auth(organizer.token));
+    expect(summaries.status).toBe(200);
+    const paidSummary = summaries.body.data.find((s: { tripId: string }) => s.tripId === paidTripId);
+    expect(paidSummary).toBeTruthy();
+    expect(Number(paidSummary.collected)).toBeGreaterThanOrEqual(1500);
+  }, 120_000);
+
+  it('8. Direct payment captures the exact fee, credits the trip budget, and files a permanent receipt for both sides', async () => {
+    const traveler = await registerUser('Direct Payer');
+    createdUserIds.push(traveler.userId);
+
+    const asked = await request(app)
+      .post('/api/v1/interactions/join-request')
+      .set(auth(traveler.token))
+      .send({ tripId: paidTripId });
+    expect(asked.status).toBe(201);
+    const joinRequestId = asked.body.data.id;
+
+    await request(app)
+      .post(`/api/v1/interactions/join-request/${joinRequestId}/status`)
+      .set(auth(organizer.token))
+      .send({ status: 'APPROVED' });
+
+    const before = await request(app)
+      .get('/api/v1/trips/mine/payment-summaries')
+      .set(auth(organizer.token));
+    const collectedBefore = Number(
+      before.body.data.find((s: { tripId: string }) => s.tripId === paidTripId)?.collected ?? 0,
+    );
+
+    // Pays the trip's actual fee. No balance is funded first and nothing is
+    // deducted from anywhere — the amount itself is what gets captured.
+    const paid = await request(app)
+      .post('/api/v1/trip-payments/pay')
+      .set(auth(traveler.token))
+      .send({ joinRequestId });
+    expect(paid.status).toBe(200);
+    expect(Number(paid.body.data.amount)).toBe(1500);
+
+    // Seated, and the exact amount moved into that trip's collected budget.
+    expect(
+      await prisma.tripMember.count({ where: { tripId: paidTripId, userId: traveler.userId } })
+    ).toBe(1);
+    const after = await request(app)
+      .get('/api/v1/trips/mine/payment-summaries')
+      .set(auth(organizer.token));
+    const collectedAfter = Number(
+      after.body.data.find((s: { tripId: string }) => s.tripId === paidTripId)?.collected ?? 0,
+    );
+    expect(collectedAfter - collectedBefore).toBe(1500);
+
+    // Both notifications quote the real figures, not just "payment confirmed".
+    const travellerNotif = await prisma.notification.findFirst({
+      where: { userId: traveler.userId, category: 'PAYMENT_SUCCESS', tripId: paidTripId },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(travellerNotif!.content).toContain('1500');
+    const organizerNotif = await prisma.notification.findFirst({
+      where: { userId: organizer.userId, category: 'PAYMENT_SUCCESS', tripId: paidTripId },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(organizerNotif!.content).toContain('1500');
+    expect(organizerNotif!.content).toContain('Direct Payer');
+
+    // The same payment appears in each side's permanent receipt list, from
+    // their own point of view.
+    const travellerReceipts = await request(app)
+      .get('/api/v1/trip-payments/receipts')
+      .set(auth(traveler.token));
+    expect(travellerReceipts.status).toBe(200);
+    const mine = travellerReceipts.body.data.find(
+      (r: { joinRequestId?: string; tripId: string; direction: string }) =>
+        r.tripId === paidTripId && r.direction === 'PAID',
+    );
+    expect(mine).toBeTruthy();
+    expect(Number(mine.amount)).toBe(1500);
+    expect(mine.counterpartyRole).toBe('Organizer');
+    expect(mine.reference).toHaveLength(8);
+
+    const organizerReceipts = await request(app)
+      .get('/api/v1/trip-payments/receipts')
+      .set(auth(organizer.token));
+    const received = organizerReceipts.body.data.find(
+      (r: { direction: string; counterpartyName: string }) =>
+        r.direction === 'RECEIVED' && r.counterpartyName === 'Direct Payer',
+    );
+    expect(received).toBeTruthy();
+    expect(Number(received.amount)).toBe(1500);
+    expect(received.tripName).toBe('Paid Himalayan Expedition');
+  }, 120_000);
+
   it('5. Signature mismatch on verify endpoint returns 400 INVALID_SIGNATURE', async () => {
     const traveler = await registerUser('Sig Test Traveler');
     createdUserIds.push(traveler.userId);

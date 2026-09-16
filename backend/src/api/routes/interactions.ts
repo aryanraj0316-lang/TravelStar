@@ -488,7 +488,15 @@ const handleStatusChange = async (req: Request, res: Response) => {
     // /initiate for the same rule applied to the actual charge.
     const perPersonFee = request.adjustedPrice ? Number(request.adjustedPrice) : Number(request.trip.budget);
     const fee = perPersonFee * request.partySize;
-    if (fee > 0 && isRazorpayConfigured()) {
+    // Whether a seat must be paid for is a property of the trip, not of which
+    // gateways happen to be credentialled. This used to also require
+    // isRazorpayConfigured(), so on a deployment with no Razorpay keys an
+    // approval fell straight through to claimSeatAndJoin below: the traveller
+    // was seated for free, never saw a payment step, and the organizer's
+    // "Money Collected" stayed at zero because no TripPaymentOrder was ever
+    // captured. Wallet payment needs no gateway credentials at all
+    // (POST /trip-payments/wallet-pay), so the fee alone decides.
+    if (fee > 0) {
       await prisma.joinRequest.update({
         where: { id: request.id },
         data: { status: 'AWAITING_PAYMENT' },

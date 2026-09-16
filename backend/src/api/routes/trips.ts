@@ -1257,6 +1257,9 @@ router.get('/:id/members', async (req, res) => {
       checkedIn: null,
       roomAllocated: null,
       seatAllocated: null,
+      partySize: 1,
+      isPendingCompanion: false,
+      companionOf: null as string | null,
     };
 
     const memberItems = trip.members.map((m) => {
@@ -1278,10 +1281,48 @@ router.get('/:id/members', async (req, res) => {
         checkedIn: m.checkedInAt !== null,
         roomAllocated: m.roomAllocated,
         seatAllocated: m.seatAllocated,
+        // How many seats this one person booked, themselves included. A
+        // Family Connect / midway join books for a party, and the extra
+        // seats belong to people who have no account of their own yet.
+        partySize: m.partySize ?? 1,
+        isPendingCompanion: false,
+        companionOf: null as string | null,
       };
     });
 
-    const participants = [creatorItem, ...memberItems];
+    // The extra seats of a party booking are real, paid-for people who are
+    // expected on the trip but have not joined yet. They had no
+    // representation at all here, so neither the group chat nor the
+    // organizer's roster could show them — the seats simply vanished into
+    // the availableSeats arithmetic. One entry per unjoined companion, so
+    // every roster that walks this list shows them without having to know
+    // how party bookings work.
+    const companionItems = trip.members.flatMap((m) => {
+      const extraSeats = Math.max(0, (m.partySize ?? 1) - 1);
+      if (extraSeats === 0) return [];
+      const bookerName = m.user.profile
+        ? `${m.user.profile.firstName} ${m.user.profile.lastName}`.trim()
+        : m.user.email
+          ? m.user.email.split('@')[0]
+          : 'Traveler';
+
+      return Array.from({ length: extraSeats }, (_, i) => ({
+        id: `companion-${m.id}-${i + 1}`,
+        // No account exists for them yet, so there is no userId to give.
+        userId: null,
+        name: `Guest ${i + 1} of ${bookerName}`,
+        avatar: null,
+        isCreator: false,
+        checkedIn: false,
+        roomAllocated: null,
+        seatAllocated: null,
+        partySize: 1,
+        isPendingCompanion: true,
+        companionOf: bookerName,
+      }));
+    });
+
+    const participants = [creatorItem, ...memberItems, ...companionItems];
     return res.status(200).json({ ok: true, data: participants });
   } catch (err) {
     logger.error('[Trips] Get trip members error:', err);

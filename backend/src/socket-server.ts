@@ -10,6 +10,14 @@ import { env } from './config/env';
 import { socketAuthMiddleware, getSocketUserId } from './lib/socket-auth';
 import { getSosAudienceUserIds } from './services/sos-audience';
 import { notifyTripEnquiry } from './services/trip-enquiry-notifications';
+
+/**
+ * Live socket count per connected user, which is what "online" actually
+ * means. Per-process: with more than one instance behind a load balancer
+ * each sees only its own connections, so this is a presence signal for a
+ * single-instance deployment, not a cluster-wide directory.
+ */
+const onlineSocketCounts = new Map<string, number>();
 import { setUserLocation } from './lib/presence-store';
 
 export function createSocketServer(httpServer: HttpServer): Server {
@@ -44,6 +52,29 @@ export function createSocketServer(httpServer: HttpServer): Server {
   io.on('connection', (socket) => {
     const userId = getSocketUserId(socket);
     void socket.join(userId);
+
+    // Who is actually connected right now. Counted per socket, not per user,
+    // so a second device or a reconnect does not mark someone offline while
+    // they still have a live connection. This is the only real answer to
+    // "who is online" — member lists previously implied presence from seat
+    // counts, which say nothing about whether anyone is connected.
+    const previousSockets = onlineSocketCounts.get(userId) ?? 0;
+    onlineSocketCounts.set(userId, previousSockets + 1);
+    if (previousSockets === 0) {
+      io.emit('presenceChanged', { userId, online: true });
+    }
+    // The newcomer needs the current picture, not just future changes.
+    socket.emit('presenceSnapshot', { userIds: [...onlineSocketCounts.keys()] });
+
+    socket.on('disconnect', () => {
+      const remaining = (onlineSocketCounts.get(userId) ?? 1) - 1;
+      if (remaining > 0) {
+        onlineSocketCounts.set(userId, remaining);
+        return;
+      }
+      onlineSocketCounts.delete(userId);
+      io.emit('presenceChanged', { userId, online: false });
+    });
 
     // Auto-join all chat rooms the user is a member of so they receive
     // real-time message events on all active devices, regardless of current screen/tab.

@@ -113,13 +113,24 @@ describe('join request approval chain', () => {
   });
 
   it('approves and seats the traveller', async () => {
+    // This trip charges a fee, so acceptance asks the traveller to pay
+    // rather than seating them outright — the seat is theirs once paid for.
     const res = await request(app)
       .post(`/api/v1/interactions/join-request/${requestId}/status`)
       .set(auth(organizer.token))
       .send({ status: 'APPROVED' });
     expect(res.status).toBe(200);
-    expect(res.body.data.status).toBe('APPROVED');
-    expect(res.body.data.chatRoomId).toBeTruthy();
+    expect(res.body.data.status).toBe('AWAITING_PAYMENT');
+
+    const paid = await request(app)
+      .post('/api/v1/trip-payments/pay')
+      .set(auth(joiner.token))
+      .send({ joinRequestId: requestId });
+    expect(paid.status).toBe(200);
+    expect(paid.body.data.chatRoomId).toBeTruthy();
+
+    const settled = await prisma.joinRequest.findUnique({ where: { id: requestId } });
+    expect(settled?.status).toBe('APPROVED');
   });
 
   it('puts the traveller on the roster', async () => {
@@ -134,8 +145,13 @@ describe('join request approval chain', () => {
     const res = await request(app).get('/api/v1/notifications').set(auth(joiner.token));
     expect(res.status).toBe(200);
     const rows = res.body.data as { category: string; content: string }[];
-    expect(rows.some((n) => n.category === 'JOIN_ACCEPTED')).toBe(true);
-    expect(rows.find((n) => n.category === 'JOIN_ACCEPTED')?.content).toContain('group chat');
+    // On a paid trip the "you are in" moment is the payment landing, so that
+    // is the notification carrying it; a free trip still says JOIN_ACCEPTED.
+    const welcome = rows.find(
+      (n) => n.category === 'PAYMENT_SUCCESS' || n.category === 'JOIN_ACCEPTED',
+    );
+    expect(welcome).toBeTruthy();
+    expect(welcome!.content).toContain('group chat');
   });
 
   it('will not double-approve the same request', async () => {

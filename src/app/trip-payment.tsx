@@ -68,11 +68,11 @@ export default function TripPaymentScreen() {
     loadOrder();
   }, [loadOrder]);
 
-  const handlePayWallet = async () => {
+  const handlePayDirect = async () => {
     if (!order || payingWallet) return;
     const confirmed = await confirm({
-      title: 'Pay from Wallet',
-      message: `Confirm deduction of ${formatINR(order.amount)} from your wallet balance to join this trip?`,
+      title: 'Confirm Payment',
+      message: `Pay ${formatINR(order.amount)} to secure your seat on this trip? This amount goes to the organizer's trip budget.`,
       confirmLabel: 'Pay Now',
       cancelLabel: 'Cancel',
     });
@@ -80,7 +80,7 @@ export default function TripPaymentScreen() {
 
     setPayingWallet(true);
     try {
-      const res = await apiService.payTripFromWallet({ joinRequestId: order.joinRequestId });
+      const res = await apiService.payTripDirect({ joinRequestId: order.joinRequestId });
       if (res?.joinRequestId) {
         toast('Payment confirmed! Welcome to the group journey.', 'success');
         refreshTrips();
@@ -92,10 +92,10 @@ export default function TripPaymentScreen() {
           router.replace('/bookings');
         }
       } else {
-        toast('Payment could not be completed. Please check your wallet balance.', 'error');
+        toast('Payment could not be completed. Please try again.', 'error');
       }
     } catch (err: any) {
-      toast(err?.message || 'Wallet payment failed', 'error');
+      toast(err?.message || 'Payment failed', 'error');
     } finally {
       setPayingWallet(false);
     }
@@ -194,9 +194,6 @@ export default function TripPaymentScreen() {
   }
 
   const isAlreadyPaid = order.status === 'CAPTURED' || order.joinRequestStatus === 'APPROVED';
-  const walletBal = Number(order.walletBalance ?? 0);
-  const amountNum = Number(order.amount);
-  const hasEnoughWallet = walletBal >= amountNum;
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -282,43 +279,35 @@ export default function TripPaymentScreen() {
           <View style={styles.paymentSection}>
             <Text style={styles.sectionHeading}>SELECT PAYMENT METHOD</Text>
 
-            {/* Wallet Option Card */}
+            {/* Pay the seat fee. There is no stored balance to fund first —
+                the amount itself is captured and goes straight into the
+                organizer's collected budget for this trip. */}
             <View style={styles.methodCard}>
               <View style={styles.methodTop}>
                 <View style={[styles.methodIconWrap, { backgroundColor: '#ECFDF5' }]}>
                   <Wallet size={22} color={C.green} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.methodTitle}>TravelStar Wallet</Text>
+                  <Text style={styles.methodTitle}>Pay Seat Fee</Text>
                   <Text style={styles.methodSub}>
-                    Balance: <Text style={{ fontWeight: fontWeight.bold }}>{formatINR(walletBal)}</Text>
+                    Goes directly to the organizer&apos;s trip budget
                   </Text>
                 </View>
               </View>
 
               <TouchableOpacity
-                style={[
-                  styles.payBtn,
-                  hasEnoughWallet ? styles.payBtnGreen : styles.payBtnDisabled,
-                ]}
-                disabled={!hasEnoughWallet || payingWallet}
-                onPress={handlePayWallet}
+                style={[styles.payBtn, styles.payBtnGreen]}
+                disabled={payingWallet}
+                onPress={handlePayDirect}
                 activeOpacity={0.85}
               >
                 {payingWallet ? (
                   <ActivityIndicator color={C.white} size="small" />
                 ) : (
                   <>
-                    <ShieldCheck size={18} color={hasEnoughWallet ? C.white : C.textMuted} />
-                    <Text
-                      style={[
-                        styles.payBtnText,
-                        !hasEnoughWallet && styles.payBtnTextDisabled,
-                      ]}
-                    >
-                      {hasEnoughWallet
-                        ? `Pay ${formatINR(order.amount)} from Wallet`
-                        : 'Insufficient Wallet Balance'}
+                    <ShieldCheck size={18} color={C.white} />
+                    <Text style={styles.payBtnText}>
+                      {`Pay ${formatINR(order.amount)}`}
                     </Text>
                   </>
                 )}

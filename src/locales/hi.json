@@ -626,6 +626,38 @@
     "photoCounter": "{{current}} / {{total}}",
     "couldNotSave": "आपके सहेजे गए डेस्टिनेशन अपडेट नहीं हो सके।"
   },
+  "receipts": {
+    "title": "भुगतान रसीदें",
+    "loading": "आपकी रसीदें लोड हो रही हैं...",
+    "couldNotLoad": "रसीदें लोड नहीं हो सकीं",
+    "couldNotLoadMessage": "कृपया पुनः प्रयास करें।",
+    "emptyTitle": "अभी कोई रसीद नहीं",
+    "emptyMessage": "आपके द्वारा किए गए और आपकी ट्रिप को मिले भुगतान यहाँ हमेशा सुरक्षित रहते हैं।",
+    "signInTitle": "रसीदें देखने के लिए साइन इन करें",
+    "signInMessage": "आपका भुगतान इतिहास आपके खाते से जुड़ा है।",
+    "totalPaid": "कुल भुगतान",
+    "totalReceived": "कुल प्राप्त",
+    "paidTo": "{{name}} को भुगतान किया",
+    "receivedFrom": "{{name}} से प्राप्त",
+    "date": "तारीख",
+    "seats": "सीटें",
+    "reference": "संदर्भ"
+  },
+  "sos": {
+    "needsHelp": "🆘 {{name}} को मदद चाहिए",
+    "tapForLocation": "सटीक स्थान देखने के लिए टैप करें",
+    "bannerAccessibility": "{{name}} को मदद चाहिए। उनका सटीक स्थान खोलें।",
+    "mapLabel": "🆘 {{name}} को यहाँ मदद चाहिए",
+    "imSafe": "मैं सुरक्षित हूँ",
+    "resolveTitle": "स्वयं को सुरक्षित चिह्नित करें",
+    "resolveSub": "जिन्हें आपका अलर्ट मिला था, सभी को बता दिया जाएगा कि स्थिति सामान्य है।",
+    "resolvePlaceholder": "जैसे: समूह मिल गया, अब सब ठीक है",
+    "sendAllClear": "सूचना भेजें",
+    "whatsWrongTitle": "क्या समस्या है?",
+    "whatsWrongMessage": "यह उस अलर्ट में दिखेगा जो सबको मिलेगा। आप इसे छोड़ भी सकते हैं।",
+    "whatsWrongPlaceholder": "जैसे: चोट लगी है, मदद चाहिए",
+    "sendAlert": "अलर्ट भेजें"
+  },
   "stories": {
     "allStoriesTitle": "कहानियाँ",
     "signInTitle": "कहानियाँ देखने के लिए साइन इन करें",
@@ -820,6 +852,8 @@
     "statStyleFallback": "एक्सप्लोरर",
     "bookingsTripsSub": "सक्रिय बुकिंग और पिछली यात्राएं",
     "expenseTrackerSub": "खर्च बांटें और ट्रिप खर्च ट्रैक करें",
+    "paymentReceipts": "भुगतान रसीदें",
+    "paymentReceiptsSub": "आपके किए और प्राप्त ट्रिप भुगतान",
     "sosReach": "SOS अलर्ट की पहुंच",
     "sosReachExplainer": "आपका ट्रिप ग्रुप, आपके इमरजेंसी संपर्क और हमारी सेफ्टी टीम हमेशा सूचित किए जाते हैं। यह सेटिंग तय करती है कि आपके आस-पास मौजूद अन्य TravelStar यात्रियों को भी सूचित किया जाए या नहीं।",
     "sosReachTripGroupValue": "केवल ट्रिप ग्रुप",
@@ -828,6 +862,7 @@
     "sosReachNearbySub": "आस-पास लोकेशन साझा करने वाला कोई भी व्यक्ति, साथ ही आपका ट्रिप ग्रुप"
   },
   "map": {
+    "searchPlaceholder": "मानचित्र पर स्थान खोजें",
     "routeStops": "मार्ग: {{count}} पड़ाव",
     "entireRoute": "पूरा मार्ग",
     "legLabel": "खंड {{number}}: {{start}} ➔ {{end}}",
@@ -913,6 +948,7 @@
     "notAvailableShort": "—"
   },
   "groupOrganizer": {
+    "yetToJoin": "अभी शामिल नहीं",
     "goBack": "वापस जाएं",
     "headerTitle": "ग्रुप आयोजक पोर्टल",
     "headerSub": "एडमिन पैनल और ट्रिप प्रबंधक",
@@ -1615,6 +1651,8 @@
     "bookingStatusConfirmed": "पुष्ट"
   },
   "chat": {
+    "membersOnline": "{{total}} में से {{online}} ऑनलाइन",
+    "yetToJoin": "अभी शामिल नहीं हुए",
     "you": "आप",
     "isTyping": "{{name}} टाइप कर रहे हैं",
     "roleOrganizer": "आयोजक",

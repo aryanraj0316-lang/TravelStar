@@ -67,12 +67,22 @@ describe('Family Connect Midway party-size seat claiming', () => {
     const joinRequestId = joinRes.body.data.id;
 
     // A party of 4 against a trip that only has 5 seats total is fine to
-    // approve.
+    // approve. This trip charges a fee, so approval asks for payment rather
+    // than seating the party — the seats are claimed when it is paid for.
     const approveRes = await request(app)
       .post(`/api/v1/interactions/join-request/${joinRequestId}/status`)
       .set('Authorization', `Bearer ${organizer.token}`)
       .send({ status: 'APPROVED' });
     expect(approveRes.status).toBe(200);
+    expect(approveRes.body.data.status).toBe('AWAITING_PAYMENT');
+
+    // The whole party is charged for, not just the requester: 1000 × 4.
+    const paid = await request(app)
+      .post('/api/v1/trip-payments/pay')
+      .set('Authorization', `Bearer ${requester.token}`)
+      .send({ joinRequestId });
+    expect(paid.status).toBe(200);
+    expect(Number(paid.body.data.amount)).toBe(4000);
 
     const afterApprove = await prisma.trip.findUnique({ where: { id: tripId }, select: { availableSeats: true } });
     expect(afterApprove?.availableSeats).toBe(1); // 5 - 4
@@ -91,6 +101,85 @@ describe('Family Connect Midway party-size seat claiming', () => {
     const afterRelease = await prisma.trip.findUnique({ where: { id: tripId }, select: { availableSeats: true } });
     expect(afterRelease?.availableSeats).toBe(5);
   }, 30_000);
+
+  it('lists the unjoined companions of a party booking on the roster, so the extra seats are visible people', async () => {
+    const organizer = await registerAndLogin('roster-organizer');
+    const requester = await registerAndLogin('roster-requester');
+
+    const start = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const end = new Date(start.getTime() + 4 * 24 * 60 * 60 * 1000);
+
+    // Created directly because POST /trips requires a positive budget: this
+    // trip is free on purpose, so approval seats the party immediately and
+    // the test stays about the roster rather than about payment.
+    const createdTrip = await prisma.trip.create({
+      data: {
+        creatorId: organizer.userId,
+        name: `Roster Family Trip ${runId}`,
+        description: 'Roster companion visibility',
+        category: 'ADVENTURE',
+        cities: ['Goa'],
+        startDate: start,
+        endDate: end,
+        durationDays: 4,
+        budget: 0,
+        totalSeats: 6,
+        availableSeats: 6,
+        meetingPoint: 'Panaji',
+        privacy: 'PRIVATE',
+      },
+    });
+    const tripId = createdTrip.id;
+    createdTripIds.push(tripId);
+
+    // One traveller books for themselves plus two companions.
+    const joinRes = await request(app)
+      .post('/api/v1/interactions/join-request')
+      .set('Authorization', `Bearer ${requester.token}`)
+      .send({ tripId, familyMemberCount: 2 });
+    const joinRequestId = joinRes.body.data.id;
+
+    await request(app)
+      .post(`/api/v1/interactions/join-request/${joinRequestId}/status`)
+      .set('Authorization', `Bearer ${organizer.token}`)
+      .send({ status: 'APPROVED' });
+
+    const roster = await request(app)
+      .get(`/api/v1/trips/${tripId}/members`)
+      .set('Authorization', `Bearer ${organizer.token}`);
+    expect(roster.status).toBe(200);
+
+    type RosterRow = {
+      userId: string | null;
+      name: string;
+      isCreator: boolean;
+      partySize: number;
+      isPendingCompanion: boolean;
+      companionOf: string | null;
+    };
+    const rows: RosterRow[] = roster.body.data;
+
+    // Two real people are here: the organizer and the traveller who booked.
+    const joined = rows.filter((r) => !r.isPendingCompanion);
+    expect(joined).toHaveLength(2);
+    const booker = joined.find((r) => !r.isCreator)!;
+    expect(booker.partySize).toBe(3);
+
+    // The two seats they booked for other people are now visible as people
+    // who are expected but have not joined — previously they existed only
+    // inside the availableSeats arithmetic and appeared nowhere at all.
+    const companions = rows.filter((r) => r.isPendingCompanion);
+    expect(companions).toHaveLength(2);
+    for (const c of companions) {
+      expect(c.userId).toBeNull();
+      expect(c.companionOf).toBe(booker.name);
+      expect(c.name).toContain(booker.name);
+    }
+
+    // Seats still reconcile: 6 total − 3 booked = 3 left.
+    const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { availableSeats: true } });
+    expect(trip?.availableSeats).toBe(3);
+  }, 60_000);
 
   it('rejects a party too large for the remaining seats up front', async () => {
     const organizer = await registerAndLogin('organizer2');

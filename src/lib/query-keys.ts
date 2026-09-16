@@ -48,6 +48,9 @@ export const queryKeys = {
   emergencyContactsForCity: (city: string) => ['emergency-contacts', 'city', city] as const,
   monsoonAdvisories: () => ['monsoon-advisories'] as const,
 
+  /** Permanent trip payment receipts — both paid and received. */
+  tripReceipts: () => ['trip-payments', 'receipts'] as const,
+
   notifications: () => ['notifications'] as const,
   unreadNotificationCount: () => ['notifications', 'unread-count'] as const,
 

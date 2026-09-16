@@ -26,6 +26,7 @@ import CheckCircle from 'lucide-react-native/icons/circle-check-big';
 import HelpCircle from 'lucide-react-native/icons/circle-question-mark';
 import Compass from 'lucide-react-native/icons/compass';
 import CreditCard from 'lucide-react-native/icons/credit-card';
+import ReceiptIcon from 'lucide-react-native/icons/receipt';
 import Download from 'lucide-react-native/icons/download';
 import Globe from 'lucide-react-native/icons/globe';
 import ImageIcon from 'lucide-react-native/icons/image';
@@ -1042,6 +1043,31 @@ function ProfileScreen() {
                   <View style={styles.menuItemTextCol}>
                     <Text style={styles.menuItemTitle}>{t('profile.savedDestinations')}</Text>
                     <Text style={styles.menuItemSub}>{t('profile.savedDestinationsCount', { count: savedCount })}</Text>
+                  </View>
+                </View>
+                <ChevronRight size={16} color="#94A3B8" />
+              </TouchableOpacity>
+
+              <View style={styles.menuDivider} />
+
+              {/* Payment Receipts — every trip payment made or received,
+                  kept permanently for both travellers and organizers. */}
+              <TouchableOpacity
+                style={styles.menuItem}
+                activeOpacity={0.7}
+                onPress={() => router.push('/receipts')}
+                accessibilityRole="button"
+                accessibilityLabel={t('profile.paymentReceipts', 'Payment Receipts')}
+              >
+                <View style={styles.menuItemLeft}>
+                  <View style={[styles.menuIconBadge, { backgroundColor: '#FFF7ED' }]}>
+                    <ReceiptIcon size={16} color="#D97706" />
+                  </View>
+                  <View style={styles.menuItemTextCol}>
+                    <Text style={styles.menuItemTitle}>{t('profile.paymentReceipts', 'Payment Receipts')}</Text>
+                    <Text style={styles.menuItemSub}>
+                      {t('profile.paymentReceiptsSub', 'Trip payments you made and received')}
+                    </Text>
                   </View>
                 </View>
                 <ChevronRight size={16} color="#94A3B8" />

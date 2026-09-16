@@ -636,6 +636,38 @@
     "photoCounter": "{{current}} / {{total}}",
     "couldNotSave": "Could not update your saved destinations."
   },
+  "receipts": {
+    "title": "Payment Receipts",
+    "loading": "Loading your receipts...",
+    "couldNotLoad": "Couldn't load receipts",
+    "couldNotLoadMessage": "Please try again.",
+    "emptyTitle": "No receipts yet",
+    "emptyMessage": "Payments you make for a trip, and payments your own trips receive, are kept here permanently.",
+    "signInTitle": "Sign in to view receipts",
+    "signInMessage": "Your trip payment history is tied to your account.",
+    "totalPaid": "Total Paid",
+    "totalReceived": "Total Received",
+    "paidTo": "Paid to {{name}}",
+    "receivedFrom": "Received from {{name}}",
+    "date": "Date",
+    "seats": "Seats",
+    "reference": "Reference"
+  },
+  "sos": {
+    "needsHelp": "🆘 {{name}} needs help",
+    "tapForLocation": "Tap for exact location",
+    "bannerAccessibility": "{{name}} needs help. Open their exact location.",
+    "mapLabel": "🆘 {{name}} needs help here",
+    "imSafe": "I am safe",
+    "resolveTitle": "Mark yourself safe",
+    "resolveSub": "Everyone who received your alert will be told it is over. Add a note if you want them to know what changed.",
+    "resolvePlaceholder": "e.g. Found my group, all fine now",
+    "sendAllClear": "Send all-clear",
+    "whatsWrongTitle": "What is wrong?",
+    "whatsWrongMessage": "This shows in the alert everyone receives. You can skip it.",
+    "whatsWrongPlaceholder": "e.g. Injured, need help near the ridge",
+    "sendAlert": "Send alert"
+  },
   "stories": {
     "allStoriesTitle": "Stories",
     "signInTitle": "Sign In to View Stories",
@@ -830,6 +862,8 @@
     "statStyleFallback": "Explorer",
     "bookingsTripsSub": "Active reservations & past itineraries",
     "expenseTrackerSub": "Split costs and track trip expenses",
+    "paymentReceipts": "Payment Receipts",
+    "paymentReceiptsSub": "Trip payments you made and received",
     "sosReach": "SOS alert reach",
     "sosReachExplainer": "Your trip group, your emergency contacts, and our safety team are always alerted. This controls whether other TravelStar travellers near you are woken too.",
     "sosReachTripGroupValue": "Trip group only",
@@ -838,6 +872,7 @@
     "sosReachNearbySub": "Anyone sharing their location nearby, plus your trip group"
   },
   "map": {
+    "searchPlaceholder": "Search places on the map",
     "routeStops": "ROUTE: {{count}} STOPS",
     "entireRoute": "Entire Route",
     "legLabel": "Leg {{number}}: {{start}} ➔ {{end}}",
@@ -923,6 +958,7 @@
     "notAvailableShort": "—"
   },
   "groupOrganizer": {
+    "yetToJoin": "YET TO JOIN",
     "goBack": "Go back",
     "headerTitle": "Group Organizer Portal",
     "headerSub": "Admin Panel & Trip Manager",
@@ -1625,6 +1661,8 @@
     "bookingStatusConfirmed": "Confirmed"
   },
   "chat": {
+    "membersOnline": "{{online}} of {{total}} online",
+    "yetToJoin": "Yet to join",
     "you": "You",
     "isTyping": "{{name}} is typing",
     "roleOrganizer": "Organizer",

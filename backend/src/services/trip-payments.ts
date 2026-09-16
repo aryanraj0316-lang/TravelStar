@@ -288,6 +288,98 @@ export async function payFromWallet(joinRequestId: string, userId: string): Prom
   return { ok: true, joinRequestId, chatRoomId: claim.chatRoomId ?? null };
 }
 
+// ── Direct payment capture ─────────────────────────────────────────────────
+
+export type DirectPayResult =
+  | { ok: true; joinRequestId: string; chatRoomId: string | null; amount: string }
+  | { ok: false; reason: 'ORDER_NOT_FOUND' | 'ALREADY_CAPTURED' | 'TRIP_FULL' | 'TRIP_NOT_FOUND' | 'BUSY' };
+
+/**
+ * Captures the seat fee the traveller has just paid, for the exact amount the
+ * trip charges, and seats them.
+ *
+ * Deliberately not a stored-credit model: there is no balance to fund first
+ * and nothing is deducted from anywhere. The amount owed for this join
+ * request is recorded as a captured TripPaymentOrder, which is the single row
+ * every "money collected" figure in the organizer's portal is computed from
+ * (GET /trips/mine/payment-summaries), and which is also the permanent
+ * receipt for both sides — orders are never deleted.
+ *
+ * The Razorpay path (captureAndClaimSeat) ends in exactly the same state, so
+ * adding gateway credentials later changes how the money is collected without
+ * changing anything downstream of it.
+ */
+export async function payDirect(joinRequestId: string, userId: string): Promise<DirectPayResult> {
+  const jr = await prisma.joinRequest.findUnique({
+    where: { id: joinRequestId },
+    include: { trip: true, paymentOrder: true },
+  });
+
+  if (!jr || jr.userId !== userId) {
+    return { ok: false, reason: 'ORDER_NOT_FOUND' };
+  }
+  if (jr.paymentOrder?.status === 'CAPTURED') {
+    return {
+      ok: true,
+      joinRequestId,
+      chatRoomId: null,
+      amount: jr.paymentOrder.amount.toString(),
+    };
+  }
+  if (jr.status !== 'AWAITING_PAYMENT') {
+    return { ok: false, reason: 'ORDER_NOT_FOUND' };
+  }
+
+  // Per-person price × party size — the same rule /initiate, /order and the
+  // wallet path use, so a Family Connect join is charged for the whole party.
+  const perPerson = (jr.adjustedPrice ?? jr.trip.budget) as Decimal;
+  const amount = new Decimal(perPerson).mul(jr.partySize);
+
+  const order =
+    jr.paymentOrder ??
+    (await prisma.tripPaymentOrder.create({
+      data: {
+        joinRequestId,
+        userId,
+        amount,
+        gateway: 'DIRECT',
+        status: 'PENDING',
+        idempotencyKey: `direct-${joinRequestId}-${userId}`,
+      },
+    }));
+
+  const claim = await claimSeatAndJoin(jr.tripId, jr.userId, {
+    existingJoinRequestId: jr.id,
+    fromCity: jr.fromCity,
+    toCity: jr.toCity,
+    adjustedPrice: jr.adjustedPrice ? Number(jr.adjustedPrice) : null,
+    partySize: jr.partySize,
+  });
+
+  if (!claim.ok) {
+    // Nothing was taken, so there is nothing to refund — the order simply
+    // never captures and the traveller keeps their money.
+    await prisma.tripPaymentOrder.update({ where: { id: order.id }, data: { status: 'CREATED' } });
+    return { ok: false, reason: claim.reason };
+  }
+
+  await prisma.tripPaymentOrder.update({
+    where: { id: order.id },
+    data: { status: 'CAPTURED', gateway: 'DIRECT', amount },
+  });
+
+  await _dispatchJoinNotifications(
+    jr.userId, jr.tripId, jr.trip.name, claim.chatRoomId ?? null,
+  );
+
+  return {
+    ok: true,
+    joinRequestId,
+    chatRoomId: claim.chatRoomId ?? null,
+    amount: amount.toString(),
+  };
+}
+
 // ── Refund ─────────────────────────────────────────────────────────────────
 
 /**
@@ -352,14 +444,38 @@ async function _dispatchJoinNotifications(
   chatRoomId: string | null,
 ) {
   try {
+    // Both notifications quote the actual figures rather than "payment
+    // confirmed", so each side has the receipt in hand without opening
+    // anything. The same numbers back the permanent receipt list
+    // (GET /trip-payments/receipts), which reads the very same order row.
+    const order = await prisma.tripPaymentOrder.findFirst({
+      where: { userId, joinRequest: { tripId } },
+      orderBy: { updatedAt: 'desc' },
+      include: { joinRequest: { include: { trip: true } } },
+    });
+
+    const amountLabel = order ? `₹${Number(order.amount).toFixed(2)}` : null;
+    const seats = order?.joinRequest.partySize ?? 1;
+    const seatLabel = seats > 1 ? `${seats} seats` : '1 seat';
+    const paidOn = new Date().toLocaleDateString('en-IN', {
+      day: 'numeric', month: 'short', year: 'numeric',
+    });
+    const reference = order ? order.id.slice(0, 8).toUpperCase() : null;
+
+    const travellerReceipt = amountLabel
+      ? `Receipt · ${tripName}\nAmount paid: ${amountLabel} (${seatLabel})\nDate: ${paidOn}` +
+        (reference ? `\nReference: ${reference}` : '') +
+        (chatRoomId ? '\nYou have been added to the group chat.' : '')
+      : 'Your payment for ' + tripName + ' was confirmed. You are now a member' +
+        (chatRoomId ? ' and have been added to the group chat.' : '.');
+
     await prisma.notification.create({
       data: {
         userId,
         type: 'TRIP',
         category: 'PAYMENT_SUCCESS',
         title: 'Payment Successful — Welcome!',
-        content: 'Your payment for ' + tripName + ' was confirmed. You are now a member' +
-          (chatRoomId ? ' and have been added to the group chat.' : '.'),
+        content: travellerReceipt,
         time: 'Just now',
         unread: true,
         tripId,
@@ -369,10 +485,58 @@ async function _dispatchJoinNotifications(
 
     await sendPushToUsers([userId], 'TRIP', {
       title: 'Payment Successful — Welcome!',
-      body: 'You are now a member of ' + tripName,
+      body: amountLabel
+        ? `${amountLabel} paid for ${tripName}. You are now a member.`
+        : 'You are now a member of ' + tripName,
       data: { screen: 'trip', tripId, chatRoomId: chatRoomId ?? '' },
       badge: await unreadCountFor(userId),
     });
+
+    // The organizer is the other half of this transaction — it is their trip
+    // that just filled a seat and their "Money Collected" that just moved —
+    // but only the traveller was ever told. Nothing on the organizer side
+    // announced a payment, so a seat silently became paid.
+    const trip = await prisma.trip.findUnique({
+      where: { id: tripId },
+      select: { creatorId: true },
+    });
+    const payer = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { profile: true },
+    });
+    if (trip?.creatorId && trip.creatorId !== userId) {
+      const payerName = payer?.profile
+        ? `${payer.profile.firstName} ${payer.profile.lastName ?? ''}`.trim()
+        : (payer?.email?.split('@')[0] ?? 'A traveller');
+      const organizerTitle = 'Payment received — ' + tripName;
+      const organizerContent = amountLabel
+        ? `Receipt · ${tripName}\nFrom: ${payerName}\nAmount received: ${amountLabel} (${seatLabel})\nDate: ${paidOn}` +
+          (reference ? `\nReference: ${reference}` : '') +
+          `\nAdded to this trip's collected budget.`
+        : `${payerName} has paid for their seat on ${tripName}.`;
+
+      await prisma.notification.create({
+        data: {
+          userId: trip.creatorId,
+          type: 'TRIP',
+          category: 'PAYMENT_SUCCESS',
+          title: organizerTitle,
+          content: organizerContent,
+          time: 'Just now',
+          unread: true,
+          tripId,
+        },
+      });
+
+      await sendPushToUsers([trip.creatorId], 'TRIP', {
+        title: organizerTitle,
+        body: amountLabel
+          ? `${payerName} paid ${amountLabel} for ${tripName}.`
+          : `${payerName} has paid for their seat on ${tripName}.`,
+        data: { screen: 'group-organizer', tripId },
+        badge: await unreadCountFor(trip.creatorId),
+      });
+    }
   } catch (err) {
     logger.warn('[TripPayments] Notification dispatch failed (non-fatal):', err);
   }

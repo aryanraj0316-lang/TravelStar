@@ -245,7 +245,8 @@ export interface StoryPayload {
 
 export interface TripMemberRow {
   id: string;
-  userId: string;
+  /** null on a pending companion — they have no account yet. */
+  userId: string | null;
   name: string;
   avatar: string;
   isCreator?: boolean;
@@ -253,6 +254,16 @@ export interface TripMemberRow {
   checkedIn: boolean | null;
   roomAllocated: string | null;
   seatAllocated: string | null;
+  /** Seats this one person booked, themselves included (Family Connect). */
+  partySize?: number;
+  /**
+   * An extra seat from a party booking: a real, paid-for person who is
+   * expected on the trip but has not joined yet. Shown on the roster as
+   * "yet to join", and never counted as someone who is present.
+   */
+  isPendingCompanion?: boolean;
+  /** Display name of the traveller whose booking this seat belongs to. */
+  companionOf?: string | null;
 }
 
 export interface TripExpenseItem {
@@ -767,4 +778,34 @@ export interface InitiatePaymentResult {
 export interface VerifyPaymentResult {
   joinRequestId: string;
   chatRoomId: string | null;
+}
+
+export interface DirectPayResult {
+  joinRequestId: string;
+  chatRoomId: string | null;
+  /** The amount actually captured, in rupees. */
+  amount: Money;
+}
+
+/**
+ * One captured trip payment, from the point of view of whoever is asking:
+ * 'PAID' is money this user sent as a traveller, 'RECEIVED' is money their
+ * own trip took in. Kept permanently — these are read straight off the
+ * captured payment order.
+ */
+export interface TripReceipt {
+  id: string;
+  /** Short human-quotable code, e.g. "A1B2C3D4". */
+  reference: string;
+  direction: 'PAID' | 'RECEIVED';
+  amount: Money;
+  gateway: string;
+  seats: number;
+  paidAt: IsoDateTime;
+  tripId: string;
+  tripName: string;
+  tripStartDate: IsoDateTime;
+  tripCities: string[];
+  counterpartyName: string;
+  counterpartyRole: 'Organizer' | 'Traveller';
 }

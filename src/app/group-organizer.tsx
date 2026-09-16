@@ -127,10 +127,14 @@ interface ActiveTour {
 
 interface GroupMember {
   id: string;
-  userId: string;
+  /** null on a pending companion — an extra party seat with no account yet. */
+  userId: string | null;
   name: string;
   avatar: string;
   role: 'LEADER' | 'GUIDE' | 'MEMBER';
+  /** An unjoined extra seat from a Family Connect / party booking. */
+  isPendingCompanion?: boolean;
+  companionOf?: string | null;
   // docs/REMEDIATION.md §8.6 — these three are real, persisted TripMember
   // fields (GET /trips/:id/members), not client-only state. null on the
   // organizer's own row (they have no TripMember row to hold them).
@@ -1716,6 +1720,8 @@ export default function GroupOrganizerScreen() {
           checkedIn: m.checkedIn,
           roomAllocated: m.roomAllocated,
           seatAllocated: m.seatAllocated,
+          isPendingCompanion: !!m.isPendingCompanion,
+          companionOf: m.companionOf ?? null,
         }));
         setMembers(mappedMembers);
       })
@@ -1959,8 +1965,15 @@ export default function GroupOrganizerScreen() {
 
 
 
+  // A pending companion is an extra seat from a party booking with no
+  // account behind it yet, so there is no TripMember row to check in or
+  // allocate against. The roster shows them, but these three actions are
+  // not theirs to take.
+  const isRosterActionable = (member: GroupMember): member is GroupMember & { userId: string } =>
+    !member.isPendingCompanion && !!member.userId;
+
   const handleCheckInToggle = async (member: GroupMember) => {
-    if (!currentTour) return;
+    if (!currentTour || !isRosterActionable(member)) return;
     const next = !member.checkedIn;
     // Optimistic — rolled back if the server rejects it.
     setMembers((prev) => prev.map((m) => (m.id === member.id ? { ...m, checkedIn: next } : m)));
@@ -2037,7 +2050,7 @@ export default function GroupOrganizerScreen() {
   // web the allocator buttons did nothing at all, silently. showPrompt is the
   // cross-platform replacement (docs/REMEDIATION.md §9.2).
   const handleAllocateRoom = (member: GroupMember) => {
-    if (!currentTour) return;
+    if (!currentTour || !isRosterActionable(member)) return;
     void (async () => {
       const room = await showPrompt({
         title: t('groupOrganizer.allocateHotelRoom'),
@@ -2063,7 +2076,7 @@ export default function GroupOrganizerScreen() {
   };
 
   const handleAllocateSeat = (member: GroupMember) => {
-    if (!currentTour) return;
+    if (!currentTour || !isRosterActionable(member)) return;
     void (async () => {
       const seat = await showPrompt({
         title: t('groupOrganizer.allocateTransportSeat'),
@@ -2734,6 +2747,17 @@ export default function GroupOrganizerScreen() {
                                       {isLeader ? 'ORGANIZER' : member.role === 'GUIDE' ? 'GUIDE' : 'TRAVELER'}
                                     </Text>
                                   </View>
+
+                                  {/* A paid-for extra seat from a Family
+                                      Connect / party booking that nobody has
+                                      joined on yet. */}
+                                  {member.isPendingCompanion && (
+                                    <View style={styles.memberPendingPill}>
+                                      <Text style={styles.memberPendingPillText}>
+                                        {t('groupOrganizer.yetToJoin', 'YET TO JOIN')}
+                                      </Text>
+                                    </View>
+                                  )}
                                 </View>
 
                                 {/* Optional Allocations (Room & Seat) */}
@@ -7951,6 +7975,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
+  },
+  memberPendingPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+  },
+  memberPendingPillText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#C2410C',
+    letterSpacing: 0.3,
   },
   memberRoleText: {
     fontSize: 9.5,
