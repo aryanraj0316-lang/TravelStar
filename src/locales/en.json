@@ -580,6 +580,12 @@
     "hazardsFoundHeader_one": "{{count}} hazard found near this trip's route",
     "hazardsFoundHeader_other": "{{count}} hazards found near this trip's route",
     "distanceFromRoute": "{{km}} km from route",
+    "routeSafetyOverview": "Trip Route Safety",
+    "safeBadge": "Safe",
+    "hazardsBadge_one": "{{count}} Hazard",
+    "hazardsBadge_other": "{{count}} Hazards",
+    "checkingBadge": "Checking…",
+    "unmonitoredBadge": "Monitored",
     "statusOngoing": "Ongoing",
     "statusUpcoming": "Upcoming",
     "statusCompleted": "Completed"

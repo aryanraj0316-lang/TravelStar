@@ -25,6 +25,7 @@ import Flame from 'lucide-react-native/icons/flame';
 import HelpCircle from 'lucide-react-native/icons/circle-question-mark';
 import MapPin from 'lucide-react-native/icons/map-pin';
 import Mountain from 'lucide-react-native/icons/mountain';
+import ShieldCheck from 'lucide-react-native/icons/shield-check';
 import Tornado from 'lucide-react-native/icons/tornado';
 import Waves from 'lucide-react-native/icons/waves-horizontal';
 
@@ -37,18 +38,6 @@ import Waves from 'lucide-react-native/icons/waves-horizontal';
 // trip's route" when none of its cities are in the geocoding table. That
 // last case is never presented as "all clear" — it is a distinct unknown
 // state.
-
-const STATUS_LABEL_KEYS = {
-  ONGOING: 'tripSafetyAnalysis.statusOngoing',
-  UPCOMING: 'tripSafetyAnalysis.statusUpcoming',
-  COMPLETED: 'tripSafetyAnalysis.statusCompleted',
-} as const;
-
-const STATUS_TONE: Record<MyTripBooking['status'], BadgeTone> = {
-  ONGOING: 'success',
-  UPCOMING: 'info',
-  COMPLETED: 'neutral',
-};
 
 // Same severity convention as monsoon-advisory.tsx / notifications.tsx
 // (CRITICAL/WARNING/ADVISORY -> danger/warning/info), reused via the shared
@@ -90,22 +79,46 @@ const CATEGORY_ICON: Record<AlertCategory, typeof Mountain> = {
   WILDFIRE: Flame,
 };
 
-function StatusBadge({ status }: { status: MyTripBooking['status'] }) {
-  const { t } = useTranslation();
-  return <Badge label={t(STATUS_LABEL_KEYS[status])} tone={STATUS_TONE[status]} />;
-}
 
-// Each row is its own component so the React Compiler
-// (app.json > experiments.reactCompiler) memoizes rows independently.
-function TripRow({ trip, onPress }: { trip: MyTripBooking; onPress: (trip: MyTripBooking) => void }) {
+// Each row fetches its trip's own hazard analysis so travellers immediately see
+// at a glance which trips are Safe and which have active Hazards.
+function TripSafetyRow({ trip, onPress }: { trip: MyTripBooking; onPress: (trip: MyTripBooking) => void }) {
+  const { t } = useTranslation();
+  const { data: report, isLoading } = useQuery({
+    queryKey: queryKeys.tripHazards(trip.id),
+    queryFn: () => apiService.getTripHazards(trip.id),
+    staleTime: 60_000,
+  });
+
+  const hasHazards = (report?.hazards?.length ?? 0) > 0;
+  const isClear = report?.clear === true;
+
   return (
     <TouchableOpacity
       activeOpacity={0.85}
-      style={styles.tripRow}
+      style={[styles.tripRow, hasHazards && styles.tripRowHazard]}
       onPress={() => onPress(trip)}
       accessibilityRole="button"
-      accessibilityLabel={trip.name}
+      accessibilityLabel={`${trip.name}, ${hasHazards ? 'Caution: hazards reported' : isClear ? 'Safe' : 'Route monitored'}`}
     >
+      <View
+        style={[
+          styles.safetyStatusIndicator,
+          {
+            backgroundColor: hasHazards ? '#FEE2E2' : isClear ? '#ECFDF5' : '#F1F5F9',
+            borderColor: hasHazards ? '#FECACA' : isClear ? '#A7F3D0' : '#E2E8F0',
+          },
+        ]}
+      >
+        {hasHazards ? (
+          <AlertTriangle size={15} color={C.redText} />
+        ) : isClear ? (
+          <Check size={15} color="#059669" strokeWidth={2.4} />
+        ) : (
+          <ShieldCheck size={15} color={C.textMuted} strokeWidth={2} />
+        )}
+      </View>
+
       <View style={{ flex: 1 }}>
         <Text style={styles.tripRowTitle} numberOfLines={1}>
           {trip.name}
@@ -115,7 +128,21 @@ function TripRow({ trip, onPress }: { trip: MyTripBooking; onPress: (trip: MyTri
           <Text style={styles.tripRowMetaText}>{formatDateRange(trip.startDate, trip.endDate)}</Text>
         </View>
       </View>
-      <StatusBadge status={trip.status} />
+
+      <View style={styles.tripRowBadges}>
+        {isLoading ? (
+          <Badge label={t('tripSafetyAnalysis.checkingBadge')} tone="neutral" />
+        ) : hasHazards ? (
+          <Badge
+            label={t('tripSafetyAnalysis.hazardsBadge', { count: report!.hazards.length })}
+            tone="danger"
+          />
+        ) : isClear ? (
+          <Badge label={t('tripSafetyAnalysis.safeBadge')} tone="success" />
+        ) : (
+          <Badge label={t('tripSafetyAnalysis.unmonitoredBadge')} tone="neutral" />
+        )}
+      </View>
       <ChevronRight size={16} color={C.textMuted} />
     </TouchableOpacity>
   );
@@ -208,7 +235,11 @@ export default function TripSafetyAnalysisScreen() {
       setSelectedTripId(null);
       return;
     }
-    router.canGoBack() ? router.back() : router.replace('/');
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/');
+    }
   };
 
   return (
@@ -251,11 +282,16 @@ export default function TripSafetyAnalysisScreen() {
           <FlatList
             data={myTrips}
             keyExtractor={tripKeyExtractor}
-            renderItem={({ item }) => <TripRow trip={item} onPress={(trip) => setSelectedTripId(trip.id)} />}
+            renderItem={({ item }) => <TripSafetyRow trip={item} onPress={(trip) => setSelectedTripId(trip.id)} />}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.listContent}
             refreshControl={<RefreshControl refreshing={tripsRefetching} onRefresh={refetchTrips} tintColor={C.blue} />}
-            ListHeaderComponent={<Text style={styles.listHeader}>{t('tripSafetyAnalysis.pickTripHint')}</Text>}
+            ListHeaderComponent={
+              <View style={styles.listHeaderWrap}>
+                <Text style={styles.listHeaderTitle}>{t('tripSafetyAnalysis.routeSafetyOverview')}</Text>
+                <Text style={styles.listHeaderSubtitle}>{t('tripSafetyAnalysis.pickTripHint')}</Text>
+              </View>
+            }
           />
         )
       ) : hazardsLoading ? (
@@ -329,10 +365,26 @@ const styles = StyleSheet.create({
   topNavTitle: { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '800', color: C.text },
   listContent: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 40 },
   listHeader: { fontSize: 12, fontWeight: '700', color: C.textSec, marginBottom: 12 },
+  listHeaderWrap: {
+    marginBottom: 16,
+    paddingTop: 4,
+  },
+  listHeaderTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: C.text,
+    letterSpacing: -0.3,
+    marginBottom: 4,
+  },
+  listHeaderSubtitle: {
+    fontSize: 12.5,
+    color: C.textSec,
+    lineHeight: 17,
+  },
   tripRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
     backgroundColor: C.card,
     borderRadius: 16,
     borderWidth: 1,
@@ -340,9 +392,26 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 12,
   },
-  tripRowTitle: { fontSize: 14.5, fontWeight: '800', color: C.text, marginBottom: 6 },
+  tripRowHazard: {
+    borderColor: '#FECACA',
+    backgroundColor: '#FFFBFB',
+  },
+  safetyStatusIndicator: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  tripRowTitle: { fontSize: 14.5, fontWeight: '800', color: C.text, marginBottom: 4 },
   tripRowMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   tripRowMetaText: { fontSize: 12, color: C.textMuted, fontWeight: '600' },
+  tripRowBadges: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 4,
+  },
 
   stateWrap: {
     flex: 1,

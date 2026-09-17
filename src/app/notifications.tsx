@@ -264,13 +264,13 @@ export default function NotificationsScreen() {
     const uniqueById = new Map<string, AppNotification>();
     for (const n of notifications) {
       if (!n || !n.id || n.unread === false) continue;
-      // Route / weather alerts and personal SOS alerts belong on the home and chat tickers, not this list.
-      if (
-        n.type === 'HAZARD' ||
-        n.category === 'HAZARD' ||
-        (n.title && (n.title.toLowerCase().includes('emergency alert') || n.title.toLowerCase().includes('sos'))) ||
-        (n.content && (n.content.toLowerCase().includes('emergency alert') || n.content.toLowerCase().includes('sos')))
-      ) {
+      // Personal SOS alerts belong on the home and chat tickers, not this list.
+      const isSosNotification =
+        (n.category as string) === 'SOS' ||
+        n.type === 'SOS' ||
+        (n.title && /emergency|sos|आपातकालीन/i.test(n.title)) ||
+        (n.content && /emergency|sos|आपातकालीन/i.test(n.content));
+      if (isSosNotification) {
         continue;
       }
       if (!uniqueById.has(n.id)) {

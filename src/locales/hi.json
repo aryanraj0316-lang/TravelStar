@@ -570,6 +570,12 @@
     "hazardsFoundHeader_one": "इस ट्रिप के मार्ग के पास {{count}} खतरा मिला",
     "hazardsFoundHeader_other": "इस ट्रिप के मार्ग के पास {{count}} खतरे मिले",
     "distanceFromRoute": "मार्ग से {{km}} किमी",
+    "routeSafetyOverview": "यात्रा मार्ग सुरक्षा",
+    "safeBadge": "सुरक्षित",
+    "hazardsBadge_one": "{{count}} खतरा",
+    "hazardsBadge_other": "{{count}} खतरे",
+    "checkingBadge": "जाँच जारी…",
+    "unmonitoredBadge": "निगरानी में",
     "statusOngoing": "जारी",
     "statusUpcoming": "आगामी",
     "statusCompleted": "पूर्ण"

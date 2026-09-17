@@ -6,6 +6,8 @@ import { logger } from '../../lib/logger';
 import { requireRole } from '../../middleware/auth';
 import { buildPage, cursorFilter, cursorPageQuerySchema, takeWithLookahead } from '../../lib/pagination';
 
+import { sendPushToUsers } from '../../lib/push';
+
 const router = Router();
 
 // Get all active alerts. Reference data is seeded once via
@@ -57,11 +59,24 @@ router.post('/', requireRole(['ADMIN']), async (req, res) => {
   try {
     const alert = await prisma.alert.create({ data: parsed.data });
 
-    // Home already surfaces live alerts as a tag above Stories. Creating a
-    // broadcast Notification (or push) here duplicated that same event in
-    // the Notifications tab.
+    await prisma.notification.create({
+      data: {
+        userId: null,
+        type: 'HAZARD',
+        title: alert.title,
+        content: alert.desc,
+        time: 'Just now',
+      },
+    });
 
-    res.status(201).json({ ok: true, data: { ...alert, pushed: 0 } });
+    const recipients = await prisma.user.findMany({ select: { id: true } });
+    const { sent: pushed } = await sendPushToUsers(
+      recipients.map((u) => u.id),
+      'HAZARD',
+      { title: alert.title, body: alert.desc, data: { screen: 'alerts', alertId: alert.id } }
+    );
+
+    res.status(201).json({ ok: true, data: { ...alert, pushed } });
   } catch (err) {
     logger.error('[Alerts] Create error:', err);
     res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to create alert' } });

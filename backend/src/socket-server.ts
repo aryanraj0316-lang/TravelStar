@@ -404,6 +404,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
         };
 
         await emitToUsers(audience.userIds, 'sosReceived', alert);
+        io.emit('sosReceived', alert);
       } catch (e) {
         logger.error('[Socket] triggerSOS failed:', e);
       }

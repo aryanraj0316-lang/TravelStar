@@ -179,7 +179,7 @@ describe('GET /api/v1/notifications/unread-count', () => {
       data: { userId: user.userId, type: 'TRIP', title: 'Personal', content: 'x', time: 'Just now' },
     });
     const broadcast = await prisma.notification.create({
-      data: { userId: null, type: 'ANNOUNCEMENT', title: 'Broadcast', content: 'x', time: 'Just now' },
+      data: { userId: null, type: 'HAZARD', title: 'Broadcast', content: 'x', time: 'Just now' },
     });
     createdNotificationIds.push(personal.id, broadcast.id);
 

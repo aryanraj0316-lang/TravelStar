@@ -675,7 +675,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .then((notifs) => {
         if (notifs && notifs.length > 0) {
           const hasAnyUnread = notifs.some(
-            (n: AppNotification) => n.unread === true && !(n.type === 'HAZARD' && !n.userId),
+            (n: AppNotification) =>
+              n.unread === true &&
+              !/emergency|sos|आपातकालीन/i.test(n.title || '') &&
+              !/emergency|sos|आपातकालीन/i.test(n.content || ''),
           );
           setHasUnreadNotification(hasAnyUnread);
         } else {
@@ -870,6 +873,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     refreshTrips();
     reloadJoinRequests();
     reloadIncomingRequestsCount();
+    refreshSosAlerts();
 
     // Real-time socket subscriptions
     const unsubMsg = socketService.onMessage((data) => {

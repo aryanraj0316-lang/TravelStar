@@ -559,10 +559,23 @@ function TrendingWeatherCardBase({ isFocused }: { isFocused: boolean }) {
 
 // ─── Route safety ───────────────────────────────────────────────────
 
-function AllClearCard({ onViewDetails }: { onViewDetails: () => void }) {
+function RouteSafetyCardBase(_props: { isFocused?: boolean }) {
   const { t } = useTranslation();
+  const router = useRouter();
+
+  const handleOpenAnalysis = useCallback(() => {
+    router.push('/trip-safety-analysis');
+  }, [router]);
+
   return (
-    <View style={styles.allClearCard}>
+    <TouchableOpacity
+      style={styles.allClearCard}
+      activeOpacity={0.85}
+      onPress={handleOpenAnalysis}
+      accessibilityRole="button"
+      accessibilityLabel={t('home.routeSafety')}
+      accessibilityHint={t('home.allClearMinimalDesc')}
+    >
       <View style={styles.cardHeaderRow}>
         <View style={styles.cardHeaderBadge}>
           <View style={[styles.cardLiveDot, styles.cardDotGreen]} />
@@ -585,254 +598,10 @@ function AllClearCard({ onViewDetails }: { onViewDetails: () => void }) {
         </Text>
       </View>
 
-      <TouchableOpacity
-        style={styles.allClearFooterBtn}
-        activeOpacity={0.75}
-        onPress={onViewDetails}
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        accessibilityRole="button"
-        accessibilityLabel={t('home.viewDetails')}
-      >
+      <View style={styles.allClearFooterBtn}>
         <Text style={styles.allClearFooterBtnText}>{t('home.viewDetails')}</Text>
         <ChevronRight size={12} color={C.greenText} strokeWidth={2.4} />
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-const ALERT_CATEGORY_ICON = {
-  LANDSLIDE: Mountain,
-  FLOOD_RAIN: Waves,
-  CLOUDBURST: CloudRain,
-  TRAFFIC_RUSH: Car,
-  CYCLONE: Tornado,
-  EARTHQUAKE: Activity,
-  WILDFIRE: Flame,
-} as const;
-
-function RouteSafetyCardBase({ isFocused }: { isFocused: boolean }) {
-  const { t } = useTranslation();
-  const router = useRouter();
-  const [alertIndex, setAlertIndex] = useState(0);
-  const fadeAnim = useState(() => new Animated.Value(1))[0];
-  const isAnimatingRef = useRef(false);
-
-  const alertsQuery = useQuery({
-    ...alertsQueryOptions(),
-  });
-  const { data: alerts, refetch } = alertsQuery;
-  const alertsState = sectionState(alertsQuery, alerts != null);
-
-  const alertCount = alerts?.length ?? 0;
-
-  useEffect(() => {
-    if (!isFocused || alertCount <= 1) return;
-    const timer = setInterval(() => {
-      if (isAnimatingRef.current) return;
-      isAnimatingRef.current = true;
-
-      Animated.timing(fadeAnim, {
-        toValue: 0,
-        duration: 400,
-        useNativeDriver: true,
-      }).start(({ finished }) => {
-        if (finished) {
-          setAlertIndex((prev) => (prev + 1) % alertCount);
-          Animated.timing(fadeAnim, {
-            toValue: 1,
-            duration: 450,
-            useNativeDriver: true,
-          }).start(() => {
-            isAnimatingRef.current = false;
-          });
-        }
-      });
-    }, 5000);
-
-    return () => clearInterval(timer);
-  }, [alertCount, isFocused, fadeAnim]);
-
-  const openAdvisory = useCallback(() => router.push('/monsoon-advisory'), [router]);
-  // "All Clear"'s own View Details goes to the trip-wise hazard report, not
-  // the generic monsoon advisory feed the active-alert card below still uses.
-  const openTripSafetyAnalysis = useCallback(() => router.push('/trip-safety-analysis'), [router]);
-
-  if (alertsState.kind === 'loading') {
-    return (
-      <View style={styles.allClearCard}>
-        <View style={styles.cardHeaderRow}>
-          <View style={styles.cardHeaderBadge}>
-            <View style={[styles.cardLiveDot, styles.cardDotInactive]} />
-            <Text style={styles.cardHeaderText} numberOfLines={1}>
-              {t('home.routeSafety')}
-            </Text>
-          </View>
-          <View style={[styles.cardHeaderIconCircle, { backgroundColor: '#ECFDF5' }]}>
-            <ShieldCheck size={14} color="#059669" strokeWidth={2.2} />
-          </View>
-        </View>
-
-        <View style={styles.cardStateCenter}>
-          <ActivityIndicator size="small" color="#10B981" />
-          <Text style={styles.cardStateMessage}>{t('home.checkingRoutes')}</Text>
-        </View>
-
-        <View style={styles.cardFooterSpacer} />
       </View>
-    );
-  }
-
-  // Distinct from the all-clear state below on purpose. A failed hazard
-  // fetch rendering "all monitored routes are safe" is not a cosmetic bug —
-  // it is the safety card asserting something it does not know. That applies
-  // just as much when the reason is "we are offline" as when the server
-  // returned a 500.
-  if (alertsState.kind === 'error' || !alerts) {
-    return (
-      <View style={styles.allClearCard}>
-        <View style={styles.cardHeaderRow}>
-          <View style={styles.cardHeaderBadge}>
-            <View style={[styles.cardLiveDot, styles.cardDotInactive]} />
-            <Text style={styles.cardHeaderText} numberOfLines={1}>
-              {t('home.routeSafety')}
-            </Text>
-          </View>
-          <View style={[styles.cardHeaderIconCircle, { backgroundColor: '#FEF2F2' }]}>
-            <AlertTriangle size={13} color={C.redText} />
-          </View>
-        </View>
-
-        <View style={styles.cardStateCenter}>
-          <View style={[styles.cardCenterIconCircle, { backgroundColor: '#FEF2F2', borderColor: '#FEE2E2' }]}>
-            <AlertTriangle size={18} color={C.amberText} strokeWidth={2.2} />
-          </View>
-          <Text style={styles.cardPromptTitle}>{t('home.couldNotLoadAlerts')}</Text>
-          <Text style={styles.cardPromptMessage} numberOfLines={2}>
-            {alertsState.kind === 'error' && alertsState.offline
-              ? t('common.offlineMessage')
-              : t('home.couldNotLoadAlertsMessage')}
-          </Text>
-        </View>
-
-        <TouchableOpacity
-          style={styles.cardSecondaryCta}
-          activeOpacity={0.8}
-          onPress={() => void refetch()}
-          accessibilityRole="button"
-          accessibilityLabel={t('common.retry')}
-        >
-          <Text style={styles.cardSecondaryCtaText}>{t('common.retry')}</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  // Zero active alerts is the real, good answer from GET /alerts (synced
-  // hourly from GDACS), not an absence of data — so it gets a deliberate
-  // "all clear" card rather than a generic empty state.
-  if (alerts.length === 0) {
-    return <AllClearCard onViewDetails={openTripSafetyAnalysis} />;
-  }
-
-  const activeAlert: HazardAlert = alerts[alertIndex % alerts.length];
-  const CategoryIcon = ALERT_CATEGORY_ICON[activeAlert.category] ?? AlertTriangle;
-
-  return (
-    <Animated.View style={[styles.advisoryCard, { opacity: fadeAnim }]}>
-      <View style={styles.cardHeaderRow}>
-        <View style={styles.cardHeaderBadge}>
-          <View style={[styles.cardLiveDot, styles.cardDotRed]} />
-          <Text style={[styles.cardHeaderText, { color: C.redText }]} numberOfLines={1}>
-            {t('home.routeSafety')}
-          </Text>
-        </View>
-        {/* GDACS's own live map-marker icon for this event category, not a
-            stock photo — it's small and transparent by design, so it sits in
-            the same circular badge the CategoryIcon fallback uses rather
-            than being stretched to fill the card. The lucide icon renders
-            underneath so a broken/expired GDACS icon URL still leaves a
-            real icon visible instead of an empty badge. transition=0 for
-            the same reason as the weather card: this Image already lives
-            inside an Animated opacity fade, and letting expo-image run its
-            own cross-fade on top of that is what read as a flicker. */}
-        <View style={[styles.cardHeaderIconCircle, { backgroundColor: '#FEE2E2' }]}>
-          <View style={[StyleSheet.absoluteFill, styles.advisoryIconFallback]}>
-            <CategoryIcon size={13} color={C.redText} />
-          </View>
-          <CoverImage
-            uri={activeAlert.image}
-            name={activeAlert.title}
-            style={styles.advisoryIcon}
-            showInitial={false}
-            transition={0}
-          />
-        </View>
-      </View>
-
-      <View style={styles.advisoryCenter}>
-        <Text style={styles.advisoryTitle} numberOfLines={2}>
-          {activeAlert.title}
-        </Text>
-        <View style={styles.locationRowDark}>
-          <MapPin size={11} color={C.redText} />
-          <Text style={styles.advisoryLocation} numberOfLines={1}>
-            {activeAlert.location}
-          </Text>
-          <Text style={styles.advisoryTime} numberOfLines={1}>
-            · {activeAlert.time}
-          </Text>
-        </View>
-        <Text style={styles.advisoryDesc} numberOfLines={2}>
-          {activeAlert.desc}
-        </Text>
-      </View>
-
-      <TouchableOpacity
-        style={styles.advisoryFooterBtn}
-        activeOpacity={0.8}
-        onPress={openAdvisory}
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        accessibilityRole="button"
-        accessibilityLabel={t('home.viewDetails')}
-      >
-        <Text style={styles.advisoryFooterBtnText}>{t('home.viewDetails')}</Text>
-        <ChevronRight size={12} color={C.redText} strokeWidth={2.4} />
-      </TouchableOpacity>
-    </Animated.View>
-  );
-}
-
-function HomeHazardTagBase() {
-  const { t } = useTranslation();
-  const router = useRouter();
-  const alertsQuery = useQuery({
-    ...alertsQueryOptions(),
-  });
-  const alerts = alertsQuery.data ?? [];
-  if (alerts.length === 0) return null;
-
-  const alert = alerts[0];
-  const CategoryIcon = ALERT_CATEGORY_ICON[alert.category] ?? AlertTriangle;
-  const isCritical = alert.severity === 'CRITICAL';
-
-  return (
-    <TouchableOpacity
-      style={[styles.homeAlertTag, isCritical ? styles.homeAlertTagCritical : styles.homeAlertTagWarning]}
-      activeOpacity={0.85}
-      onPress={() => router.push('/monsoon-advisory')}
-      accessibilityRole="button"
-      accessibilityLabel={`${t('home.liveAlert')}: ${alert.title}`}
-    >
-      <View style={styles.homeAlertTagIcon}>
-        <CategoryIcon size={14} color="#FFF" />
-      </View>
-      <View style={styles.homeAlertTagTextWrap}>
-        <Text style={styles.homeAlertTagBadge}>{t('home.liveAlert')}</Text>
-        <Text style={styles.homeAlertTagTitle} numberOfLines={1}>
-          {alert.title}
-        </Text>
-      </View>
-      <ChevronRight size={14} color="rgba(255,255,255,0.85)" strokeWidth={2.4} />
     </TouchableOpacity>
   );
 }
@@ -1619,7 +1388,6 @@ function StoriesRailBase({
 const AppleMultilingualGreeting = React.memo(AppleMultilingualGreetingBase);
 const TrendingWeatherCard = React.memo(TrendingWeatherCardBase);
 const RouteSafetyCard = React.memo(RouteSafetyCardBase);
-const HomeHazardTag = React.memo(HomeHazardTagBase);
 const FeaturedTripsCarousel = React.memo(FeaturedTripsCarouselBase);
 const TrendingDestinations = React.memo(TrendingDestinationsBase);
 const StoriesRail = React.memo(StoriesRailBase);
@@ -2077,8 +1845,6 @@ function HomeScreen() {
             )}
           </TouchableOpacity>
         )}
-
-        {!activeSOS && <HomeHazardTag />}
 
         {/* ════════════════════════════════════════════════
             TRAVEL REELS & STORIES
@@ -2833,48 +2599,6 @@ const styles = StyleSheet.create({
     color: '#065F46',
     fontSize: 11.5,
     fontWeight: '800',
-  },
-  homeAlertTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginHorizontal: 20,
-    marginBottom: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    borderWidth: 1,
-  },
-  homeAlertTagCritical: {
-    backgroundColor: '#B91C1C',
-    borderColor: '#EF4444',
-  },
-  homeAlertTagWarning: {
-    backgroundColor: '#C2410C',
-    borderColor: '#FB923C',
-  },
-  homeAlertTagIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  homeAlertTagTextWrap: {
-    flex: 1,
-  },
-  homeAlertTagBadge: {
-    color: 'rgba(255,255,255,0.85)',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.6,
-  },
-  homeAlertTagTitle: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
-    marginTop: 1,
   },
   roleCard: {
     flex: 1,
