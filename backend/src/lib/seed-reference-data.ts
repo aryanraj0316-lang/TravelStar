@@ -116,6 +116,35 @@ async function seedIfEmpty<T>(
   logger.log(`[seed-reference-data] ${label}: inserted ${data.length} rows.`);
 }
 
+export async function purgeNonFeaturedTrips(client: PrismaClient): Promise<void> {
+  try {
+    const deleted = await client.trip.deleteMany({
+      where: {
+        NOT: {
+          OR: [
+            { name: { contains: 'Vrindavan', mode: 'insensitive' } },
+            { name: { contains: 'Varanasi', mode: 'insensitive' } },
+            { name: { contains: 'Kerala', mode: 'insensitive' } },
+            { name: { contains: 'Kerela', mode: 'insensitive' } },
+            { name: { contains: 'Ladakh', mode: 'insensitive' } },
+          ],
+        },
+      },
+    });
+    if (deleted.count > 0) {
+      logger.info(`[seed-reference-data] Purged ${deleted.count} non-featured trips from database.`);
+    }
+
+    // Standardize 'Kerela' to 'Kerala' if present
+    await client.trip.updateMany({
+      where: { name: { equals: 'Kerela', mode: 'insensitive' } },
+      data: { name: 'Kerala' },
+    });
+  } catch (err) {
+    logger.warn('[seed-reference-data] Failed to purge non-featured trips:', err);
+  }
+}
+
 export async function seedReferenceDataIfEmpty(client: PrismaClient): Promise<void> {
   await seedIfEmpty(
     'Destination',
@@ -123,4 +152,5 @@ export async function seedReferenceDataIfEmpty(client: PrismaClient): Promise<vo
     (data) => client.destination.createMany({ data }),
     SEED_DESTINATIONS,
   );
+  await purgeNonFeaturedTrips(client);
 }
