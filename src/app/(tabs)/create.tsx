@@ -60,6 +60,7 @@ import {
   KeyboardAvoidingView,
   Modal,
   Platform,
+  Pressable,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -317,6 +318,9 @@ function defaultTripEndDate(): string {
   return new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]!;
 }
 
+const TIME_HOURS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'] as const;
+const TIME_MINUTES = ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'] as const;
+
 function CreateTripScreen() {
   useEffect(() => {
     logger.log('Screen mounted: CreateTripScreen');
@@ -453,6 +457,14 @@ function CreateTripScreen() {
   // Meeting Point details
   const [meetingDate, setMeetingDate] = useState(defaultTripStartDate);
   const [meetingTime, setMeetingTime] = useState('10:00 AM');
+
+  // Time Picker Modal State
+  const [isTimePickerOpen, setIsTimePickerOpen] = useState(false);
+  const [tempHour, setTempHour] = useState('10');
+  const [tempMinute, setTempMinute] = useState('00');
+  const [tempPeriod, setTempPeriod] = useState<'AM' | 'PM'>('AM');
+  const hourScrollRef = useRef<ScrollView>(null);
+  const minuteScrollRef = useRef<ScrollView>(null);
 
   // Calendar Modal State
   const [activeDatePicker, setActiveDatePicker] = useState<'start' | 'end' | 'meeting' | null>(null);
@@ -752,6 +764,37 @@ function CreateTripScreen() {
     } else if (activeDatePicker === 'meeting') {
       setMeetingDate(formatted);
     }
+  };
+
+  const openTimePicker = () => {
+    const match = (meetingTime || '10:00 AM').trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+    let h = '10';
+    let m = '00';
+    let p: 'AM' | 'PM' = 'AM';
+    if (match) {
+      const numH = parseInt(match[1], 10);
+      h = String(Math.min(12, Math.max(1, numH || 10))).padStart(2, '0');
+      const numM = parseInt(match[2], 10);
+      const snappedM = (Math.round(numM / 5) * 5) % 60;
+      m = String(snappedM).padStart(2, '0');
+      p = (match[3] || 'AM').toUpperCase() === 'PM' ? 'PM' : 'AM';
+    }
+    setTempHour(h);
+    setTempMinute(m);
+    setTempPeriod(p);
+    setIsTimePickerOpen(true);
+
+    setTimeout(() => {
+      const hIdx = TIME_HOURS.indexOf(h as any);
+      if (hIdx >= 0) hourScrollRef.current?.scrollTo({ y: hIdx * 48, animated: false });
+      const mIdx = TIME_MINUTES.indexOf(m as any);
+      if (mIdx >= 0) minuteScrollRef.current?.scrollTo({ y: mIdx * 48, animated: false });
+    }, 50);
+  };
+
+  const handleConfirmTime = () => {
+    setMeetingTime(`${tempHour}:${tempMinute} ${tempPeriod}`);
+    setIsTimePickerOpen(false);
   };
 
   const openDatePicker = (type: 'start' | 'end' | 'meeting') => {
@@ -1257,16 +1300,23 @@ function CreateTripScreen() {
                       </Text>
                     </TouchableOpacity>
                   </View>
-                  <Input
-                    label={t('createTrip.meetingTimeLabel')}
-                    labelStyle={styles.compactGridLabel}
-                    labelNumberOfLines={1}
-                    placeholder={t('createTrip.meetingTimePlaceholder')}
-                    value={meetingTime}
-                    onChangeText={setMeetingTime}
-                    icon={<Clock size={16} color={C.amber} />}
-                    containerStyle={{ flex: 1 }}
-                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.inputLabel, styles.compactGridLabel]} numberOfLines={1}>
+                      {t('createTrip.meetingTimeLabel')}
+                    </Text>
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      style={styles.inputWrapper}
+                      onPress={openTimePicker}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('createTrip.meetingTimeLabel')}
+                    >
+                      <Clock size={16} color={C.amber} style={styles.inputIcon} />
+                      <Text style={[styles.textInput, !meetingTime && { color: '#64748B', fontWeight: '400' }]}>
+                        {meetingTime || t('createTrip.selectTime', 'Select Time')}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
 
@@ -1848,6 +1898,169 @@ function CreateTripScreen() {
             </View>
           </View>
         )}
+
+        {/* Minimalist Professional Meeting Time Picker Modal */}
+        <Modal
+          visible={isTimePickerOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setIsTimePickerOpen(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setIsTimePickerOpen(false)} />
+            <View style={styles.timePickerModalCard}>
+              {/* Header */}
+              <View style={styles.timePickerHeaderRow}>
+                <Text style={styles.timePickerHeaderTitle}>
+                  {t('createTrip.timePickerTitle', 'Meeting Time')}
+                </Text>
+                <TouchableOpacity
+                  style={styles.closeBtn}
+                  onPress={() => setIsTimePickerOpen(false)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('common.close')}
+                >
+                  <X size={16} color={C.white} />
+                </TouchableOpacity>
+              </View>
+
+              {/* AM / PM Segmented Control */}
+              <View style={styles.periodSelectorRow}>
+                {(['AM', 'PM'] as const).map((p) => {
+                  const isSelected = tempPeriod === p;
+                  return (
+                    <TouchableOpacity
+                      key={p}
+                      style={[styles.periodTab, isSelected && styles.periodTabActive]}
+                      onPress={() => setTempPeriod(p)}
+                      activeOpacity={0.8}
+                      accessibilityRole="button"
+                      accessibilityLabel={p}
+                      accessibilityState={{ selected: isSelected }}
+                    >
+                      <Text style={[styles.periodTabText, isSelected && styles.periodTabTextActive]}>
+                        {p}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {/* Wheels Container */}
+              <View style={styles.timePickerWheelContainer}>
+                {/* Center Selection Lens */}
+                <View style={styles.selectionLens} pointerEvents="none" />
+
+                {/* Hour Column */}
+                <View style={styles.timePickerWheelColumn}>
+                  <ScrollView
+                    ref={hourScrollRef}
+                    style={styles.wheelScrollView}
+                    contentContainerStyle={styles.wheelScrollContent}
+                    showsVerticalScrollIndicator={false}
+                    snapToInterval={48}
+                    decelerationRate="fast"
+                    nestedScrollEnabled
+                    onMomentumScrollEnd={(e) => {
+                      const idx = Math.round(e.nativeEvent.contentOffset.y / 48);
+                      if (TIME_HOURS[idx]) setTempHour(TIME_HOURS[idx]);
+                    }}
+                  >
+                    {TIME_HOURS.map((h, idx) => {
+                      const isSelected = tempHour === h;
+                      return (
+                        <TouchableOpacity
+                          key={h}
+                          style={styles.wheelItem}
+                          onPress={() => {
+                            setTempHour(h);
+                            hourScrollRef.current?.scrollTo({ y: idx * 48, animated: true });
+                          }}
+                          activeOpacity={0.7}
+                          accessibilityRole="button"
+                          accessibilityLabel={`${h} hours`}
+                          accessibilityState={{ selected: isSelected }}
+                        >
+                          <Text style={[styles.wheelItemText, isSelected && styles.wheelItemTextActive]}>
+                            {h}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+
+                {/* Colon */}
+                <Text style={styles.wheelColon}>:</Text>
+
+                {/* Minute Column */}
+                <View style={styles.timePickerWheelColumn}>
+                  <ScrollView
+                    ref={minuteScrollRef}
+                    style={styles.wheelScrollView}
+                    contentContainerStyle={styles.wheelScrollContent}
+                    showsVerticalScrollIndicator={false}
+                    snapToInterval={48}
+                    decelerationRate="fast"
+                    nestedScrollEnabled
+                    onMomentumScrollEnd={(e) => {
+                      const idx = Math.round(e.nativeEvent.contentOffset.y / 48);
+                      if (TIME_MINUTES[idx]) setTempMinute(TIME_MINUTES[idx]);
+                    }}
+                  >
+                    {TIME_MINUTES.map((m, idx) => {
+                      const isSelected = tempMinute === m;
+                      return (
+                        <TouchableOpacity
+                          key={m}
+                          style={styles.wheelItem}
+                          onPress={() => {
+                            setTempMinute(m);
+                            minuteScrollRef.current?.scrollTo({ y: idx * 48, animated: true });
+                          }}
+                          activeOpacity={0.7}
+                          accessibilityRole="button"
+                          accessibilityLabel={`${m} minutes`}
+                          accessibilityState={{ selected: isSelected }}
+                        >
+                          <Text style={[styles.wheelItemText, isSelected && styles.wheelItemTextActive]}>
+                            {m}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              </View>
+
+              {/* Action Buttons */}
+              <View style={styles.timePickerActionRow}>
+                <TouchableOpacity
+                  style={styles.timePickerCancelBtn}
+                  onPress={() => setIsTimePickerOpen(false)}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('common.cancel')}
+                >
+                  <Text style={styles.timePickerCancelText}>{t('common.cancel')}</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.timePickerConfirmBtn}
+                  onPress={handleConfirmTime}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('createTrip.confirmTime', 'Set Time')}
+                >
+                  <Text style={styles.timePickerConfirmText}>
+                    {t('createTrip.confirmTime', 'Set Time')}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -2223,6 +2436,146 @@ const styles = StyleSheet.create({
     padding: 20,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+
+  // Minimalist Professional Time Picker Modal Styles
+  timePickerModalCard: {
+    width: '100%',
+    maxWidth: 320,
+    backgroundColor: '#111422',
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  timePickerHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  timePickerHeaderTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#F8FAFC',
+    letterSpacing: 0.2,
+  },
+  periodSelectorRow: {
+    flexDirection: 'row',
+    backgroundColor: '#0F121F',
+    borderRadius: 12,
+    padding: 3,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  periodTab: {
+    flex: 1,
+    height: 38,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  periodTabActive: {
+    backgroundColor: C.blue,
+  },
+  periodTabText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#64748B',
+    letterSpacing: 0.5,
+  },
+  periodTabTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+  },
+  timePickerWheelContainer: {
+    position: 'relative',
+    height: 144,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  selectionLens: {
+    position: 'absolute',
+    top: 48,
+    left: 24,
+    right: 24,
+    height: 48,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.07)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  timePickerWheelColumn: {
+    width: 80,
+    height: 144,
+  },
+  wheelScrollView: {
+    height: 144,
+  },
+  wheelScrollContent: {
+    paddingVertical: 48,
+    alignItems: 'center',
+  },
+  wheelItem: {
+    height: 48,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  wheelItemText: {
+    fontSize: 20,
+    fontWeight: '500',
+    color: '#64748B',
+  },
+  wheelItemTextActive: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  wheelColon: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#64748B',
+    paddingHorizontal: 12,
+    marginBottom: 2,
+  },
+  timePickerActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  timePickerCancelBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.07)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  timePickerCancelText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#94A3B8',
+  },
+  timePickerConfirmBtn: {
+    flex: 1.4,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: C.blue,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  timePickerConfirmText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   calendarHeaderRow: {
     flexDirection: 'row',
