@@ -852,8 +852,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     void socketService.connect();
     if (activeRoomId) {
       socketService.joinRoom(activeRoomId);
-    } else {
-      socketService.joinRoom('trip-1');
     }
 
     // Warm stories feed + chat inbox before the user opens those screens,
@@ -1027,6 +1025,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
     });
 
+    const unsubNotificationRead = socketService.onNotificationRead((data) => {
+      checkUnreadNotifications();
+      checkUnreadChats();
+      queryClient.invalidateQueries({ queryKey: queryKeys.notifications() });
+      if (data?.chatRoomId) {
+        eventBus.emit('dismissInAppNotification', { chatRoomId: data.chatRoomId });
+      }
+    });
+
     // The server only ever emitted this over the socket — no in-app banner,
     // no cache invalidation on either side — so a guide confirming/declining
     // a booking never moved anything on the traveller's or the guide's own
@@ -1057,6 +1064,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsubSosResolved();
       unsubAddedToChat();
       unsubNotification();
+      unsubNotificationRead();
       unsubBookingStatus();
       unsubSendMessageError();
       unsubRoomJoinError();
@@ -1249,7 +1257,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       mediaUrl?: string,
       coords?: { latitude: number; longitude: number } | null,
     ) => {
-      socketService.sendMessage(activeRoomId || 'trip-1', content, mediaType, mediaUrl, coords);
+      if (!activeRoomId) return;
+      socketService.sendMessage(activeRoomId, content, mediaType, mediaUrl, coords);
     },
     [activeRoomId],
   );
@@ -1258,7 +1267,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // fake timer-driven simulation.
   const setTyping = useCallback(
     (isTyping: boolean) => {
-      socketService.setTyping(activeRoomId || 'trip-1', isTyping);
+      if (!activeRoomId) return;
+      socketService.setTyping(activeRoomId, isTyping);
     },
     [activeRoomId],
   );

@@ -20,6 +20,31 @@ import { notifyTripEnquiry } from './services/trip-enquiry-notifications';
 const onlineSocketCounts = new Map<string, number>();
 import { setUserLocation } from './lib/presence-store';
 
+async function resolveChatRoomMembership(roomId: string, userId: string): Promise<{ chatRoomId: string } | null> {
+  const membership = await prisma.chatRoomMember.findUnique({
+    where: { chatRoomId_userId: { chatRoomId: roomId, userId } },
+  });
+  if (membership) return { chatRoomId: roomId };
+
+  const stripped = roomId.startsWith('room-') ? roomId.replace('room-', '') : roomId;
+  const room = await prisma.chatRoom.findFirst({
+    where: { OR: [{ id: roomId }, { id: stripped }, { tripId: roomId }, { tripId: stripped }] },
+    include: { trip: { include: { members: true } } },
+  });
+  if (
+    room?.trip &&
+    (room.trip.creatorId === userId || room.trip.members.some((m) => m.userId === userId))
+  ) {
+    await prisma.chatRoomMember.upsert({
+      where: { chatRoomId_userId: { chatRoomId: room.id, userId } },
+      create: { chatRoomId: room.id, userId },
+      update: {},
+    });
+    return { chatRoomId: room.id };
+  }
+  return null;
+}
+
 export function createSocketServer(httpServer: HttpServer): Server {
   const io = new Server(httpServer, {
     cors: {
@@ -49,8 +74,12 @@ export function createSocketServer(httpServer: HttpServer): Server {
 
   io.use(socketAuthMiddleware);
 
-  io.on('connection', (socket) => {
+  io.on('connection', async (socket) => {
     const userId = getSocketUserId(socket);
+    if (!userId) {
+      socket.disconnect(true);
+      return;
+    }
     void socket.join(userId);
 
     // Who is actually connected right now. Counted per socket, not per user,
@@ -107,15 +136,16 @@ export function createSocketServer(httpServer: HttpServer): Server {
       }
 
       try {
-        const membership = await prisma.chatRoomMember.findUnique({
-          where: { chatRoomId_userId: { chatRoomId: roomId, userId } },
-        });
-        if (!membership) {
+        const resolved = await resolveChatRoomMembership(roomId, userId);
+        if (!resolved) {
           socket.emit('roomJoinError', { roomId, message: 'You are not a member of this chat room.' });
           ack?.(false);
           return;
         }
-        await socket.join(roomId);
+        await socket.join(resolved.chatRoomId);
+        if (resolved.chatRoomId !== roomId) {
+          await socket.join(roomId);
+        }
         ack?.(true);
       } catch (e) {
         logger.error('[Socket] joinRoom membership check failed:', e);
@@ -147,18 +177,17 @@ export function createSocketServer(httpServer: HttpServer): Server {
       try {
         // Never accept sender identity from the payload — the socket's own
         // verified identity is the only source of truth.
-        const membership = await prisma.chatRoomMember.findUnique({
-          where: { chatRoomId_userId: { chatRoomId, userId } },
-        });
-        if (!membership) {
+        const resolved = await resolveChatRoomMembership(chatRoomId, userId);
+        if (!resolved) {
           socket.emit('sendMessageError', { message: 'You are not a member of this chat room.' });
           return;
         }
+        const effectiveChatRoomId = resolved.chatRoomId;
 
         const [savedMsg, sender, chatRoom] = await Promise.all([
           prisma.message.create({
             data: {
-              chatRoomId,
+              chatRoomId: effectiveChatRoomId,
               senderId: userId,
               content: content || '',
               mediaType: mediaType || 'NONE',
@@ -169,7 +198,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
           }),
           prisma.user.findUnique({ where: { id: userId }, include: { profile: true } }),
           prisma.chatRoom.findUnique({
-            where: { id: chatRoomId },
+            where: { id: effectiveChatRoomId },
             include: { trip: true, inquiryTrip: { select: { id: true, name: true, creatorId: true } } },
           }),
         ]);
@@ -208,26 +237,34 @@ export function createSocketServer(httpServer: HttpServer): Server {
         const inquiryTripId = chatRoom?.inquiryTripId ?? null;
         const inquiryOrganizerId = chatRoom?.inquiryTrip?.creatorId ?? null;
 
-        io.to(chatRoomId).emit('messageReceived', {
-          roomId: chatRoomId,
+        io.to(effectiveChatRoomId).emit('messageReceived', {
+          roomId: effectiveChatRoomId,
           message: newMsg,
           inquiryTripId,
           inquiryOrganizerId,
         });
+        if (effectiveChatRoomId !== chatRoomId) {
+          io.to(chatRoomId).emit('messageReceived', {
+            roomId: effectiveChatRoomId,
+            message: newMsg,
+            inquiryTripId,
+            inquiryOrganizerId,
+          });
+        }
 
         // Also emit directly to every room member's personal user room (`userId`),
         // ensuring every active socket belonging to room members receives the message
         // in real-time even if they are currently on another tab, screen, or reconnected.
         prisma.chatRoomMember
           .findMany({
-            where: { chatRoomId },
+            where: { chatRoomId: effectiveChatRoomId },
             select: { userId: true },
           })
           .then((members) => {
             members.forEach((m) => {
               if (m.userId !== userId) {
                 io.to(m.userId).emit('messageReceived', {
-                  roomId: chatRoomId,
+                  roomId: effectiveChatRoomId,
                   message: newMsg,
                   inquiryTripId,
                   inquiryOrganizerId,

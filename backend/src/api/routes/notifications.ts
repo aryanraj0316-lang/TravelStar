@@ -55,6 +55,43 @@ router.get('/', async (req, res) => {
     // never resurrect one the organizer has already dealt with.
     await pruneReadEnquiryNotifications(tokenUserId);
 
+    // Any notification whose chat room messages have all been read by this user is stale
+    try {
+      const chatNotifs = await prisma.notification.findMany({
+        where: {
+          userId: tokenUserId,
+          unread: true,
+          chatRoomId: { not: null },
+        },
+        select: { id: true, chatRoomId: true },
+      });
+      if (chatNotifs.length > 0) {
+        const roomIds = [...new Set(chatNotifs.map((n) => n.chatRoomId as string))];
+        const unreadMsgs = await prisma.message.findMany({
+          where: {
+            chatRoomId: { in: roomIds },
+            senderId: { not: tokenUserId },
+            isSystem: false,
+            readBy: { none: { userId: tokenUserId } },
+          },
+          select: { chatRoomId: true },
+          distinct: ['chatRoomId'],
+        });
+        const roomsWithUnread = new Set(unreadMsgs.map((m) => m.chatRoomId));
+        const staleNotifIds = chatNotifs
+          .filter((n) => !roomsWithUnread.has(n.chatRoomId as string))
+          .map((n) => n.id);
+
+        if (staleNotifIds.length > 0) {
+          await prisma.notification.deleteMany({
+            where: { id: { in: staleNotifIds } },
+          });
+        }
+      }
+    } catch (e) {
+      logger.warn('[Notifications] Failed auto-pruning chat notifications:', e);
+    }
+
     // Both streams are filtered by the same `createdAt < cursor` and each
     // over-fetches limit+1, so the newest `limit` of the union is correct:
     // anything dropped from a stream's top limit+1 is older than that

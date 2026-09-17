@@ -38,6 +38,7 @@ type NotificationListener = (data: {
   joinRequestId?: string | null;
   category?: NotificationCategory | null;
 }) => void;
+type NotificationReadListener = (data: { chatRoomId?: string }) => void;
 type TypingListener = (data: { roomId: string; userId: string; userName: string; isTyping: boolean }) => void;
 /** Who is connected right now — a snapshot on connect, then deltas. */
 type PresenceListener = (data: { userIds: string[] } | { userId: string; online: boolean }) => void;
@@ -53,6 +54,7 @@ class SocketService {
   private locationListeners: LocationListener[] = [];
   private addedToChatListeners: AddedToChatListener[] = [];
   private notificationListeners: NotificationListener[] = [];
+  private notificationReadListeners: NotificationReadListener[] = [];
   private typingListeners: TypingListener[] = [];
   private presenceListeners: PresenceListener[] = [];
 
@@ -112,6 +114,10 @@ class SocketService {
 
       this.socket.on('notificationReceived', (data: Parameters<NotificationListener>[0]) => {
         this.notificationListeners.forEach((l) => l(data));
+      });
+
+      this.socket.on('notificationRead', (data: { chatRoomId?: string }) => {
+        this.notificationReadListeners.forEach((l) => l(data));
       });
 
       this.socket.on('userTyping', (data: { roomId: string; userId: string; userName: string; isTyping: boolean }) => {
@@ -182,6 +188,7 @@ class SocketService {
     this.locationListeners = [];
     this.addedToChatListeners = [];
     this.notificationListeners = [];
+    this.notificationReadListeners = [];
     this.typingListeners = [];
   }
 
@@ -362,6 +369,13 @@ class SocketService {
     this.notificationListeners.push(listener);
     return () => {
       this.notificationListeners = this.notificationListeners.filter((l) => l !== listener);
+    };
+  }
+
+  onNotificationRead(listener: NotificationReadListener) {
+    this.notificationReadListeners.push(listener);
+    return () => {
+      this.notificationReadListeners = this.notificationReadListeners.filter((l) => l !== listener);
     };
   }
 

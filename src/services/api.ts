@@ -436,26 +436,26 @@ async function requestEnvelope<T>(
   const url = `${getApiBaseUrl()}${endpoint}`;
   const method = (options?.method ?? 'GET').toUpperCase();
   const requestId = generateRequestId();
+  const { timeoutMs, noRetry, ...fetchInit } = options ?? {};
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), options?.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs ?? DEFAULT_TIMEOUT_MS);
 
+  const token = await secureStorage.getItem(ACCESS_TOKEN_KEY).catch(() => null);
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'X-Request-Id': requestId,
+  };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  let res: Response;
   try {
-    const token = await secureStorage.getItem(ACCESS_TOKEN_KEY).catch(() => null);
-
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'X-Request-Id': requestId,
-    };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-
-    let res: Response;
-    try {
-      res = await fetch(url, {
-        ...options,
-        signal: controller.signal,
-        headers: { ...headers, ...(options?.headers as Record<string, string>) },
-      });
-    } catch (err) {
+    res = await fetch(url, {
+      ...fetchInit,
+      signal: controller.signal,
+      headers: { ...headers, ...(fetchInit.headers as Record<string, string>) },
+    });
+  } catch (err) {
       if (isRetryableNetworkError(err) && !options?.noRetry && attempt < MAX_RETRIES) {
         await sleep(RETRY_BASE_DELAY_MS * 2 ** attempt);
         return requestEnvelope<T>(endpoint, options, isAuthRetry, attempt + 1);
@@ -474,6 +474,8 @@ async function requestEnvelope<T>(
         undefined,
         requestId,
       );
+    } finally {
+      clearTimeout(timeout);
     }
 
     if (res.status === 401 && !isAuthRetry) {
@@ -539,9 +541,6 @@ async function requestEnvelope<T>(
     }
 
     return { data: (json?.data !== undefined ? json.data : json) as T, meta: json?.meta };
-  } finally {
-    clearTimeout(timeout);
-  }
 }
 
 /**

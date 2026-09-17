@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { NotificationCategory } from '@prisma/client';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 import { requireUserId } from '../../lib/auth-context';
@@ -64,6 +65,29 @@ router.get('/', async (req, res) => {
   const tokenUserId = requireUserId(req);
 
   try {
+    // Ensure all trips where user is creator or confirmed member have a ChatRoom & ChatRoomMember
+    const userTrips = await prisma.trip.findMany({
+      where: {
+        status: { not: 'CANCELLED' },
+        OR: [{ creatorId: tokenUserId }, { members: { some: { userId: tokenUserId } } }],
+      },
+      include: { chatRoom: true },
+    });
+    for (const trip of userTrips) {
+      let roomId = trip.chatRoom?.id;
+      if (!roomId) {
+        const newRoom = await prisma.chatRoom.create({
+          data: { isGroup: true, name: trip.name, tripId: trip.id },
+        });
+        roomId = newRoom.id;
+      }
+      await prisma.chatRoomMember.upsert({
+        where: { chatRoomId_userId: { chatRoomId: roomId, userId: tokenUserId } },
+        create: { chatRoomId: roomId, userId: tokenUserId },
+        update: {},
+      });
+    }
+
     const memberships = await prisma.chatRoomMember.findMany({
       where: { userId: tokenUserId },
       include: {
@@ -143,13 +167,31 @@ router.get('/', async (req, res) => {
 
       const displayMsg = room.messages[0];
       const isMe = displayMsg?.senderId === tokenUserId;
-      const lastMsgPreview = displayMsg
-        ? (isMe
-            ? `You: ${displayMsg.content || ''}`
-            : (room.isGroup
-                ? `${displayMsg.sender?.profile?.firstName || 'User'}: ${displayMsg.content || ''}`
-                : (displayMsg.content || '')))
-        : '';
+      let lastMsgPreview = '';
+      if (displayMsg) {
+        let displayContent = displayMsg.content || '';
+        if (displayMsg.mediaType === 'IMAGE') {
+          displayContent = displayContent && !displayContent.includes('📷') ? displayContent : 'Photo';
+        } else if (displayMsg.mediaType === 'LOCATION') {
+          displayContent = displayContent || 'Location shared';
+        } else if (displayMsg.mediaType === 'VOICE') {
+          displayContent = 'Voice note';
+        }
+
+        if (displayMsg.isSystem) {
+          lastMsgPreview = displayContent;
+        } else if (isMe) {
+          lastMsgPreview = `You: ${displayContent}`;
+        } else if (room.isGroup) {
+          const senderName =
+            displayMsg.sender?.profile?.firstName ||
+            displayMsg.sender?.email?.split('@')[0] ||
+            'Member';
+          lastMsgPreview = `${senderName}: ${displayContent}`;
+        } else {
+          lastMsgPreview = displayContent;
+        }
+      }
 
       const unreadCount = unreadCountByRoom.get(room.id) ?? 0;
       const sortDate = room.messages[0]?.createdAt || room.createdAt;
@@ -528,19 +570,70 @@ router.post('/:id/read', async (req, res) => {
     }
 
     // Dismiss / clear any notification for this chat room once opened / marked read
+    const room = await prisma.chatRoom.findUnique({
+      where: { id },
+      select: { id: true, tripId: true, inquiryTripId: true },
+    }).catch(() => null);
+
+    const roomIdsToClear = [id];
+    if (room?.id) roomIdsToClear.push(room.id);
+    if (room?.tripId) roomIdsToClear.push(room.tripId, `room-${room.tripId}`);
+    if (room?.inquiryTripId) roomIdsToClear.push(room.inquiryTripId, `room-${room.inquiryTripId}`);
+
+    const tripIdsToClear: string[] = [];
+    if (room?.tripId) tripIdsToClear.push(room.tripId);
+    if (room?.inquiryTripId) tripIdsToClear.push(room.inquiryTripId);
+
     await prisma.notification.deleteMany({
       where: {
         userId: tokenUserId,
-        chatRoomId: id,
+        OR: [
+          { chatRoomId: { in: roomIdsToClear } },
+          ...(tripIdsToClear.length > 0
+            ? [{
+                tripId: { in: tripIdsToClear },
+                category: {
+                  in: [
+                    NotificationCategory.TRIP_ENQUIRY,
+                    NotificationCategory.JOIN_ACCEPTED,
+                    NotificationCategory.CHAT_ADDED,
+                  ],
+                },
+              }]
+            : []),
+        ],
       },
     }).catch((err) => {
       logger.warn('[Chats] Failed to clear notifications for chat room:', err);
     });
 
+    // Mark broadcast notifications as read for this user
+    const broadcasts = await prisma.notification.findMany({
+      where: {
+        userId: null,
+        OR: [
+          { chatRoomId: { in: roomIdsToClear } },
+          ...(tripIdsToClear.length > 0 ? [{ tripId: { in: tripIdsToClear } }] : []),
+        ],
+      },
+      select: { id: true },
+    }).catch(() => []);
+
+    if (broadcasts && broadcasts.length > 0) {
+      await prisma.notificationRead.createMany({
+        data: broadcasts.map((b) => ({ notificationId: b.id, userId: tokenUserId })),
+        skipDuplicates: true,
+      }).catch(() => {});
+    }
+
+    const io = req.app.get('socketio');
+
+    // Notify user's personal socket room to refresh notifications badge immediately
+    io?.to(tokenUserId).emit('notificationRead', { chatRoomId: id });
+
     // One batched event, not one per message: opening a room with 200
     // unread would otherwise fan out 200 socket emits to update ticks.
     if (messagesToRead.length > 0) {
-      const io = req.app.get('socketio');
       io?.to(id).emit('messageRead', {
         roomId: id,
         messageIds: messagesToRead.map((m) => m.id),

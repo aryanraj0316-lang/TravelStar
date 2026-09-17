@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -10,6 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import ArrowLeft from 'lucide-react-native/icons/arrow-left';
@@ -39,6 +39,9 @@ export default function TripPaymentScreen() {
   const [order, setOrder] = useState<TripPaymentOrder | null>(null);
   const [payingGateway, setPayingGateway] = useState(false);
   const [payingWallet, setPayingWallet] = useState(false);
+
+  const insets = useSafeAreaInsets();
+  const topInset = Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 0);
 
   const joinRequestId = params.joinRequestId;
 
@@ -214,7 +217,7 @@ export default function TripPaymentScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.safe}>
+      <SafeAreaView edges={['top', 'left', 'right']} style={styles.safe}>
         <ScreenLoading label="Loading payment details..." />
       </SafeAreaView>
     );
@@ -222,7 +225,7 @@ export default function TripPaymentScreen() {
 
   if (error || !order) {
     return (
-      <SafeAreaView style={styles.safe}>
+      <SafeAreaView edges={['top', 'left', 'right']} style={styles.safe}>
         <ScreenError
           title="Payment Not Available"
           message={error || 'No active payment found for this join request.'}
@@ -235,21 +238,23 @@ export default function TripPaymentScreen() {
   const isAlreadyPaid = order.status === 'CAPTURED' || order.joinRequestStatus === 'APPROVED';
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <View style={styles.safe}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => router.back()}
-          accessibilityRole="button"
-          accessibilityLabel="Go back"
-        >
-          <ArrowLeft size={20} color={C.text} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Trip Joining Fee</Text>
-        <View style={{ width: 40 }} />
+      {/* Header lowered down past status bar / notch */}
+      <View style={[styles.headerWrap, { paddingTop: topInset }]}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => router.back()}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
+            <ArrowLeft size={20} color={C.text} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Trip Payment</Text>
+          <View style={{ width: 40 }} />
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -406,7 +411,7 @@ export default function TripPaymentScreen() {
           </View>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -436,6 +441,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F8FAFC',
   },
+  headerWrap: {
+    backgroundColor: C.white,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: C.border,
+  },
   header: {
     height: 56,
     flexDirection: 'row',
@@ -443,8 +453,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: space[4],
     backgroundColor: C.white,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: C.border,
   },
   backBtn: {
     width: 40,
@@ -551,13 +559,16 @@ const styles = StyleSheet.create({
   },
   paymentSection: {
     gap: space[3],
+    marginTop: space[3],
   },
   sectionHeading: {
     fontSize: fontSize.xs,
     fontWeight: fontWeight.bold,
     color: C.textMuted,
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
     marginLeft: 2,
+    lineHeight: 18,
+    paddingVertical: 2,
   },
   methodCard: {
     backgroundColor: C.white,

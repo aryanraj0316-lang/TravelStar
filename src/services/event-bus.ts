@@ -12,6 +12,7 @@ interface EventMap {
   toggleNavbar: boolean;
   focusTripOnMap: string;
   inAppNotification: InAppNotif;
+  dismissInAppNotification: { chatRoomId?: string } | undefined;
   tabChanged: string;
   sessionExpired: undefined;
 }

@@ -191,8 +191,20 @@ export const InAppNotificationBanner: React.FC = () => {
       });
     });
 
+    const unsubDismiss = eventBus.on('dismissInAppNotification', (data?: { chatRoomId?: string }) => {
+      setNotif((current) => {
+        if (!current) return null;
+        if (!data?.chatRoomId || current.chatRoomId === data.chatRoomId) {
+          dismiss();
+          return null;
+        }
+        return current;
+      });
+    });
+
     return () => {
       unsub();
+      unsubDismiss();
       if (dismissTimer.current) clearTimeout(dismissTimer.current);
     };
   }, [dismiss, translateX, translateY, opacity]);

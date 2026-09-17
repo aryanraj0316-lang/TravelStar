@@ -8,12 +8,13 @@ import { logger } from '@/lib/logger';
 import { formatINR } from '@/lib/money';
 import { uploadFileToUrl } from '@/lib/upload';
 import { queryClient } from '@/lib/query-client';
+import { queryKeys } from '@/lib/query-keys';
 import { chatsQueryOptions } from '@/lib/prefetch-launch';
 import { apiService } from '@/services/api';
 import { eventBus } from '@/services/event-bus';
 import { socketService } from '@/services/socket';
 import { useApp } from '@/store/AppContext';
-import type { ChatRoomSummary, MessageAudienceEntry, MessageStatus } from '@/types/api';
+import type { AppNotification, ChatRoomSummary, MessageAudienceEntry, MessageStatus } from '@/types/api';
 import { C, MIN_TOUCH_TARGET, fontSize, radii } from '@/theme/tokens';
 import { useQuery } from '@tanstack/react-query';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -912,6 +913,7 @@ function ChatScreen() {
     typingUser,
     clearChatUnread,
     checkUnreadChats,
+    checkUnreadNotifications,
     refreshTrips,
     isLoggedIn,
   } = useApp();
@@ -946,7 +948,13 @@ function ChatScreen() {
     setInboxRooms((prevRooms) => {
       const merged = [...prevRooms];
       loadedRooms.forEach((lr) => {
-        const idx = merged.findIndex((mr) => mr.id === lr.id);
+        const idx = merged.findIndex(
+          (mr) =>
+            mr.id === lr.id ||
+            `room-${mr.id}` === lr.id ||
+            mr.id === `room-${lr.id}` ||
+            (mr.tripId && lr.tripId && mr.tripId === lr.tripId && mr.type === 'GROUP'),
+        );
         const isCurrentlyOpen =
           lr.id === openRoomId ||
           (!!openRoomId && (`room-${openRoomId}` === lr.id || openRoomId === `room-${lr.id}`));
@@ -958,7 +966,25 @@ function ChatScreen() {
         const finalUnread = isCurrentlyOpen ? 0 : (lr.unreadCount || 0);
 
         if (idx >= 0) {
-          merged[idx] = { ...merged[idx], ...lr, unreadCount: finalUnread };
+          // Preserve locally-updated snippet if the local room's
+          // lastMessageAt is newer than what the server returned — a
+          // real-time socket message may have arrived since the last
+          // GET /chats response and updating with stale server data
+          // would revert the preview text the user already sees.
+          const existing = merged[idx];
+          const localTime = existing.lastMessageAt ? new Date(existing.lastMessageAt).getTime() : 0;
+          const serverTime = lr.lastMessageAt ? new Date(lr.lastMessageAt).getTime() : 0;
+          const keepLocalSnippet = localTime > serverTime && !!existing.latestMessage;
+          merged[idx] = {
+            ...merged[idx],
+            ...lr,
+            unreadCount: finalUnread,
+            ...(keepLocalSnippet ? {
+              latestMessage: existing.latestMessage,
+              latestTime: existing.latestTime,
+              lastMessageAt: existing.lastMessageAt,
+            } : {}),
+          };
         } else {
           merged.push({ ...lr, unreadCount: finalUnread });
         }
@@ -1066,10 +1092,30 @@ function ChatScreen() {
       });
       if (noneUnreadLeft) clearChatUnread();
 
+      // Dismiss in-app banner for this room immediately
+      eventBus.emit('dismissInAppNotification', { chatRoomId: selectedRoomId });
+
+      // Optimistically clear matching notifications so the bell badge / notifications list updates instantly
+      queryClient.setQueryData<AppNotification[]>(queryKeys.notifications(), (old) => {
+        if (!old) return [];
+        const normId = selectedRoomId.toLowerCase();
+        return old.filter((n) => {
+          const notifRoomId = (n.chatRoomId || '').toLowerCase();
+          const notifTripId = (n.tripId || '').toLowerCase();
+          const isMatch =
+            (notifRoomId && (notifRoomId === normId || `room-${notifRoomId}` === normId || notifRoomId === `room-${normId}`)) ||
+            (notifTripId && normId.includes(notifTripId)) ||
+            (notifRoomId && normId.includes(notifRoomId));
+          return !isMatch;
+        });
+      });
+
       apiService
         .markChatRead(selectedRoomId)
         .then(() => {
           checkUnreadChats();
+          checkUnreadNotifications();
+          queryClient.invalidateQueries({ queryKey: queryKeys.notifications() });
         })
         .catch((e) => logger.warn('[Chat] Mark-read failed:', e));
 
@@ -1134,19 +1180,32 @@ function ChatScreen() {
             const lastMsg = history[history.length - 1];
             setInboxRooms((prevRooms) => {
               const nowIso = new Date().toISOString();
-              const existingRoom = prevRooms.find((r) => r.id === selectedRoomId);
-              const otherRooms = prevRooms.filter((r) => r.id !== selectedRoomId);
+              const isMatch = (r: ChatRoom) =>
+                r.id === selectedRoomId ||
+                `room-${r.id}` === selectedRoomId ||
+                r.id === `room-${selectedRoomId}` ||
+                (r.tripId && selectedTripId && r.tripId === selectedTripId && r.type === 'GROUP');
+              const existingRoom = prevRooms.find(isMatch);
+              const otherRooms = prevRooms.filter((r) => !isMatch(r));
 
               if (existingRoom) {
                 const isMe = lastMsg.senderName === profile.name;
-                const senderLabel = isMe ? 'You' : lastMsg.senderName;
+                const isSystemMsg = lastMsg.senderRole === 'SYSTEM' || lastMsg.senderName === 'System' || lastMsg.isSystem;
                 const displayContent = lastMsg.mediaType === 'IMAGE'
                   ? (lastMsg.content && !lastMsg.content.includes('📷') ? lastMsg.content : 'Photo')
-                  : lastMsg.content;
+                  : (lastMsg.content || '');
+                let snippetText = '';
+                if (isSystemMsg) {
+                  snippetText = displayContent;
+                } else if (isMe) {
+                  snippetText = `You: ${displayContent}`;
+                } else {
+                  snippetText = `${lastMsg.senderName || 'Member'}: ${displayContent}`;
+                }
                 const updatedRoom: ChatRoom = {
                   ...existingRoom,
-                  latestMessage: `${senderLabel}: ${displayContent}`,
-                  latestTime: lastMsg.createdAt || lastMsg.timestamp,
+                  latestMessage: snippetText,
+                  latestTime: lastMsg.createdAt || lastMsg.timestamp || nowIso,
                   unreadCount: 0,
                   lastMessageAt: nowIso,
                 };
@@ -1340,18 +1399,31 @@ function ChatScreen() {
       setInboxRooms((prevRooms) => {
         const nowIso = new Date().toISOString();
         const isMe = latestMsg.senderId === profile.id || !!(profile.name && latestMsg.senderName === profile.name);
-        const senderLabel = isMe ? 'You' : latestMsg.senderName || 'System';
+        const isSystemMsg = latestMsg.senderRole === 'SYSTEM' || latestMsg.senderName === 'System' || (latestMsg as any).isSystem;
         const displayContent = latestMsg.mediaType === 'IMAGE'
           ? (latestMsg.content && !latestMsg.content.includes('📷') ? latestMsg.content : 'Photo')
-          : latestMsg.content;
-        const snippetText = `${senderLabel}: ${displayContent}`;
+          : (latestMsg.content || '');
+        let snippetText = '';
+        if (isSystemMsg) {
+          snippetText = displayContent;
+        } else if (isMe) {
+          snippetText = `You: ${displayContent}`;
+        } else {
+          snippetText = `${latestMsg.senderName || 'Member'}: ${displayContent}`;
+        }
 
-        const existingRoom = prevRooms.find((room) => room.id === key);
-        const otherRooms = prevRooms.filter((room) => room.id !== key);
+        const isMatch = (room: ChatRoom) =>
+          room.id === key ||
+          `room-${room.id}` === key ||
+          room.id === `room-${key}` ||
+          (room.tripId && (room.tripId === key || key === `room-${room.tripId}` || (selectedTripId && room.tripId === selectedTripId && room.type === 'GROUP')));
+
+        const existingRoom = prevRooms.find(isMatch);
+        const otherRooms = prevRooms.filter((room) => !isMatch(room));
 
         const isCurrentRoom =
-          Boolean(selectedRoomId && (key === selectedRoomId || key === `room-${selectedRoomId}` || selectedRoomId === `room-${key}`));
-        const shouldMarkUnread = !isCurrentRoom && !isMe && !latestMsg.isSystem;
+          Boolean(selectedRoomId && (selectedRoomId === key || `room-${selectedRoomId}` === key || selectedRoomId === `room-${key}` || (selectedTripId && (key === selectedTripId || key === `room-${selectedTripId}`))));
+        const shouldMarkUnread = !isCurrentRoom && !isMe && !isSystemMsg;
 
         if (existingRoom) {
           const updatedRoom: ChatRoom = {
@@ -1567,7 +1639,14 @@ function ChatScreen() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setInboxRooms((prevRooms) => {
       const myTrips = trips.filter((t) => t.isMyTrip || (profile.id && t.creatorId === profile.id));
-      const missingTrips = myTrips.filter((t) => !prevRooms.some((r) => r.tripId === t.id));
+      const missingTrips = myTrips.filter(
+        (t) =>
+          !prevRooms.some(
+            (r) =>
+              r.tripId === t.id ||
+              (t.chatRoomId && (r.id === t.chatRoomId || `room-${r.id}` === t.chatRoomId || r.id === `room-${t.chatRoomId}`)),
+          ),
+      );
       if (missingTrips.length === 0) return prevRooms;
 
       const newRooms: ChatRoom[] = missingTrips.map((t) => ({
@@ -1761,6 +1840,9 @@ function ChatScreen() {
             return updated;
           });
           if (noneUnreadLeft) clearChatUnread();
+          // Re-check server-side unread state so the tab badge syncs
+          // after the mark-read API call has completed.
+          checkUnreadChats();
           setSelectedRoomId(null);
           setUnreadSessionCount(0);
           return true;
@@ -1784,6 +1866,7 @@ function ChatScreen() {
       isEditTripModalOpen,
       selectedRoomId,
       setSelectedRoomId,
+      checkUnreadChats,
     ])
   );
 
@@ -2212,8 +2295,13 @@ function ChatScreen() {
 
     // Update the WhatsApp Inbox snippet text dynamically and move room to index 0 (TOP)!
     setInboxRooms((prevRooms) => {
-      const existingRoom = prevRooms.find((r) => r.id === selectedRoomId);
-      const otherRooms = prevRooms.filter((r) => r.id !== selectedRoomId);
+      const isMatch = (r: ChatRoom) =>
+        r.id === selectedRoomId ||
+        `room-${r.id}` === selectedRoomId ||
+        r.id === `room-${selectedRoomId}` ||
+        (r.tripId && selectedTripId && r.tripId === selectedTripId && r.type === 'GROUP');
+      const existingRoom = prevRooms.find(isMatch);
+      const otherRooms = prevRooms.filter((r) => !isMatch(r));
 
       if (existingRoom) {
         const displaySnippet = msgData.type === 'image'
@@ -2787,11 +2875,18 @@ function ChatScreen() {
         return updated;
       });
       if (noneUnreadLeft) clearChatUnread();
+
+      // Re-check server-side unread state so the tab badge syncs after
+      // the mark-read API call has had time to complete. Without this,
+      // the badge could persist if the earlier checkUnreadChats (fired
+      // right when the room was opened) ran before the server finished
+      // recording the read receipts.
+      checkUnreadChats();
     }
     setSelectedRoomId(null);
     setIsSettingsOpen(false);
     setUnreadSessionCount(0);
-  }, [selectedRoomId, clearChatUnread, setSelectedRoomId]);
+  }, [selectedRoomId, clearChatUnread, setSelectedRoomId, checkUnreadChats]);
 
   const handleCloseRoom = useCallback(() => {
     if (selectedMessageForOptions) {
@@ -3213,6 +3308,20 @@ function ChatScreen() {
                   style={styles.optionsRowBtn}
                   onPress={() => {
                     const roomId = selectedRoomForOptions.id;
+                    eventBus.emit('dismissInAppNotification', { chatRoomId: roomId });
+                    queryClient.setQueryData<AppNotification[]>(queryKeys.notifications(), (old) => {
+                      if (!old) return [];
+                      const normId = roomId.toLowerCase();
+                      return old.filter((n) => {
+                        const notifRoomId = (n.chatRoomId || '').toLowerCase();
+                        const notifTripId = (n.tripId || '').toLowerCase();
+                        const isMatch =
+                          (notifRoomId && (notifRoomId === normId || `room-${notifRoomId}` === normId || notifRoomId === `room-${normId}`)) ||
+                          (notifTripId && normId.includes(notifTripId)) ||
+                          (notifRoomId && normId.includes(notifRoomId));
+                        return !isMatch;
+                      });
+                    });
                     apiService
                       .markChatRead(roomId)
                       .then(() => {
@@ -3220,6 +3329,8 @@ function ChatScreen() {
                           prev.map((r) => (r.id === roomId ? { ...r, unreadCount: 0 } : r)),
                         );
                         checkUnreadChats();
+                        checkUnreadNotifications();
+                        queryClient.invalidateQueries({ queryKey: queryKeys.notifications() });
                       })
                       .catch((e) => {
                         logger.warn('[Chat] Mark-read failed:', e);
