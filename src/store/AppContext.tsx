@@ -414,6 +414,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [messages, setMessages] = useState<Message[]>([]);
   const [sosAlerts, setSosAlerts] = useState<SOSAlert[]>([]);
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
+  const resolvedAlertTrackerRef = useRef<Map<string, number>>(new Map());
 
   const login = useCallback(() => {
     setIsLoggedIn(true);
@@ -949,19 +950,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // The all-clear. Matches by both alert id and userId to ensure all
     // associated alerts for the tourist are cleared immediately on every device.
-    const unsubSosResolved = socketService.onSOSResolved(({ id, userId, resolutionNote }) => {
-      setSosAlerts((prev) =>
-        prev.filter((alert) =>
+    const unsubSosResolved = socketService.onSOSResolved(({ id, userId, userName, resolverName, resolutionNote }) => {
+      let victimName = userName;
+      setSosAlerts((prev) => {
+        if (!victimName) {
+          const found = prev.find((a) => a.id === id || (userId && a.userId === userId));
+          if (found?.userName) victimName = found.userName;
+        }
+        return prev.filter((alert) =>
           alert.id !== id &&
           (!userId || alert.userId !== userId) &&
           (!profile?.id || userId !== profile.id),
-        ),
-      );
+        );
+      });
 
-      toast(
-        resolutionNote ? `Marked safe: ${resolutionNote}` : 'The SOS alert has been marked safe.',
-        'success',
-      );
+      // Deduplicate: if this alert was already resolved/notified within the last 10 seconds, do not show duplicate message
+      const now = Date.now();
+      const lastResolvedTime = (id ? resolvedAlertTrackerRef.current.get(id) : undefined) ??
+        (userId ? resolvedAlertTrackerRef.current.get(userId) : undefined);
+      if (lastResolvedTime && now - lastResolvedTime < 10000) {
+        return;
+      }
+      if (id) resolvedAlertTrackerRef.current.set(id, now);
+      if (userId) resolvedAlertTrackerRef.current.set(userId, now);
+
+      // Do not toast for the person who resolved it (they already received their local confirmation)
+      if ((userId && profile?.id && userId === profile.id) || (resolverName && profile?.name && resolverName === profile.name)) {
+        return;
+      }
+
+      const displayName = victimName || resolverName || 'User';
+      const msg = resolutionNote
+        ? `${displayName} is safe: ${resolutionNote}`
+        : `${displayName} is safe.`;
+
+      toast(msg, 'success');
     });
 
     const unsubPresence = socketService.onPresence((data) => {
@@ -1306,6 +1329,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         (!profile.id || alert.userId !== profile.id) &&
         (!profile.name || alert.userName !== profile.name),
       ),
+    );
+
+    // Record resolution locally so subsequent socket broadcasts do not double-toast on the sender's device
+    resolvedAlertTrackerRef.current.set(id, Date.now());
+    if (profile.id) resolvedAlertTrackerRef.current.set(profile.id, Date.now());
+
+    // Single confirmation to the person marking themselves safe
+    toast(
+      resolutionNote ? `Marked safe: ${resolutionNote}` : 'You have marked yourself safe.',
+      'success',
     );
 
     // Socket broadcasts the stand-down in real time so all devices immediately clear

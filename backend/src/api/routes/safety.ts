@@ -246,7 +246,14 @@ router.post('/sos/:id/resolve', async (req, res) => {
       where: { id },
       // Coordinates included so the stand-down can reach the same nearby
       // audience the alert itself did.
-      select: { userId: true, latitude: true, longitude: true },
+      select: {
+        userId: true,
+        latitude: true,
+        longitude: true,
+        user: {
+          include: { profile: true },
+        },
+      },
     });
 
     if (!alert) {
@@ -291,20 +298,29 @@ router.post('/sos/:id/resolve', async (req, res) => {
       data: { status: 'RESOLVED', resolutionNote, resolvedAt: new Date() },
     });
 
-    // Notify the same scoped audience that received the original alert, and
-    // broadcast globally to all connected clients so every device dismisses the alert immediately
-    const io = req.app.get('socketio');
-    const audience = await resolveSosAudience(alert.userId, {
-      lat: alert.latitude,
-      lng: alert.longitude,
-    });
-    audience.userIds.forEach((uid: string) => io?.to(uid).emit('sosResolved', { id, userId: alert.userId, resolutionNote }));
-    io?.emit('sosResolved', { id, userId: alert.userId, resolutionNote });
-
     const resolver = await prisma.user.findUnique({ where: { id: userId }, include: { profile: true } });
     const resolverName = resolver?.profile
       ? `${resolver.profile.firstName} ${resolver.profile.lastName || ''}`.trim()
       : (resolver?.email?.split('@')[0] ?? 'Someone');
+
+    const victimName = alert.user?.profile
+      ? `${alert.user.profile.firstName} ${alert.user.profile.lastName || ''}`.trim()
+      : (alert.user?.email?.split('@')[0] ?? 'User');
+
+    // Broadcast once globally to all connected clients so every device dismisses the alert without duplicate messages
+    const io = req.app.get('socketio');
+    io?.emit('sosResolved', {
+      id,
+      userId: alert.userId,
+      userName: victimName,
+      resolverName,
+      resolutionNote,
+    });
+
+    const audience = await resolveSosAudience(alert.userId, {
+      lat: alert.latitude,
+      lng: alert.longitude,
+    });
 
     for (const room of audience.chatRooms) {
       const saved = await prisma.message.create({
@@ -335,7 +351,6 @@ router.post('/sos/:id/resolve', async (req, res) => {
           createdAt: saved.createdAt.toISOString(),
         },
       });
-      io?.to(room.chatRoomId).emit('sosResolved', { id, userId: alert.userId, resolutionNote, tripId: room.tripId });
     }
 
     res.status(200).json({ ok: true, data: { message: `SOS Alert ${id} marked as resolved` } });

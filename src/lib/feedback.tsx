@@ -143,9 +143,14 @@ export const FeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const idRef = useRef(0);
 
   const addToast = useCallback((message: string, type: ToastType) => {
-    const id = String(idRef.current++);
-    setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3500);
+    setToasts((prev) => {
+      if (prev.some((t) => t.message === message && t.type === type)) {
+        return prev;
+      }
+      const id = String(idRef.current++);
+      setTimeout(() => setToasts((current) => current.filter((t) => t.id !== id)), 3500);
+      return [...prev, { id, message, type }];
+    });
   }, []);
 
   const openAlert = useCallback(

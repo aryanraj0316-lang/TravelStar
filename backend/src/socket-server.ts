@@ -421,7 +421,14 @@ export function createSocketServer(httpServer: HttpServer): Server {
       try {
         const alert = await prisma.sOSAlert.findUnique({
           where: { id },
-          select: { userId: true, latitude: true, longitude: true },
+          select: {
+            userId: true,
+            latitude: true,
+            longitude: true,
+            user: {
+              include: { profile: true },
+            },
+          },
         });
         if (!alert) return;
 
@@ -437,12 +444,17 @@ export function createSocketServer(httpServer: HttpServer): Server {
           data: { status: 'RESOLVED', resolvedAt: new Date() },
         });
 
-        const audience = await getSosAudienceUserIds(alert.userId, {
-          lat: alert.latitude,
-          lng: alert.longitude,
+        const victimName = alert.user?.profile
+          ? `${alert.user.profile.firstName} ${alert.user.profile.lastName || ''}`.trim()
+          : (alert.user?.email?.split('@')[0] ?? 'User');
+
+        // Broadcast once globally to dismiss the emergency alert on all devices without duplicates
+        io.emit('sosResolved', {
+          id,
+          userId: alert.userId,
+          userName: victimName,
+          resolverName: isOwner ? victimName : 'Admin',
         });
-        await emitToUsers(audience, 'sosResolved', { id, userId: alert.userId });
-        io.emit('sosResolved', { id, userId: alert.userId });
       } catch (e) {
         logger.error('[Socket] resolveSOS failed:', e);
       }
