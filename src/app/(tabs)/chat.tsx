@@ -2925,7 +2925,21 @@ function ChatScreen() {
         {activeSOS && (
           <TouchableOpacity
             style={styles.safetyTickerBanner}
-            onPress={() => router.navigate('/map')}
+            onPress={() => {
+              router.push({
+                pathname: '/map',
+                params: {
+                  focusLat: String(activeSOS.latitude),
+                  focusLng: String(activeSOS.longitude),
+                  focusLabel: activeSOS.message
+                    ? `🚨 SOS • ${activeSOS.userName}: ${activeSOS.message}`
+                    : `🚨 SOS • ${activeSOS.userName} needs help here`,
+                  isSos: 'true',
+                  sosId: activeSOS.id,
+                  t: String(Date.now()),
+                },
+              });
+            }}
             accessibilityRole="button"
             accessibilityLabel={
               activeSOS.message

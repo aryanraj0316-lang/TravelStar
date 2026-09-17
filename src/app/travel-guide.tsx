@@ -2218,40 +2218,73 @@ export default function TravelGuideScreen() {
 
             {/* Safety Warning Alerts List */}
             <Text style={styles.sectionLabelInline}>{t('travelGuide.realTimeSafetyAlerts')}</Text>
-            {safetyAlerts.map((alert) => (
-              <View key={alert.id} style={styles.safetyAlertItem}>
-                <View style={styles.safetyAlertHeader}>
-                  <View
-                    style={[
-                      styles.safetyAlertBadge,
-                      {
-                        backgroundColor:
-                          alert.type === 'DANGER'
-                            ? 'rgba(239,68,68,0.2)'
-                            : alert.type === 'WARNING'
-                              ? 'rgba(245,158,11,0.2)'
-                              : 'rgba(59,130,246,0.2)',
-                      },
-                    ]}
-                  >
-                    <AlertTriangle
-                      size={11}
-                      color={alert.type === 'DANGER' ? C.rose : alert.type === 'WARNING' ? C.amber : C.blue}
-                    />
-                    <Text
+            {safetyAlerts.map((alert) => {
+              const matched = sosAlerts.find((s) => s.id === alert.id);
+              const isTappable = !!(matched && Number.isFinite(matched.latitude) && Number.isFinite(matched.longitude));
+
+              const itemContent = (
+                <View style={styles.safetyAlertItem}>
+                  <View style={styles.safetyAlertHeader}>
+                    <View
                       style={[
-                        styles.safetyAlertBadgeText,
-                        { color: alert.type === 'DANGER' ? C.rose : alert.type === 'WARNING' ? C.amber : C.blue },
+                        styles.safetyAlertBadge,
+                        {
+                          backgroundColor:
+                            alert.type === 'DANGER'
+                              ? 'rgba(239,68,68,0.2)'
+                              : alert.type === 'WARNING'
+                                ? 'rgba(245,158,11,0.2)'
+                                : 'rgba(59,130,246,0.2)',
+                        },
                       ]}
                     >
-                      {t(ALERT_TYPE_LABEL_KEYS[alert.type] ?? 'travelGuide.alertTypeInfo')}
-                    </Text>
+                      <AlertTriangle
+                        size={11}
+                        color={alert.type === 'DANGER' ? C.rose : alert.type === 'WARNING' ? C.amber : C.blue}
+                      />
+                      <Text
+                        style={[
+                          styles.safetyAlertBadgeText,
+                          { color: alert.type === 'DANGER' ? C.rose : alert.type === 'WARNING' ? C.amber : C.blue },
+                        ]}
+                      >
+                        {t(ALERT_TYPE_LABEL_KEYS[alert.type] ?? 'travelGuide.alertTypeInfo')}
+                      </Text>
+                    </View>
+                    <Text style={styles.safetyAlertLocation}>{alert.location}</Text>
                   </View>
-                  <Text style={styles.safetyAlertLocation}>{alert.location}</Text>
+                  <Text style={styles.safetyAlertMessage}>{alert.message}</Text>
                 </View>
-                <Text style={styles.safetyAlertMessage}>{alert.message}</Text>
-              </View>
-            ))}
+              );
+
+              if (isTappable && matched) {
+                return (
+                  <TouchableOpacity
+                    key={alert.id}
+                    activeOpacity={0.8}
+                    onPress={() => {
+                      router.push({
+                        pathname: '/map',
+                        params: {
+                          focusLat: String(matched.latitude),
+                          focusLng: String(matched.longitude),
+                          focusLabel: `🚨 SOS • ${matched.userName || 'Victim'}: ${matched.message || 'Needs help'}`,
+                          isSos: 'true',
+                          sosId: matched.id,
+                          t: String(Date.now()),
+                        },
+                      });
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={alert.message}
+                  >
+                    {itemContent}
+                  </TouchableOpacity>
+                );
+              }
+
+              return <View key={alert.id}>{itemContent}</View>;
+            })}
 
             {/* Emergency Contacts Dial Desk */}
             <Text style={styles.sectionLabelInline}>{t('travelGuide.speedDialEmergencyDesk')}</Text>

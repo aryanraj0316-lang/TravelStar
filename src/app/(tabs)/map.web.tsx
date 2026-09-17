@@ -12,6 +12,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiService } from '@/services/api';
 import { RouteErrorFallback } from '@/components/route-error-fallback';
 import AlertCircle from 'lucide-react-native/icons/circle-alert';
+import AlertTriangle from 'lucide-react-native/icons/triangle-alert';
 import ArrowLeft from 'lucide-react-native/icons/arrow-left';
 import Car from 'lucide-react-native/icons/car';
 import ChevronDown from 'lucide-react-native/icons/chevron-down';
@@ -94,7 +95,12 @@ const getLegDetails = (startIndex: number, coords: RoutePoint[]) => {
 // docs/REMEDIATION.md §8.8: a getNavigationSteps() used to live here,
 // returning six invented turns per leg ("Toll plaza ahead, prepare FASTag
 // payment") for any pair of cities, with no routing service behind it.
-// Removed — the overlay hands the leg to a real maps app instead.
+export type MapFocusTarget = {
+  lat: number;
+  lng: number;
+  label?: string;
+  isSos?: boolean;
+};
 
 function WebMapScreen() {
   const { t } = useTranslation();
@@ -109,13 +115,58 @@ function WebMapScreen() {
     return unsub;
   }, []);
   const router = useRouter();
-  const { triggerSOS, trips, setNavbarHidden, isLoggedIn } = useApp();
-  const { tripId, focusLat, focusLng, focusLabel } = useLocalSearchParams<{
+  const { triggerSOS, trips, setNavbarHidden, isLoggedIn, sosAlerts } = useApp();
+  const { tripId, focusLat, focusLng, focusLabel, isSos, sosId, t: searchTimestamp } = useLocalSearchParams<{
     tripId: string;
     focusLat?: string;
     focusLng?: string;
     focusLabel?: string;
+    isSos?: string;
+    sosId?: string;
+    t?: string;
   }>();
+
+  // Resolve active SOS alert context if arriving from an SOS tap
+  const matchedSos = useMemo(() => {
+    if (!sosAlerts || !Array.isArray(sosAlerts)) return null;
+    if (sosId) {
+      const byId = sosAlerts.find((s) => s.id === sosId);
+      if (byId) return byId;
+    }
+    if (isSos === 'true') {
+      return sosAlerts.find((s) => s.status === 'ACTIVE') ?? sosAlerts[0] ?? null;
+    }
+    return null;
+  }, [sosAlerts, sosId, isSos]);
+
+  // Robust focus target resolution: combines params with active SOS alerts
+  const activeFocus = useMemo<MapFocusTarget | null>(() => {
+    let lat = focusLat ? parseFloat(focusLat) : NaN;
+    let lng = focusLng ? parseFloat(focusLng) : NaN;
+    const isTargetSos = isSos === 'true' || !!matchedSos;
+
+    if ((!Number.isFinite(lat) || !Number.isFinite(lng)) && matchedSos) {
+      lat = matchedSos.latitude;
+      lng = matchedSos.longitude;
+    }
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+    const label =
+      focusLabel ||
+      (matchedSos
+        ? `🚨 SOS • ${matchedSos.userName}: ${matchedSos.message || 'Emergency assistance needed'}`
+        : isTargetSos
+          ? '🚨 Victim Location'
+          : undefined);
+
+    return {
+      lat,
+      lng,
+      label,
+      isSos: isTargetSos,
+    };
+  }, [focusLat, focusLng, focusLabel, isSos, matchedSos]);
 
   useEffect(() => {
     if (tripId) {
@@ -173,12 +224,22 @@ function WebMapScreen() {
         const data = JSON.parse(e.data);
         if (data.type === 'CHECKPOINT_CLICKED') {
           setSelectedLegIndex(data.index);
+        } else if (data.type === 'MAP_READY') {
+          if (activeFocus) {
+            postMapMessage({
+              type: 'FLY_TO',
+              lat: activeFocus.lat,
+              lng: activeFocus.lng,
+              label: activeFocus.label ?? null,
+              isSos: activeFocus.isSos ?? false,
+            });
+          }
         }
       } catch { }
     };
     window.addEventListener('message', handleMapMessage);
     return () => window.removeEventListener('message', handleMapMessage);
-  }, []);
+  }, [activeFocus, postMapMessage]);
 
   // Post filter updates to Leaflet web iframe
   useEffect(() => {
@@ -187,14 +248,27 @@ function WebMapScreen() {
 
   // Opened from a chat "shared location" card or the SOS "Show on Map" button.
   useEffect(() => {
-    const lat = focusLat ? Number(focusLat) : NaN;
-    const lng = focusLng ? Number(focusLng) : NaN;
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
-    const timer = setTimeout(() => {
-      postMapMessage({ type: 'FLY_TO', lat, lng, label: focusLabel ?? null });
-    }, 600); // Leaflet needs a beat to finish mounting after the iframe document is written.
-    return () => clearTimeout(timer);
-  }, [focusLat, focusLng, focusLabel, postMapMessage]);
+    if (!activeFocus) return;
+    const fireFlyTo = () => {
+      postMapMessage({
+        type: 'FLY_TO',
+        lat: activeFocus.lat,
+        lng: activeFocus.lng,
+        label: activeFocus.label ?? null,
+        isSos: activeFocus.isSos ?? false,
+      });
+    };
+
+    fireFlyTo();
+    const t1 = setTimeout(fireFlyTo, 300);
+    const t2 = setTimeout(fireFlyTo, 800);
+    const t3 = setTimeout(fireFlyTo, 1600);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
+  }, [activeFocus, searchTimestamp, postMapMessage]);
 
 
   // Dials India's real national emergency number. The button that calls this
@@ -314,6 +388,8 @@ function WebMapScreen() {
       navigate: t('map.leafletNavigate'),
       youAreHere: t('map.leafletYouAreHere'),
       liveGpsLocation: t('map.leafletLiveGpsLocation'),
+      criticalSosAlert: t('chat.criticalSosAlert', 'CRITICAL SOS ALERT'),
+      victimLocation: t('sos.victimLocation', 'Victim Pinpoint Location'),
     });
 
     return `
@@ -376,12 +452,93 @@ function WebMapScreen() {
             0% { transform: scale(1); opacity: 1; }
             100% { transform: scale(2.2); opacity: 0; }
           }
+
+          /* SOS Beacon Marker Styles */
+          .sos-pin-beacon {
+            position: relative;
+            width: 46px;
+            height: 46px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          }
+          .sos-beacon-ring-outer {
+            position: absolute;
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: rgba(239, 68, 68, 0.25);
+            animation: sos-pulse-ring 1.8s cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
+            pointer-events: none;
+          }
+          .sos-beacon-ring {
+            position: absolute;
+            width: 42px;
+            height: 42px;
+            border-radius: 50%;
+            background: rgba(239, 68, 68, 0.4);
+            animation: sos-pulse-ring 1.8s cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
+            animation-delay: 0.35s;
+            pointer-events: none;
+          }
+          .sos-beacon-core {
+            position: relative;
+            width: 34px;
+            height: 34px;
+            border-radius: 17px;
+            background: #DC2626;
+            border: 2.5px solid #FFFFFF;
+            box-shadow: 0 0 16px rgba(220, 38, 38, 0.95), 0 4px 12px rgba(0, 0, 0, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #FFFFFF;
+            font-size: 17px;
+            line-height: 1;
+            z-index: 2;
+            cursor: pointer;
+          }
+          @keyframes sos-pulse-ring {
+            0% { transform: scale(0.5); opacity: 0.95; }
+            70% { transform: scale(1.6); opacity: 0.25; }
+            100% { transform: scale(2.2); opacity: 0; }
+          }
+          .focus-pin-default {
+            position: relative;
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          }
+          .focus-pin-core {
+            width: 28px;
+            height: 28px;
+            border-radius: 14px;
+            background: #0066FF;
+            border: 2.5px solid #FFF;
+            box-shadow: 0 0 12px rgba(0, 102, 255, 0.8), 0 4px 10px rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #FFFFFF;
+            font-size: 14px;
+          }
         </style>
       </head>
       <body>
         <div id="map"></div>
         <script>
           (function() {
+            function escapeHtml(value) {
+              return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+            }
+
             const map = L.map('map', { zoomControl: false, fadeAnimation: true, zoomAnimation: true, markerZoomAnimation: false });
           
           L.tileLayer('https://{s}.google.com/vt/lyrs=m&hl=en&x={x}&y={y}&z={z}', {
@@ -391,6 +548,59 @@ function WebMapScreen() {
           }).addTo(map);
 
           const I18N = ${i18nJson};
+          const initFocus = ${JSON.stringify(activeFocus || null)};
+
+          function addFocusMarker(lat, lng, label, isSos) {
+            if (window.__focusMarker) {
+              try { map.removeLayer(window.__focusMarker); } catch(e) {}
+              window.__focusMarker = null;
+            }
+            var focusLatLng = [lat, lng];
+            var iconHtml = '';
+            if (isSos) {
+              iconHtml = '<div class="sos-pin-beacon">' +
+                '<div class="sos-beacon-ring-outer"></div>' +
+                '<div class="sos-beacon-ring"></div>' +
+                '<div class="sos-beacon-core">🚨</div>' +
+                '</div>';
+            } else {
+              iconHtml = '<div class="focus-pin-default"><div class="focus-pin-core">📍</div></div>';
+            }
+
+            var focusIcon = L.divIcon({
+              html: iconHtml,
+              className: '',
+              iconSize: isSos ? [46, 46] : [36, 36],
+              iconAnchor: isSos ? [23, 23] : [18, 18],
+              popupAnchor: [0, isSos ? -25 : -18]
+            });
+
+            window.__focusMarker = L.marker(focusLatLng, { icon: focusIcon, zIndexOffset: 4000 }).addTo(map);
+
+            var popupHtml = '';
+            if (isSos) {
+              popupHtml = '<div class="popup-card" style="min-width:180px; max-width:260px; padding:10px 12px; background:rgba(13, 17, 23, 0.98); border-radius:8px;">' +
+                '<div class="popup-badge" style="background:rgba(239,68,68,0.25); color:#EF4444; font-size:10px; font-weight:800; padding:3px 8px; border-radius:4px; display:inline-flex; align-items:center; gap:4px; letter-spacing:0.5px;">🚨 ' + (I18N.criticalSosAlert || 'CRITICAL SOS ALERT') + '</div>' +
+                (label ? '<p class="popup-name" style="margin:6px 0 3px 0; font-size:13px; font-weight:700; color:#FFFFFF; line-height:1.3;">' + escapeHtml(label) + '</p>' : '') +
+                '<p class="popup-detail" style="font-size:10px; color:#9CA3AF; margin:0 0 6px 0;">' + Number(lat).toFixed(5) + '° N, ' + Number(lng).toFixed(5) + '° E</p>' +
+                '<div class="popup-cta" style="color:#EF4444; font-weight:700; font-size:10px; border-top:1px solid rgba(255,255,255,0.1); padding-top:6px; margin-top:2px;">⚠️ ' + (I18N.victimLocation || 'Victim Pinpoint Location') + '</div>' +
+                '</div>';
+            } else if (label) {
+              popupHtml = '<div class="popup-card" style="padding:8px 10px;">' +
+                '<p class="popup-name" style="font-size:12px; color:#FFF; font-weight:700;">' + escapeHtml(label) + '</p>' +
+                '<p class="popup-detail" style="font-size:10px; color:#A1A1AA;">' + Number(lat).toFixed(5) + '°, ' + Number(lng).toFixed(5) + '°</p>' +
+                '</div>';
+            }
+
+            if (popupHtml) {
+              window.__focusMarker.bindPopup(popupHtml, { closeButton: false, autoPan: true }).openPopup();
+            }
+          }
+
+          if (initFocus && typeof initFocus.lat === 'number' && typeof initFocus.lng === 'number' && !isNaN(initFocus.lat) && !isNaN(initFocus.lng)) {
+            map.setView([initFocus.lat, initFocus.lng], 16);
+            addFocusMarker(initFocus.lat, initFocus.lng, initFocus.label, !!initFocus.isSos);
+          }
 
           // Render Route Polyline & Segments
           const routeCoords = ${routeJson};
@@ -737,16 +947,12 @@ function WebMapScreen() {
                 }
               }
               if (data.type === 'FLY_TO') {
-                if (window.__focusMarker) { map.removeLayer(window.__focusMarker); window.__focusMarker = null; }
-                var focusLatLng = [data.lat, data.lng];
-                window.__focusMarker = L.marker(focusLatLng).addTo(map);
-                if (data.label) {
-                  // textContent, not a bindPopup string: the label is chat text.
-                  var focusPopupEl = document.createElement('div');
-                  focusPopupEl.textContent = data.label;
-                  window.__focusMarker.bindPopup(focusPopupEl).openPopup();
+                var lat = typeof data.lat === 'number' ? data.lat : parseFloat(data.lat);
+                var lng = typeof data.lng === 'number' ? data.lng : parseFloat(data.lng);
+                if (!isNaN(lat) && !isNaN(lng)) {
+                  addFocusMarker(lat, lng, data.label, !!data.isSos);
+                  map.flyTo([lat, lng], 16, { animate: true, duration: 0.85 });
                 }
-                map.flyTo(focusLatLng, 15, { animate: true, duration: 0.85 });
               }
               if (data.type === 'SELECT_LEG') {
                 var idx = data.index;
@@ -760,6 +966,10 @@ function WebMapScreen() {
             } catch(e) {}
           }
           window.addEventListener('message', handleMsg);
+
+          // Signal map readiness immediately
+          var readyPayload = JSON.stringify({ type: 'MAP_READY' });
+          window.parent.postMessage(readyPayload, '*');
           })();
         </script>
       </body>
@@ -794,6 +1004,43 @@ function WebMapScreen() {
           style={{ width: '100%', height: '100%', border: 'none' }}
           title={t('map.iframeTitle')}
         />
+
+        {/* FLOATING SOS VICTIM PINPOINT BANNER */}
+        {activeFocus && activeFocus.isSos && (
+          <View style={styles.sosVictimFloatingBanner}>
+            <View style={styles.sosVictimBannerLeft}>
+              <View style={styles.sosVictimBeaconBadge}>
+                <AlertTriangle size={15} color="#FFF" />
+              </View>
+              <View style={{ flex: 1, marginLeft: 8 }}>
+                <Text style={styles.sosVictimBannerTitle}>
+                  {t('chat.criticalSosAlert', 'CRITICAL SOS ALERT')}
+                </Text>
+                <Text style={styles.sosVictimBannerSubtitle} numberOfLines={1}>
+                  {activeFocus.label || `${activeFocus.lat.toFixed(4)}°, ${activeFocus.lng.toFixed(4)}°`}
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={styles.sosVictimRecenterBtn}
+              onPress={() => {
+                postMapMessage({
+                  type: 'FLY_TO',
+                  lat: activeFocus.lat,
+                  lng: activeFocus.lng,
+                  label: activeFocus.label ?? null,
+                  isSos: true,
+                });
+              }}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel={t('map.recenter', 'Focus Victim')}
+            >
+              <Locate size={13} color="#FFF" />
+              <Text style={styles.sosVictimRecenterText}>{t('map.recenter', 'Focus')}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* ─── FILTERS SELECTOR ROW OVERLAY ───────────────────── */}
         <View style={styles.topFilterOverlay}>
@@ -2090,6 +2337,70 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 4,
     experimental_backgroundImage: 'linear-gradient(135deg, #0066FF, #00D2FF)',
+  },
+  sosVictimFloatingBanner: {
+    position: 'absolute',
+    top: 72,
+    left: 14,
+    right: 14,
+    zIndex: 999,
+    backgroundColor: 'rgba(220, 38, 38, 0.95)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    shadowColor: '#DC2626',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  sosVictimBannerLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  sosVictimBeaconBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0, 0, 0, 0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sosVictimBannerTitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#FFF',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  sosVictimBannerSubtitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFF',
+    marginTop: 1,
+  },
+  sosVictimRecenterBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    gap: 4,
+  },
+  sosVictimRecenterText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFF',
   },
 });
 

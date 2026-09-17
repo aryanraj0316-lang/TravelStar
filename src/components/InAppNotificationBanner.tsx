@@ -40,7 +40,7 @@ export const InAppNotificationBanner: React.FC = () => {
   const opacity = useRef(new Animated.Value(0)).current;
   const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const { setActiveRoomId, checkUnreadNotifications } = useApp();
+  const { setActiveRoomId, checkUnreadNotifications, sosAlerts } = useApp();
   const router = useRouter();
 
   const dismiss = useCallback(() => {
@@ -221,6 +221,29 @@ export const InAppNotificationBanner: React.FC = () => {
           void syncBadgeCount();
         })
         .catch((e) => logger.warn('[InAppNotificationBanner] Failed to dismiss notification:', e));
+    }
+
+    if (notif.category === 'SOS' || /sos|emergency|आपातकालीन/i.test(notif.title || '') || /sos|emergency|आपातकालीन/i.test(notif.content || '')) {
+      const matchedAlert = sosAlerts.find(
+        (a) => a && (a.status === 'ACTIVE' || String(a.status).toUpperCase() === 'ACTIVE'),
+      );
+      if (matchedAlert) {
+        router.push({
+          pathname: '/map',
+          params: {
+            focusLat: String(matchedAlert.latitude),
+            focusLng: String(matchedAlert.longitude),
+            focusLabel: matchedAlert.message
+              ? `🚨 SOS • ${matchedAlert.userName}: ${matchedAlert.message}`
+              : `🚨 SOS • ${matchedAlert.userName} needs help here`,
+            isSos: 'true',
+            sosId: matchedAlert.id,
+            t: String(Date.now()),
+          },
+        });
+        dismiss();
+        return;
+      }
     }
 
     if (notif.category === 'PAYMENT_REQUIRED' && notif.joinRequestId) {

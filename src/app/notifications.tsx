@@ -248,7 +248,7 @@ export default function NotificationsScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { setActiveRoomId, checkUnreadNotifications, setHasUnreadNotification, isLoggedIn } = useApp();
+  const { setActiveRoomId, checkUnreadNotifications, setHasUnreadNotification, isLoggedIn, sosAlerts } = useApp();
 
   const notifQ = useQuery({
     queryKey: queryKeys.notifications(),
@@ -482,6 +482,28 @@ export default function NotificationsScreen() {
         },
       });
       return;
+    }
+
+    if ((n.category as string) === 'SOS' || (n.type as string) === 'EMERGENCY' || /sos|emergency|आपातकालीन/i.test(n.title) || /sos|emergency|आपातकालीन/i.test(n.content)) {
+      const matchedAlert = sosAlerts.find(
+        (a) => a && (a.status === 'ACTIVE' || String(a.status).toUpperCase() === 'ACTIVE'),
+      );
+      if (matchedAlert) {
+        router.push({
+          pathname: '/map',
+          params: {
+            focusLat: String(matchedAlert.latitude),
+            focusLng: String(matchedAlert.longitude),
+            focusLabel: matchedAlert.message
+              ? `🚨 SOS • ${matchedAlert.userName}: ${matchedAlert.message}`
+              : `🚨 SOS • ${matchedAlert.userName} needs help here`,
+            isSos: 'true',
+            sosId: matchedAlert.id,
+            t: String(Date.now()),
+          },
+        });
+        return;
+      }
     }
 
     if (n.chatRoomId) {
