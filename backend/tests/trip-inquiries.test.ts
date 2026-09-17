@@ -84,7 +84,7 @@ describe('Trip enquiries', () => {
     expect(members.map((m) => m.userId).sort()).toEqual([organizer.userId, tourist.userId].sort());
   }, 90_000);
 
-  it('tells the organizer a new enquiry is waiting on them', async () => {
+  it('does not notify the organizer merely by opening an enquiry thread; notifies once a message is sent', async () => {
     const organizer = await registerAndLogin('notify-org');
     const tourist = await registerAndLogin('notify-tourist');
     const tripId = await createTrip(organizer.token, `Notify Trip ${runId}`);
@@ -94,18 +94,34 @@ describe('Trip enquiries', () => {
       .set('Authorization', `Bearer ${tourist.token}`)
       .send({ tripId });
     expect(opened.status).toBe(201);
+    const chatRoomId = opened.body.data.chatRoomId;
 
-    // The thread on its own is invisible to an organizer who is not already
-    // looking at that tab — this is what actually brings them back to it.
-    const notifications = await prisma.notification.findMany({
+    // Merely opening the inquiry thread without sending a message should NOT notify the organizer.
+    const notificationsBefore = await prisma.notification.findMany({
       where: { userId: organizer.userId, tripId },
     });
-    expect(notifications).toHaveLength(1);
-    expect(notifications[0]!.category).toBe('TRIP_ENQUIRY');
-    // Carries the trip and the thread, so the notification can open that
-    // trip's Chats & Approvals section rather than a generic inbox.
-    expect(notifications[0]!.chatRoomId).toBe(opened.body.data.chatRoomId);
-    expect(notifications[0]!.content).toContain('Inquiry notify-tourist');
+    expect(notificationsBefore).toHaveLength(0);
+
+    // Once a message is sent, the organizer is notified.
+    await prisma.message.create({
+      data: { chatRoomId, senderId: tourist.userId, content: 'Is there still room?' },
+    });
+    await notifyTripEnquiry({
+      tripId,
+      tripName: `Notify Trip ${runId}`,
+      organizerId: organizer.userId,
+      chatRoomId,
+      travellerName: 'Inquiry notify-tourist',
+      preview: 'Is there still room?',
+    });
+
+    const notificationsAfter = await prisma.notification.findMany({
+      where: { userId: organizer.userId, tripId },
+    });
+    expect(notificationsAfter).toHaveLength(1);
+    expect(notificationsAfter[0]!.category).toBe('TRIP_ENQUIRY');
+    expect(notificationsAfter[0]!.chatRoomId).toBe(chatRoomId);
+    expect(notificationsAfter[0]!.content).toContain('Inquiry notify-tourist');
 
     // The traveller who asked is not notified about their own question.
     expect(await prisma.notification.count({ where: { userId: tourist.userId, tripId } })).toBe(0);

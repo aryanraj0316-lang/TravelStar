@@ -18,6 +18,7 @@ import { C, MIN_TOUCH_TARGET, fontSize, radii } from '@/theme/tokens';
 import { useQuery } from '@tanstack/react-query';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useLocalSearchParams, useRouter, type ErrorBoundaryProps } from 'expo-router';
+import ArrowDown from 'lucide-react-native/icons/arrow-down';
 import ArrowLeft from 'lucide-react-native/icons/arrow-left';
 import Bell from 'lucide-react-native/icons/bell';
 import BellOff from 'lucide-react-native/icons/bell-off';
@@ -64,6 +65,8 @@ import {
   LayoutChangeEvent,
   Linking,
   Modal,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   PanResponder,
   Platform,
   Pressable,
@@ -74,7 +77,9 @@ import {
   TextInput,
   TouchableOpacity,
   UIManager,
-  View
+  View,
+  ViewabilityConfig,
+  ViewToken,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -1652,8 +1657,42 @@ function ChatScreen() {
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollToBottom = useCallback((animated = true) => {
     if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
+    setIsScrolledUp(false);
     messageListRef.current?.scrollToOffset({ offset: 0, animated });
   }, []);
+
+  const handleScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
+    // If messages do not fill the screen height, the latest message is always at the bottom
+    if (contentSize.height <= layoutMeasurement.height + 20) {
+      setIsScrolledUp(false);
+      return;
+    }
+    // In an inverted FlatList, offset.y <= 15 strictly indicates the user is at the bottom
+    if (contentOffset.y <= 15) {
+      setIsScrolledUp(false);
+    }
+  }, []);
+
+  // Strictly track whether the last (newest) message is visible on screen.
+  // In an inverted FlatList, index 0 is the newest message positioned at the bottom of the screen.
+  const handleViewableItemsChanged = useRef(
+    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
+      if (!viewableItems || viewableItems.length === 0) {
+        setIsScrolledUp(false);
+        return;
+      }
+      // Strict check: if index 0 is visible in the viewport, the last message IS at the bottom of the screen
+      const isLastMessageVisible = viewableItems.some((v) => v.index === 0);
+      setIsScrolledUp(!isLastMessageVisible);
+    }
+  ).current;
+
+  const viewabilityConfig = useRef<ViewabilityConfig>({
+    // As long as even 1% of the last message is visible at the bottom, treat it as visible (hide arrow)
+    itemVisiblePercentThreshold: 1,
+    waitForInteraction: false,
+  }).current;
 
   // Hardware/System Back Button Handler:
   // When inside a particular chat, pressing the system back button directs back to the chat list screen
@@ -2055,6 +2094,7 @@ function ChatScreen() {
   const scrollToInitialFocus = useCallback(() => {
     if (!selectedRoomId) return;
 
+    setIsScrolledUp(false);
     // Inverted FlatList shows latest messages at offset 0 by default
     messageListRef.current?.scrollToOffset({ offset: 0, animated: false });
     setIsChatContentReady(true);
@@ -2062,6 +2102,7 @@ function ChatScreen() {
   }, [selectedRoomId]);
 
   useEffect(() => {
+    setIsScrolledUp(false);
     if (selectedRoomId) {
       scrollToInitialFocus();
     }
@@ -3403,11 +3444,12 @@ function ChatScreen() {
           }}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
-          onScroll={(e) => {
-            const { contentOffset } = e.nativeEvent;
-            setIsScrolledUp(contentOffset.y > 150);
-          }}
-          scrollEventThrottle={100}
+          onScroll={handleScroll}
+          onMomentumScrollEnd={handleScroll}
+          onScrollEndDrag={handleScroll}
+          onViewableItemsChanged={handleViewableItemsChanged}
+          viewabilityConfig={viewabilityConfig}
+          scrollEventThrottle={16}
           onTouchStart={() => {
             if (isEmojiPickerOpen) setIsEmojiPickerOpen(false);
           }}
@@ -3431,16 +3473,19 @@ function ChatScreen() {
           }
         />
 
-        {/* Floating Jump to Bottom Button when scrolled up (e.g. reading unread messages) */}
-        {isScrolledUp && (
+        {/* Floating Jump to Bottom Button strictly when last message is not at bottom */}
+        {isScrolledUp && reversedMessages.length > 1 && (
           <TouchableOpacity
             style={styles.floatingScrollBottomBtn}
-            onPress={() => scrollToBottom(true)}
+            onPress={() => {
+              setIsScrolledUp(false);
+              scrollToBottom(true);
+            }}
             activeOpacity={0.85}
             accessibilityRole="button"
             accessibilityLabel="Jump to latest message"
           >
-            <ArrowLeft size={18} color="#2563EB" style={{ transform: [{ rotate: '-90deg' }] }} />
+            <ArrowDown size={20} color="#2563EB" strokeWidth={2.4} />
             {unreadSessionCount > 0 && (
               <View style={styles.floatingUnreadBadge}>
                 <Text style={styles.floatingUnreadBadgeText}>{unreadSessionCount}</Text>

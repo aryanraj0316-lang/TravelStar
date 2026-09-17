@@ -5,7 +5,6 @@ import { logger } from '../../lib/logger';
 import { requireUserId } from '../../lib/auth-context';
 import { ObjectStorageNotConfiguredError, createChatMediaUploadUrl } from '../../lib/object-storage';
 import { audienceForMessage, recordDelivery, statusesForOwnMessages } from '../../services/message-status';
-import { notifyTripEnquiry } from '../../services/trip-enquiry-notifications';
 
 const router = Router();
 
@@ -245,24 +244,6 @@ router.post('/inquiry', async (req, res) => {
         members: { create: [{ userId: tokenUserId }, { userId: trip.creatorId }] },
       },
       select: { id: true },
-    });
-
-    const asker = await prisma.user.findUnique({
-      where: { id: tokenUserId },
-      include: { profile: true },
-    });
-    const travellerName = asker?.profile
-      ? `${asker.profile.firstName} ${asker.profile.lastName || ''}`.trim()
-      : (asker?.email?.split('@')[0] ?? 'A traveller');
-
-    await notifyTripEnquiry({
-      tripId,
-      tripName: trip.name,
-      organizerId: trip.creatorId,
-      chatRoomId: room.id,
-      travellerName,
-      trigger: 'THREAD_OPENED',
-      io: req.app.get('socketio'),
     });
 
     return res.status(201).json({ ok: true, data: { chatRoomId: room.id, tripId, tripName: trip.name } });

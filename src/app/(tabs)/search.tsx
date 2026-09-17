@@ -275,7 +275,7 @@ function TripResultCard({
       {/* Right side: Detailed trip content */}
       <View style={styles.tripContent}>
         <View style={styles.tripHeaderRow}>
-          <Text style={[styles.tripName, { color: C.white }]} numberOfLines={3}>
+          <Text style={[styles.tripName, { color: C.text }]} numberOfLines={3}>
             {trip.name}
           </Text>
         </View>
@@ -1550,6 +1550,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     lineHeight: 19,
     flex: 1,
+    color: C.text,
   },
   verifiedBadge: {
     flexDirection: 'row',

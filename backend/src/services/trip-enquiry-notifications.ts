@@ -15,11 +15,8 @@ import { organizerHasUnreadInEnquiry } from './enquiry-notification-hygiene';
  * that tab and scroll, a traveller asking "is there still room?" waited on
  * an answer that was never coming.
  *
- * Both moments that create something for the organizer to answer come
- * through here — the thread being opened, and each subsequent message from
- * the traveller — so the wording, the category, and the deep link stay in
- * one place rather than drifting between the REST route and the socket
- * server.
+ * When a traveller sends a question in an enquiry thread, this tells the
+ * organizer with push and in-app notifications so they can answer promptly.
  */
 export async function notifyTripEnquiry(opts: {
   tripId: string;
