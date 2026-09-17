@@ -1,7 +1,7 @@
 import { ScreenError, ScreenLoading } from '@/components/ui';
 import { apiService } from '@/services/api';
 import { logger } from '@/lib/logger';
-import { queryKeys } from '@/lib/query-keys';
+import { feedQueryOptions, wasStoryMediaPrefetched } from '@/lib/prefetch-launch';
 import { sectionState } from '@/lib/query-state';
 import type { FeedItem, StoryInteractionsResponse } from '@/types/api';
 import { useQuery } from '@tanstack/react-query';
@@ -70,11 +70,7 @@ export default function StoriesScreen() {
   const { storiesList, profile, isLoggedIn, deleteStory, deletedStoryIds } = useApp();
 
   const feedQuery = useQuery({
-    queryKey: queryKeys.feed(),
-    queryFn: async () => {
-      const page = await apiService.getFeed(20);
-      return page.items;
-    },
+    ...feedQueryOptions(),
     enabled: isLoggedIn,
   });
   const { data: feed, refetch } = feedQuery;
@@ -148,7 +144,9 @@ export default function StoriesScreen() {
   const [failedMediaIds, setFailedMediaIds] = useState<Record<string, boolean>>({});
   const mediaFailed = activeStory ? !!failedMediaIds[activeStory.id] : false;
   const [mediaLoaded, setMediaLoaded] = useState<Record<string, boolean>>({});
-  const slideReady = activeStory ? !!mediaLoaded[activeStory.id] : false;
+  const slideReady = activeStory
+    ? !!mediaLoaded[activeStory.id] || wasStoryMediaPrefetched(storyMediaUrl)
+    : false;
 
   // A spinner that never resolves is the worst outcome: the slide looks
   // broken with no explanation and no way forward. If the asset has not

@@ -30,7 +30,7 @@ export default function TabsLayout() {
         <Tabs.Screen name="search" />
         <Tabs.Screen name="create" />
         <Tabs.Screen name="map" />
-        <Tabs.Screen name="chat" />
+        <Tabs.Screen name="chat" options={{ lazy: false }} />
         <Tabs.Screen name="profile" />
       </Tabs>
       <InAppNotificationBanner />

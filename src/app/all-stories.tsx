@@ -1,6 +1,5 @@
 import { ScreenError, ScreenLoading } from '@/components/ui';
-import { apiService } from '@/services/api';
-import { queryKeys } from '@/lib/query-keys';
+import { feedQueryOptions } from '@/lib/prefetch-launch';
 import { sectionState } from '@/lib/query-state';
 import type { FeedItem } from '@/types/api';
 import { useQuery } from '@tanstack/react-query';
@@ -28,11 +27,7 @@ export default function AllStoriesScreen() {
   const { isLoggedIn, deletedStoryIds, profile } = useApp();
 
   const feedQuery = useQuery({
-    queryKey: queryKeys.feed(),
-    queryFn: async () => {
-      const page = await apiService.getFeed(50);
-      return page.items;
-    },
+    ...feedQueryOptions(),
     enabled: isLoggedIn,
   });
   const { data: feed, refetch } = feedQuery;

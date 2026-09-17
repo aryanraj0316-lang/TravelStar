@@ -27,7 +27,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useApp } from '@/store/AppContext';
 import { apiService } from '@/services/api';
-import { queryKeys } from '@/lib/query-keys';
+import { feedQueryOptions } from '@/lib/prefetch-launch';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import type { FeedItem } from '@/types/api';
 
@@ -81,11 +81,7 @@ export default function AccountStoriesModal({
 
   // Fetch feed to merge any remote stories for this user
   const feedQuery = useQuery({
-    queryKey: queryKeys.feed(),
-    queryFn: async () => {
-      const page = await apiService.getFeed(30);
-      return page.items;
-    },
+    ...feedQueryOptions(),
     enabled: isLoggedIn && visible,
   });
   const feed = feedQuery.data;

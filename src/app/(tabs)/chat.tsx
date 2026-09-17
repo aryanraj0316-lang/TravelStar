@@ -7,12 +7,15 @@ import { errorToastMessage, showAlert, showPrompt, toast, useConfirm } from '@/l
 import { logger } from '@/lib/logger';
 import { formatINR } from '@/lib/money';
 import { uploadFileToUrl } from '@/lib/upload';
+import { queryClient } from '@/lib/query-client';
+import { chatsQueryOptions } from '@/lib/prefetch-launch';
 import { apiService } from '@/services/api';
 import { eventBus } from '@/services/event-bus';
 import { socketService } from '@/services/socket';
 import { useApp } from '@/store/AppContext';
-import type { MessageAudienceEntry, MessageStatus } from '@/types/api';
+import type { ChatRoomSummary, MessageAudienceEntry, MessageStatus } from '@/types/api';
 import { C, MIN_TOUCH_TARGET, fontSize, radii } from '@/theme/tokens';
+import { useQuery } from '@tanstack/react-query';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useLocalSearchParams, useRouter, type ErrorBoundaryProps } from 'expo-router';
 import ArrowLeft from 'lucide-react-native/icons/arrow-left';
@@ -47,7 +50,7 @@ import Trash2 from 'lucide-react-native/icons/trash-2';
 import AlertTriangle from 'lucide-react-native/icons/triangle-alert';
 import UsersIcon from 'lucide-react-native/icons/users';
 import X from 'lucide-react-native/icons/x';
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
@@ -316,6 +319,34 @@ interface ChatRoom {
   inquiryTripId?: string | null;
   /** True only for the organizer's own side of that enquiry thread. */
   isMyOrganizerInquiry?: boolean;
+}
+
+function mapChatSummaries(res: ChatRoomSummary[]): ChatRoom[] {
+  return res.map((r) => ({
+    id: r.id,
+    tripId: r.tripId ?? '',
+    name: r.name,
+    avatar: r.avatar,
+    // Backend sends 'GUIDE' for all non-group rooms (guide sessions and
+    // peer DMs alike). Map to 'DM' so member DMs appear under the DMs
+    // tab. Actual guide session rooms can be explicitly typed 'GUIDE'
+    // via socket events (key contains 'guide').
+    type: r.type === 'GROUP' ? 'GROUP' : 'DM',
+    latestMessage: r.latestMessage,
+    latestTime: r.latestTime,
+    unreadCount: r.unreadCount || 0,
+    badge: r.badge || 'Member',
+    myRole: r.badge === 'Organizer' || r.badge === 'Organizer Trip' ? 'Organizer' : 'Member',
+    lastMessageAt: r.lastMessageAt || '1970-01-01T00:00:00.000Z',
+    muted: !!r.muted,
+    inquiryTripId: r.inquiryTripId ?? null,
+    isMyOrganizerInquiry: !!r.isMyOrganizerInquiry,
+  }));
+}
+
+function roomsFromChatCache(): ChatRoom[] {
+  const cached = queryClient.getQueryData<ChatRoomSummary[]>(chatsQueryOptions().queryKey);
+  return cached && cached.length > 0 ? mapChatSummaries(cached) : [];
 }
 
 const SENDER_ROLE_LABEL_KEYS: Record<string, string> = {
@@ -982,9 +1013,41 @@ function ChatScreen() {
   // interfaces for why this used to be seeded with fake conversations.
   const [tripMessages, setTripMessages] = useState<Record<string, CustomMessage[]>>({});
 
-  // Inbox Rooms state - updates snippet text in real-time. Starts empty for
-  // the same reason as tripMessages above.
-  const [inboxRooms, setInboxRooms] = useState<ChatRoom[]>([]);
+  const chatsQuery = useQuery({
+    ...chatsQueryOptions(),
+    enabled: isLoggedIn,
+  });
+
+  // Inbox Rooms state - updates snippet text in real-time. Seeded from the
+  // launch prefetch so the first paint already has rooms instead of an
+  // empty list that flickers in after GET /chats.
+  const [inboxRooms, setInboxRooms] = useState<ChatRoom[]>(roomsFromChatCache);
+
+  const applyChatSummaries = useCallback((res: ChatRoomSummary[], openRoomId: string | null) => {
+    const loadedRooms = mapChatSummaries(res);
+    setInboxRooms((prevRooms) => {
+      const merged = [...prevRooms];
+      loadedRooms.forEach((lr) => {
+        const idx = merged.findIndex((mr) => mr.id === lr.id);
+        const isCurrentlyOpen =
+          lr.id === openRoomId ||
+          (!!openRoomId && (`room-${openRoomId}` === lr.id || openRoomId === `room-${lr.id}`));
+        // GET /chats is the authoritative count (real MessageReadReceipt
+        // rows, joinedAt-scoped, isSystem-excluded) — trusting it
+        // outright, rather than Math.max against whatever this device
+        // last believed, is what lets a read recorded on another device
+        // actually clear the badge here instead of only ever growing.
+        const finalUnread = isCurrentlyOpen ? 0 : (lr.unreadCount || 0);
+
+        if (idx >= 0) {
+          merged[idx] = { ...merged[idx], ...lr, unreadCount: finalUnread };
+        } else {
+          merged.push({ ...lr, unreadCount: finalUnread });
+        }
+      });
+      return merged;
+    });
+  }, []);
 
   const loadInboxRooms = useCallback(async () => {
     if (!isLoggedIn) {
@@ -992,54 +1055,24 @@ function ChatScreen() {
       return;
     }
     try {
-      const res = await apiService.getChats();
+      const res = await queryClient.fetchQuery(chatsQueryOptions());
       if (res && res.length > 0) {
-        const loadedRooms: ChatRoom[] = res.map((r) => ({
-          id: r.id,
-          tripId: r.tripId ?? '',
-          name: r.name,
-          avatar: r.avatar,
-          // Backend sends 'GUIDE' for all non-group rooms (guide sessions and
-          // peer DMs alike). Map to 'DM' so member DMs appear under the DMs
-          // tab. Actual guide session rooms can be explicitly typed 'GUIDE'
-          // via socket events (key contains 'guide').
-          type: r.type === 'GROUP' ? 'GROUP' : 'DM',
-          latestMessage: r.latestMessage,
-          latestTime: r.latestTime,
-          unreadCount: r.unreadCount || 0,
-          badge: r.badge || 'Member',
-          myRole: r.badge === 'Organizer' || r.badge === 'Organizer Trip' ? 'Organizer' : 'Member',
-          lastMessageAt: r.lastMessageAt || '1970-01-01T00:00:00.000Z',
-          muted: !!r.muted,
-          inquiryTripId: r.inquiryTripId ?? null,
-          isMyOrganizerInquiry: !!r.isMyOrganizerInquiry,
-        }));
-
-        setInboxRooms((prevRooms) => {
-          const merged = [...prevRooms];
-          loadedRooms.forEach((lr) => {
-            const idx = merged.findIndex((mr) => mr.id === lr.id);
-            const isCurrentlyOpen = lr.id === selectedRoomId || (selectedRoomId && (`room-${selectedRoomId}` === lr.id || selectedRoomId === `room-${lr.id}`));
-            // GET /chats is the authoritative count (real MessageReadReceipt
-            // rows, joinedAt-scoped, isSystem-excluded) — trusting it
-            // outright, rather than Math.max against whatever this device
-            // last believed, is what lets a read recorded on another device
-            // actually clear the badge here instead of only ever growing.
-            const finalUnread = isCurrentlyOpen ? 0 : (lr.unreadCount || 0);
-
-            if (idx >= 0) {
-              merged[idx] = { ...merged[idx], ...lr, unreadCount: finalUnread };
-            } else {
-              merged.push({ ...lr, unreadCount: finalUnread });
-            }
-          });
-          return merged;
-        });
+        applyChatSummaries(res, activeRoomId);
       }
     } catch (e) {
       logger.warn('Failed to load chat rooms from backend:', e);
     }
-  }, [isLoggedIn]);
+  }, [isLoggedIn, applyChatSummaries, activeRoomId]);
+
+  useLayoutEffect(() => {
+    if (!isLoggedIn) return;
+    if (chatsQuery.data && chatsQuery.data.length > 0) {
+      applyChatSummaries(chatsQuery.data, activeRoomId);
+    }
+    // Hydrate from the launch cache as soon as it is available — do not
+    // re-run on every room switch or socket-updated snippets get replaced.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoggedIn, chatsQuery.data, applyChatSummaries]);
 
   useEffect(() => {
     if (!isLoggedIn) {

@@ -66,12 +66,12 @@ router.get('/', async (req, res) => {
     const [personal, broadcasts, reads] = await queryWithRetry(() =>
       Promise.all([
         prisma.notification.findMany({
-          where: { userId: tokenUserId, unread: true, ...pageFilter },
+          where: { userId: tokenUserId, type: { not: 'HAZARD' }, unread: true, ...pageFilter },
           orderBy: { createdAt: 'desc' },
           take: takeWithLookahead(limit),
         }),
         prisma.notification.findMany({
-          where: { userId: null, ...pageFilter },
+          where: { userId: null, type: { not: 'HAZARD' }, ...pageFilter },
           orderBy: { createdAt: 'desc' },
           take: takeWithLookahead(limit),
         }),

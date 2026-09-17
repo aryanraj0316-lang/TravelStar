@@ -107,6 +107,7 @@
     "viewDetails": "विवरण देखें",
     "destinationCardLabel": "{{name}}, रेटिंग {{rating}}",
     "routeSafety": "मार्ग सुरक्षा",
+    "liveAlert": "अलर्ट",
     "allClear": "ऑल क्लियर",
     "allClearMinimalDesc": "सभी मार्ग सुरक्षित हैं और सामान्य रूप से चालू हैं।",
     "guestTraveler": "अतिथि यात्री",

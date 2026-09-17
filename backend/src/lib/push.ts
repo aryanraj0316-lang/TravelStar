@@ -188,9 +188,11 @@ export async function unreadCountFor(userId: string): Promise<number> {
   await pruneReadEnquiryNotifications(userId);
 
   const [personal, broadcastTotal, broadcastRead] = await Promise.all([
-    prisma.notification.count({ where: { userId, unread: true } }),
-    prisma.notification.count({ where: { userId: null } }),
-    prisma.notificationRead.count({ where: { userId, notification: { userId: null } } }),
+    prisma.notification.count({ where: { userId, type: { not: 'HAZARD' }, unread: true } }),
+    prisma.notification.count({ where: { userId: null, type: { not: 'HAZARD' } } }),
+    prisma.notificationRead.count({
+      where: { userId, notification: { userId: null, type: { not: 'HAZARD' } } },
+    }),
   ]);
   return personal + Math.max(0, broadcastTotal - broadcastRead);
 }

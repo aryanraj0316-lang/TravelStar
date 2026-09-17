@@ -5,6 +5,7 @@ import { logger } from '@/lib/logger';
 import { toast } from '@/lib/feedback';
 import { formatINR } from '@/lib/money';
 import { queryKeys } from '@/lib/query-keys';
+import { feedQueryOptions, alertsQueryOptions, prefetchLaunchData } from '@/lib/prefetch-launch';
 import { sectionState } from '@/lib/query-state';
 import { formatTripDuration, tripCoverImage, tripTransportLabel } from '@/lib/trip-display';
 import { weatherGlyph } from '@/lib/weather-display';
@@ -617,8 +618,7 @@ function RouteSafetyCardBase({ isFocused }: { isFocused: boolean }) {
   const isAnimatingRef = useRef(false);
 
   const alertsQuery = useQuery({
-    queryKey: queryKeys.alerts(),
-    queryFn: async () => (await apiService.getAlerts()) ?? [],
+    ...alertsQueryOptions(),
   });
   const { data: alerts, refetch } = alertsQuery;
   const alertsState = sectionState(alertsQuery, alerts != null);
@@ -799,6 +799,41 @@ function RouteSafetyCardBase({ isFocused }: { isFocused: boolean }) {
         <ChevronRight size={12} color={C.redText} strokeWidth={2.4} />
       </TouchableOpacity>
     </Animated.View>
+  );
+}
+
+function HomeHazardTagBase() {
+  const { t } = useTranslation();
+  const router = useRouter();
+  const alertsQuery = useQuery({
+    ...alertsQueryOptions(),
+  });
+  const alerts = alertsQuery.data ?? [];
+  if (alerts.length === 0) return null;
+
+  const alert = alerts[0];
+  const CategoryIcon = ALERT_CATEGORY_ICON[alert.category] ?? AlertTriangle;
+  const isCritical = alert.severity === 'CRITICAL';
+
+  return (
+    <TouchableOpacity
+      style={[styles.homeAlertTag, isCritical ? styles.homeAlertTagCritical : styles.homeAlertTagWarning]}
+      activeOpacity={0.85}
+      onPress={() => router.push('/monsoon-advisory')}
+      accessibilityRole="button"
+      accessibilityLabel={`${t('home.liveAlert')}: ${alert.title}`}
+    >
+      <View style={styles.homeAlertTagIcon}>
+        <CategoryIcon size={14} color="#FFF" />
+      </View>
+      <View style={styles.homeAlertTagTextWrap}>
+        <Text style={styles.homeAlertTagBadge}>{t('home.liveAlert')}</Text>
+        <Text style={styles.homeAlertTagTitle} numberOfLines={1}>
+          {alert.title}
+        </Text>
+      </View>
+      <ChevronRight size={14} color="rgba(255,255,255,0.85)" strokeWidth={2.4} />
+    </TouchableOpacity>
   );
 }
 
@@ -1350,11 +1385,7 @@ function StoriesRailBase({
 
   // Do not show or fetch stories if user is not signed in
   const feedQuery = useQuery({
-    queryKey: queryKeys.feed(),
-    queryFn: async () => {
-      const page = await apiService.getFeed(20);
-      return page.items;
-    },
+    ...feedQueryOptions(),
     enabled: isLoggedIn,
   });
   const { data: feed, refetch } = feedQuery;
@@ -1588,6 +1619,7 @@ function StoriesRailBase({
 const AppleMultilingualGreeting = React.memo(AppleMultilingualGreetingBase);
 const TrendingWeatherCard = React.memo(TrendingWeatherCardBase);
 const RouteSafetyCard = React.memo(RouteSafetyCardBase);
+const HomeHazardTag = React.memo(HomeHazardTagBase);
 const FeaturedTripsCarousel = React.memo(FeaturedTripsCarouselBase);
 const TrendingDestinations = React.memo(TrendingDestinationsBase);
 const StoriesRail = React.memo(StoriesRailBase);
@@ -1601,22 +1633,6 @@ function HomeScreen() {
   const navigation = useNavigation();
   const [isFocused, setIsFocused] = useState(() => navigation.isFocused());
 
-  useEffect(() => {
-    const unsubscribeFocus = navigation.addListener('focus', () => {
-      setIsFocused(true);
-      setCurrentRole('TOURIST');
-      setRealTimeOfDay(getTimeOfDay());
-    });
-    const unsubscribeBlur = navigation.addListener('blur', () => {
-      setIsFocused(false);
-    });
-
-    return () => {
-      unsubscribeFocus();
-      unsubscribeBlur();
-    };
-  }, [navigation]);
-
   const {
     currentRole,
     setCurrentRole,
@@ -1628,12 +1644,47 @@ function HomeScreen() {
     addStory,
     refreshTrips,
     sosAlerts,
+    refreshSosAlerts,
     resolveSOS,
   } = useApp();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  const activeSOS = sosAlerts?.find((sos) => sos.status === 'ACTIVE');
+  useEffect(() => {
+    const unsubscribeFocus = navigation.addListener('focus', () => {
+      setIsFocused(true);
+      setCurrentRole('TOURIST');
+      setRealTimeOfDay(getTimeOfDay());
+      refreshSosAlerts();
+    });
+    const unsubscribeBlur = navigation.addListener('blur', () => {
+      setIsFocused(false);
+    });
+
+    return () => {
+      unsubscribeFocus();
+      unsubscribeBlur();
+    };
+  }, [navigation, refreshSosAlerts]);
+
+  // Automatically sync active SOS alerts when focused, with a periodic 10s poll
+  useEffect(() => {
+    if (!isFocused) return;
+    refreshSosAlerts();
+    const timer = setInterval(() => {
+      refreshSosAlerts();
+    }, 10000);
+    return () => clearInterval(timer);
+  }, [isFocused, refreshSosAlerts]);
+
+  const activeSOS = useMemo(() => {
+    if (!sosAlerts || !Array.isArray(sosAlerts)) return null;
+    return (
+      sosAlerts.find(
+        (sos) => sos && (sos.status === 'ACTIVE' || String(sos.status).toUpperCase() === 'ACTIVE'),
+      ) || null
+    );
+  }, [sosAlerts]);
 
   const handleResolveSOSEvent = useCallback(() => {
     if (activeSOS) {
@@ -1653,11 +1704,12 @@ function HomeScreen() {
         queryClient.refetchQueries({ type: 'active' }),
         Promise.resolve(refreshTrips()),
         Promise.resolve(checkUnreadNotifications()),
+        Promise.resolve(refreshSosAlerts()),
       ]);
     } finally {
       setRefreshing(false);
     }
-  }, [refreshTrips, checkUnreadNotifications]);
+  }, [refreshTrips, checkUnreadNotifications, refreshSosAlerts]);
 
   // A pending enquiry is invisible until the organizer is already inside
   // the portal, on the right trip's Chats & Approvals tab — this is the
@@ -1706,6 +1758,11 @@ function HomeScreen() {
   const navbarHiddenRef = useRef(false);
 
   const requestAuth = useCallback((reason: AuthReason) => setAuthReason(reason), []);
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    void prefetchLaunchData();
+  }, [isLoggedIn]);
 
   const handleAddStoryPress = useCallback(async () => {
     if (!isLoggedIn) {
@@ -2020,6 +2077,8 @@ function HomeScreen() {
             )}
           </TouchableOpacity>
         )}
+
+        {!activeSOS && <HomeHazardTag />}
 
         {/* ════════════════════════════════════════════════
             TRAVEL REELS & STORIES
@@ -2774,6 +2833,48 @@ const styles = StyleSheet.create({
     color: '#065F46',
     fontSize: 11.5,
     fontWeight: '800',
+  },
+  homeAlertTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginHorizontal: 20,
+    marginBottom: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  homeAlertTagCritical: {
+    backgroundColor: '#B91C1C',
+    borderColor: '#EF4444',
+  },
+  homeAlertTagWarning: {
+    backgroundColor: '#C2410C',
+    borderColor: '#FB923C',
+  },
+  homeAlertTagIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  homeAlertTagTextWrap: {
+    flex: 1,
+  },
+  homeAlertTagBadge: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  homeAlertTagTitle: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 1,
   },
   roleCard: {
     flex: 1,

@@ -11,6 +11,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import { AppState } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/query-keys';
+import { prefetchLaunchData } from '@/lib/prefetch-launch';
 import { apiService, clearTokens, ApiError, type CreateTripInput, type SosTriggerResult } from '../services/api';
 import { socketService } from '../services/socket';
 import { eventBus } from '../services/event-bus';
@@ -267,6 +268,7 @@ interface AppContextType {
   setTyping: (isTyping: boolean) => void;
   typingUser: { roomId: string; userId: string; userName: string; userAvatar?: string | null; isTyping: boolean } | null;
   sosAlerts: SOSAlert[];
+  refreshSosAlerts: () => void;
   /**
    * Resolves with what the server says actually happened — who was reached,
    * and its own wording for it — or null when the alert could not be
@@ -617,6 +619,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
   }, []);
 
+  const refreshSosAlerts = useCallback(() => {
+    apiService
+      .getSOSAlerts()
+      .then((alerts) => {
+        if (alerts) {
+          setSosAlerts(alerts.filter((a) => a.status === 'ACTIVE' || String(a.status).toUpperCase() === 'ACTIVE'));
+        }
+      })
+      .catch((e) => logger.warn('[Safety] Refresh SOS alerts failed:', e));
+  }, []);
+
   const reloadIncomingRequestsCount = useCallback(() => {
     if (!isLoggedIn) return;
     apiService
@@ -661,7 +674,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .getNotifications()
       .then((notifs) => {
         if (notifs && notifs.length > 0) {
-          const hasAnyUnread = notifs.some((n: AppNotification) => n.unread === true);
+          const hasAnyUnread = notifs.some(
+            (n: AppNotification) => n.unread === true && !(n.type === 'HAZARD' && !n.userId),
+          );
           setHasUnreadNotification(hasAnyUnread);
         } else {
           setHasUnreadNotification(false);
@@ -837,22 +852,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       socketService.joinRoom('trip-1');
     }
 
-    // Proactively fetch all user chat rooms and join their socket channels
-    apiService
-      .getChats()
-      .then((rooms) => {
-        if (rooms && rooms.length > 0) {
-          rooms.forEach((r) => socketService.joinRoom(r.id));
-          organizerInquiryRoomIdsRef.current = new Set(
-            rooms.filter((r) => isOrganizerEnquiry(r)).map((r) => r.id),
-          );
-          const hasUnread = rooms.some((r) => r.unreadCount > 0 && !isOrganizerEnquiry(r));
-          if (hasUnread) {
-            setHasUnreadChat(true);
-          }
-        }
-      })
-      .catch(() => {});
+    // Warm stories feed + chat inbox before the user opens those screens,
+    // then join the same rooms so messages arrive in the background.
+    void prefetchLaunchData().then(() => {
+      const rooms = queryClient.getQueryData<ChatRoomSummary[]>(queryKeys.chats()) ?? [];
+      if (rooms.length === 0) return;
+      rooms.forEach((r) => socketService.joinRoom(r.id));
+      organizerInquiryRoomIdsRef.current = new Set(
+        rooms.filter((r) => isOrganizerEnquiry(r)).map((r) => r.id),
+      );
+      const hasUnread = rooms.some((r) => r.unreadCount > 0 && !isOrganizerEnquiry(r));
+      if (hasUnread) {
+        setHasUnreadChat(true);
+      }
+    });
 
     refreshTrips();
     reloadJoinRequests();
@@ -916,9 +929,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const unsubSOS = socketService.onSOS((alert) => {
       if (alert) {
+        const activeAlert = { ...alert, status: 'ACTIVE' as const };
         setSosAlerts((prev) => {
-          if (prev.some((a) => a.id === alert.id)) return prev;
-          return [alert, ...prev];
+          if (prev.some((a) => a.id === alert.id)) {
+            return prev.map((a) => (a.id === alert.id ? activeAlert : a));
+          }
+          return [activeAlert, ...prev];
         });
       }
     });
@@ -1535,6 +1551,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setTyping,
       typingUser,
       sosAlerts,
+      refreshSosAlerts,
       triggerSOS,
       resolveSOS,
       activeRoomId,
@@ -1582,6 +1599,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setTyping,
       typingUser,
       sosAlerts,
+      refreshSosAlerts,
       triggerSOS,
       resolveSOS,
       activeRoomId,

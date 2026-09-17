@@ -188,6 +188,8 @@ router.post('/sos', sosLimiter, async (req, res) => {
     const io = req.app.get('socketio');
     if (io) {
       audience.userIds.forEach((uid: string) => io.to(uid).emit('sosReceived', alertPayload));
+      // Broadcast to all connected clients so the alert ticker appears on Home and Chat tabs on all devices immediately
+      io.emit('sosReceived', alertPayload);
     }
 
     if (recipients.length > 0) {
@@ -195,21 +197,6 @@ router.post('/sos', sosLimiter, async (req, res) => {
       const content = audience.chatRooms.length > 0
         ? `Emergency alert from ${displayName} on ${audience.chatRooms[0]!.tripName}.`
         : `Emergency alert from ${displayName}.`;
-      const chatRoomId = audience.chatRooms[0]?.chatRoomId ?? null;
-      const tripId = audience.tripIds[0] ?? null;
-
-      // Persisted per recipient: socket delivery alone loses the alert for
-      // anyone who was not connected at that moment, which is precisely the
-      // case an emergency has to survive.
-      await prisma.notification.createMany({
-        data: recipients.map((uid) => ({
-          userId: uid,
-          type: 'HAZARD' as const,
-          title,
-          content,
-          time: 'Just now',
-        })),
-      });
 
       await sendPushToUsers(recipients, 'HAZARD', {
         title,

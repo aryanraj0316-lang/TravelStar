@@ -117,6 +117,7 @@
     "viewDetails": "View Details",
     "destinationCardLabel": "{{name}}, rated {{rating}}",
     "routeSafety": "Route Safety",
+    "liveAlert": "ALERT",
     "allClear": "All Clear",
     "allClearMinimalDesc": "All monitored routes are safe and running normally.",
     "guestTraveler": "Guest Traveler",
