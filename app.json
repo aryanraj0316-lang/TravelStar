@@ -19,7 +19,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.travelstar.app"
+      "package": "com.travelstar.app",
+      "softwareKeyboardLayoutMode": "resize"
     },
     "web": {
       "output": "static",

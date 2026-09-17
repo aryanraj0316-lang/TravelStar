@@ -56,9 +56,12 @@ import {
   ActivityIndicator,
   Animated,
   BackHandler,
+  Dimensions,
   FlatList,
   Image,
   Keyboard,
+  KeyboardAvoidingView,
+  LayoutChangeEvent,
   Linking,
   Modal,
   PanResponder,
@@ -1516,10 +1519,8 @@ function ChatScreen() {
   const [selectedEmojiCategory, setSelectedEmojiCategory] = useState('popular');
   useEffect(() => {
     setIsEmojiPickerOpen(false);
+    setIsAttachmentOpen(false);
   }, [selectedRoomId]);
-
-  // Keyboard height tracking for input bar repositioning
-  const keyboardOffset = useState(() => new Animated.Value(0))[0];
 
   // Custom Modal Forms
   const [activeModal, setActiveModal] = useState<'NONE' | 'LOCATION'>('NONE');
@@ -2034,34 +2035,7 @@ function ChatScreen() {
     }).start();
   }, [isAttachmentOpen, attachPanelHeight]);
 
-  // Keyboard show/hide — lift input bar above keyboard
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
 
-    const onShow = Keyboard.addListener(showEvent, (e) => {
-      const kbHeight = e.endCoordinates.height;
-      Animated.timing(keyboardOffset, {
-        toValue: kbHeight,
-        duration: Platform.OS === 'ios' ? 250 : 150,
-        useNativeDriver: false,
-      }).start();
-      scrollToBottom();
-    });
-
-    const onHide = Keyboard.addListener(hideEvent, () => {
-      Animated.timing(keyboardOffset, {
-        toValue: 0,
-        duration: Platform.OS === 'ios' ? 200 : 100,
-        useNativeDriver: false,
-      }).start();
-    });
-
-    return () => {
-      onShow.remove();
-      onHide.remove();
-    };
-  }, [keyboardOffset, scrollToBottom]);
 
   // docs/REMEDIATION.md §8.7: this was a "Typing indicator simulation" (the
   // original code's own comment) — a fixed setTimeout that showed a
@@ -2651,7 +2625,7 @@ function ChatScreen() {
 
   const attachMenuHeight = attachPanelHeight.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, 120],
+    outputRange: [0, 80],
   });
 
   // A pre-join enquiry thread belongs solely in the organizer portal's
@@ -2758,6 +2732,77 @@ function ChatScreen() {
     setIsSettingsOpen(false);
   };
 
+  const handleExitRoom = useCallback(() => {
+    if (selectedRoomId) {
+      const leavingRoomId = selectedRoomId;
+      let noneUnreadLeft = false;
+      setInboxRooms((prev) => {
+        const updated = prev.map((r) =>
+          r.id === leavingRoomId || `room-${r.id}` === leavingRoomId || r.id === `room-${leavingRoomId}`
+            ? { ...r, unreadCount: 0 }
+            : r,
+        );
+        if (!updated.some((r) => r.unreadCount > 0)) noneUnreadLeft = true;
+        return updated;
+      });
+      if (noneUnreadLeft) clearChatUnread();
+    }
+    setSelectedRoomId(null);
+    setIsSettingsOpen(false);
+    setUnreadSessionCount(0);
+  }, [selectedRoomId, clearChatUnread, setSelectedRoomId]);
+
+  const handleCloseRoom = useCallback(() => {
+    if (selectedMessageForOptions) {
+      setSelectedMessageForOptions(null);
+      return;
+    }
+    if (messageInfoOpen) {
+      setMessageInfoOpen(false);
+      return;
+    }
+    if (isEmojiPickerOpen) {
+      setIsEmojiPickerOpen(false);
+      return;
+    }
+    if (isAttachmentOpen) {
+      setIsAttachmentOpen(false);
+      return;
+    }
+    if (replyingToMessage) {
+      setReplyingToMessage(null);
+      return;
+    }
+    if (isSettingsOpen) {
+      setIsSettingsOpen(false);
+      return;
+    }
+    if (itineraryModalMode !== 'NONE') {
+      setItineraryModalMode('NONE');
+      return;
+    }
+    if (isEditTripModalOpen) {
+      setIsEditTripModalOpen(false);
+      return;
+    }
+    if (activeModal !== 'NONE') {
+      setActiveModal('NONE');
+      return;
+    }
+    handleExitRoom();
+  }, [
+    selectedMessageForOptions,
+    messageInfoOpen,
+    isEmojiPickerOpen,
+    isAttachmentOpen,
+    replyingToMessage,
+    isSettingsOpen,
+    itineraryModalMode,
+    isEditTripModalOpen,
+    activeModal,
+    handleExitRoom,
+  ]);
+
   // --- SCREEN 0: GUEST SIGN-IN REQUIRED VIEW ---
   if (!isLoggedIn) {
     return (
@@ -2778,9 +2823,8 @@ function ChatScreen() {
   }
 
   // --- SCREEN 1: WHATSAPP-STYLE INBOX LIST VIEW ---
-  if (!selectedRoomId) {
-    return (
-      <SafeAreaView edges={['top', 'left', 'right']} style={styles.inboxContainer}>
+  return (
+    <SafeAreaView edges={['top', 'left', 'right']} style={styles.inboxContainer}>
         {/* WhatsApp-Style Header */}
         <View style={styles.inboxHeader}>
           <Text style={styles.inboxHeaderTitle}>{t('chat.travelStarChats')}</Text>
@@ -3200,43 +3244,32 @@ function ChatScreen() {
             </View>
           </View>
         )}
-      </SafeAreaView>
-    );
-  }
 
-  // --- SCREEN 2: CLEAN CONVERSATION DETAIL VIEW ---
-  return (
-    <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
-      {/* ─── CLEAN ROOM HEADER BAR ───────────────────────────── */}
-      <View style={styles.roomHeaderBar}>
-        <View style={styles.headerLeftMeta}>
-          <TouchableOpacity
-            style={styles.backBtnTouch}
-            onPress={() => {
-              if (selectedRoomId) {
-                const leavingRoomId = selectedRoomId;
-                let noneUnreadLeft = false;
-                setInboxRooms((prev) => {
-                  const updated = prev.map((r) =>
-                    r.id === leavingRoomId || `room-${r.id}` === leavingRoomId || r.id === `room-${leavingRoomId}`
-                      ? { ...r, unreadCount: 0 }
-                      : r,
-                  );
-                  if (!updated.some((r) => r.unreadCount > 0)) noneUnreadLeft = true;
-                  return updated;
-                });
-                if (noneUnreadLeft) clearChatUnread();
-              }
-              setSelectedRoomId(null);
-              setIsSettingsOpen(false);
-              setUnreadSessionCount(0);
-            }}
-            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-            accessibilityRole="button"
-            accessibilityLabel={t('chat.goBack')}
-          >
-            <ArrowLeft size={20} color={C.text} />
-          </TouchableOpacity>
+      {/* ─── SCREEN 2: CONVERSATION DETAIL MODAL (Matching Chats & Approvals in group-organizer.tsx) ─── */}
+      <Modal
+        visible={!!selectedRoomId}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={handleCloseRoom}
+      >
+        {!!selectedRoomId && (
+          <SafeAreaView edges={['top', 'bottom']} style={styles.container}>
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+              style={{ flex: 1 }}
+            >
+              {/* ─── CLEAN ROOM HEADER BAR ───────────────────────────── */}
+              <View style={styles.roomHeaderBar}>
+                <View style={styles.headerLeftMeta}>
+                  <TouchableOpacity
+                    style={styles.backBtnTouch}
+                    onPress={handleExitRoom}
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('chat.goBack')}
+                  >
+                    <ArrowLeft size={20} color={C.text} />
+                  </TouchableOpacity>
 
           <Avatar uri={activeRoom?.avatar || findMemberAvatar(undefined, activeRoom?.name, undefined, dbMembers)} name={activeRoom?.name || 'Chat'} size={40} style={styles.roomHeaderAvatar} />
 
@@ -3381,19 +3414,11 @@ function ChatScreen() {
           initialNumToRender={20}
           maxToRenderPerBatch={15}
           windowSize={11}
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          keyboardShouldPersistTaps="handled"
           ListHeaderComponent={
             <>
-              {/* Scroll spacer dynamically adjusts with keyboard height to keep latest messages clearly visible above the input box */}
-              <Animated.View
-                style={{
-                  height: Animated.add(
-                    selectedRoomId
-                      ? (isEmojiPickerOpen ? 340 : 120)
-                      : (isEmojiPickerOpen ? 400 : 170),
-                    keyboardOffset,
-                  ),
-                }}
-              />
+              <View style={{ height: 8 }} />
               {isTyping && (
                 <View style={styles.typingIndicatorRow}>
                   <View style={styles.typingDotWrap}>
@@ -3406,7 +3431,7 @@ function ChatScreen() {
           }
         />
 
-                {/* Floating Jump to Bottom Button when scrolled up (e.g. reading unread messages) */}
+        {/* Floating Jump to Bottom Button when scrolled up (e.g. reading unread messages) */}
         {isScrolledUp && (
           <TouchableOpacity
             style={styles.floatingScrollBottomBtn}
@@ -3423,67 +3448,53 @@ function ChatScreen() {
             )}
           </TouchableOpacity>
         )}
+      </View>
 
-        {/* Floating Attachments Drawer */}
-        <Animated.View
-          style={[
-            styles.attachmentPanel,
-            {
-              height: attachMenuHeight,
-              bottom: Animated.add(selectedRoomId ? Math.max(insets.bottom + 58, 74) : 140, keyboardOffset),
-              borderWidth: isAttachmentOpen ? 1 : 0,
-            },
-          ]}
+      {/* Floating Attachments Drawer */}
+      <Animated.View
+        style={[
+          styles.attachmentPanel,
+          {
+            height: attachMenuHeight,
+            borderWidth: isAttachmentOpen ? 1 : 0,
+          },
+        ]}
+      >
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.attachScrollInner}
         >
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.attachScrollInner}
+          <TouchableOpacity
+            style={styles.attachBtn}
+            onPress={() => setActiveModal('LOCATION')}
+            accessibilityRole="button"
+            accessibilityLabel={t('chat.sharePlace')}
           >
-            {/* "Create Poll" and "Split Expense" removed here — polls had
-                  no backend at all, and the expense form wrote to a
-                  local-only ledger that contradicted the real one
-                  (docs/REMEDIATION.md §8.7). The expense tracker is reachable
-                  from this room's settings panel. */}
+            <LinearGradient colors={['#64B5F6', '#2196F3']} style={styles.attachIconCircle}>
+              <MapPin size={18} color="#FFF" />
+            </LinearGradient>
+            <Text style={styles.attachLabel}>{t('chat.sharePlace')}</Text>
+          </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.attachBtn}
-              onPress={() => setActiveModal('LOCATION')}
-              accessibilityRole="button"
-              accessibilityLabel={t('chat.sharePlace')}
-            >
-              <LinearGradient colors={['#64B5F6', '#2196F3']} style={styles.attachIconCircle}>
-                <MapPin size={18} color="#FFF" />
-              </LinearGradient>
-              <Text style={styles.attachLabel}>{t('chat.sharePlace')}</Text>
-            </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.attachBtn}
+            onPress={handleSendPhoto}
+            disabled={photoUploading}
+            accessibilityRole="button"
+            accessibilityLabel={photoUploading ? t('chat.sendingPhoto') : t('chat.sendPhotoHint')}
+            accessibilityState={{ disabled: photoUploading, busy: photoUploading }}
+          >
+            <LinearGradient colors={['#4DB6AC', '#009688']} style={styles.attachIconCircle}>
+              {photoUploading ? <ActivityIndicator size="small" color="#FFF" /> : <ImageIcon size={18} color="#FFF" />}
+            </LinearGradient>
+            <Text style={styles.attachLabel}>{photoUploading ? t('chat.sendingEllipsis') : t('chat.sendPhoto')}</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </Animated.View>
 
-            <TouchableOpacity
-              style={styles.attachBtn}
-              onPress={handleSendPhoto}
-              disabled={photoUploading}
-              accessibilityRole="button"
-              accessibilityLabel={photoUploading ? t('chat.sendingPhoto') : t('chat.sendPhotoHint')}
-              accessibilityState={{ disabled: photoUploading, busy: photoUploading }}
-            >
-              <LinearGradient colors={['#4DB6AC', '#009688']} style={styles.attachIconCircle}>
-                {photoUploading ? <ActivityIndicator size="small" color="#FFF" /> : <ImageIcon size={18} color="#FFF" />}
-              </LinearGradient>
-              <Text style={styles.attachLabel}>{photoUploading ? t('chat.sendingEllipsis') : t('chat.sendPhoto')}</Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </Animated.View>
-
-        {/* BOTTOM MESSAGE INPUT BAR — lifts with keyboard, dynamically positioned when tab bar is hidden, respecting system bottom inset */}
-        <Animated.View
-          style={[
-            styles.bottomInputBarDetail,
-            {
-              bottom: keyboardOffset,
-              paddingBottom: insets.bottom > 0 ? insets.bottom + 12 : 20,
-            },
-          ]}
-        >
+      {/* BOTTOM MESSAGE INPUT BAR */}
+      <View style={styles.bottomInputBarDetail}>
           {replyingToMessage && (
             <View style={styles.replyPreviewContainer}>
               <View style={styles.replyPreviewTextCol}>
@@ -3647,8 +3658,8 @@ function ChatScreen() {
               </ScrollView>
             </View>
           )}
-        </Animated.View>
-      </View>
+        </View>
+      </KeyboardAvoidingView>
 
 
       {/* ─── MESSAGE LONG PRESS OPTIONS OVERLAY ────────────────── */}
@@ -4462,6 +4473,9 @@ function ChatScreen() {
         </Pressable>
       </Modal>
 
+          </SafeAreaView>
+        )}
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -5329,7 +5343,7 @@ const styles = StyleSheet.create({
   floatingScrollBottomBtn: {
     position: 'absolute',
     right: 16,
-    bottom: 60,
+    bottom: 16,
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -6255,11 +6269,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
 
-  // Dynamic Floating Detail Input Bar sits at bottom: 82 to float perfectly above nav bar!
   bottomInputBarDetail: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
     flexDirection: 'column',
     alignItems: 'stretch',
     paddingHorizontal: 14,
@@ -6268,7 +6278,6 @@ const styles = StyleSheet.create({
     backgroundColor: C.bg,
     borderTopWidth: 1,
     borderTopColor: '#E2E8F0',
-    zIndex: 90,
   },
   plusCircle: {
     width: 40,
@@ -6432,9 +6441,8 @@ const styles = StyleSheet.create({
 
   // Floating Attachments Panel
   attachmentPanel: {
-    position: 'absolute',
-    left: 10,
-    right: 10,
+    marginHorizontal: 10,
+    marginBottom: 6,
     backgroundColor: '#FFFFFF',
     overflow: 'hidden',
     borderRadius: 20,
@@ -6444,8 +6452,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.12,
     shadowRadius: 10,
-    elevation: 8,
-    zIndex: 91,
+    elevation: 4,
   },
   attachScrollInner: {
     paddingHorizontal: 16,
