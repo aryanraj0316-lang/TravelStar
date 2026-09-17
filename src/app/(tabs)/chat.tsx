@@ -517,114 +517,24 @@ function MessageBubble({
   const senderAvatar = msg.avatar || findMemberAvatar(msg.senderId, msg.senderName, msg.senderRole, members || []);
 
   if (isSOS) {
-    const { issue, requester, isStale } = extractSosDetails(msg.content, msg.sosReason);
+    const { issue, requester } = extractSosDetails(msg.content, msg.sosReason);
     const displayName = requester || (msg.isMe ? t('chat.you', 'You') : msg.senderName) || t('common.traveller', 'Traveller');
-    const lat = msg.locationCoords?.latitude;
-    const lng = msg.locationCoords?.longitude;
-    const hasCoords = lat != null && lng != null;
+
+    let textContent = '';
+    if (hasTranslation && msg.translations?.hindi) {
+      textContent = msg.translations.hindi;
+    } else if (issue) {
+      textContent = `🚨 Emergency SOS: ${displayName} has requested assistance — ${issue}`;
+    } else {
+      textContent = `🚨 Emergency SOS: ${displayName} has requested assistance.`;
+    }
+
+    const timeStr = formatChatTime(msg.createdAt || msg.timestamp);
 
     return (
-      <View style={styles.sosBroadcastRow}>
-        <View style={styles.sosCardAlert}>
-          {/* Header Badge & Alert Level */}
-          <View style={styles.sosCardTopRow}>
-            <View style={styles.sosBadgePill}>
-              <ShieldAlert size={14} color="#EF4444" strokeWidth={2.4} />
-              <Text style={styles.sosBadgePillText}>
-                {t('chat.criticalSosDispatch', 'CRITICAL SOS ALERT')}
-              </Text>
-            </View>
-            <Text style={styles.sosCardTimestamp}>
-              {formatChatTime(msg.createdAt || msg.timestamp)}
-            </Text>
-          </View>
-
-          {/* Requester Identity Row */}
-          <View style={styles.sosRequesterRow}>
-            <View style={styles.sosRequesterIconCircle}>
-              <AlertTriangle size={18} color="#FFFFFF" strokeWidth={2.4} />
-            </View>
-            <View style={styles.sosRequesterMeta}>
-              <Text style={styles.sosRequesterTitle} numberOfLines={1}>
-                {displayName}
-              </Text>
-              <Text style={styles.sosRequesterSub}>
-                {t('chat.sosAssistanceRequested', 'Emergency assistance requested')}
-              </Text>
-            </View>
-          </View>
-
-          {/* Reported Issue Box */}
-          <View style={styles.sosIssueCard}>
-            <View style={styles.sosIssueLabelRow}>
-              <AlertCircle size={13} color="#F87171" strokeWidth={2.2} />
-              <Text style={styles.sosIssueLabelText}>
-                {t('chat.reportedIssueLabel', 'REPORTED ISSUE / REASON')}
-              </Text>
-            </View>
-            <Text style={styles.sosIssueMainText}>
-              {issue ? issue : t('chat.sosImmediateHelpNeeded', 'Immediate emergency assistance required at current position.')}
-            </Text>
-          </View>
-
-          {/* Location and Telemetry Strip */}
-          {hasCoords && (
-            <View style={styles.sosLocationStrip}>
-              <View style={styles.sosLocationCoordsRow}>
-                <MapPin size={13} color="#FCA5A5" />
-                <Text style={styles.sosLocationCoordsText}>
-                  {lat.toFixed(4)}° N, {lng.toFixed(4)}° E
-                </Text>
-              </View>
-              {isStale && (
-                <View style={styles.sosStaleBadge}>
-                  <Text style={styles.sosStaleBadgeText}>
-                    {t('chat.lastKnownPosition', 'Last Known Position')}
-                  </Text>
-                </View>
-              )}
-            </View>
-          )}
-
-          {/* Action Controls */}
-          <View style={styles.sosAlertBtnRow}>
-            {hasCoords && (
-              <TouchableOpacity
-                style={styles.sosPrimaryBtn}
-                onPress={() => onOpenMap(msg)}
-                accessibilityRole="button"
-                accessibilityLabel={t('chat.showOnMap', 'View on Map')}
-              >
-                <MapPin size={13} color="#FFFFFF" strokeWidth={2.4} />
-                <Text style={styles.sosPrimaryBtnText}>{t('chat.showOnMap', 'View on Map')}</Text>
-              </TouchableOpacity>
-            )}
-
-            {hasCoords && (
-              <TouchableOpacity
-                style={styles.sosSecondaryBtn}
-                onPress={() => onOpenExternalMaps(msg)}
-                accessibilityRole="button"
-                accessibilityLabel={t('chat.openInMaps', 'Navigate')}
-              >
-                <CornerUpLeft size={13} color="#E2E8F0" strokeWidth={2.4} />
-                <Text style={styles.sosSecondaryBtnText}>{t('chat.navigate', 'Navigate')}</Text>
-              </TouchableOpacity>
-            )}
-
-            {(canResolveSOS || msg.isMe) && (
-              <TouchableOpacity
-                style={styles.sosResolveBtn}
-                onPress={onResolveSOS}
-                accessibilityRole="button"
-                accessibilityLabel={t('chat.markAsSafe', "I'm safe")}
-              >
-                <ShieldCheck size={13} color="#FFFFFF" strokeWidth={2.4} />
-                <Text style={styles.sosResolveBtnText}>{t('chat.safe', "I'm safe")}</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
+      <View style={styles.sosMessageContainer}>
+        <Text style={styles.sosMessageText}>{textContent}</Text>
+        {timeStr ? <Text style={styles.sosMessageTime}>{timeStr}</Text> : null}
       </View>
     );
   }
@@ -7602,6 +7512,31 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
     fontWeight: '500',
+  },
+  sosMessageContainer: {
+    alignSelf: 'center',
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.25)',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    marginVertical: 8,
+    maxWidth: '88%',
+    alignItems: 'center',
+  },
+  sosMessageText: {
+    color: '#DC2626',
+    fontSize: 12.5,
+    lineHeight: 18,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  sosMessageTime: {
+    color: C.textMuted,
+    fontSize: 11,
+    marginTop: 3,
+    textAlign: 'center',
   },
 });
 

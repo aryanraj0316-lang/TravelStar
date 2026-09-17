@@ -149,7 +149,7 @@ router.post('/sos', sosLimiter, async (req, res) => {
     for (const room of audience.chatRooms) {
       const body = isStale
         ? `Emergency alert — ${displayName} has requested assistance. Showing their Last known location, which may not be current.`
-        : `Emergency alert — ${displayName} has requested assistance at the location below.`;
+        : `Emergency alert — ${displayName} has requested assistance.`;
       const saved = await prisma.message.create({
         data: {
           chatRoomId: room.chatRoomId,
