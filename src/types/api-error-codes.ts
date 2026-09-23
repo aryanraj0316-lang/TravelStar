@@ -15,6 +15,8 @@ export type ApiErrorCode =
   | 'ACCOUNT_LOCKED'
   | 'APPROVAL_REQUIRED'
   | 'EMAIL_ALREADY_REGISTERED'
+  | 'PHONE_ALREADY_REGISTERED'
+  | 'INVALID_PHONE'
   | 'GUIDE_PROFILE_EXISTS'
   | 'GUIDE_PROFILE_NOT_FOUND'
   | 'INVALID_CREDENTIALS'
@@ -22,6 +24,7 @@ export type ApiErrorCode =
   | 'REFRESH_TOKEN_INVALID'
   | 'REFRESH_TOKEN_REUSED'
   | 'RESET_TOKEN_INVALID'
+  | 'OTP_INVALID'
   // The database was too contended to start a transaction; nothing was
   // written, so the caller may safely retry (docs/REMEDIATION.md §5.4).
   | 'SERVICE_BUSY'

@@ -9,18 +9,24 @@
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_API_URL": "http://localhost:5000"
-      }
+      },
+      "channel": "development"
     },
     "preview": {
       "distribution": "internal",
+      "channel": "preview",
+      "android": {
+        "buildType": "apk"
+      },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://travelstar.onrender.com"
       }
     },
     "production": {
       "autoIncrement": true,
+      "channel": "production",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://api.travelstar.app"
+        "EXPO_PUBLIC_API_URL": "https://travelstar.onrender.com"
       }
     }
   },

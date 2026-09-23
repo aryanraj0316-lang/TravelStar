@@ -17,12 +17,12 @@ export async function seedFeaturedTrips(client: PrismaClient = prisma) {
       verificationStatus: 'VERIFIED',
       profile: {
         create: {
-          firstName: 'TravelStar',
+          firstName: 'Yatrenzo',
           lastName: 'Expeditions',
           verifiedBadge: true,
           rating: 4.9,
           avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&q=80',
-          bio: 'Official TravelStar community expedition leader & verified organiser.',
+          bio: 'Official Yatrenzo community expedition leader & verified organiser.',
           country: 'India',
         },
       },

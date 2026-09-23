@@ -167,7 +167,7 @@ export default function TripPaymentScreen() {
           key: init.keyId || '',
           amount: amountPaise,
           currency: 'INR',
-          name: 'TravelStar',
+          name: 'Yatrenzo',
           description: `Trip joining fee for ${order.tripName || 'group trip'}`,
           order_id: init.orderId,
           theme: { color: C.blue },

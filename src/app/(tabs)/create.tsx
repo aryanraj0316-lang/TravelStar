@@ -375,7 +375,7 @@ function CreateTripScreen() {
               `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(city + ', India')}`,
               {
                 headers: {
-                  'User-Agent': 'TravelStarApp/1.0',
+                  'User-Agent': 'YatrenzoApp/1.0',
                 },
               },
             );

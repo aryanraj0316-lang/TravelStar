@@ -1,5 +1,5 @@
 import { io, type Socket } from 'socket.io-client';
-import { clearTokens, getHostUrl, refreshAccessToken } from './api';
+import { clearTokens, getHostUrl, refreshSession } from './api';
 import { eventBus } from './event-bus';
 import { secureStorage } from './secureStorage';
 import { logger } from '@/lib/logger';
@@ -157,8 +157,10 @@ class SocketService {
         // gives the next attempt a real token to pick up via the auth
         // callback, rather than retrying the same dead one for 10 attempts.
         if (err?.message === 'UNAUTHORIZED') {
-          void refreshAccessToken().then((newToken) => {
-            if (newToken) return;
+          void refreshSession().then((outcome) => {
+            // Only a refused refresh token ends the session; being offline
+            // or hitting a cold server just means try again later.
+            if (!('rejected' in outcome)) return;
             // Refresh itself failed — the session is dead (an expired
             // refresh token, or an account removed since the token was
             // issued), not just the access token. Retrying can never fix

@@ -294,6 +294,10 @@ model PasswordResetToken {
   expiresAt DateTime
   usedAt    DateTime?
   createdAt DateTime  @default(now())
+  /// Wrong codes entered against this reset. A 6-digit code has only a
+  /// million values, so it is burned after a handful of misses rather than
+  /// left open to guessing for its whole lifetime.
+  attempts  Int       @default(0)
 
   @@index([userId])
 }

@@ -20,7 +20,7 @@ const io = createSocketServer(server);
 app.set('socketio', io);
 
 server.listen(env.PORT, () => {
-  logger.info(`TravelStar server is running on port ${env.PORT}`);
+  logger.info(`Yatrenzo server is running on port ${env.PORT}`);
 });
 
 startRetentionScheduler();

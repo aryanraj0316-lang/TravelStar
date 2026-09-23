@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { indianMobileError, normalizeIndianMobile } from '@/lib/indian-phone';
 import { useTranslation } from 'react-i18next';
 import {
   View,
@@ -28,6 +29,7 @@ import Svg, {
 } from 'react-native-svg';
 import ArrowLeft from 'lucide-react-native/icons/arrow-left';
 import Mail from 'lucide-react-native/icons/mail';
+import Phone from 'lucide-react-native/icons/phone';
 import Lock from 'lucide-react-native/icons/lock';
 import User from 'lucide-react-native/icons/user';
 import Eye from 'lucide-react-native/icons/eye';
@@ -52,6 +54,7 @@ const COMMON_PASSWORDS = new Set([
 interface FieldErrors {
   name?: string;
   email?: string;
+  phone?: string;
   password?: string;
 }
 
@@ -161,6 +164,7 @@ export default function AuthScreen() {
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -175,6 +179,7 @@ export default function AuthScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
   const nameInputRef = useRef<TextInput>(null);
   const emailInputRef = useRef<TextInput>(null);
+  const phoneInputRef = useRef<TextInput>(null);
   const passwordInputRef = useRef<TextInput>(null);
 
   useEffect(() => {
@@ -224,11 +229,18 @@ export default function AuthScreen() {
       }
     }
 
-    if (!trimmedEmail) {
-      errs.email = 'Email address is required.';
-    } else if (!emailRegex.test(trimmedEmail)) {
-      errs.email = 'Please enter a valid email address (e.g. name@example.com).';
+    // Email is collected at sign-up only: it is where password-reset codes
+    // are sent. Signing in is by mobile number alone.
+    if (mode === 'SIGNUP') {
+      if (!trimmedEmail) {
+        errs.email = 'Email address is required.';
+      } else if (!emailRegex.test(trimmedEmail)) {
+        errs.email = 'Please enter a valid email address (e.g. name@example.com).';
+      }
     }
+
+    const phoneProblem = indianMobileError(phone);
+    if (phoneProblem) errs.phone = phoneProblem;
 
     if (!password) {
       errs.password = 'Password is required.';
@@ -255,7 +267,7 @@ export default function AuthScreen() {
     if (mode === 'LOGIN') {
       setLoading(true);
       try {
-        const response = await apiService.login(email.trim(), password);
+        const response = await apiService.login(normalizeIndianMobile(phone) as string, password);
         if (!response) {
           setErrors({ password: 'Login failed — Invalid credentials.' });
           return;
@@ -286,26 +298,30 @@ export default function AuthScreen() {
         if (err instanceof ApiError) {
           if (err.code === 'INVALID_CREDENTIALS') {
             setErrors({
-              password: 'Incorrect email or password. Please try again.',
+              password: 'Incorrect mobile number or password. Please try again.',
             });
             return;
           }
           if (err.code === 'ACCOUNT_LOCKED') {
             setErrors({
-              email: err.message || 'Too many failed attempts. Please try again in 15 minutes.',
+              phone: err.message || 'Too many failed attempts. Please try again in 15 minutes.',
             });
             return;
           }
           if (err.code === 'VALIDATION_FAILED' && Array.isArray(err.details)) {
             const apiErrors: FieldErrors = {};
             for (const issue of err.details as { path?: string; message?: string }[]) {
-              if (issue.path?.includes('email')) apiErrors.email = issue.message;
+              if (issue.path?.includes('phone')) apiErrors.phone = issue.message;
               else if (issue.path?.includes('password')) apiErrors.password = issue.message;
             }
             if (Object.keys(apiErrors).length > 0) {
               setErrors(apiErrors);
               return;
             }
+          }
+          if (err.code === 'VALIDATION_FAILED') {
+            setErrors({ phone: err.message });
+            return;
           }
         }
         toast(errorToastMessage(err, t('auth.couldNotSignIn') || 'Could not sign you in'), 'error');
@@ -318,6 +334,7 @@ export default function AuthScreen() {
         const response = await apiService.register({
           name: fullName.trim(),
           email: email.trim(),
+          phoneNumber: normalizeIndianMobile(phone) as string,
           password,
           role: selectedRole,
         });
@@ -353,7 +370,7 @@ export default function AuthScreen() {
             );
           } else {
             void showAlert(
-              'Welcome to TravelStar! 🎉',
+              'Welcome to Yatrenzo! 🎉',
               `Welcome, ${userName}! Let's set up your profile — add a profile photo from your device and a bio to connect with travelers.`,
               'Set Up Profile'
             );
@@ -361,6 +378,12 @@ export default function AuthScreen() {
         }, 150);
       } catch (err: unknown) {
         if (err instanceof ApiError) {
+          if (err.code === 'PHONE_ALREADY_REGISTERED') {
+            setErrors({
+              phone: 'An account with this mobile number already exists. Please log in instead.',
+            });
+            return;
+          }
           if (err.code === 'EMAIL_ALREADY_REGISTERED') {
             setErrors({
               email: 'An account with this email already exists. Please sign in instead.',
@@ -377,6 +400,7 @@ export default function AuthScreen() {
             const apiErrors: FieldErrors = {};
             for (const issue of err.details as { path?: string; message?: string }[]) {
               if (issue.path?.includes('name')) apiErrors.name = issue.message;
+              else if (issue.path?.includes('phone')) apiErrors.phone = issue.message;
               else if (issue.path?.includes('email')) apiErrors.email = issue.message;
               else if (issue.path?.includes('password')) apiErrors.password = issue.message;
             }
@@ -485,7 +509,7 @@ export default function AuthScreen() {
 
               {/* Text on lower-left side just above the form */}
               <View style={styles.headerBottomLeftWrap} pointerEvents="none">
-                <Text style={styles.headerBrandHeading}>TravelStar</Text>
+                <Text style={styles.headerBrandHeading}>Yatrenzo</Text>
                 <Text style={styles.headerBottomLeftTitle}>
                   {mode === 'LOGIN' ? 'Welcome back' : 'Create account'}
                 </Text>
@@ -608,6 +632,7 @@ export default function AuthScreen() {
                 </View>
               )}
 
+              {mode === 'SIGNUP' && (
               <View style={styles.inputGroup}>
                 <TouchableOpacity
                   activeOpacity={0.8}
@@ -650,6 +675,45 @@ export default function AuthScreen() {
                   <View style={styles.fieldErrorRow}>
                     <CircleAlert size={12} color="#DC2626" strokeWidth={2.2} />
                     <Text style={styles.fieldErrorText}>{errors.email}</Text>
+                  </View>
+                ) : null}
+              </View>
+              )}
+
+              <View style={styles.inputGroup}>
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => phoneInputRef.current?.focus()}
+                >
+                  <Text style={styles.inputFieldLabel}>MOBILE NUMBER</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  activeOpacity={1}
+                  onPress={() => phoneInputRef.current?.focus()}
+                  style={[styles.inputBox, Boolean(errors.phone) && styles.inputBoxError]}
+                >
+                  <Phone size={16} color={errors.phone ? '#EF4444' : '#94A3B8'} strokeWidth={2} />
+                  <Text style={styles.phonePrefix}>+91</Text>
+                  <TextInput
+                    ref={phoneInputRef}
+                    placeholder="98765 43210"
+                    placeholderTextColor="#94A3B8"
+                    keyboardType="phone-pad"
+                    textContentType="telephoneNumber"
+                    autoComplete="tel"
+                    maxLength={16}
+                    value={phone}
+                    onChangeText={(text) => {
+                      setPhone(text);
+                      if (errors.phone) setErrors((prev) => ({ ...prev, phone: undefined }));
+                    }}
+                    style={styles.textInput}
+                  />
+                </TouchableOpacity>
+                {errors.phone ? (
+                  <View style={styles.fieldErrorRow}>
+                    <CircleAlert size={12} color="#DC2626" strokeWidth={2.2} />
+                    <Text style={styles.fieldErrorText}>{errors.phone}</Text>
                   </View>
                 ) : null}
               </View>
@@ -822,6 +886,12 @@ export default function AuthScreen() {
 }
 
 const styles = StyleSheet.create({
+  phonePrefix: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#334155',
+    marginLeft: 2,
+  },
   container: {
     flex: 1,
     backgroundColor: '#EFF4FB',

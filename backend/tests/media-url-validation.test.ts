@@ -1,6 +1,7 @@
 import request from 'supertest';
 import app from '../src/app';
 import prisma from '../src/services/db';
+import { uniqueTestPhone } from './test-phone';
 
 /**
  * Every URL field that other people will load must reject device-local and
@@ -28,7 +29,7 @@ async function registerUser(): Promise<string> {
   createdEmails.push(email);
   const res = await request(app)
     .post('/api/v1/auth/register')
-    .send({ name: 'Media URL Tester', email, password: 'correcthorsebattery' });
+    .send({ name: 'Media URL Tester', email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
   expect(res.status).toBe(201);
   return res.body.data.token as string;
 }

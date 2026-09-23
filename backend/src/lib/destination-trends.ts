@@ -47,7 +47,7 @@ async function fetchRecentPageviews(article: string): Promise<number | null> {
     // API callers, not an authentication credential.
     const res = await fetch(url, {
       signal: controller.signal,
-      headers: { 'User-Agent': 'TravelStar/1.0 (https://travelstar.onrender.com)' },
+      headers: { 'User-Agent': 'Yatrenzo/1.0 (https://travelstar.onrender.com)' },
     });
     if (!res.ok) return null;
     const data = (await res.json()) as PageviewsResponse;

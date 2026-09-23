@@ -209,7 +209,7 @@ app.use('/api/v1/bookings', bookingRoutes);
 
 // Liveness — no dependencies. If the process is up, this returns 200.
 app.get('/health', (req, res) => {
-  res.status(200).json({ ok: true, data: { status: 'ok', service: 'TravelStar Backend', timestamp: new Date().toISOString() } });
+  res.status(200).json({ ok: true, data: { status: 'ok', service: 'Yatrenzo Backend', timestamp: new Date().toISOString() } });
 });
 
 // Readiness — checks the dependencies the app needs to serve traffic

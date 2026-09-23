@@ -16,6 +16,9 @@ import {
   type SessionMeta,
 } from '../../services/session';
 import { isLockedOut, recordFailure, recordSuccess } from '../../services/login-attempts';
+import { normalizeIndianMobile, INDIAN_MOBILE_ERROR } from '../../lib/indian-phone';
+import { sendEmail } from '../../services/email';
+import crypto from 'node:crypto';
 import { createAvatarUploadUrl, getMissingObjectStorageVars, ObjectStorageNotConfiguredError } from '../../lib/object-storage';
 
 const router = Router();
@@ -97,6 +100,18 @@ function requestMeta(req: Request): SessionMeta {
 const registerSchema = z.object({
   name: z.string().trim().min(1).max(120),
   email: z.string().trim().toLowerCase().email(),
+  // Required: the mobile number is what an account signs in with. Normalised
+  // to +91XXXXXXXXXX so every spelling of the same number is one number.
+  phoneNumber: z
+    .string()
+    .transform((v, ctx) => {
+      const normalized = normalizeIndianMobile(v);
+      if (!normalized) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: INDIAN_MOBILE_ERROR });
+        return z.NEVER;
+      }
+      return normalized;
+    }),
   password: z.string().min(MIN_PASSWORD_LENGTH).max(200),
 });
 
@@ -115,7 +130,7 @@ router.post('/register', async (req, res) => {
       });
   }
 
-  const { name, email, password } = parsed.data;
+  const { name, email, phoneNumber, password } = parsed.data;
 
   const weak = validatePasswordStrength(password);
   if (weak) {
@@ -123,6 +138,17 @@ router.post('/register', async (req, res) => {
   }
 
   try {
+    const phoneTaken = await prisma.user.findUnique({ where: { phoneNumber }, select: { id: true } });
+    if (phoneTaken) {
+      return res.status(409).json({
+        ok: false,
+        error: {
+          code: 'PHONE_ALREADY_REGISTERED',
+          message: 'An account with this mobile number already exists. Please log in instead.',
+        },
+      });
+    }
+
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
       // Never issue a token from the registration path for an existing account.
@@ -145,6 +171,7 @@ router.post('/register', async (req, res) => {
     const user = await prisma.user.create({
       data: {
         email,
+        phoneNumber,
         passwordHash,
         role: 'TOURIST',
         verificationStatus: 'NONE',
@@ -183,8 +210,9 @@ router.post('/register', async (req, res) => {
 
 // ── Login ───────────────────────────────────────────────────────────────────
 
+// Mobile number only — email is no longer a way to sign in.
 const loginSchema = z.object({
-  email: z.string().trim().toLowerCase().email(),
+  phoneNumber: z.string().min(1).max(30),
   password: z.string().min(1).max(200),
 });
 
@@ -193,12 +221,16 @@ router.post('/login', async (req, res) => {
   if (!parsed.success) {
     return res
       .status(400)
-      .json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Please enter a valid email and password.' } });
+      .json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Please enter your mobile number and password.' } });
   }
 
-  const { email, password } = parsed.data;
+  const phoneNumber = normalizeIndianMobile(parsed.data.phoneNumber);
+  if (!phoneNumber) {
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: INDIAN_MOBILE_ERROR } });
+  }
+  const { password } = parsed.data;
 
-  if (await isLockedOut(email)) {
+  if (await isLockedOut(phoneNumber)) {
     return res
       .status(429)
       .json({
@@ -209,17 +241,17 @@ router.post('/login', async (req, res) => {
 
   try {
     const user = await prisma.user.findUnique({
-      where: { email },
+      where: { phoneNumber },
       include: USER_INCLUDE,
     });
 
     // Same response for "no such user" and "wrong password" so the endpoint
-    // cannot be used to enumerate which emails are registered.
+    // cannot be used to enumerate which numbers are registered.
     const invalid = async () => {
-      await recordFailure(email);
+      await recordFailure(phoneNumber);
       return res
         .status(401)
-        .json({ ok: false, error: { code: 'INVALID_CREDENTIALS', message: 'Incorrect email or password.' } });
+        .json({ ok: false, error: { code: 'INVALID_CREDENTIALS', message: 'Incorrect mobile number or password.' } });
     };
 
     if (!user?.passwordHash) return await invalid();
@@ -227,7 +259,7 @@ router.post('/login', async (req, res) => {
     const ok = await verifyPassword(user.passwordHash, password);
     if (!ok) return await invalid();
 
-    await recordSuccess(email);
+    await recordSuccess(phoneNumber);
 
     const accessToken = issueAccessToken({
       id: user.id,
@@ -326,33 +358,105 @@ router.post('/logout', async (req, res) => {
 
 // ── Password reset ──────────────────────────────────────────────────────────
 
-const forgotSchema = z.object({ email: z.string().trim().toLowerCase().email() });
+// ── Password reset: 6-digit code emailed to the account's address ──────────
+
+const OTP_TTL_MS = 10 * 60 * 1000;
+const OTP_MAX_ATTEMPTS = 5;
+const OTP_RESEND_COOLDOWN_MS = 60 * 1000;
+
+/** "ra***@gmail.com" — enough to recognise, not enough to harvest. */
+function maskEmail(email: string): string {
+  const [local, domain] = email.split('@');
+  if (!local || !domain) return email;
+  const head = local.slice(0, Math.min(2, local.length));
+  return `${head}${'*'.repeat(Math.max(3, local.length - head.length))}@${domain}`;
+}
+
+/**
+ * The code's hash is salted with its own row id. tokenHash is unique, and a
+ * 6-digit code has only a million values, so two users would otherwise
+ * collide on the same hash — and an unsalted hash of so small a space is
+ * trivially reversible anyway.
+ */
+function hashOtp(rowId: string, otp: string): string {
+  return hashResetToken(`${rowId}:${otp}`);
+}
+
+const forgotSchema = z.object({ phoneNumber: z.string().min(1).max(30) });
 
 router.post('/forgot-password', async (req, res) => {
   const parsed = forgotSchema.safeParse(req.body);
-  // Always report success — revealing whether an email is registered is an
-  // account-enumeration leak.
-  const genericOk = () =>
-    res.status(200).json({ ok: true, data: { message: 'If that email is registered, a reset link has been sent.' } });
+  const phoneNumber = parsed.success ? normalizeIndianMobile(parsed.data.phoneNumber) : null;
+  if (!phoneNumber) {
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: INDIAN_MOBILE_ERROR } });
+  }
 
-  if (!parsed.success) return genericOk();
+  const genericOk = (extra: Record<string, unknown> = {}) =>
+    res.status(200).json({
+      ok: true,
+      data: {
+        message: 'If this number is registered, a verification code has been sent to its email.',
+        ...extra,
+      },
+    });
 
   try {
-    const user = await prisma.user.findUnique({ where: { email: parsed.data.email } });
-    if (user) {
-      const raw = generateResetToken();
-      await prisma.passwordResetToken.create({
-        data: {
-          userId: user.id,
-          tokenHash: hashResetToken(raw),
-          expiresAt: new Date(Date.now() + 30 * 60 * 1000),
-        },
-      });
-      // TODO(email): send this via a real provider. Until then the link is only
-      // logged server-side so the flow is testable without leaking it to the client.
-      logger.warn(`[Auth] Password reset token for ${user.email}: ${raw}`);
+    const user = await prisma.user.findUnique({
+      where: { phoneNumber },
+      include: { profile: true },
+    });
+    if (!user?.email) return genericOk();
+
+    // One code at a time, and not re-sent faster than once a minute.
+    const latest = await prisma.passwordResetToken.findFirst({
+      where: { userId: user.id, usedAt: null },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (latest && Date.now() - latest.createdAt.getTime() < OTP_RESEND_COOLDOWN_MS) {
+      const retryAfterSeconds = Math.ceil(
+        (OTP_RESEND_COOLDOWN_MS - (Date.now() - latest.createdAt.getTime())) / 1000,
+      );
+      return genericOk({ maskedEmail: maskEmail(user.email), retryAfterSeconds });
     }
-    return genericOk();
+
+    // Any earlier unused code stops working the moment a new one is issued.
+    await prisma.passwordResetToken.updateMany({
+      where: { userId: user.id, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+
+    const otp = crypto.randomInt(0, 1_000_000).toString().padStart(6, '0');
+    const rowId = crypto.randomUUID();
+    await prisma.passwordResetToken.create({
+      data: {
+        id: rowId,
+        userId: user.id,
+        tokenHash: hashOtp(rowId, otp),
+        expiresAt: new Date(Date.now() + OTP_TTL_MS),
+      },
+    });
+
+    const firstName = user.profile?.firstName || 'there';
+    const { sent } = await sendEmail({
+      to: user.email,
+      toName: firstName,
+      subject: 'Your Yatrenzo password reset code',
+      text:
+        `Hi ${firstName},\n\nYour Yatrenzo password reset code is ${otp}.\n` +
+        `It expires in 10 minutes. If you did not request this, you can ignore this email.\n`,
+      html:
+        `<p>Hi ${firstName},</p>` +
+        `<p>Your Yatrenzo password reset code is:</p>` +
+        `<p style="font-size:28px;font-weight:700;letter-spacing:6px">${otp}</p>` +
+        `<p>It expires in 10 minutes. If you did not request this, you can ignore this email.</p>`,
+    });
+    if (!sent) {
+      // Brevo not configured yet (or it failed): keep the flow testable
+      // without ever sending the code back to the client.
+      logger.warn(`[Auth] Password reset code for ${user.email}: ${otp}`);
+    }
+
+    return genericOk({ maskedEmail: maskEmail(user.email), retryAfterSeconds: 60 });
   } catch (err) {
     logger.error('[Auth] Forgot-password failed:', err);
     return genericOk();
@@ -360,19 +464,27 @@ router.post('/forgot-password', async (req, res) => {
 });
 
 const resetSchema = z.object({
-  token: z.string().min(1),
+  phoneNumber: z.string().min(1).max(30),
+  otp: z.string().regex(/^\d{6}$/, 'Enter the 6-digit code from your email.'),
   password: z.string().min(MIN_PASSWORD_LENGTH).max(200),
 });
 
 router.post('/reset-password', async (req, res) => {
   const parsed = resetSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res
-      .status(400)
-      .json({
-        ok: false,
-        error: { code: 'VALIDATION_FAILED', message: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.` },
-      });
+    const otpIssue = parsed.error.issues.find((i) => i.path[0] === 'otp');
+    return res.status(400).json({
+      ok: false,
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: otpIssue ? otpIssue.message : `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`,
+      },
+    });
+  }
+
+  const phoneNumber = normalizeIndianMobile(parsed.data.phoneNumber);
+  if (!phoneNumber) {
+    return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: INDIAN_MOBILE_ERROR } });
   }
 
   const weak = validatePasswordStrength(parsed.data.password);
@@ -380,33 +492,50 @@ router.post('/reset-password', async (req, res) => {
     return res.status(400).json({ ok: false, error: { code: 'WEAK_PASSWORD', message: weak } });
   }
 
-  try {
-    const record = await prisma.passwordResetToken.findUnique({
-      where: { tokenHash: hashResetToken(parsed.data.token) },
-    });
+  const invalidCode = (message = 'That code is incorrect or has expired. Request a new one.') =>
+    res.status(400).json({ ok: false, error: { code: 'OTP_INVALID', message } });
 
-    if (!record || record.usedAt || record.expiresAt.getTime() < Date.now()) {
-      return res
-        .status(400)
-        .json({
-          ok: false,
-          error: { code: 'RESET_TOKEN_INVALID', message: 'This reset link is invalid or has expired.' },
-        });
+  try {
+    const user = await prisma.user.findUnique({ where: { phoneNumber }, select: { id: true } });
+    if (!user) return invalidCode();
+
+    const record = await prisma.passwordResetToken.findFirst({
+      where: { userId: user.id, usedAt: null, expiresAt: { gt: new Date() } },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!record || record.attempts >= OTP_MAX_ATTEMPTS) {
+      return invalidCode('This code has expired or been used too many times. Request a new one.');
+    }
+
+    const expected = Buffer.from(record.tokenHash, 'hex');
+    const given = Buffer.from(hashOtp(record.id, parsed.data.otp), 'hex');
+    const matches = expected.length === given.length && crypto.timingSafeEqual(expected, given);
+
+    if (!matches) {
+      const updated = await prisma.passwordResetToken.update({
+        where: { id: record.id },
+        data: { attempts: { increment: 1 } },
+      });
+      const left = OTP_MAX_ATTEMPTS - updated.attempts;
+      return invalidCode(
+        left > 0
+          ? `Incorrect code. ${left} attempt${left === 1 ? '' : 's'} left.`
+          : 'Too many incorrect attempts. Request a new code.',
+      );
     }
 
     const passwordHash = await hashPassword(parsed.data.password);
-
     await prisma.$transaction([
-      prisma.user.update({ where: { id: record.userId }, data: { passwordHash } }),
+      prisma.user.update({ where: { id: user.id }, data: { passwordHash } }),
       prisma.passwordResetToken.update({ where: { id: record.id }, data: { usedAt: new Date() } }),
       // A password reset invalidates every existing session.
       prisma.session.updateMany({
-        where: { userId: record.userId, revokedAt: null },
+        where: { userId: user.id, revokedAt: null },
         data: { revokedAt: new Date() },
       }),
     ]);
 
-    return res.status(200).json({ ok: true, data: { message: 'Password updated. Please sign in.' } });
+    return res.status(200).json({ ok: true, data: { message: 'Password updated. Please log in.' } });
   } catch (err) {
     logger.error('[Auth] Reset-password failed:', err);
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not reset password.' } });
@@ -485,14 +614,21 @@ router.put('/profile', async (req, res) => {
     const userId = requireUserId(req);
 
     if (updates.phoneNumber !== undefined) {
-      // phoneNumber is @unique — write null for "no phone", never ''. Postgres
-      // allows any number of NULLs under a unique constraint but treats ''
-      // as a real, colliding value, so the second user to clear this field
-      // would otherwise hit a unique-constraint violation here.
-      await prisma.user.update({
-        where: { id: userId },
-        data: { phoneNumber: updates.phoneNumber === '' ? null : updates.phoneNumber },
-      });
+      // This is the number the account signs in with, so it can be changed
+      // but never cleared, and only to a valid Indian mobile no one else
+      // holds — anything else would lock the owner out of their account.
+      const phoneNumber = normalizeIndianMobile(updates.phoneNumber);
+      if (!phoneNumber) {
+        return res.status(400).json({ ok: false, error: { code: 'INVALID_PHONE', message: INDIAN_MOBILE_ERROR } });
+      }
+      const holder = await prisma.user.findUnique({ where: { phoneNumber }, select: { id: true } });
+      if (holder && holder.id !== userId) {
+        return res.status(409).json({
+          ok: false,
+          error: { code: 'PHONE_ALREADY_REGISTERED', message: 'This mobile number is already used by another account.' },
+        });
+      }
+      await prisma.user.update({ where: { id: userId }, data: { phoneNumber } });
     }
 
     const profileData: Record<string, unknown> = {};

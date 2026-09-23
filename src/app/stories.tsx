@@ -397,7 +397,7 @@ export default function StoriesScreen() {
         (s, i, arr) => !!s && arr.indexOf(s) === i,
       );
       const author = activeStory.authorName || t('stories.defaultCreatorName');
-      const message = [...parts, `Shared from TravelStar by ${author}`].join('\n\n');
+      const message = [...parts, `Shared from Yatrenzo by ${author}`].join('\n\n');
       await Share.share({ message });
     } catch (e) {
       logger.warn('[Stories] Share failed:', e);

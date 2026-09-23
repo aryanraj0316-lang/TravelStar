@@ -229,7 +229,7 @@ router.post('/sos', sosLimiter, async (req, res) => {
         ...alertPayload,
         notifiedCount: recipients.length,
         reach: audience.reach,
-        message: `SOS sent to ${whoWasTold}, your emergency contacts on TravelStar, and our safety team. For police, fire, or ambulance, call 112.`,
+        message: `SOS sent to ${whoWasTold}, your emergency contacts on Yatrenzo, and our safety team. For police, fire, or ambulance, call 112.`,
       },
     });
   } catch (err) {

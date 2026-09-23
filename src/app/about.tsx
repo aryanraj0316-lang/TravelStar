@@ -50,7 +50,7 @@ export default function AboutScreen() {
           <View style={styles.logoBadge}>
             <Globe size={40} color={C.white} />
           </View>
-          <Text style={styles.brandName}>TravelStar</Text>
+          <Text style={styles.brandName}>Yatrenzo</Text>
           <Text style={styles.versionText}>{t('about.version')}</Text>
         </View>
 

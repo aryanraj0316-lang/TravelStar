@@ -1,6 +1,7 @@
 import request from 'supertest';
 import app from '../src/app';
 import prisma from '../src/services/db';
+import { uniqueTestPhone } from './test-phone';
 
 /**
  * Integration tests for GET /api/v1/trips/mine (docs/REMEDIATION.md §8.11).
@@ -29,7 +30,7 @@ async function registerAndLogin(label: string): Promise<{ userId: string; token:
   const email = uniqueEmail(label);
   const res = await request(app)
     .post('/api/v1/auth/register')
-    .send({ name: `Trips Mine ${label}`, email, password: 'correcthorsebattery' });
+    .send({ name: `Trips Mine ${label}`, email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
   return { userId: res.body.data.user.id, token: res.body.data.token };
 }
 

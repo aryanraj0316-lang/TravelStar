@@ -2,6 +2,7 @@ import request from 'supertest';
 import app from '../src/app';
 import prisma from '../src/services/db';
 import { notifyTripEnquiry } from '../src/services/trip-enquiry-notifications';
+import { uniqueTestPhone } from './test-phone';
 
 /**
  * Pre-join enquiry threads.
@@ -25,7 +26,7 @@ async function registerAndLogin(label: string): Promise<{ userId: string; token:
   createdEmails.push(email);
   const res = await request(app)
     .post('/api/v1/auth/register')
-    .send({ name: `Inquiry ${label}`, email, password: 'correcthorsebattery' });
+    .send({ name: `Inquiry ${label}`, email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
   return { userId: res.body.data.user.id, token: res.body.data.token };
 }
 

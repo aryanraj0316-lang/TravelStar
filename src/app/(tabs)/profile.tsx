@@ -3,7 +3,7 @@ import { RouteErrorFallback } from '@/components/route-error-fallback';
 import { Button, Input, ScreenEmpty, ScreenError, ScreenLoading, Sheet } from '@/components/ui';
 import { recordConsent } from '@/lib/consent';
 import { errorToastMessage, showAlert, toast, useConfirm } from '@/lib/feedback';
-import { getAppLanguage, setAppLanguage } from '@/lib/i18n';
+import { LANGUAGES, setAppLanguage } from '@/lib/i18n';
 import { logger } from '@/lib/logger';
 import { formatINR } from '@/lib/money';
 import { registerForPushNotifications, unregisterPushNotifications } from '@/lib/push';
@@ -142,7 +142,11 @@ function ProfileScreen() {
     logger.log('Screen mounted: ProfileScreen');
   }, []);
   const insets = useSafeAreaInsets();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  // Derived from the live i18next language (useTranslation re-renders on
+  // change), so the picker and menu row always reflect what's on screen.
+  const currentLanguage =
+    LANGUAGES.find((l) => l.code === i18n.language) ?? LANGUAGES[0];
   const router = useRouter();
   const navigation = useNavigation();
   const params = useLocalSearchParams<{ setup?: string }>();
@@ -164,7 +168,6 @@ function ProfileScreen() {
 
   // Language settings state
   const [showLanguageModal, setShowLanguageModal] = useState(false);
-  const [selectedLanguage, setSelectedLanguage] = useState('English');
   const [pushNotifications, setPushNotifications] = useState(true);
   const [locationSharing, setLocationSharing] = useState(true);
 
@@ -356,9 +359,6 @@ function ProfileScreen() {
   const [prevProfileForSettings, setPrevProfileForSettings] = useState(profile);
   if (profile !== prevProfileForSettings) {
     setPrevProfileForSettings(profile);
-    if (profile.selectedLanguage) {
-      setSelectedLanguage(profile.selectedLanguage);
-    }
     if (profile.pushNotifications !== undefined) {
       setPushNotifications(profile.pushNotifications);
     }
@@ -571,7 +571,8 @@ function ProfileScreen() {
       avatar: editAvatar,
       gender: editGender,
       bio: editBio,
-      phoneNumber: profile.phoneNumber,
+      // phoneNumber is deliberately not sent: it is the sign-in number and
+      // isn't edited here, and echoing back an empty one would be rejected.
       emergencyContact: cleanEmergency,
       languages: editLanguages,
       travelStyles: editStyles,
@@ -932,73 +933,62 @@ function ProfileScreen() {
               MENU SECTIONS & CARDS
               ════════════════════════════════════════════════ */}
           <View style={styles.menuContainer}>
-            {/* Section: PERSONAL DETAILS */}
-            <Text style={styles.sectionHeader}>{t('profile.personalDetails')}</Text>
-            <View style={styles.menuCard}>
-              <TouchableOpacity
-                style={styles.detailItem}
-                activeOpacity={0.7}
-                onPress={() => (isLoggedIn ? setShowEditModal(true) : router.push('/auth?mode=SIGNUP'))}
-                accessibilityRole="button"
-              >
-                <View style={styles.menuItemLeft}>
-                  <View style={[styles.menuIconBadge, { backgroundColor: '#FEF2F2' }]}>
-                    <ShieldAlert size={16} color="#DC2626" />
+            {/* Section: PERSONAL DETAILS — only the details the user has
+                actually filled in; the whole section is hidden when none are.
+                They can still add them from Edit Profile. */}
+            {(() => {
+              const details = [
+                {
+                  key: 'emergency',
+                  value: profile.emergencyContact ? sanitizePhone10(profile.emergencyContact) : '',
+                  label: t('profile.emergencySosContact'),
+                  icon: <ShieldAlert size={16} color="#DC2626" />,
+                  tint: '#FEF2F2',
+                },
+                {
+                  key: 'languages',
+                  value: profile.languages || '',
+                  label: t('profile.languagesSpoken'),
+                  icon: <Globe size={16} color="#16A34A" />,
+                  tint: '#F0FDF4',
+                },
+                {
+                  key: 'styles',
+                  value: profile.travelStyles || '',
+                  label: t('profile.adventureStyles'),
+                  icon: <Compass size={16} color="#9333EA" />,
+                  tint: '#FAF5FF',
+                },
+              ].filter((d) => d.value.trim().length > 0);
+              if (details.length === 0) return null;
+              return (
+                <>
+                  <Text style={styles.sectionHeader}>{t('profile.personalDetails')}</Text>
+                  <View style={styles.menuCard}>
+                    {details.map((d, i) => (
+                      <React.Fragment key={d.key}>
+                        {i > 0 && <View style={styles.menuDivider} />}
+                        <TouchableOpacity
+                          style={styles.detailItem}
+                          activeOpacity={0.7}
+                          onPress={() => (isLoggedIn ? setShowEditModal(true) : router.push('/auth?mode=SIGNUP'))}
+                          accessibilityRole="button"
+                        >
+                          <View style={styles.menuItemLeft}>
+                            <View style={[styles.menuIconBadge, { backgroundColor: d.tint }]}>{d.icon}</View>
+                            <View style={styles.menuItemTextCol}>
+                              <Text style={styles.detailLabel}>{d.label}</Text>
+                              <Text style={styles.detailValue}>{d.value}</Text>
+                            </View>
+                          </View>
+                          <ChevronRight size={15} color="#94A3B8" />
+                        </TouchableOpacity>
+                      </React.Fragment>
+                    ))}
                   </View>
-                  <View style={styles.menuItemTextCol}>
-                    <Text style={styles.detailLabel}>{t('profile.emergencySosContact')}</Text>
-                    <Text style={[styles.detailValue, !profile.emergencyContact && styles.detailValueEmpty]}>
-                      {profile.emergencyContact ? sanitizePhone10(profile.emergencyContact) : t('profile.notAddedYet')}
-                    </Text>
-                  </View>
-                </View>
-                <ChevronRight size={15} color="#94A3B8" />
-              </TouchableOpacity>
-
-              <View style={styles.menuDivider} />
-
-              <TouchableOpacity
-                style={styles.detailItem}
-                activeOpacity={0.7}
-                onPress={() => (isLoggedIn ? setShowEditModal(true) : router.push('/auth?mode=SIGNUP'))}
-                accessibilityRole="button"
-              >
-                <View style={styles.menuItemLeft}>
-                  <View style={[styles.menuIconBadge, { backgroundColor: '#F0FDF4' }]}>
-                    <Globe size={16} color="#16A34A" />
-                  </View>
-                  <View style={styles.menuItemTextCol}>
-                    <Text style={styles.detailLabel}>{t('profile.languagesSpoken')}</Text>
-                    <Text style={[styles.detailValue, !profile.languages && styles.detailValueEmpty]}>
-                      {profile.languages || t('profile.notAddedYet')}
-                    </Text>
-                  </View>
-                </View>
-                <ChevronRight size={15} color="#94A3B8" />
-              </TouchableOpacity>
-
-              <View style={styles.menuDivider} />
-
-              <TouchableOpacity
-                style={styles.detailItem}
-                activeOpacity={0.7}
-                onPress={() => (isLoggedIn ? setShowEditModal(true) : router.push('/auth?mode=SIGNUP'))}
-                accessibilityRole="button"
-              >
-                <View style={styles.menuItemLeft}>
-                  <View style={[styles.menuIconBadge, { backgroundColor: '#FAF5FF' }]}>
-                    <Compass size={16} color="#9333EA" />
-                  </View>
-                  <View style={styles.menuItemTextCol}>
-                    <Text style={styles.detailLabel}>{t('profile.adventureStyles')}</Text>
-                    <Text style={[styles.detailValue, !profile.travelStyles && styles.detailValueEmpty]}>
-                      {profile.travelStyles || t('profile.notAddedYet')}
-                    </Text>
-                  </View>
-                </View>
-                <ChevronRight size={15} color="#94A3B8" />
-              </TouchableOpacity>
-            </View>
+                </>
+              );
+            })()}
 
             {/* Section 1: TRAVEL HUB */}
             <Text style={styles.sectionHeader}>{t('profile.travelHub')}</Text>
@@ -1108,15 +1098,15 @@ function ProfileScreen() {
                   setNavbarHidden(true);
                 }}
                 accessibilityRole="button"
-                accessibilityLabel={t('profile.languageRegion', { language: selectedLanguage })}
+                accessibilityLabel={t('profile.languageRegion', { language: currentLanguage.native })}
               >
                 <View style={styles.menuItemLeft}>
                   <View style={[styles.menuIconBadge, { backgroundColor: '#EFF6FF' }]}>
                     <Globe size={16} color="#2563EB" />
                   </View>
                   <View style={styles.menuItemTextCol}>
-                    <Text style={styles.menuItemTitle}>{t('profile.languageRegion', { language: selectedLanguage })}</Text>
-                    <Text style={styles.menuItemSub}>{selectedLanguage}</Text>
+                    <Text style={styles.menuItemTitle}>{t('profile.languageRegion', { language: currentLanguage.native })}</Text>
+                    <Text style={styles.menuItemSub}>{currentLanguage.label}</Text>
                   </View>
                 </View>
                 <ChevronRight size={16} color="#94A3B8" />
@@ -1844,42 +1834,26 @@ function ProfileScreen() {
 
             {/* List */}
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 }}>
-              {[
-                { label: 'English', sub: '', code: 'en' as const },
-                { label: 'Hindi', sub: '(हिन्दी)', code: 'hi' as const },
-                { label: 'Punjabi', sub: '(ਪੰਜਾਬੀ)', code: null },
-                { label: 'Bengali', sub: '(বাংলা)', code: null },
-                { label: 'Tamil', sub: '(தமிழ்)', code: null },
-              ].map((lang, idx, arr) => {
-                const isSelected = selectedLanguage.startsWith(lang.label);
+              {LANGUAGES.map((lang, idx, arr) => {
+                const isSelected = currentLanguage.code === lang.code;
+                const sub = lang.native !== lang.label ? `(${lang.native})` : '';
                 return (
-                  <View key={lang.label}>
+                  <View key={lang.code}>
                     <TouchableOpacity
                       activeOpacity={0.7}
                       style={[styles.langRow, isSelected && { backgroundColor: '#EFF6FF' }]}
                       onPress={() => {
-                        setSelectedLanguage(lang.label);
                         updateProfile({ selectedLanguage: lang.label });
                         setShowLanguageModal(false);
                         setNavbarHidden(false);
-                        if (lang.code) {
-                          void setAppLanguage(lang.code);
-                        } else {
-                          toast(
-                            t('profile.notTranslatedYet', {
-                              language: lang.label,
-                              current: getAppLanguage() === 'hi' ? t('profile.langNameHindi') : t('profile.langNameEnglish'),
-                            }),
-                            'info',
-                          );
-                        }
+                        void setAppLanguage(lang.code);
                       }}
                       accessibilityRole="button"
-                      accessibilityLabel={`${lang.label} ${lang.sub}`.trim()}
+                      accessibilityLabel={`${lang.label} ${sub}`.trim()}
                       accessibilityState={{ selected: isSelected }}
                     >
                       <Text style={[styles.langText, isSelected && { color: '#0B63E5', fontWeight: '700' }]}>
-                        {lang.label} {lang.sub && <Text style={styles.langSubText}>{lang.sub}</Text>}
+                        {lang.label} {sub !== '' && <Text style={styles.langSubText}>{sub}</Text>}
                       </Text>
                       {isSelected && <Check size={16} color="#0B63E5" />}
                     </TouchableOpacity>
@@ -2293,11 +2267,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#0F172A',
     marginTop: 2,
-  },
-  detailValueEmpty: {
-    color: '#94A3B8',
-    fontWeight: '400',
-    fontStyle: 'italic',
   },
   menuDivider: {
     height: 1,

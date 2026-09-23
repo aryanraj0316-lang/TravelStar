@@ -1,26 +1,35 @@
 {
   "expo": {
-    "name": "TravelStar",
-    "slug": "travelstar",
+    "name": "Yatrenzo",
+    "slug": "yatrenzo",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "travelstar",
+    "scheme": "yatrenzo",
     "userInterfaceStyle": "dark",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "ios": {
       "icon": "./assets/expo.icon",
-      "bundleIdentifier": "com.travelstar.app"
+      "bundleIdentifier": "com.yatrenzo.app"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#FFFFFF",
+        "foregroundImage": "./assets/images/android-icon-foreground.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.travelstar.app",
-      "softwareKeyboardLayoutMode": "resize"
+      "package": "com.yatrenzo.app",
+      "softwareKeyboardLayoutMode": "resize",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
     },
     "web": {
       "output": "static",
@@ -31,22 +40,22 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#FFFFFF",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "imageWidth": 240
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow TravelStar to access your photos to select your profile picture.",
-          "cameraPermission": "Allow TravelStar to access your camera to take a profile picture."
+          "photosPermission": "Allow Yatrenzo to access your photos to select your profile picture.",
+          "cameraPermission": "Allow Yatrenzo to access your camera to take a profile picture."
         }
       ],
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "TravelStar uses your location to send your real position when you trigger an SOS alert, and to show it on the trip map."
+          "locationWhenInUsePermission": "Yatrenzo uses your location to send your real position when you trigger an SOS alert, and to show it on the trip map."
         }
       ],
       "expo-image",
@@ -59,6 +68,16 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "9de41b02-3359-4583-bda7-d81ebfe1b8d6"
+      }
+    },
+    "owner": "harsh_16",
+    "updates": {
+      "url": "https://u.expo.dev/9de41b02-3359-4583-bda7-d81ebfe1b8d6"
     }
   }
 }

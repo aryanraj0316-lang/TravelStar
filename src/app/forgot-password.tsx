@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -6,7 +6,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import ArrowLeft from 'lucide-react-native/icons/arrow-left';
 import KeyRound from 'lucide-react-native/icons/key-round';
-import Mail from 'lucide-react-native/icons/mail';
+import Lock from 'lucide-react-native/icons/lock';
+import Phone from 'lucide-react-native/icons/phone';
 import ShieldCheck from 'lucide-react-native/icons/shield-check';
 
 import { GlassCard } from '@/components/ui/GlassCard';
@@ -14,44 +15,93 @@ import { Button, Input } from '@/components/ui';
 import { apiService } from '@/services/api';
 import { logger } from '@/lib/logger';
 import { errorToastMessage, toast } from '@/lib/feedback';
+import { indianMobileError, normalizeIndianMobile } from '@/lib/indian-phone';
 import { C, MIN_TOUCH_TARGET, space } from '@/theme/tokens';
 
-// docs/REMEDIATION.md §8.1: apiService.forgotPassword/resetPassword existed
-// on the client and the backend routes were fully built (token hashing,
-// expiry, session revocation on reset, account-enumeration protection —
-// see backend/src/api/routes/auth.ts) but nothing in the UI ever called
-// them: there was no "Forgot password?" link anywhere. This screen is that
-// missing link. It shows the server's own message verbatim rather than
-// writing a second copy — the server deliberately returns the same message
-// whether or not the email is registered, and duplicating that text here
-// would risk it drifting out of sync with the real enumeration-safe wording.
-//
-// One honest limitation: the backend has no email provider wired up yet
-// (see the TODO in that route) — the reset token is logged server-side, not
-// emailed. So this screen completes the flow the doc asked for; whether a
-// real user can act on it depends on Phase 11/12 email infra that doesn't
-// exist yet. reset-password.tsx is the other half, reached via a
-// travelstar://reset-password?token=... deep link once that token reaches
-// the user by some channel.
+// Password reset by a 6-digit code emailed to the address the account
+// registered with. Two steps on one screen: ask for the mobile number (the
+// thing people sign in with), then take the code and a new password. The
+// server answers identically whether or not the number is registered, so
+// this screen moves on to the code step either way and only names the
+// masked address when one was actually used.
+
+const MIN_PASSWORD_LENGTH = 10;
+
 export default function ForgotPasswordScreen() {
   const { t } = useTranslation();
   const router = useRouter();
-  const [email, setEmail] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [sentMessage, setSentMessage] = useState<string | null>(null);
 
-  const handleSubmit = async () => {
-    if (!email.trim()) {
-      toast(t('forgotPassword.enterEmail'), 'error');
+  const [step, setStep] = useState<'PHONE' | 'CODE' | 'DONE'>('PHONE');
+  const [phone, setPhone] = useState('');
+  const [otp, setOtp] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [maskedEmail, setMaskedEmail] = useState<string | null>(null);
+  const [resendIn, setResendIn] = useState(0);
+  const [phoneError, setPhoneError] = useState<string | undefined>();
+  const [codeError, setCodeError] = useState<string | undefined>();
+  const [passwordError, setPasswordError] = useState<string | undefined>();
+
+  // Resend countdown.
+  useEffect(() => {
+    if (resendIn <= 0) return;
+    const timer = setTimeout(() => setResendIn((s) => s - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [resendIn]);
+
+  const requestCode = async () => {
+    const problem = indianMobileError(phone);
+    if (problem) {
+      setPhoneError(problem);
       return;
     }
+    setPhoneError(undefined);
     setLoading(true);
     try {
-      const res = await apiService.forgotPassword(email.trim());
-      setSentMessage(res.message);
+      const res = await apiService.forgotPassword(normalizeIndianMobile(phone) as string);
+      setMaskedEmail(res.maskedEmail ?? null);
+      setResendIn(res.retryAfterSeconds ?? 60);
+      setStep('CODE');
     } catch (e) {
       logger.warn('[ForgotPassword] Request failed:', e);
-      toast(errorToastMessage(e, t('forgotPassword.couldNotSendReset')), 'error');
+      toast(errorToastMessage(e, t('forgotPassword.couldNotSendReset', 'Could not send the code. Please try again.')), 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submitReset = async () => {
+    let bad = false;
+    if (!/^\d{6}$/.test(otp)) {
+      setCodeError(t('forgotPassword.enterSixDigitCode', 'Enter the 6-digit code from your email.'));
+      bad = true;
+    } else {
+      setCodeError(undefined);
+    }
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      setPasswordError(
+        t('forgotPassword.passwordTooShort', 'Password must be at least 10 characters.'),
+      );
+      bad = true;
+    } else if (password !== confirm) {
+      setPasswordError(t('forgotPassword.passwordsDoNotMatch', 'Passwords do not match.'));
+      bad = true;
+    } else {
+      setPasswordError(undefined);
+    }
+    if (bad) return;
+
+    setLoading(true);
+    try {
+      await apiService.resetPassword(normalizeIndianMobile(phone) as string, otp, password);
+      setStep('DONE');
+    } catch (e) {
+      logger.warn('[ForgotPassword] Reset failed:', e);
+      const message = e instanceof Error ? e.message : '';
+      if (/code|attempt/i.test(message)) setCodeError(message);
+      else if (/password/i.test(message)) setPasswordError(message);
+      else toast(errorToastMessage(e, t('forgotPassword.couldNotReset', 'Could not reset your password.')), 'error');
     } finally {
       setLoading(false);
     }
@@ -60,10 +110,14 @@ export default function ForgotPasswordScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={styles.headerRow}>
             <TouchableOpacity
-              onPress={() => router.back()}
+              onPress={() => (step === 'CODE' ? setStep('PHONE') : router.back())}
               style={styles.backBtn}
               activeOpacity={0.8}
               accessibilityRole="button"
@@ -80,61 +134,135 @@ export default function ForgotPasswordScreen() {
             </LinearGradient>
             <Text style={styles.heroHeading}>{t('forgotPassword.heading')}</Text>
             <Text style={styles.heroSub}>
-              {t('forgotPassword.sub')}
+              {step === 'CODE'
+                ? maskedEmail
+                  ? t('forgotPassword.codeSentTo', {
+                      email: maskedEmail,
+                      defaultValue: 'We sent a 6-digit code to {{email}}. Enter it below with your new password.',
+                    })
+                  : t(
+                      'forgotPassword.codeSentGeneric',
+                      'If this number is registered, a 6-digit code has been sent to its email.',
+                    )
+                : t('forgotPassword.subPhone', 'Enter the mobile number on your account. We will email you a code.')}
             </Text>
           </View>
 
           <GlassCard style={styles.card}>
-            {sentMessage ? (
+            {step === 'DONE' ? (
               <View style={styles.confirmWrap}>
                 <ShieldCheck size={28} color={C.greenText} style={{ marginBottom: 10 }} />
-                <Text style={styles.confirmText}>{sentMessage}</Text>
-                <TouchableOpacity
-                  style={{ marginTop: 18 }}
-                  onPress={() => router.replace('/auth')}
-                  activeOpacity={0.85}
-                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                  accessibilityRole="button"
-                  accessibilityLabel={t('forgotPassword.backToLogIn')}
-                >
-                  <Text style={styles.footerLink}>{t('forgotPassword.backToLogIn')}</Text>
-                </TouchableOpacity>
+                <Text style={styles.confirmText}>
+                  {t('forgotPassword.resetDone', 'Your password has been reset. Log in with your new password.')}
+                </Text>
+                <Button
+                  label={t('forgotPassword.logIn')}
+                  onPress={() => router.replace({ pathname: '/auth', params: { mode: 'LOGIN' } })}
+                  fullWidth
+                  style={styles.submitBtn}
+                />
               </View>
-            ) : (
+            ) : step === 'PHONE' ? (
               <>
                 <Input
-                  label={t('forgotPassword.emailLabel')}
-                  icon={<Mail size={18} color={C.textSec} />}
-                  placeholder="aarav@example.com"
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  value={email}
-                  onChangeText={setEmail}
+                  label={t('forgotPassword.phoneLabel', 'Mobile number')}
+                  icon={<Phone size={18} color={C.textSec} />}
+                  placeholder="98765 43210"
+                  keyboardType="phone-pad"
+                  maxLength={16}
+                  value={phone}
+                  onChangeText={(v) => {
+                    setPhone(v);
+                    if (phoneError) setPhoneError(undefined);
+                  }}
+                  error={phoneError}
                   containerStyle={styles.inputWrap}
                 />
-
                 <Button
-                  label={t('forgotPassword.sendResetLink')}
-                  onPress={handleSubmit}
+                  label={t('forgotPassword.sendCode', 'Send code')}
+                  onPress={requestCode}
                   loading={loading}
                   fullWidth
                   style={styles.submitBtn}
                 />
               </>
+            ) : (
+              <>
+                <Input
+                  label={t('forgotPassword.codeLabel', '6-digit code')}
+                  icon={<ShieldCheck size={18} color={C.textSec} />}
+                  placeholder="123456"
+                  keyboardType="number-pad"
+                  maxLength={6}
+                  value={otp}
+                  onChangeText={(v) => {
+                    setOtp(v.replace(/\D/g, ''));
+                    if (codeError) setCodeError(undefined);
+                  }}
+                  error={codeError}
+                  containerStyle={styles.inputWrap}
+                />
+                <Input
+                  label={t('forgotPassword.newPasswordLabel', 'New password')}
+                  icon={<Lock size={18} color={C.textSec} />}
+                  placeholder="••••••••••"
+                  secureTextEntry
+                  value={password}
+                  onChangeText={(v) => {
+                    setPassword(v);
+                    if (passwordError) setPasswordError(undefined);
+                  }}
+                  containerStyle={styles.inputWrap}
+                />
+                <Input
+                  label={t('forgotPassword.confirmPasswordLabel', 'Confirm new password')}
+                  icon={<Lock size={18} color={C.textSec} />}
+                  placeholder="••••••••••"
+                  secureTextEntry
+                  value={confirm}
+                  onChangeText={(v) => {
+                    setConfirm(v);
+                    if (passwordError) setPasswordError(undefined);
+                  }}
+                  error={passwordError}
+                  containerStyle={styles.inputWrap}
+                />
+                <Button
+                  label={t('forgotPassword.resetPassword', 'Reset password')}
+                  onPress={submitReset}
+                  loading={loading}
+                  fullWidth
+                  style={styles.submitBtn}
+                />
+                <TouchableOpacity
+                  style={styles.resendBtn}
+                  onPress={requestCode}
+                  disabled={resendIn > 0 || loading}
+                  accessibilityRole="button"
+                >
+                  <Text style={[styles.footerLink, resendIn > 0 && styles.resendDisabled]}>
+                    {resendIn > 0
+                      ? t('forgotPassword.resendIn', { seconds: resendIn, defaultValue: 'Resend code in {{seconds}}s' })
+                      : t('forgotPassword.resendCode', 'Resend code')}
+                  </Text>
+                </TouchableOpacity>
+              </>
             )}
           </GlassCard>
 
-          <View style={styles.footerWrap}>
-            <Text style={styles.footerText}>{t('forgotPassword.rememberedIt')}</Text>
-            <TouchableOpacity
-              onPress={() => router.replace('/auth')}
-              hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
-              accessibilityRole="button"
-              accessibilityLabel={t('forgotPassword.logIn')}
-            >
-              <Text style={styles.footerLink}>{t('forgotPassword.logIn')}</Text>
-            </TouchableOpacity>
-          </View>
+          {step !== 'DONE' && (
+            <View style={styles.footerWrap}>
+              <Text style={styles.footerText}>{t('forgotPassword.rememberedIt')}</Text>
+              <TouchableOpacity
+                onPress={() => router.replace({ pathname: '/auth', params: { mode: 'LOGIN' } })}
+                hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel={t('forgotPassword.logIn')}
+              >
+                <Text style={styles.footerLink}>{t('forgotPassword.logIn')}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -148,41 +276,35 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 10,
-    marginBottom: 20,
+    paddingVertical: 12,
   },
   backBtn: {
     width: MIN_TOUCH_TARGET,
     height: MIN_TOUCH_TARGET,
     borderRadius: MIN_TOUCH_TARGET / 2,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
   },
   heroWrap: { alignItems: 'center', marginBottom: 24 },
   heroIconBadge: {
     width: 56,
     height: 56,
-    borderRadius: 28,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
-    shadowColor: C.blue,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 8,
+    marginBottom: 14,
   },
   heroHeading: { fontSize: 24, fontWeight: '800', color: C.white, marginBottom: 6, textAlign: 'center' },
-  heroSub: { fontSize: 13, color: C.textSec, textAlign: 'center', maxWidth: 280, lineHeight: 18 },
+  heroSub: { fontSize: 13, color: C.textSec, textAlign: 'center', maxWidth: 300, lineHeight: 18 },
   card: { padding: 20, borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.12)' },
   inputWrap: { marginBottom: 14 },
   submitBtn: { marginTop: space[2] },
   confirmWrap: { alignItems: 'center', paddingVertical: 10 },
   confirmText: { fontSize: 14, color: C.white, textAlign: 'center', lineHeight: 20 },
-  footerWrap: { flexDirection: 'row', justifyContent: 'center', marginTop: 16 },
+  resendBtn: { alignSelf: 'center', marginTop: 16, paddingVertical: 6 },
+  resendDisabled: { color: C.textMuted },
+  footerWrap: { flexDirection: 'row', justifyContent: 'center', marginTop: 16, gap: 4 },
   footerText: { fontSize: 13, color: C.textSec },
   footerLink: { fontSize: 13, fontWeight: '700', color: C.blueText },
 });

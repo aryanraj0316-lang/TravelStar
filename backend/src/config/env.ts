@@ -6,7 +6,7 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 bytes'),
   JWT_ACCESS_TOKEN_TTL: z.string().default('15m'),
-  JWT_REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(30),
+  JWT_REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(365),
   CORS_ALLOWED_ORIGINS: z
     .string()
     .default('http://localhost:8081,http://localhost:19006')
@@ -75,6 +75,13 @@ const envSchema = z.object({
   RAZORPAY_KEY_ID: z.string().min(1).optional(),
   RAZORPAY_KEY_SECRET: z.string().min(1).optional(),
   RAZORPAY_WEBHOOK_SECRET: z.string().min(1).optional(),
+
+  // Transactional email via Brevo — used for password-reset codes. Optional:
+  // unset, the code is logged server-side instead of emailed, so the flow is
+  // testable before the Brevo account is set up.
+  BREVO_API_KEY: z.string().min(1).optional(),
+  BREVO_SENDER_EMAIL: z.string().email().optional(),
+  BREVO_SENDER_NAME: z.string().min(1).optional(),
 
   // Push notifications (docs/REMEDIATION.md §8.18). The Expo push service
   // needs no server credential by default — this is only required once a

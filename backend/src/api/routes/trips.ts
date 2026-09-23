@@ -898,7 +898,7 @@ router.post('/', async (req, res) => {
           creatorId: user.id,
           name: data.name,
           // The organizer's own words. This used to be a fixed sentence
-          // ("Custom travel route created via TravelStar app.") written
+          // ("Custom travel route created via Yatrenzo app.") written
           // onto every trip while the description the organizer actually
           // typed on the Plan tab was dropped on the floor.
           description: data.description ?? '',

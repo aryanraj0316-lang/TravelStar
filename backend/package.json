@@ -1,7 +1,7 @@
 {
   "name": "travelstar-backend",
   "version": "1.0.0",
-  "description": "Backend API for TravelStar",
+  "description": "Backend API for Yatrenzo",
   "main": "dist/server.js",
   "scripts": {
     "dev": "nodemon --exec ts-node src/server.ts",

@@ -151,18 +151,30 @@ export async function getRefreshToken(): Promise<string | null> {
 // on use, so two independent refresh calls racing each other would have the
 // second one present an already-dead token and trip reuse detection,
 // revoking the whole session over what was really just a timing accident.
-let refreshInFlight: Promise<string | null> | null = null;
+// `rejected` means the server refused the refresh token itself (expired,
+// revoked, reused) — the session is truly over. `transient` means the server
+// couldn't be reached or answered 5xx (offline, Render cold start); the
+// session is still valid and must NOT be thrown away, or users get signed out
+// just for opening the app on a bad connection.
+export type RefreshOutcome = { token: string } | { rejected: true } | { transient: true };
+
+let refreshInFlight: Promise<RefreshOutcome> | null = null;
 
 // Exported so socket.ts can trigger the same refresh on a socket auth
 // failure — the socket may be the first thing to notice an expired token
 // (e.g. the user is idle in a chat with no REST calls firing), in which
 // case nothing else would ever refresh it.
 export async function refreshAccessToken(): Promise<string | null> {
+  const outcome = await refreshSession();
+  return 'token' in outcome ? outcome.token : null;
+}
+
+export async function refreshSession(): Promise<RefreshOutcome> {
   if (refreshInFlight) return refreshInFlight;
 
-  refreshInFlight = (async () => {
+  refreshInFlight = (async (): Promise<RefreshOutcome> => {
     const refreshToken = await secureStorage.getItem(REFRESH_TOKEN_KEY);
-    if (!refreshToken) return null;
+    if (!refreshToken) return { rejected: true };
 
     try {
       const res = await fetch(`${getApiBaseUrl()}/auth/refresh`, {
@@ -170,18 +182,19 @@ export async function refreshAccessToken(): Promise<string | null> {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refreshToken }),
       });
-      if (!res.ok) return null;
+      if (res.status >= 500 || res.status === 429) return { transient: true };
+      if (!res.ok) return { rejected: true };
 
       const json = await res.json();
       const token = json?.data?.token;
       const nextRefreshToken = json?.data?.refreshToken;
-      if (!token || !nextRefreshToken) return null;
+      if (!token || !nextRefreshToken) return { transient: true };
 
       await setTokens(token, nextRefreshToken);
-      return token as string;
+      return { token: token as string };
     } catch (e) {
       logger.warn('[API] Token refresh failed:', e);
-      return null;
+      return { transient: true };
     }
   })();
 
@@ -493,9 +506,14 @@ async function requestEnvelope<T>(
         throw new ApiError('UNAUTHORIZED', 'Not signed in.', 401, undefined, requestId);
       }
 
-      const newToken = await refreshAccessToken();
-      if (newToken) {
+      const outcome = await refreshSession();
+      if ('token' in outcome) {
         return requestEnvelope<T>(endpoint, options, true, attempt);
+      }
+      if ('transient' in outcome) {
+        // Couldn't reach the server to refresh — keep the session and let
+        // the caller treat it like any other network failure.
+        throw new ApiError('NETWORK_ERROR', 'Could not reach the server. Please check your connection.', null, undefined, requestId);
       }
       // A real session existed and refresh failed — the session is gone. Let
       // AppContext react (clear state, show a "session expired" toast, route
@@ -569,14 +587,15 @@ async function requestWithMeta<T>(
 
 export const apiService = {
   // Auth & Account
-  async login(email: string, password?: string) {
+  /** Mobile number + password — the only way an account signs in. */
+  async login(phoneNumber: string, password: string) {
     return request<AuthResponse>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ phoneNumber, password }),
     });
   },
 
-  async register(userData: { name: string; email: string; phoneNumber?: string; password?: string; role?: string }) {
+  async register(userData: { name: string; email: string; phoneNumber: string; password: string; role?: string }) {
     return request<AuthResponse>('/auth/register', {
       method: 'POST',
       body: JSON.stringify(userData),
@@ -591,21 +610,22 @@ export const apiService = {
     }).catch((e) => logger.warn('[API] Logout request failed (clearing session locally anyway):', e));
   },
 
-  async forgotPassword(email: string) {
-    // The server always replies with the same generic message regardless of
-    // whether the email is registered — revealing that would be an account-
-    // enumeration leak (backend/src/api/routes/auth.ts). Render its message
-    // verbatim rather than writing a second copy of it here.
-    return request<{ message: string }>('/auth/forgot-password', {
-      method: 'POST',
-      body: JSON.stringify({ email }),
-    });
+  /**
+   * Emails a 6-digit reset code to the address the account registered with.
+   * The server answers the same way whether or not the number is registered;
+   * `maskedEmail` is present only when a code was actually sent.
+   */
+  async forgotPassword(phoneNumber: string) {
+    return request<{ message: string; maskedEmail?: string; retryAfterSeconds?: number }>(
+      '/auth/forgot-password',
+      { method: 'POST', body: JSON.stringify({ phoneNumber }) },
+    );
   },
 
-  async resetPassword(token: string, password: string) {
+  async resetPassword(phoneNumber: string, otp: string, password: string) {
     return request<{ message: string }>('/auth/reset-password', {
       method: 'POST',
-      body: JSON.stringify({ token, password }),
+      body: JSON.stringify({ phoneNumber, otp, password }),
     });
   },
 

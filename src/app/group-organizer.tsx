@@ -270,7 +270,7 @@ async function searchLiveMapLocations(query: string): Promise<LiveLocationItem[]
     const res = await fetch(
       `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=6&addressdetails=1`,
       {
-        headers: { 'User-Agent': 'TravelStarApp/1.0' },
+        headers: { 'User-Agent': 'YatrenzoApp/1.0' },
         signal: controller.signal,
       }
     );

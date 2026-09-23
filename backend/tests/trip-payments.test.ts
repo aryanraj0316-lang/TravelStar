@@ -1,6 +1,7 @@
 import request from 'supertest';
 import app from '../src/app';
 import prisma from '../src/services/db';
+import { uniqueTestPhone } from './test-phone';
 
 const runId = Date.now();
 let seq = 0;
@@ -10,7 +11,7 @@ async function registerUser(label: string): Promise<{ token: string; userId: str
   const email = `pay-test-${runId}-${seq}@travelstar.test`;
   const res = await request(app)
     .post('/api/v1/auth/register')
-    .send({ name: label, email, password: 'correcthorsebattery' });
+    .send({ name: label, email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
   expect(res.status).toBe(201);
   return { token: res.body.data.token, userId: res.body.data.user.id };
 }

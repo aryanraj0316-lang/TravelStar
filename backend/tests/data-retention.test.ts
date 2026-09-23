@@ -2,6 +2,7 @@ import request from 'supertest';
 import app from '../src/app';
 import prisma from '../src/services/db';
 import { purgeStaleLiveLocations } from '../src/lib/data-retention';
+import { uniqueTestPhone } from './test-phone';
 
 /**
  * Automated location-retention purge (docs/REMEDIATION.md §12.5 —
@@ -19,7 +20,7 @@ async function registerAndLogin(label: string): Promise<{ userId: string; token:
   createdEmails.push(email);
   const res = await request(app)
     .post('/api/v1/auth/register')
-    .send({ name: `Retention ${label}`, email, password: 'correcthorsebattery' });
+    .send({ name: `Retention ${label}`, email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
   return { userId: res.body.data.user.id, token: res.body.data.token };
 }
 

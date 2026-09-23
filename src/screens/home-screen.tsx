@@ -75,6 +75,7 @@ import {
   View,
   RefreshControl,
 } from 'react-native';
+import type { StyleProp, TextStyle } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -205,87 +206,24 @@ const AUTH_REASON_COPY: Record<AuthReason, { titleKey: string; descKey: string; 
   ORGANIZER_ROLE: { titleKey: 'home.organizerAuthTitle', descKey: 'home.organizerAuthDesc', Icon: Users },
 };
 
-// ─── Apple-Style Live Character Formation Greeting Component ────────
-const GREETING_WORD_SEQUENCES = [
-  ['N', 'Na', 'Nam', 'Nama', 'Namas', 'Namast', 'Namaste'],
-  ['न', 'नम', 'नमस्', 'नमस्त', 'नमस्ते'],
-];
+// ─── Home Greeting ──────────────────────────────────────────────────
+// Was an animated "Namaste"/"नमस्ते" character-formation loop. Now one
+// fixed English line above the user's name, deliberately NOT translated:
+// it is brand copy, the same in every language (same rule as "Yatrenzo").
+const HOME_GREETING = 'Welcome to the trip..';
 
-function AppleMultilingualGreetingBase({
-  isFocused,
+function HomeGreetingBase({
   color,
   textShadow,
 }: {
-  isFocused: boolean;
   color?: string;
-  textShadow?: any;
+  textShadow?: StyleProp<TextStyle>;
 }) {
-  const wordSequences = GREETING_WORD_SEQUENCES;
-
-  const [wordIdx, setWordIdx] = useState(0);
-  const [stepIdx, setStepIdx] = useState(0);
-  const fadeAnim = useState(() => new Animated.Value(1))[0];
-
-  useEffect(() => {
-    if (!isFocused) return;
-    let isMounted = true;
-    const currentSequence = wordSequences[wordIdx];
-
-    // Deferred to a timer rather than called synchronously here, so this
-    // effect body itself never calls setState directly (react-hooks/set-state-in-effect).
-    const resetTimer = setTimeout(() => {
-      if (!isMounted) return;
-      setStepIdx(0);
-      fadeAnim.setValue(1);
-    }, 0);
-
-    let charTimer: ReturnType<typeof setInterval>;
-    let stepCounter = 0;
-
-    const animateNextChar = () => {
-      if (!isMounted) return;
-
-      if (stepCounter < currentSequence.length - 1) {
-        stepCounter++;
-        setStepIdx(stepCounter);
-        charTimer = setTimeout(animateNextChar, 85);
-      } else {
-        // Hold for 1.4s when word is fully formed
-        setTimeout(() => {
-          if (!isMounted) return;
-
-          // Dissolve word smoothly
-          Animated.timing(fadeAnim, {
-            toValue: 0,
-            duration: 450,
-            easing: Easing.inOut(Easing.quad),
-            useNativeDriver: true,
-          }).start(({ finished }) => {
-            if (!finished || !isMounted) return;
-
-            // Switch language
-            setWordIdx((prev) => (prev + 1) % wordSequences.length);
-          });
-        }, 1400);
-      }
-    };
-
-    charTimer = setTimeout(animateNextChar, 85);
-
-    return () => {
-      isMounted = false;
-      clearTimeout(resetTimer);
-      clearTimeout(charTimer);
-    };
-  }, [wordIdx, isFocused, fadeAnim, wordSequences]);
-
-  const currentText = wordSequences[wordIdx][stepIdx] || '';
-
   return (
     <View style={styles.appleGreetingContainer}>
-      <Animated.View style={{ opacity: fadeAnim }}>
-        <Text style={[styles.appleGreetingText, color ? { color } : null, textShadow]}>{currentText}</Text>
-      </Animated.View>
+      <Text style={[styles.appleGreetingText, color ? { color } : null, textShadow]} numberOfLines={1}>
+        {HOME_GREETING}
+      </Text>
     </View>
   );
 }
@@ -1385,7 +1323,7 @@ function StoriesRailBase({
 // props above. Memoising them means one section's data settling no longer
 // re-renders — and so no longer interrupts the animation of — every other
 // section on the screen.
-const AppleMultilingualGreeting = React.memo(AppleMultilingualGreetingBase);
+const HomeGreeting = React.memo(HomeGreetingBase);
 const TrendingWeatherCard = React.memo(TrendingWeatherCardBase);
 const RouteSafetyCard = React.memo(RouteSafetyCardBase);
 const FeaturedTripsCarousel = React.memo(FeaturedTripsCarouselBase);
@@ -1650,8 +1588,7 @@ function HomeScreen() {
           <View style={styles.topHeader}>
             <View style={styles.topHeaderRow}>
               <View style={styles.headerLeftCol}>
-                <AppleMultilingualGreeting
-                  isFocused={isFocused}
+                <HomeGreeting
                   color={headerTheme.greetingColor}
                   textShadow={headerTheme.greetingShadow ?? headerTheme.textShadow}
                 />

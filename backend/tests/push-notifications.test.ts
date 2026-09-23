@@ -2,6 +2,7 @@ import request from 'supertest';
 import app from '../src/app';
 import prisma from '../src/services/db';
 import { unreadCountFor } from '../src/lib/push';
+import { uniqueTestPhone } from './test-phone';
 
 /**
  * Integration tests for device-token registration, per-category push
@@ -28,7 +29,7 @@ async function registerAndLogin(label: string): Promise<{ userId: string; token:
   createdEmails.push(email);
   const res = await request(app)
     .post('/api/v1/auth/register')
-    .send({ name: `Push ${label}`, email, password: 'correcthorsebattery' });
+    .send({ name: `Push ${label}`, email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
   return { userId: res.body.data.user.id, token: res.body.data.token };
 }
 

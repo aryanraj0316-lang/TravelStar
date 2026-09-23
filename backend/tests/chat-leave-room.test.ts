@@ -1,6 +1,7 @@
 import request from 'supertest';
 import app from '../src/app';
 import prisma from '../src/services/db';
+import { uniqueTestPhone } from './test-phone';
 
 /**
  * Integration tests for DELETE /api/v1/chats/:id/members/me
@@ -24,7 +25,7 @@ async function registerUser(label: string): Promise<{ id: string; token: string 
   createdEmails.push(email);
   const res = await request(app)
     .post('/api/v1/auth/register')
-    .send({ name: `LeaveRoom ${label}`, email, password: 'correcthorsebattery' });
+    .send({ name: `LeaveRoom ${label}`, email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
   return { id: res.body.data.user.id, token: res.body.data.token };
 }
 

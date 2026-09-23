@@ -1,6 +1,7 @@
 import request from 'supertest';
 import app from '../src/app';
 import prisma from '../src/services/db';
+import { uniqueTestPhone } from './test-phone';
 
 /**
  * Integration tests for saved destinations — the profile screen's
@@ -31,7 +32,7 @@ async function registerUser(): Promise<string> {
   createdEmails.push(email);
   const res = await request(app)
     .post('/api/v1/auth/register')
-    .send({ name: 'Saved Tester', email, password: 'correcthorsebattery' });
+    .send({ name: 'Saved Tester', email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
   expect(res.status).toBe(201);
   return res.body.data.token as string;
 }

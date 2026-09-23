@@ -1,6 +1,7 @@
 import request from 'supertest';
 import app from '../src/app';
 import prisma from '../src/services/db';
+import { uniqueTestPhone } from './test-phone';
 
 /**
  * Hiring a guide for a trip: date ranges, checkpoint scope, accept/reject,
@@ -22,7 +23,7 @@ async function registerAndLogin(label: string): Promise<{ userId: string; token:
   createdEmails.push(email);
   const res = await request(app)
     .post('/api/v1/auth/register')
-    .send({ name: `Hire ${label}`, email, password: 'correcthorsebattery' });
+    .send({ name: `Hire ${label}`, email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
   return { userId: res.body.data.user.id, token: res.body.data.token };
 }
 

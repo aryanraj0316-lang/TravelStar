@@ -395,11 +395,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [sessionRestored, setSessionRestored] = useState(false);
   const [hasOnboarded, setHasOnboarded] = useState(false);
 
-  // TODO(prod): re-enable safeStorage.setItem('hasOnboarded', 'true') here
-  // once the onboarding flow is finalised — removed during development so
-  // the onboarding screen shows on every fresh app launch.
+  // Onboarding is shown once per device; the choice is persisted so it
+  // never reappears on later launches.
   const completeOnboarding = useCallback(() => {
     setHasOnboarded(true);
+    safeStorage.setItem('hasOnboarded', 'true').catch((e) => logger.warn('[Onboarding] Failed to persist:', e));
   }, []);
 
   // Declared here (rather than down by the other chat/SOS state, where they
@@ -758,6 +758,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       safeStorage.getItem('isLoggedIn').then((val) => {
         if (val === 'true') {
           setIsLoggedIn(true);
+          // A signed-in user has been past onboarding already.
+          setHasOnboarded(true);
         }
       }),
       safeStorage.getItem('savedStories').then((val) => {
@@ -775,12 +777,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setProfile(JSON.parse(val));
         }
       }),
-      // TODO(prod): re-enable reading hasOnboarded from storage once the
-      // onboarding flow is finalised. Skipped during development so it
-      // always shows on app launch.
-      // safeStorage.getItem('hasOnboarded').then((val) => {
-      //   if (val === 'true') setHasOnboarded(true);
-      // }),
+      safeStorage.getItem('hasOnboarded').then((val) => {
+        if (val === 'true') setHasOnboarded(true);
+      }),
     ]).then((results) => {
       results.forEach((r) => {
         if (r.status === 'rejected') logger.warn('[Hydrate] Reading local session failed:', r.reason);

@@ -2,6 +2,7 @@ import request from 'supertest';
 import app from '../src/app';
 import prisma from '../src/services/db';
 import { resolveSosAudience } from '../src/services/sos-audience';
+import { uniqueTestPhone } from './test-phone';
 
 /**
  * An SOS has to reach the people who can actually help, and has to survive
@@ -27,7 +28,7 @@ async function registerAndLogin(label: string): Promise<{ userId: string; token:
   createdEmails.push(email);
   const res = await request(app)
     .post('/api/v1/auth/register')
-    .send({ name: `SOS ${label}`, email, password: 'correcthorsebattery' });
+    .send({ name: `SOS ${label}`, email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
   return { userId: res.body.data.user.id, token: res.body.data.token };
 }
 

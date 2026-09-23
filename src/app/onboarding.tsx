@@ -192,14 +192,14 @@ export default function OnboardingScreen() {
 
   const isLast = index === SLIDES.length - 1;
 
-  const finish = (destination: '/auth' | '/') => {
+  const finish = (destination: '/auth?mode=LOGIN' | '/auth?mode=SIGNUP' | '/') => {
     completeOnboarding();
     router.replace(destination);
   };
 
   const goNext = () => {
     if (isLast) {
-      finish('/auth');
+      finish('/auth?mode=SIGNUP');
       return;
     }
     scrollRef.current?.scrollTo({
@@ -520,7 +520,7 @@ export default function OnboardingScreen() {
             <Pressable
               onPress={goNext}
               accessibilityRole="button"
-              accessibilityLabel={isLast ? t('onboarding.getStarted') : t('onboarding.next')}
+              accessibilityLabel={isLast ? t('onboarding.signUp') : t('onboarding.next')}
               style={({ pressed }) => [
                 styles.nextButtonWrapper,
                 pressed && styles.nextButtonPressed,
@@ -537,12 +537,22 @@ export default function OnboardingScreen() {
               >
                 <View style={styles.nextButtonContent}>
                   <Text style={[styles.nextButtonText, fontStyles.button]}>
-                    {isLast ? t('onboarding.getStarted') : t('onboarding.next')}
+                    {isLast ? t('onboarding.signUp') : t('onboarding.next')}
                   </Text>
                   <ArrowRight size={19} color="#FFFFFF" strokeWidth={2.4} />
                 </View>
               </LinearGradient>
             </Pressable>
+            {isLast && (
+              <Pressable
+                onPress={() => finish('/auth?mode=LOGIN')}
+                accessibilityRole="button"
+                accessibilityLabel={t('onboarding.logIn')}
+                style={({ pressed }) => [styles.loginButton, pressed && styles.nextButtonPressed]}
+              >
+                <Text style={[styles.loginButtonText, fontStyles.button]}>{t('onboarding.logIn')}</Text>
+              </Pressable>
+            )}
             {isLast && (
               <TouchableOpacity
                 style={styles.guestLink}
@@ -863,6 +873,23 @@ const styles = StyleSheet.create({
   nextButtonText: {
     fontSize: fontSize.md,
     color: '#FFFFFF',
+    letterSpacing: 0.3,
+  },
+  loginButton: {
+    alignSelf: 'center',
+    minWidth: 220,
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 52,
+    paddingHorizontal: 28,
+    borderRadius: radii.pill,
+    borderWidth: 1.5,
+    borderColor: '#2563EB',
+    backgroundColor: 'rgba(37, 99, 235, 0.08)',
+  },
+  loginButtonText: {
+    fontSize: fontSize.md,
+    color: '#2563EB',
     letterSpacing: 0.3,
   },
   guestLink: {

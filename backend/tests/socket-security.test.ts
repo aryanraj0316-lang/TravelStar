@@ -5,6 +5,7 @@ import request from 'supertest';
 import app from '../src/app';
 import prisma from '../src/services/db';
 import { createSocketServer } from '../src/socket-server';
+import { uniqueTestPhone } from './test-phone';
 
 /**
  * Integration tests for the Phase 3 socket-layer fixes in
@@ -34,7 +35,7 @@ async function registerUser(label: string) {
   const email = uniqueEmail(label);
   const res = await request(app)
     .post('/api/v1/auth/register')
-    .send({ name: label, email, password: 'correcthorsebattery' });
+    .send({ name: label, email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
   return { id: res.body.data.user.id as string, token: res.body.data.token as string };
 }
 

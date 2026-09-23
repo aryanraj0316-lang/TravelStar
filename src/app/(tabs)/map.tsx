@@ -1294,7 +1294,7 @@ function MapScreen() {
       try {
         const res = await fetch(
           `https://nominatim.openstreetmap.org/search?format=json&limit=6&q=${encodeURIComponent(q)}`,
-          { headers: { 'User-Agent': 'TravelStarApp/1.0' } },
+          { headers: { 'User-Agent': 'YatrenzoApp/1.0' } },
         );
         const rows = (await res.json()) as {
           place_id: number;
