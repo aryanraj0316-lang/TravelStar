@@ -69,7 +69,6 @@ export default function RootLayout() {
         <FeedbackProvider>
           <AppProvider>
             <ThemeProvider value={AppTheme}>
-              <AnimatedSplashOverlay />
               <GlobalSosBanner />
               <OfflineBanner />
               <Stack screenOptions={{ headerShown: false }}>
@@ -79,6 +78,13 @@ export default function RootLayout() {
                 <Stack.Screen name="stories" options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
                 <Stack.Screen name="all-stories" />
               </Stack>
+              {/* Last sibling on purpose. Mounted before the navigator it
+                  still held zIndex 1000, but react-native-screens gives the
+                  navigator its own native container on Android, which draws
+                  over earlier siblings regardless — the home screen showed
+                  through for a frame before the splash covered it again.
+                  Declared last, it paints last, so the cover never breaks. */}
+              <AnimatedSplashOverlay />
             </ThemeProvider>
           </AppProvider>
         </FeedbackProvider>

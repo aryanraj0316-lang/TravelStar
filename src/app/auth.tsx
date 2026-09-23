@@ -112,6 +112,11 @@ function TouristIcon({ color }: { color: string }) {
   );
 }
 
+// Single source of truth for the bottom bookmark ribbon's height: it sets
+// both the ribbon's own box and the padding the form reserves for it.
+const BOOKMARK_WIDTH = 268;
+const BOOKMARK_HEIGHT = 46;
+
 interface RoleOption {
   id: UserRole;
   title: string;
@@ -465,6 +470,11 @@ export default function AuthScreen() {
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={[
             styles.scrollContent,
+            // Reserve the strip the bookmark ribbon occupies. It is
+            // absolutely positioned against the screen, so it is outside
+            // this content's flow and used to sit on top of whatever the
+            // card ended with. Height (42) + its bottom offset + a gap.
+            { paddingBottom: BOOKMARK_HEIGHT + Math.max(insets.bottom, 14) + 14 + 16 },
             keyboardOpen && styles.scrollContentKeyboardOpen,
           ]}
         >
@@ -860,6 +870,7 @@ export default function AuthScreen() {
           style={[
             styles.screenBookmarkTab,
             {
+              height: BOOKMARK_HEIGHT,
               bottom: Math.max(insets.bottom, 14) + 14 - (keyboardOpen ? keyboardHeight : 0),
             },
           ]}
@@ -871,13 +882,13 @@ export default function AuthScreen() {
           accessibilityRole="button"
           accessibilityLabel={mode === 'LOGIN' ? 'Switch to Sign Up' : 'Switch to Log In'}
         >
-          <BookmarkRibbon width={248} height={42} />
+          <BookmarkRibbon width={BOOKMARK_WIDTH} height={BOOKMARK_HEIGHT} />
           <View style={styles.bookmarkContent}>
-            <Text style={styles.bookmarkLabel}>
-              {mode === 'LOGIN' ? "Don't have an account? " : 'Already have an account? '}
+            <Text style={styles.bookmarkLabel} numberOfLines={1}>
+              {mode === 'LOGIN' ? t('auth.noAccountYet') : t('auth.alreadyRegistered')}
             </Text>
-            <Text style={styles.bookmarkAction}>
-              {mode === 'LOGIN' ? 'Sign Up' : 'Log In'} →
+            <Text style={styles.bookmarkAction} numberOfLines={1}>
+              {mode === 'LOGIN' ? t('auth.createOneNow') : t('auth.switchToLogIn')} →
             </Text>
           </View>
       </TouchableOpacity>
@@ -979,13 +990,16 @@ const styles = StyleSheet.create({
       } as unknown as ViewStyle,
     }),
   },
+  // Stacked, not side by side: the two strings shared one 248px row and
+  // both got ellipsised once they were translated ("Don't have an accou…
+  // Create one no…"). Stacking gives each the ribbon's full width, which
+  // also absorbs the longer Indian-language wordings.
   bookmarkContent: {
-    width: 248,
-    height: 42,
-    flexDirection: 'row',
+    width: BOOKMARK_WIDTH,
+    height: BOOKMARK_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingLeft: 22,
+    paddingLeft: 26,
     paddingRight: 14,
   },
   bookmarkLabel: {

@@ -2,11 +2,18 @@ import { Image } from 'expo-image';
 import { SplashScreen, useRouter } from 'expo-router';
 import { logger } from '@/lib/logger';
 import { useEffect, useState } from 'react';
-import { Animated, StyleSheet, View } from 'react-native';
+import { Animated, Dimensions, StyleSheet, View } from 'react-native';
 
 import { useApp } from '@/store/AppContext';
 
 const DURATION = 500;
+
+// A square box, sized off the SHORTER screen edge so it fits whole in any
+// orientation, at 64% so the logo reads large without touching the edges.
+const SPLASH_LOGO_SIZE = (() => {
+  const { width, height } = Dimensions.get('window');
+  return Math.round(Math.min(width, height) * 0.64);
+})();
 
 // `ready` gates the hide — without it, onLayout fires on the very
 // first render (well before AppContext's session-restore hydrate effect
@@ -46,7 +53,11 @@ export function AnimatedSplashOverlay() {
 
   return (
     <Animated.View pointerEvents="none" style={[styles.splashOverlay, { opacity }]}>
-      <Image style={styles.image} source={require('@/assets/images/expo-logo.png')} />
+      <Image
+        style={styles.splashLogo}
+        source={require('@/assets/images/icon.png')}
+        contentFit="contain"
+      />
     </Animated.View>
   );
 }
@@ -91,11 +102,20 @@ const styles = StyleSheet.create({
     height: 128,
     position: 'absolute',
   },
+  // White, matching the native splash window, so the handover from the
+  // OS splash to this overlay is invisible — no colour flash between them.
   splashOverlay: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: '#208AEF',
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 1000,
+    elevation: 1000,
+  },
+  // The logo is square and shown whole: `contain` inside a square box, so
+  // no edge is ever cropped, whatever the screen's aspect ratio.
+  splashLogo: {
+    width: SPLASH_LOGO_SIZE,
+    height: SPLASH_LOGO_SIZE,
   },
 });
