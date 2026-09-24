@@ -2,7 +2,7 @@ import { Image } from 'expo-image';
 import { SplashScreen, useRouter, usePathname } from 'expo-router';
 import { logger } from '@/lib/logger';
 import { useEffect, useState } from 'react';
-import { Animated, Dimensions, StyleSheet, View } from 'react-native';
+import { Animated, Dimensions, Modal, StyleSheet, View } from 'react-native';
 
 import { useApp } from '@/store/AppContext';
 
@@ -84,14 +84,21 @@ export function AnimatedSplashOverlay() {
 
   if (!visible) return null;
 
+  // In a Modal, not just an absolutely-positioned sibling: on Android the
+  // navigator (react-native-screens) owns its own native container and could
+  // still paint over a plain sibling, which is what let the home screen show
+  // through. A Modal is a separate window, so nothing in the app can appear
+  // above it.
   return (
-    <Animated.View pointerEvents="none" style={[styles.splashOverlay, { opacity }]}>
-      <Image
-        style={styles.splashLogo}
-        source={require('@/assets/images/icon.png')}
-        contentFit="contain"
-      />
-    </Animated.View>
+    <Modal visible transparent animationType="none" statusBarTranslucent onRequestClose={() => {}}>
+      <Animated.View pointerEvents="none" style={[styles.splashOverlay, { opacity }]}>
+        <Image
+          style={styles.splashLogo}
+          source={require('@/assets/images/icon.png')}
+          contentFit="contain"
+        />
+      </Animated.View>
+    </Modal>
   );
 }
 

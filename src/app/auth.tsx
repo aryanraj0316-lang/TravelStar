@@ -463,7 +463,12 @@ export default function AuthScreen() {
       >
         <ScrollView
           ref={scrollViewRef}
-          scrollEnabled={keyboardOpen}
+          // Always scrollable. It used to be scrollable ONLY with the
+          // keyboard open, so on a short screen the sign-up form — which is
+          // taller than the viewport — simply had its submit button and the
+          // terms line clipped off the bottom, with the ribbon on top of them
+          // and no way to reach either.
+          scrollEnabled
           bounces={false}
           overScrollMode="never"
           showsVerticalScrollIndicator={false}
@@ -912,8 +917,13 @@ const styles = StyleSheet.create({
   },
 
   // ── Top Navigation Bar ──
+  // Floats OVER the card rather than taking a row above it: that row cost
+  // ~58px of height that the form needed, which is what pushed the submit
+  // button down into the bookmark ribbon.
   topBar: {
-    width: '100%',
+    position: 'absolute',
+    top: 0,
+    left: 0,
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'ios' ? 8 : 12,
     paddingBottom: 4,
@@ -927,7 +937,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 4,
+    paddingTop: 0,
     paddingBottom: 24,
   },
   scrollContentKeyboardOpen: {
