@@ -199,7 +199,17 @@ app.use('/api/v1/bookings', bookingRoutes);
 
 // Liveness — no dependencies. If the process is up, this returns 200.
 app.get('/health', (req, res) => {
-  res.status(200).json({ ok: true, data: { status: 'ok', service: 'Yatrenzo Backend', timestamp: new Date().toISOString() } });
+  // `commit` makes "is my push actually deployed?" answerable from outside:
+  // Render sets RENDER_GIT_COMMIT on every deploy.
+  res.status(200).json({
+    ok: true,
+    data: {
+      status: 'ok',
+      service: 'Yatrenzo Backend',
+      commit: (process.env.RENDER_GIT_COMMIT ?? 'unknown').slice(0, 8),
+      timestamp: new Date().toISOString(),
+    },
+  });
 });
 
 // Readiness — checks the dependencies the app needs to serve traffic
