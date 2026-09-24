@@ -76,6 +76,10 @@ export default function OnboardingScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const [index, setIndex] = useState(0);
   const [scrollX] = useState(() => new Animated.Value(0));
+  // Measured, not assumed: slide 3's title wraps to different heights per
+  // language, and that height decides how far the block can sit down the
+  // screen before it collides with the pagination dots.
+  const [slide3TextBlockHeight, setSlide3TextBlockHeight] = useState(0);
 
   // 3 independent hovering float animations for the 3 trip cards on slide 1
   // useState, not useRef().current, so these are read as values rather
@@ -254,10 +258,33 @@ export default function OnboardingScreen() {
   // in the lower white space with ample clearance above the bottom controls.
   const slide3Scale = Math.max(SCREEN_WIDTH / 460, SCREEN_HEIGHT / 1024);
   const slide3ImageBottom = (SCREEN_HEIGHT - 1024 * slide3Scale) / 2 + 385 * slide3Scale;
-  const slide3TopSpacerHeight = Math.max(
+  const slide3TopSpacerIdeal = Math.max(
     Math.round(slide3ImageBottom + 20),
     Math.round(SCREEN_HEIGHT * 0.40),
   );
+
+  // How much room the bottom block needs on the LAST slide, where it is at
+  // its tallest: dots row (8 + 16 margin) + Sign-up button (52) + gap (12) +
+  // Log-in button (52) + gap (12) + guest link (~34) + the container's own
+  // bottom padding. Derived from the same constants the styles below use.
+  const lastSlideControlsHeight =
+    8 + space[4] + 52 + space[3] + 52 + space[3] + 34 + Math.max(insets.bottom, 20) + 28;
+
+  // The spacer positioned slide 3's text purely off the photo, ignoring what
+  // sits underneath, so on shorter screens the title and the safety-features
+  // card ran into the pagination dots. Pull the block up by whatever it
+  // overshoots by — on tall screens nothing changes, because the ideal
+  // spacer already clears the controls.
+  const slide3TopSpacerHeight =
+    slide3TextBlockHeight > 0
+      ? Math.max(
+          space[6],
+          Math.min(
+            slide3TopSpacerIdeal,
+            SCREEN_HEIGHT - lastSlideControlsHeight - slide3TextBlockHeight - space[4],
+          ),
+        )
+      : slide3TopSpacerIdeal;
 
   const activeDotColor = C.blue;
   const inactiveDotColor = '#CBD5E1';
@@ -425,7 +452,13 @@ export default function OnboardingScreen() {
                 />
                 <View style={styles.slide3Content} pointerEvents="box-none">
                   <View style={{ height: slide3TopSpacerHeight }} />
-                  <View style={styles.slide1TextWrap}>
+                  <View
+                    style={styles.slide1TextWrap}
+                    onLayout={(e) => {
+                      const h = Math.round(e.nativeEvent.layout.height);
+                      if (h > 0 && h !== slide3TextBlockHeight) setSlide3TextBlockHeight(h);
+                    }}
+                  >
                     <Text style={[styles.title, fontStyles.title]}>
                       {t('onboarding.slide3Title').split('\n')[0]}
                       {'\n'}
