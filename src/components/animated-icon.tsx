@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { SplashScreen, useRouter } from 'expo-router';
+import { SplashScreen, useRouter, usePathname } from 'expo-router';
 import { logger } from '@/lib/logger';
 import { useEffect, useState } from 'react';
 import { Animated, Dimensions, StyleSheet, View } from 'react-native';
@@ -23,19 +23,40 @@ const SPLASH_LOGO_SIZE = (() => {
 //
 // A device that hasn't completed onboarding yet gets redirected to it
 // while the splash is still covering the screen, so the app never flashes
-// its normal tabs first — the redirect and the splash's hide both key off
-// the same `sessionRestored` flip, in this one effect.
+// its normal tabs first.
+//
+// Redirecting and uncovering used to happen in the same effect, one after
+// the other. `router.replace` is not synchronous, though: the home tabs are
+// the initial route and stay mounted while the navigation is dispatched, so
+// the overlay began fading over HOME and onboarding only painted partway
+// through the 500ms fade — a visible flash of the home screen right before
+// onboarding. The uncover now waits for the redirect to actually land,
+// watching the pathname rather than assuming.
+const REDIRECT_FALLBACK_MS = 2500;
+
 export function AnimatedSplashOverlay() {
   const { sessionRestored, hasOnboarded } = useApp();
   const router = useRouter();
+  const pathname = usePathname();
   const [visible, setVisible] = useState(true);
   const [opacity] = useState(() => new Animated.Value(1));
+  // Escape hatch: if the redirect never lands (a route error, say), the
+  // splash must not sit there forever hiding a working app.
+  const [redirectTimedOut, setRedirectTimedOut] = useState(false);
+
+  const awaitingOnboarding = sessionRestored && !hasOnboarded;
+  const onOnboarding = pathname === '/onboarding' || pathname.startsWith('/onboarding');
+  const coveredUntil = awaitingOnboarding && !onOnboarding && !redirectTimedOut;
 
   useEffect(() => {
-    if (!sessionRestored) return;
-    if (!hasOnboarded) {
-      router.replace('/onboarding');
-    }
+    if (!sessionRestored || hasOnboarded) return;
+    router.replace('/onboarding');
+    const timer = setTimeout(() => setRedirectTimedOut(true), REDIRECT_FALLBACK_MS);
+    return () => clearTimeout(timer);
+  }, [sessionRestored, hasOnboarded, router]);
+
+  useEffect(() => {
+    if (!sessionRestored || coveredUntil) return;
     SplashScreen.hideAsync()
       .catch((e) => logger.warn('[Splash] hideAsync failed:', e))
       .finally(() => {
@@ -47,7 +68,7 @@ export function AnimatedSplashOverlay() {
           setVisible(false);
         });
       });
-  }, [sessionRestored, hasOnboarded, opacity, router]);
+  }, [sessionRestored, coveredUntil, opacity]);
 
   if (!visible) return null;
 
