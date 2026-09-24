@@ -77,7 +77,9 @@
     },
     "owner": "harsh_16",
     "updates": {
-      "url": "https://u.expo.dev/9de41b02-3359-4583-bda7-d81ebfe1b8d6"
+      "url": "https://u.expo.dev/9de41b02-3359-4583-bda7-d81ebfe1b8d6",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 8000
     }
   }
 }
