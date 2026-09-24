@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useNavigation, useRouter } from 'expo-router';
 import ArrowLeft from 'lucide-react-native/icons/arrow-left';
 import KeyRound from 'lucide-react-native/icons/key-round';
 import Lock from 'lucide-react-native/icons/lock';
@@ -30,6 +30,24 @@ const MIN_PASSWORD_LENGTH = 10;
 export default function ForgotPasswordScreen() {
   const { t } = useTranslation();
   const router = useRouter();
+  const navigation = useNavigation();
+
+  // Going back to the login screen has to REUSE the auth screen this flow was
+  // opened from, not push a second one. `router.replace` swapped this screen
+  // for a fresh /auth while the original stayed underneath, so after a
+  // successful sign-in the handler's `router.back()` popped the new one and
+  // revealed the old sign-in screen — the user appeared to be thrown back to
+  // login and had to sign in a second time.
+  const goToLogin = () => {
+    const state = (navigation as { getState?: () => { routes?: { name?: string }[] } | undefined }).getState?.();
+    const routes = state?.routes ?? [];
+    const previous = routes[routes.length - 2];
+    if (previous?.name === 'auth' && router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace({ pathname: '/auth', params: { mode: 'LOGIN' } });
+  };
 
   const [step, setStep] = useState<'PHONE' | 'CODE' | 'DONE'>('PHONE');
   const [phone, setPhone] = useState('');
@@ -157,7 +175,7 @@ export default function ForgotPasswordScreen() {
                 </Text>
                 <Button
                   label={t('forgotPassword.logIn')}
-                  onPress={() => router.replace({ pathname: '/auth', params: { mode: 'LOGIN' } })}
+                  onPress={goToLogin}
                   fullWidth
                   style={styles.submitBtn}
                 />
@@ -254,7 +272,7 @@ export default function ForgotPasswordScreen() {
             <View style={styles.footerWrap}>
               <Text style={styles.footerText}>{t('forgotPassword.rememberedIt')}</Text>
               <TouchableOpacity
-                onPress={() => router.replace({ pathname: '/auth', params: { mode: 'LOGIN' } })}
+                onPress={goToLogin}
                 hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
                 accessibilityRole="button"
                 accessibilityLabel={t('forgotPassword.logIn')}

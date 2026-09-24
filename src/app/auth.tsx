@@ -17,7 +17,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, {
@@ -164,6 +164,7 @@ const ROLES: RoleOption[] = [
 export default function AuthScreen() {
   const { t } = useTranslation();
   const router = useRouter();
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
   const { currentRole, setCurrentRole, updateProfile, login, refreshTrips } = useApp();
@@ -301,7 +302,14 @@ export default function AuthScreen() {
         updateProfile(userObj);
         login();
         setTimeout(refreshAfterAuth, 300);
-        if (router.canGoBack()) {
+        // Going back returns the user to whatever they were doing before they
+        // were asked to sign in — unless the screen underneath is ANOTHER auth
+        // screen, which would show them the sign-in form again right after
+        // telling them they are signed in. In that case leave for the app.
+        const navState = (navigation as { getState?: () => { routes?: { name?: string }[] } | undefined }).getState?.();
+        const stackRoutes = navState?.routes ?? [];
+        const beneath = stackRoutes[stackRoutes.length - 2];
+        if (router.canGoBack() && beneath?.name !== 'auth') {
           router.back();
         } else {
           router.replace('/');
