@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import {
   View,
   Text,
+  Dimensions,
   StyleSheet,
   TouchableOpacity,
   KeyboardAvoidingView,
@@ -114,6 +115,14 @@ function TouristIcon({ color }: { color: string }) {
 
 // Single source of truth for the bottom bookmark ribbon's height: it sets
 // both the ribbon's own box and the padding the form reserves for it.
+// The form does not scroll (except while the keyboard is up), so it has to
+// fit the screen. The header image is the block that can give height back:
+// full size on tall phones, proportionally shorter on small ones.
+const HEADER_BANNER_HEIGHT = Math.max(
+  118,
+  Math.min(195, Math.round(Dimensions.get('window').height * 0.21)),
+);
+
 const BOOKMARK_WIDTH = 268;
 const BOOKMARK_HEIGHT = 46;
 
@@ -463,12 +472,7 @@ export default function AuthScreen() {
       >
         <ScrollView
           ref={scrollViewRef}
-          // Always scrollable. It used to be scrollable ONLY with the
-          // keyboard open, so on a short screen the sign-up form — which is
-          // taller than the viewport — simply had its submit button and the
-          // terms line clipped off the bottom, with the ribbon on top of them
-          // and no way to reach either.
-          scrollEnabled
+          scrollEnabled={keyboardOpen}
           bounces={false}
           overScrollMode="never"
           showsVerticalScrollIndicator={false}
@@ -925,7 +929,7 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'ios' ? 8 : 12,
+    paddingTop: Platform.OS === 'ios' ? 22 : 26,
     paddingBottom: 4,
     flexDirection: 'row',
     alignItems: 'center',
@@ -1033,7 +1037,7 @@ const styles = StyleSheet.create({
   // ── Header Airplane Image Banner ──
   headerBanner: {
     width: '100%',
-    height: 195,
+    height: HEADER_BANNER_HEIGHT,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     borderBottomLeftRadius: 0,
