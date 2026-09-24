@@ -76,10 +76,10 @@ export default function OnboardingScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const [index, setIndex] = useState(0);
   const [scrollX] = useState(() => new Animated.Value(0));
-  // Measured, not assumed: slide 3's title wraps to different heights per
-  // language, and that height decides how far the block can sit down the
-  // screen before it collides with the pagination dots.
-  const [slide3TextBlockHeight, setSlide3TextBlockHeight] = useState(0);
+  // Measured, not assumed: slide 3's heading wraps to different heights per
+  // language, and what is left of the white band after it decides how big
+  // the features card can be.
+  const [slide3TitleHeight, setSlide3TitleHeight] = useState(0);
 
   // 3 independent hovering float animations for the 3 trip cards on slide 1
   // useState, not useRef().current, so these are read as values rather
@@ -270,21 +270,40 @@ export default function OnboardingScreen() {
   const lastSlideControlsHeight =
     8 + space[4] + 52 + space[3] + 52 + space[3] + 34 + Math.max(insets.bottom, 20) + 28;
 
-  // The spacer positioned slide 3's text purely off the photo, ignoring what
-  // sits underneath, so on shorter screens the title and the safety-features
-  // card ran into the pagination dots. Pull the block up by whatever it
-  // overshoots by — on tall screens nothing changes, because the ideal
-  // spacer already clears the controls.
-  const slide3TopSpacerHeight =
-    slide3TextBlockHeight > 0
-      ? Math.max(
-          space[6],
-          Math.min(
-            slide3TopSpacerIdeal,
-            SCREEN_HEIGHT - lastSlideControlsHeight - slide3TextBlockHeight - space[4],
-          ),
-        )
-      : slide3TopSpacerIdeal;
+  // The text block has to clear BOTH edges of the white area: the photo's
+  // curve above it and the bottom controls below it. Clamping only against
+  // the controls pulled it up into the photo on short screens; clamping only
+  // against the photo let it run under the dots. So: never start above the
+  // photo, never end below the controls, and when the space between them is
+  // tighter than the block, centre it there — the least-bad crowding, shared
+  // evenly rather than dumped on one side.
+  const slide3Floor = Math.round(slide3ImageBottom + space[3]);
+
+  // On anything shorter than a very tall phone the block simply does not fit
+  // between the photo and the controls at full size, so moving it can only
+  // trade one collision for the other. The features card is the big item, so
+  // it shrinks (keeping its 540×309 ratio) to whatever the white band leaves
+  // after the heading — down to a floor, below which it would be unreadable.
+  const slide3FeaturesIdealWidth = Math.min(SCREEN_WIDTH - space[6] * 2, 360);
+  const slide3FeaturesIdealHeight = Math.round(slide3FeaturesIdealWidth * (309 / 540));
+  const slide3BandHeight =
+    SCREEN_HEIGHT - lastSlideControlsHeight - slide3Floor - space[4];
+  const slide3FeaturesHeight = Math.max(
+    96,
+    Math.min(
+      slide3FeaturesIdealHeight,
+      slide3BandHeight - slide3TitleHeight - space[2],
+    ),
+  );
+  const slide3FeaturesWidth = Math.min(
+    slide3FeaturesIdealWidth,
+    Math.round(slide3FeaturesHeight * (540 / 309)),
+  );
+
+  // Sits just under the photo; the block above was sized to fit the band, so
+  // this clears the controls too. Falls back to the old spacer until the
+  // heading has been measured.
+  const slide3TopSpacerHeight = slide3TitleHeight > 0 ? slide3Floor : slide3TopSpacerIdeal;
 
   const activeDotColor = C.blue;
   const inactiveDotColor = '#CBD5E1';
@@ -452,14 +471,14 @@ export default function OnboardingScreen() {
                 />
                 <View style={styles.slide3Content} pointerEvents="box-none">
                   <View style={{ height: slide3TopSpacerHeight }} />
-                  <View
-                    style={styles.slide1TextWrap}
-                    onLayout={(e) => {
-                      const h = Math.round(e.nativeEvent.layout.height);
-                      if (h > 0 && h !== slide3TextBlockHeight) setSlide3TextBlockHeight(h);
-                    }}
-                  >
-                    <Text style={[styles.title, fontStyles.title]}>
+                  <View style={styles.slide1TextWrap}>
+                    <Text
+                      style={[styles.title, fontStyles.title]}
+                      onLayout={(e) => {
+                        const h = Math.round(e.nativeEvent.layout.height);
+                        if (h > 0 && h !== slide3TitleHeight) setSlide3TitleHeight(h);
+                      }}
+                    >
                       {t('onboarding.slide3Title').split('\n')[0]}
                       {'\n'}
                       <Text style={[styles.titleHighlight, fontStyles.titleHighlight]}>
@@ -468,7 +487,10 @@ export default function OnboardingScreen() {
                     </Text>
                     <Image
                       source={require('@/assets/images/onboarding-slide3-features.png')}
-                      style={styles.slide3FeaturesImage}
+                      style={[
+                        styles.slide3FeaturesImage,
+                        { width: slide3FeaturesWidth, height: slide3FeaturesHeight },
+                      ]}
                       resizeMode="contain"
                       accessibilityLabel={t('onboarding.slide3Body')}
                     />

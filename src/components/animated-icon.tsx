@@ -6,7 +6,9 @@ import { Animated, Dimensions, StyleSheet, View } from 'react-native';
 
 import { useApp } from '@/store/AppContext';
 
-const DURATION = 500;
+// Short fade: during it the screen underneath is partly visible, which is
+// what read as 'the home screen appears behind the splash'.
+const DURATION = 250;
 
 // A square box, sized off the SHORTER screen edge so it fits whole in any
 // orientation, at 64% so the logo reads large without touching the edges.
@@ -33,6 +35,10 @@ const SPLASH_LOGO_SIZE = (() => {
 // onboarding. The uncover now waits for the redirect to actually land,
 // watching the pathname rather than assuming.
 const REDIRECT_FALLBACK_MS = 2500;
+// The splash must actually be seen. Session restore can finish in a few
+// hundred milliseconds, and hiding the moment it does made the logo flash
+// past or never appear at all.
+const MIN_VISIBLE_MS = 1400;
 
 export function AnimatedSplashOverlay() {
   const { sessionRestored, hasOnboarded } = useApp();
@@ -43,6 +49,12 @@ export function AnimatedSplashOverlay() {
   // Escape hatch: if the redirect never lands (a route error, say), the
   // splash must not sit there forever hiding a working app.
   const [redirectTimedOut, setRedirectTimedOut] = useState(false);
+  const [minTimeDone, setMinTimeDone] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setMinTimeDone(true), MIN_VISIBLE_MS);
+    return () => clearTimeout(timer);
+  }, []);
 
   const awaitingOnboarding = sessionRestored && !hasOnboarded;
   const onOnboarding = pathname === '/onboarding' || pathname.startsWith('/onboarding');
@@ -56,7 +68,7 @@ export function AnimatedSplashOverlay() {
   }, [sessionRestored, hasOnboarded, router]);
 
   useEffect(() => {
-    if (!sessionRestored || coveredUntil) return;
+    if (!sessionRestored || coveredUntil || !minTimeDone) return;
     SplashScreen.hideAsync()
       .catch((e) => logger.warn('[Splash] hideAsync failed:', e))
       .finally(() => {
@@ -68,7 +80,7 @@ export function AnimatedSplashOverlay() {
           setVisible(false);
         });
       });
-  }, [sessionRestored, coveredUntil, opacity]);
+  }, [sessionRestored, coveredUntil, minTimeDone, opacity]);
 
   if (!visible) return null;
 
