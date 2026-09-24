@@ -123,6 +123,13 @@ const HEADER_BANNER_HEIGHT = Math.max(
   Math.min(195, Math.round(Dimensions.get('window').height * 0.21)),
 );
 
+// The banner copy is anchored to the banner's BOTTOM, so on a short screen
+// (where the banner shrinks) it rises into the lowered back button. When the
+// banner is too short for both, the copy starts to the right of the button
+// instead of under it; on a tall banner nothing moves.
+const BACK_BUTTON_TOP = Platform.OS === 'ios' ? 40 : 46;
+const HEADER_COPY_LEFT = HEADER_BANNER_HEIGHT < 175 ? 76 : 20;
+
 const BOOKMARK_WIDTH = 268;
 const BOOKMARK_HEIGHT = 46;
 
@@ -929,7 +936,7 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'ios' ? 22 : 26,
+    paddingTop: BACK_BUTTON_TOP,
     paddingBottom: 4,
     flexDirection: 'row',
     alignItems: 'center',
@@ -1061,7 +1068,7 @@ const styles = StyleSheet.create({
   },
   headerBottomLeftWrap: {
     position: 'absolute',
-    left: 20,
+    left: HEADER_COPY_LEFT,
     bottom: 14,
     maxWidth: '82%',
     zIndex: 10,
