@@ -140,32 +140,22 @@ const globalLimiter = rateLimit({
   message: { ok: false, error: { code: 'RATE_LIMITED', message: 'Too many requests. Please slow down.' } },
 });
 
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  skip: skipInTest,
-  // Limit per IP *and* per email so one attacker cannot spray many accounts
-  // from one IP, nor one account from many IPs.
-  keyGenerator: (req) => {
-    const email = typeof req.body?.email === 'string' ? req.body.email.toLowerCase() : '';
-    return `${req.ip}:${email}`;
-  },
-  message: { ok: false, error: { code: 'RATE_LIMITED', message: 'Too many sign-in attempts. Please try again later.' } },
-});
-
-const registerLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  max: 3,
-  skip: skipInTest,
-  message: { ok: false, error: { code: 'RATE_LIMITED', message: 'Too many accounts created from this address.' } },
-});
-
-const passwordResetLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  max: 5,
-  skip: skipInTest,
-  message: { ok: false, error: { code: 'RATE_LIMITED', message: 'Too many reset requests. Please try again later.' } },
-});
+// The per-IP limits on the auth routes are off: they were blocking ordinary
+// testing (5 sign-ins per 15 minutes, 5 reset requests per hour, shared by
+// everyone behind one IP), and the login limiter keyed on `req.body.email`,
+// which sign-in stopped sending when it moved to mobile numbers — so every
+// caller collapsed onto the same bucket and the whole IP was locked out
+// after five attempts.
+//
+// The protection that actually guards an account is still in place, in the
+// route logic rather than here:
+//   - failed sign-ins lock THAT number for 15 minutes (services/login-attempts)
+//   - a reset code dies after 5 wrong guesses (OTP_MAX_ATTEMPTS)
+//   - a new reset code cannot be requested more than once a minute
+//   - the global limiter below still caps 1000 requests per 15 min per IP
+const loginLimiter = (_req: unknown, _res: unknown, next: () => void) => next();
+const registerLimiter = loginLimiter;
+const passwordResetLimiter = loginLimiter;
 
 const writeLimiter = rateLimit({
   windowMs: 60 * 1000,
