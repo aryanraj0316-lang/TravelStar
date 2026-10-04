@@ -1,0 +1,50 @@
+// Website version of the tabs layout (Android uses _layout.tsx).
+//
+// Identical except for one wrapper: the phone's floating dock sits inside
+// `.ts-mobile-only`, which is `display: contents` below 768px (no effect at
+// all) and `display: none` above it, where the WebShell sidebar takes over.
+// AppTabBar stays mounted either way, so its `tabChanged` event, which
+// AppContext relies on for the chat unread dot, keeps firing.
+import { Tabs, type ErrorBoundaryProps } from 'expo-router';
+
+import { AppTabBar } from '@/components/AppTabBar';
+import { InAppNotificationBanner } from '@/components/InAppNotificationBanner';
+import { RouteErrorFallback } from '@/components/route-error-fallback';
+
+// Secondary safety net for a crash in shared tab-group chrome (AppTabBar,
+// InAppNotificationBanner) rather than in one screen's own content — each
+// of the six screens also exports its own ErrorBoundary below, which
+// catches first and keeps the tab bar itself alive. This one only fires if
+// this layout's own render throws.
+export function ErrorBoundary(props: ErrorBoundaryProps) {
+  return <RouteErrorFallback {...props} label="Navigation" />;
+}
+
+// Real expo-router tab navigator (REMEDIATION.md §7.1/§7.3), replacing the
+// old horizontal-ScrollView "pager" that faked tabs while every screen was
+// also independently reachable as a real route — the two systems disagreed
+// with each other whenever code called `router.push('/map')` etc. Tabs
+// default to `lazy: true`, so only the focused tab mounts on first visit
+// instead of all six mounting eagerly at launch (§7.3).
+export default function TabsLayout() {
+  return (
+    <>
+      <Tabs
+        screenOptions={{ headerShown: false }}
+        tabBar={(props) => (
+          <div className="ts-mobile-only">
+            <AppTabBar {...props} />
+          </div>
+        )}
+      >
+        <Tabs.Screen name="index" />
+        <Tabs.Screen name="search" />
+        <Tabs.Screen name="create" />
+        <Tabs.Screen name="map" />
+        <Tabs.Screen name="chat" options={{ lazy: false }} />
+        <Tabs.Screen name="profile" />
+      </Tabs>
+      <InAppNotificationBanner />
+    </>
+  );
+}

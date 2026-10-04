@@ -1,3 +1,10 @@
+// WEBSITE COPY of src/app/(tabs)/profile.tsx. Expo Router uses this file for
+// the web build; Android keeps using profile.tsx (this one is bundled there as
+// an unused route file). Below 768px it renders exactly what profile.tsx
+// renders. From 768px up a few header styles are overridden (see `ws` and
+// webProfile) so the header reads left-to-right, like a desktop profile page.
+// Same state, same handlers. Any feature change made to profile.tsx must be
+// copied here too.
 import { FloatingStarField } from '@/components/FloatingStarField';
 import { RouteErrorFallback } from '@/components/route-error-fallback';
 import { Button, Input, ScreenEmpty, ScreenError, ScreenLoading, Sheet } from '@/components/ui';
@@ -60,6 +67,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle } from 'react-native-svg';
+import { useWebLayout, webDisplayFont } from '@/web/layout';
 
 // Safe dynamic import to prevent native app crash if module is unlinked in old
 // APK. Deliberately require(), not import(): this needs to synchronously
@@ -138,6 +146,8 @@ function ProfileCompletionRing({
 }
 
 function ProfileScreen() {
+  const web = useWebLayout();
+  const ws: Partial<typeof webProfile> = web.isDesktop ? webProfile : {};
   useEffect(() => {
     logger.log('Screen mounted: ProfileScreen');
   }, []);
@@ -708,7 +718,7 @@ function ProfileScreen() {
         {/* ════════════════════════════════════════════════
             HERO EXECUTIVE BANNER & PROFILE HEADER
             ════════════════════════════════════════════════ */}
-        <View style={[styles.heroWrap, { paddingTop: Math.max(insets.top, 24) + 12 }]}>
+        <View style={[styles.heroWrap, ws.heroWrap, { paddingTop: Math.max(insets.top, 24) + 12 }]}>
           {/* Deep pitch-black cosmic abyss gradient */}
           <LinearGradient
             colors={['#010307', '#020610', '#040B1A', '#07152E']}
@@ -759,7 +769,7 @@ function ProfileScreen() {
             </TouchableOpacity>
           </View>
 
-          <View style={styles.profileHeaderContent}>
+          <View style={[styles.profileHeaderContent, ws.profileHeaderContent]}>
             {/* Elevated Professional Avatar */}
             <TouchableOpacity
               activeOpacity={0.85}
@@ -770,7 +780,7 @@ function ProfileScreen() {
                   setShowEditModal(true);
                 }
               }}
-              style={styles.avatarHaloContainer}
+              style={[styles.avatarHaloContainer, ws.avatarHaloContainer]}
               accessibilityRole="button"
               accessibilityLabel={
                 isLoggedIn
@@ -817,16 +827,16 @@ function ProfileScreen() {
               )}
             </TouchableOpacity>
 
-            <View style={styles.nameSection}>
-              <View style={styles.nameRow}>
-                <Text style={styles.userName}>{profile.name || (isLoggedIn ? 'Traveler' : 'Guest Traveler')}</Text>
+            <View style={[styles.nameSection, ws.nameSection]}>
+              <View style={[styles.nameRow, ws.nameRow]}>
+                <Text {...(web.isDesktop ? webDisplayFont : {})} style={[styles.userName, ws.userName]}>{profile.name || (isLoggedIn ? 'Traveler' : 'Guest Traveler')}</Text>
                 {profile.isVerified && (
                   <CheckCircle size={17} color="#38BDF8" fill="#38BDF8" style={{ marginLeft: 6 }} />
                 )}
               </View>
 
               {Boolean(profile.email) && (
-                <View style={styles.userEmailRow}>
+                <View style={[styles.userEmailRow, ws.userEmailRow]}>
                   <Mail size={13} color="#93C5FD" strokeWidth={2} />
                   <Text style={styles.userEmailText} numberOfLines={1} ellipsizeMode="middle">
                     {profile.email}
@@ -845,7 +855,7 @@ function ProfileScreen() {
                     router.push('/auth?mode=SIGNUP');
                   }
                 }}
-                style={styles.userBioTouchable}
+                style={[styles.userBioTouchable, ws.userBioTouchable]}
                 accessibilityRole="button"
                 accessibilityLabel={isLoggedIn ? (profile.bio ? "Edit your bio" : "Add a short bio") : "Sign in to add a bio"}
               >
@@ -853,7 +863,7 @@ function ProfileScreen() {
                   numberOfLines={1}
                   adjustsFontSizeToFit
                   minimumFontScale={0.8}
-                  style={[styles.userBio, !profile.bio && styles.userBioEmpty]}
+                  style={[styles.userBio, !profile.bio && styles.userBioEmpty, ws.userBio]}
                 >
                   {profile.bio || (isLoggedIn ? t('profile.bioEmpty') : 'Sign in to access your saved trips, bookings, and rewards.')}
                 </Text>
@@ -862,7 +872,7 @@ function ProfileScreen() {
               {!isLoggedIn && (
                 <TouchableOpacity
                   activeOpacity={0.85}
-                  style={styles.guestLoginPromptBtn}
+                  style={[styles.guestLoginPromptBtn, ws.guestLoginPromptBtn]}
                   onPress={() => router.push('/auth?mode=SIGNUP')}
                   accessibilityRole="button"
                   accessibilityLabel="Sign In or Create Account"
@@ -877,7 +887,7 @@ function ProfileScreen() {
         {/* ════════════════════════════════════════════════
             BODY CONTAINER (FLOATING OVER HERO)
             ════════════════════════════════════════════════ */}
-        <View style={styles.bodyContainer}>
+        <View style={[styles.bodyContainer, ws.bodyContainer]}>
 
 
           {/* ════════════════════════════════════════════════
@@ -932,7 +942,7 @@ function ProfileScreen() {
           {/* ════════════════════════════════════════════════
               MENU SECTIONS & CARDS
               ════════════════════════════════════════════════ */}
-          <View style={styles.menuContainer}>
+          <View style={[styles.menuContainer, ws.menuContainer]}>
             {/* Section: PERSONAL DETAILS — only the details the user has
                 actually filled in; the whole section is hidden when none are.
                 They can still add them from Edit Profile. */}
@@ -2603,6 +2613,72 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
     marginTop: 6,
+  },
+});
+
+// ─── Website header (≥768px) ────────────────────────────────────────
+const webProfile = StyleSheet.create({
+  heroWrap: {
+    minHeight: 300,
+    paddingHorizontal: 56,
+    paddingBottom: 64,
+    alignItems: 'stretch',
+  },
+  profileHeaderContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    gap: 40,
+    maxWidth: 860,
+    alignSelf: 'center',
+  },
+  avatarHaloContainer: {
+    marginBottom: 0,
+    marginHorizontal: 18,
+    transform: [{ scale: 1.35 }],
+  },
+  nameSection: {
+    flex: 1,
+    width: 'auto',
+    alignItems: 'flex-start',
+  },
+  nameRow: {
+    justifyContent: 'flex-start',
+  },
+  userName: {
+    fontSize: 40,
+    lineHeight: 46,
+    fontWeight: '600',
+    letterSpacing: -0.8,
+  },
+  userEmailRow: {
+    justifyContent: 'flex-start',
+    paddingHorizontal: 0,
+    maxWidth: 560,
+    marginTop: 8,
+  },
+  userBioTouchable: {
+    alignItems: 'flex-start',
+    paddingHorizontal: 0,
+    maxWidth: '100%',
+    marginTop: 12,
+  },
+  userBio: {
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'left',
+  },
+  guestLoginPromptBtn: {
+    alignSelf: 'flex-start',
+    marginTop: 18,
+    paddingVertical: 10,
+    paddingHorizontal: 22,
+  },
+  bodyContainer: {
+    paddingTop: 28,
+  },
+  menuContainer: {
+    paddingHorizontal: 40,
   },
 });
 

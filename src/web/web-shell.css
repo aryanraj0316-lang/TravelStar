@@ -1,0 +1,343 @@
+/* Website-only styles. Imported from src/app/_layout.web.tsx, so the Android
+   bundle never sees this file. Everything visual is inside a min-width
+   media query, which leaves narrow browsers (< 768px) exactly as they were. */
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=Outfit:wght@300;400;500;600;700;800&display=swap');
+
+:root {
+  --ts-ink: #0b1220;
+  --ts-ink-2: #334155;
+  --ts-muted: #64748b;
+  --ts-line: #e7ebf1;
+  --ts-hover: #f3f5f9;
+  --ts-surface: #ffffff;
+  --ts-page: #f7f8fb;
+  --ts-accent: #2563eb;
+  --ts-font-ui: 'Outfit', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --ts-font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
+  --ts-rail-w: 0px;
+}
+
+/* ── Below 768px: the frame is invisible ─────────────────────────────── */
+.ts-shell,
+.ts-main {
+  display: contents;
+}
+.ts-rail {
+  display: none;
+}
+.ts-stage {
+  display: contents;
+}
+.ts-mobile-only {
+  display: contents;
+}
+
+/* ── 768px and up: website frame ─────────────────────────────────────── */
+@media (min-width: 768px) {
+  :root {
+    --ts-rail-w: 76px;
+  }
+
+  /* body, not #root: dialogs render in a layer outside #root. */
+  body,
+  body * {
+    font-family: var(--ts-font-ui) !important;
+  }
+
+  .ts-mobile-only {
+    display: none;
+  }
+
+  .ts-shell {
+    display: flex;
+    flex-direction: row;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+    background: var(--ts-page);
+  }
+  .ts-shell.is-chromeless {
+    --ts-rail-w: 0px;
+  }
+
+  .ts-main {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Page column. Screens without their own desktop layout sit in a centred
+     sheet instead of stretching across the window. */
+  .ts-stage {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    margin: 0 auto;
+    position: relative;
+    overflow: hidden;
+  }
+  .ts-stage.is-column,
+  .ts-stage.is-wide,
+  .ts-stage.is-reading {
+    max-width: 1040px;
+    background: var(--ts-surface);
+    border-inline: 1px solid var(--ts-line);
+    box-shadow: 0 0 60px -30px rgba(11, 18, 32, 0.18);
+  }
+  .ts-stage.is-reading {
+    max-width: 780px;
+  }
+  .ts-stage.is-wide {
+    max-width: 1240px;
+  }
+
+  /* Sidebar */
+  .ts-rail {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 var(--ts-rail-w);
+    width: var(--ts-rail-w);
+    height: 100%;
+    box-sizing: border-box;
+    padding: 22px 12px 16px;
+    background: var(--ts-surface);
+    border-inline-end: 1px solid var(--ts-line);
+    overflow-y: auto;
+    overflow-x: hidden;
+    z-index: 5;
+  }
+
+  .ts-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 4px 8px 26px;
+    text-decoration: none;
+    color: var(--ts-ink);
+  }
+  .ts-brand-mark {
+    width: 36px;
+    height: 36px;
+    flex: 0 0 36px;
+    filter: drop-shadow(0 6px 14px rgba(37, 99, 235, 0.28));
+  }
+  #root .ts-brand-word {
+    display: none;
+    font-family: var(--ts-font-display) !important;
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+
+  .ts-nav-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .ts-nav-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    height: 50px;
+    padding: 0 14px;
+    border-radius: 14px;
+    color: var(--ts-ink-2);
+    text-decoration: none;
+    font-size: 15.5px;
+    font-weight: 500;
+    letter-spacing: 0.005em;
+    transition:
+      background-color 160ms ease,
+      color 160ms ease,
+      transform 160ms ease;
+  }
+  .ts-nav-item:hover {
+    background: var(--ts-hover);
+    color: var(--ts-ink);
+  }
+  .ts-nav-item:hover .ts-nav-icon {
+    transform: scale(1.06);
+  }
+  .ts-nav-item:active {
+    transform: scale(0.98);
+  }
+  .ts-nav-item:focus-visible {
+    outline: 2px solid var(--ts-accent);
+    outline-offset: 2px;
+  }
+  .ts-nav-item.is-active {
+    color: var(--ts-ink);
+    font-weight: 700;
+  }
+  .ts-nav-item.is-active::before {
+    content: '';
+    position: absolute;
+    inset-inline-start: -12px;
+    top: 13px;
+    bottom: 13px;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--ts-ink);
+  }
+
+  .ts-nav-icon {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+    transition: transform 160ms ease;
+  }
+  .ts-nav-dot {
+    position: absolute;
+    top: -2px;
+    inset-inline-end: -3px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #ef4444;
+    box-shadow: 0 0 0 2px var(--ts-surface);
+  }
+  .ts-nav-avatar {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    object-fit: cover;
+    box-shadow: 0 0 0 1px var(--ts-line);
+  }
+  .ts-nav-avatar.is-active {
+    box-shadow:
+      0 0 0 2px var(--ts-surface),
+      0 0 0 4px var(--ts-ink);
+  }
+
+  .ts-nav-label {
+    display: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Create: the one filled action */
+  .ts-rail-cta {
+    margin-top: 18px;
+  }
+  .ts-nav-item.is-primary {
+    justify-content: center;
+    gap: 10px;
+    background: var(--ts-ink);
+    color: #ffffff;
+    font-weight: 600;
+    box-shadow: 0 10px 24px -12px rgba(11, 18, 32, 0.55);
+  }
+  .ts-nav-item.is-primary:hover {
+    background: #1e293b;
+    color: #ffffff;
+  }
+  .ts-nav-item.is-primary.is-active::before {
+    display: none;
+  }
+
+  .ts-rail-footer {
+    display: none;
+    margin-top: auto;
+    padding: 18px 8px 0;
+  }
+  .ts-rail-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+  }
+  .ts-rail-links a {
+    color: var(--ts-muted);
+    font-size: 12px;
+    text-decoration: none;
+  }
+  .ts-rail-links a:hover {
+    color: var(--ts-ink);
+    text-decoration: underline;
+  }
+  .ts-rail-copy {
+    margin-top: 10px;
+    color: #94a3b8;
+    font-size: 11.5px;
+    letter-spacing: 0.02em;
+  }
+}
+
+/* ── Website screens (768px and up) ──────────────────────────────────── */
+@keyframes ts-reveal {
+  to {
+    opacity: 1;
+  }
+}
+@media (min-width: 768px) {
+  /* Hidden until hydrated; the animation is a fallback that reveals the
+     page anyway if the app script never runs. */
+  html:not(.ts-hydrated) .ts-main {
+    opacity: 0;
+    animation: ts-reveal 0.2s ease 4s forwards;
+  }
+  .ts-main {
+    transition: opacity 0.25s ease;
+  }
+
+  body [data-font='display'] {
+    font-family: var(--ts-font-display) !important;
+    font-optical-sizing: auto;
+  }
+
+  [data-hover='lift'] {
+    transition:
+      transform 220ms ease,
+      box-shadow 220ms ease !important;
+  }
+  [data-hover='lift']:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 22px 40px -24px rgba(11, 18, 32, 0.45) !important;
+  }
+  [data-hover='row'] {
+    transition: background-color 160ms ease !important;
+  }
+  [data-hover='row']:hover {
+    background-color: var(--ts-hover) !important;
+  }
+}
+
+/* ── 1264px and up: full sidebar with labels ─────────────────────────── */
+@media (min-width: 1264px) {
+  :root {
+    --ts-rail-w: 248px;
+  }
+  .ts-rail {
+    padding: 26px 16px 18px;
+  }
+  #root .ts-brand-word {
+    display: inline;
+  }
+  .ts-nav-label {
+    display: inline;
+  }
+  .ts-nav-item.is-active::before {
+    inset-inline-start: -16px;
+  }
+  .ts-nav-item.is-primary {
+    justify-content: flex-start;
+    gap: 16px;
+  }
+  .ts-rail-footer {
+    display: block;
+  }
+}

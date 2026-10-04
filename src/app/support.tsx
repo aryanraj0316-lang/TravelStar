@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import ArrowLeft from 'lucide-react-native/icons/arrow-left';
-import MessageSquare from 'lucide-react-native/icons/message-square';
+
 import Mail from 'lucide-react-native/icons/mail';
 import PhoneCall from 'lucide-react-native/icons/phone-call';
 import LifeBuoy from 'lucide-react-native/icons/life-buoy';
@@ -70,33 +70,13 @@ export default function SupportScreen() {
           </Text>
         </View>
 
-        {/* Minimal Support Channels */}
+        {/* Support Channels */}
         <View style={styles.contactContainer}>
-          {/* Chat Support — no live-chat vendor is integrated yet (a real
-              build here needs picking one, e.g. Intercom/Zendesk); honest
-              about that instead of the previous Alert.alert that silently
-              no-ops on web and claimed a chat had started. */}
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={() => toast(t('support.liveChatNotAvailable'), 'info')}
-            accessibilityRole="button"
-            accessibilityLabel={t('support.startLiveChat')}
-          >
-            <Card style={styles.contactCard}>
-              <View style={styles.contactIconBg}>
-                <MessageSquare size={18} color={C.blue} />
-              </View>
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={styles.contactTitle}>{t('support.startLiveChat')}</Text>
-                <Text style={styles.contactSubtitle}>{t('support.startLiveChatSub')}</Text>
-              </View>
-            </Card>
-          </TouchableOpacity>
 
           {/* Email Support */}
           <TouchableOpacity
             activeOpacity={0.8}
-            onPress={() => Linking.openURL('mailto:support@travelstar.app').catch((e) => {
+            onPress={() => Linking.openURL('mailto:1bharatgo@gmail.com').catch((e) => {
               logger.warn('[Support] Failed to open mail client:', e);
               toast(t('support.couldNotOpenMail'), 'error');
             })}
@@ -194,6 +174,7 @@ const styles = StyleSheet.create({
   contactCard: {
     flexDirection: 'row',
     alignItems: 'center',
+    borderColor: 'transparent',
   },
   sosCardBorder: {
     borderColor: 'rgba(255, 45, 85, 0.25)',

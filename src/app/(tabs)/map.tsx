@@ -772,64 +772,40 @@ function buildMapHTML(
 
       var selfMarker = null;
 
-      function locateUser() {
-        if (navigator.geolocation) {
-          navigator.geolocation.getCurrentPosition(
-            function(position) {
-              var lat = position.coords.latitude;
-              var lng = position.coords.longitude;
-              
-              if (!lat || !lng || isNaN(lat) || isNaN(lng)) {
-                var payload = JSON.stringify({ type: 'GEOLOCATION_ERROR', message: "Invalid coordinates received." });
-                if (window.ReactNativeWebView) {
-                  window.ReactNativeWebView.postMessage(payload);
-                } else {
-                  window.parent.postMessage(payload, '*');
-                }
-                return;
-              }
-              
-              var selfLatLng = [lat, lng];
-
-              if (!selfMarker) {
-                var currentLocHtml = '<div class="current-loc-outer"><div class="current-loc-inner"></div></div>';
-                var selfIcon = L.divIcon({
-                  html: currentLocHtml,
-                  className: '',
-                  iconSize: [28, 28],
-                  iconAnchor: [14, 14]
-                });
-                selfMarker = L.marker(selfLatLng, { icon: selfIcon })
-                  .addTo(map)
-                  .bindPopup('<b>' + I18N.youAreHere + '</b><br>' + I18N.liveGpsLocation);
-              } else {
-                selfMarker.setLatLng(selfLatLng);
-              }
-
-              // Slow cinematic zoom-in focus transition on self location
-              map.flyTo(selfLatLng, 15, {
-                animate: true,
-                duration: 2.2,
-                easeLinearity: 0.2
-              });
-            },
-            function(error) {
-              var errorMsg = "Unable to retrieve your location.";
-              if (error.code === error.PERMISSION_DENIED) {
-                errorMsg = "Location permission denied. Please allow location access in settings.";
-              }
-              var payload = JSON.stringify({ type: 'GEOLOCATION_ERROR', message: errorMsg });
-              if (window.ReactNativeWebView) {
-                window.ReactNativeWebView.postMessage(payload);
-              } else {
-                window.parent.postMessage(payload, '*');
-              }
-            },
-            { enableHighAccuracy: true, timeout: 8000 }
-          );
-        } else {
-          alert("Geolocation is not supported by this browser.");
+      function locateUser(lat, lng) {
+        if (!lat || !lng || isNaN(lat) || isNaN(lng)) {
+          var payload = JSON.stringify({ type: 'GEOLOCATION_ERROR', message: "Invalid coordinates received." });
+          if (window.ReactNativeWebView) {
+            window.ReactNativeWebView.postMessage(payload);
+          } else {
+            window.parent.postMessage(payload, '*');
+          }
+          return;
         }
+
+        var selfLatLng = [lat, lng];
+
+        if (!selfMarker) {
+          var currentLocHtml = '<div class="current-loc-outer"><div class="current-loc-inner"></div></div>';
+          var selfIcon = L.divIcon({
+            html: currentLocHtml,
+            className: '',
+            iconSize: [28, 28],
+            iconAnchor: [14, 14]
+          });
+          selfMarker = L.marker(selfLatLng, { icon: selfIcon })
+            .addTo(map)
+            .bindPopup('<b>' + I18N.youAreHere + '</b><br>' + I18N.liveGpsLocation);
+        } else {
+          selfMarker.setLatLng(selfLatLng);
+        }
+
+        // Slow cinematic zoom-in focus transition on self location
+        map.flyTo(selfLatLng, 15, {
+          animate: true,
+          duration: 2.2,
+          easeLinearity: 0.2
+        });
       }
 
       function handleMsg(event) {
@@ -838,7 +814,7 @@ function buildMapHTML(
           if (data.type === 'FILTER') applyFilter(data.filter);
           if (data.type === 'SET_PINS') renderPins(data.pins || []);
           if (data.type === 'SET_HAZARDS') renderHazards(data.hazards || []);
-          if (data.type === 'LOCATE_SELF') locateUser();
+          if (data.type === 'LOCATE_SELF') locateUser(data.lat, data.lng);
           if (data.type === 'ZOOM_IN') map.zoomIn();
           if (data.type === 'ZOOM_OUT') map.zoomOut();
           if (data.type === 'RECENTER') {
@@ -1117,10 +1093,18 @@ function MapScreen() {
         toast(t('map.locationPermissionDenied'), 'error');
         return;
       }
+      const position = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      });
+      postMapMessage({
+        type: 'LOCATE_SELF',
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+      });
     } catch (e) {
-      logger.log('Location permission error:', e);
+      logger.log('Location error:', e);
+      toast(t('map.couldNotReadLocation'), 'error');
     }
-    postMapMessage({ type: 'LOCATE_SELF' });
   };
 
   // docs/REMEDIATION.md §8.8: a `place-`/`nearby-` id used to make this

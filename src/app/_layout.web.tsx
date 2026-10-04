@@ -1,0 +1,109 @@
+// Website version of the root layout. Expo Router uses this file instead of
+// _layout.tsx when bundling for web; Android keeps _layout.tsx untouched.
+//
+// It is _layout.tsx line for line, plus three things: the website
+// stylesheet, the website-only strings, and the <WebShell> sidebar frame
+// around the navigator. Any change to the
+// providers, splash, or notification wiring in _layout.tsx must be copied
+// here too.
+import '@/global.css';
+import '@/web/web-shell.css';
+
+import { DefaultTheme, ThemeProvider, Stack, type ErrorBoundaryProps, SplashScreen } from 'expo-router';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
+import { useEffect } from 'react';
+
+import { AnimatedSplashOverlay } from '@/components/animated-icon';
+import { OfflineBanner } from '@/components/OfflineBanner';
+import { GlobalSosBanner } from '@/components/GlobalSosBanner';
+import { RouteErrorFallback } from '@/components/route-error-fallback';
+import { AppProvider } from '@/store/AppContext';
+import { FeedbackProvider } from '@/lib/feedback';
+import { queryClient } from '@/lib/query-client';
+import { queryPersister, QUERY_CACHE_MAX_AGE_MS } from '@/lib/query-persister';
+import { startMutationQueueAutoFlush } from '@/lib/offline-mutation-queue';
+import { useNotificationRouter } from '@/lib/use-notification-router';
+import { initI18n } from '@/lib/i18n';
+import { logger } from '@/lib/logger';
+import { C } from '@/theme/tokens';
+import { WebShell } from '@/web/WebShell';
+import { registerWebStrings } from '@/web/web-strings';
+
+// Synchronous (resources are bundled) — must run before any component
+// calls useTranslation(). See src/lib/i18n.ts for why this doesn't need
+// to gate first render.
+initI18n();
+// Website-only text (see src/web/web-strings.ts).
+registerWebStrings();
+
+// Root error boundary (REMEDIATION.md §7.5) — expo-router auto-wraps the
+// whole app in this when a named `ErrorBoundary` export exists on the root
+// layout, catching anything not already caught by a more specific screen's
+// own boundary (including a crash inside the providers below).
+export function ErrorBoundary(props: ErrorBoundaryProps) {
+  return <RouteErrorFallback {...props} />;
+}
+
+void SplashScreen.preventAutoHideAsync().catch((e) => logger.warn('[Splash] preventAutoHideAsync failed:', e));
+
+const AppTheme = {
+  ...DefaultTheme,
+  colors: {
+    ...DefaultTheme.colors,
+    background: C.bg,
+    card: C.card,
+    text: C.text,
+    border: C.border,
+    primary: C.blue,
+  },
+};
+
+export default function RootLayout() {
+  // Client-only: on web this layout also renders during Expo Router's SSR
+  // pass, where `window`/AsyncStorage don't exist. A useEffect never runs
+  // during SSR (only after hydration in the browser), unlike the previous
+  // module-scope call which fired on every server render too and threw
+  // inside safeStorage (caught, but noisy and pointless server-side).
+  useEffect(() => {
+    startMutationQueueAutoFlush();
+  }, []);
+
+  // Notification taps deep-link into the app, and the badge resyncs on
+  // foreground (docs/REMEDIATION.md §8.18).
+  useNotificationRouter();
+
+  return (
+    <SafeAreaProvider>
+      <PersistQueryClientProvider
+        client={queryClient}
+        persistOptions={{ persister: queryPersister, maxAge: QUERY_CACHE_MAX_AGE_MS }}
+      >
+        <FeedbackProvider>
+          <AppProvider>
+            <ThemeProvider value={AppTheme}>
+              <GlobalSosBanner />
+              <OfflineBanner />
+              <WebShell>
+                <Stack screenOptions={{ headerShown: false }}>
+                  <Stack.Screen name="(tabs)" />
+                  <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
+                  <Stack.Screen name="auth" options={{ presentation: 'modal' }} />
+                  <Stack.Screen name="stories" options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
+                  <Stack.Screen name="all-stories" />
+                </Stack>
+              </WebShell>
+              {/* Last sibling on purpose. Mounted before the navigator it
+                  still held zIndex 1000, but react-native-screens gives the
+                  navigator its own native container on Android, which draws
+                  over earlier siblings regardless — the home screen showed
+                  through for a frame before the splash covered it again.
+                  Declared last, it paints last, so the cover never breaks. */}
+              <AnimatedSplashOverlay />
+            </ThemeProvider>
+          </AppProvider>
+        </FeedbackProvider>
+      </PersistQueryClientProvider>
+    </SafeAreaProvider>
+  );
+}

@@ -14,7 +14,7 @@ import ArrowLeft from 'lucide-react-native/icons/arrow-left';
 import Globe from 'lucide-react-native/icons/globe';
 import FileText from 'lucide-react-native/icons/file-text';
 import Shield from 'lucide-react-native/icons/shield';
-import Info from 'lucide-react-native/icons/info';
+
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { Card } from '@/components/ui';
 
@@ -91,20 +91,7 @@ export default function AboutScreen() {
             </View>
           </TouchableOpacity>
 
-          <View style={styles.legalDivider} />
 
-          <TouchableOpacity
-            activeOpacity={0.7}
-            style={styles.legalRow}
-            onPress={() => router.push('/licenses')}
-            accessibilityRole="button"
-            accessibilityLabel={t('about.thirdPartyLicenses')}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Info size={16} color={C.textSec} style={{ marginRight: 10 }} />
-              <Text style={styles.legalLabelText}>{t('about.thirdPartyLicenses')}</Text>
-            </View>
-          </TouchableOpacity>
         </Card>
 
         <Text style={styles.copyrightText}>{t('about.copyright')}</Text>
