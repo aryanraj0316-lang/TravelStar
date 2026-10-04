@@ -177,6 +177,7 @@ function buildPreviewMapHTML(routeCoords: { latitude: number; longitude: number;
       }
       .leaflet-control-attribution { display: none !important; }
       .leaflet-control-zoom { display: none !important; }
+      .leaflet-tile-pane { filter: invert(100%) hue-rotate(180deg) brightness(0.95) contrast(0.9); }
       .leaflet-tooltip {
         background: rgba(17, 20, 34, 0.9) !important;
         border: 1px solid rgba(59, 130, 246, 0.3) !important;
@@ -204,9 +205,8 @@ function buildPreviewMapHTML(routeCoords: { latitude: number; longitude: number;
         map.setView([20.5937, 78.9629], 4); // Center of India
       }
 
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 20,
-        subdomains: ['a','b','c','d'],
       }).addTo(map);
 
       // Route polyline

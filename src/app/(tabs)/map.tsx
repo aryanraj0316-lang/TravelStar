@@ -102,8 +102,8 @@ const TILE_LAYERS: Record<string, { url: string; subdomains: string }> = {
     subdomains: "['mt0','mt1','mt2','mt3']",
   },
   dark: {
-    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    subdomains: "['a','b','c','d']",
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    subdomains: "[]",
   },
 };
 
@@ -153,6 +153,7 @@ function buildMapHTML(
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       }
       .leaflet-control-container { display: none !important; }
+      ${tileKey === 'dark' ? `.leaflet-tile-pane { filter: invert(100%) hue-rotate(180deg) brightness(0.95) contrast(0.9); }` : ''}
 
       .leaflet-popup-content-wrapper {
         background: rgba(13, 17, 23, 0.95) !important;
