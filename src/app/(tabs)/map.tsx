@@ -38,6 +38,7 @@ import MapPinIcon from 'lucide-react-native/icons/map-pin';
 import React, { useEffect, useMemo, useRef, useState, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
+  ActivityIndicator,
   Animated,
   ScrollView,
   StyleSheet,
@@ -985,6 +986,7 @@ function MapScreen() {
   const [selectedLegIndex, setSelectedLegIndex] = useState<number | null>(null);
   const [isItineraryOpen, setIsItineraryOpen] = useState(false);
   const [showNavigationOverlay, setShowNavigationOverlay] = useState(false);
+  const [isLocating, setIsLocating] = useState(false);
   const [isBottomPanelCollapsed, setIsBottomPanelCollapsed] = useState(false);
   const [isMainPanelCollapsed, setIsMainPanelCollapsed] = useState(false);
   const toggleItineraryDropdown = () => {
@@ -1088,6 +1090,7 @@ function MapScreen() {
   };
 
   const handleLocateSelf = async () => {
+    setIsLocating(true);
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
@@ -1105,6 +1108,8 @@ function MapScreen() {
     } catch (e) {
       logger.log('Location error:', e);
       toast(t('map.couldNotReadLocation'), 'error');
+    } finally {
+      setIsLocating(false);
     }
   };
 
@@ -1575,7 +1580,7 @@ function MapScreen() {
               accessibilityRole="button"
               accessibilityLabel={t('map.goBack')}
             >
-              <ArrowLeft size={22} color="#0D1117" strokeWidth={2.5} />
+              <ArrowLeft size={22} color={tileLayer === 'dark' ? '#FFFFFF' : '#0D1117'} strokeWidth={2.5} />
             </TouchableOpacity>
 
             {/* OPTION 1: ROUTE ITINERARY SELECTOR DROPDOWN */}
@@ -1836,10 +1841,15 @@ function MapScreen() {
             style={styles.mapControlBtn}
             onPress={handleLocateSelf}
             activeOpacity={0.8}
+            disabled={isLocating}
             accessibilityRole="button"
             accessibilityLabel={t('map.locateMe')}
           >
-            <Locate size={17} color="#0066FF" />
+            {isLocating ? (
+              <ActivityIndicator size={17} color="#0066FF" />
+            ) : (
+              <Locate size={17} color="#0066FF" />
+            )}
           </TouchableOpacity>
 
           {/* SOS Emergency - Stable in control strip */}
