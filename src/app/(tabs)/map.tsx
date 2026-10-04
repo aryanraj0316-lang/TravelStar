@@ -1596,7 +1596,7 @@ function MapScreen() {
                     style={styles.mapSearchInput}
                     value={placeQuery}
                     onChangeText={setPlaceQuery}
-                    placeholder={t('map.searchPlaceholder', 'Search places on the map')}
+                    placeholder={t('map.searchPlaceholder', 'Search Place')}
                     placeholderTextColor="#8B949E"
                     returnKeyType="search"
                   />

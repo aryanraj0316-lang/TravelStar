@@ -875,7 +875,7 @@
   "map": {
     "searching": "Searching...",
     "noPlacesFound": "No matching place found",
-    "searchPlaceholder": "Search places on the map",
+    "searchPlaceholder": "Search Place",
     "routeStops": "ROUTE: {{count}} STOPS",
     "entireRoute": "Entire Route",
     "legLabel": "Leg {{number}}: {{start}} ➔ {{end}}",
