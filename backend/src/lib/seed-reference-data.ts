@@ -152,5 +152,9 @@ export async function seedReferenceDataIfEmpty(client: PrismaClient): Promise<vo
     (data) => client.destination.createMany({ data }),
     SEED_DESTINATIONS,
   );
-  await purgeNonFeaturedTrips(client);
+  // purgeNonFeaturedTrips used to run here, on every boot. It deleted every
+  // trip not named after one of four showcase routes — real users' trips
+  // included, cascading to their members, join requests, itineraries and
+  // expenses — each time the server restarted (every deploy, and every
+  // free-tier spin-up after idling). Never call it from startup.
 }
