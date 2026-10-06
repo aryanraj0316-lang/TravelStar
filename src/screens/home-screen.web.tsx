@@ -1689,6 +1689,8 @@ function HomeScreen() {
     sosAlerts,
     refreshSosAlerts,
     resolveSOS,
+    pendingRequestsCount,
+    reloadIncomingRequestsCount,
   } = useApp();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -1768,6 +1770,11 @@ function HomeScreen() {
     refetchOnWindowFocus: false,
   });
   const pendingEnquiriesCount = enquiriesSummaryQuery.data?.totalUnread ?? 0;
+  // Pending join requests waiting on this organizer's approve/decline, plus
+  // unread enquiries — together they drive the red badge on the Organizer
+  // card. Join requests stay counted until the organizer actually acts on
+  // them, not merely until a screen fetches them.
+  const organizerBadgeCount = (isLoggedIn ? pendingRequestsCount : 0) + pendingEnquiriesCount;
 
   useEffect(() => {
     if (!isLoggedIn) return;
@@ -1848,7 +1855,8 @@ function HomeScreen() {
   useFocusEffect(
     useCallback(() => {
       checkUnreadNotifications();
-    }, [checkUnreadNotifications])
+      reloadIncomingRequestsCount();
+    }, [checkUnreadNotifications, reloadIncomingRequestsCount])
   );
 
   useEffect(() => {
@@ -2391,12 +2399,23 @@ function HomeScreen() {
                 onPress={() => handleRoleSelect(role.value)}
                 style={[styles.roleCard, isActive && styles.roleCardActive]}
                 accessibilityRole="button"
-                accessibilityLabel={`${t(role.labelKey)}, ${t(role.subKey)}`}
+                accessibilityLabel={
+                  role.value === 'ORGANIZER' && organizerBadgeCount > 0
+                    ? `${t(role.labelKey)}, ${t(role.subKey)}, ${t('createTrip.pendingApproval', { count: organizerBadgeCount })}`
+                    : `${t(role.labelKey)}, ${t(role.subKey)}`
+                }
                 accessibilityHint={t('home.roleSelectHint')}
                 accessibilityState={{ selected: isActive }}
               >
                 <View style={[styles.roleIconCircle, { backgroundColor: iconBg }]}>
                   <role.Icon size={18} color={iconColor} strokeWidth={2.2} />
+                  {role.value === 'ORGANIZER' && organizerBadgeCount > 0 && (
+                    <View style={styles.roleEnquiryBadge} pointerEvents="none">
+                      <Text style={styles.roleEnquiryBadgeText}>
+                        {organizerBadgeCount > 9 ? '9+' : organizerBadgeCount}
+                      </Text>
+                    </View>
+                  )}
                 </View>
                 <Text style={styles.roleLabel}>{t(role.labelKey)}</Text>
                 <Text style={styles.roleSub}>{t(role.subKey)}</Text>

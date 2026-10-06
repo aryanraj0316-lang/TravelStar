@@ -99,6 +99,18 @@ describe('join request approval chain', () => {
     requestId = row.id;
   });
 
+  // Listing incoming requests (which the app does in the background on
+  // every launch to count pending approvals) used to delete the organizer's
+  // join-request alert, so it never reached their Notifications & Alerts.
+  it('keeps the organizer alert after the inbox has been listed', async () => {
+    const res = await request(app).get('/api/v1/notifications').set(auth(organizer.token));
+    expect(res.status).toBe(200);
+    const alert = (res.body.data as { category: string; joinRequestId: string | null }[]).find(
+      (n) => n.category === 'JOIN_REQUEST' && n.joinRequestId === requestId,
+    );
+    expect(alert).toBeDefined();
+  });
+
   it('does not show that inbox to anyone else', async () => {
     const res = await request(app).get('/api/v1/interactions/incoming-requests').set(auth(outsider.token));
     expect(res.status).toBe(200);
@@ -132,6 +144,13 @@ describe('join request approval chain', () => {
 
     const settled = await prisma.joinRequest.findUnique({ where: { id: requestId } });
     expect(settled?.status).toBe('APPROVED');
+  });
+
+  it('clears the organizer alert once the request is answered', async () => {
+    const left = await prisma.notification.count({
+      where: { userId: organizer.userId, joinRequestId: requestId, category: 'JOIN_REQUEST' },
+    });
+    expect(left).toBe(0);
   });
 
   it('puts the traveller on the roster', async () => {

@@ -263,13 +263,13 @@ export const InAppNotificationBanner: React.FC = () => {
         pathname: '/trip-payment',
         params: { joinRequestId: notif.joinRequestId },
       });
-    } else if (notif.category === 'TRIP_ENQUIRY') {
+    } else if (notif.category === 'TRIP_ENQUIRY' || notif.category === 'JOIN_REQUEST') {
       router.push({
         pathname: '/group-organizer',
         params: {
           ...(notif.tripId ? { tripId: notif.tripId } : {}),
           tab: 'chat',
-          subTab: 'chat',
+          subTab: notif.category === 'JOIN_REQUEST' ? 'approvals' : 'chat',
         },
       });
     } else if (notif.chatRoomId) {

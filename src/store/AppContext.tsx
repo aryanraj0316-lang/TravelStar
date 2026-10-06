@@ -1012,6 +1012,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (data.tripId) {
         reloadJoinRequests();
       }
+      // An organizer's "New join request" — refresh the pending-approvals
+      // count behind the red badge on the home screen's Organizer card.
+      if (data.category === 'JOIN_REQUEST') {
+        reloadIncomingRequestsCount();
+      }
+      // Keep an already-open Notifications & Alerts list live.
+      queryClient.invalidateQueries({ queryKey: queryKeys.notifications() });
       // Show in-app banner (component handles navigation)
       eventBus.emit('inAppNotification', {
         id: data.id || `notif-${Date.now()}`,

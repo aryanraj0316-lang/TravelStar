@@ -228,7 +228,7 @@ router.post('/join-request', async (req, res) => {
       await sendPushToUsers([trip.creatorId], 'TRIP', {
         title: notifTitle,
         body: notifContent,
-        data: { screen: 'group-organizer', tripId: trip.id, tab: 'chat' },
+        data: { screen: 'group-organizer', tripId: trip.id, tab: 'chat', subTab: 'approvals' },
         badge: await unreadCountFor(trip.creatorId),
       });
     } catch (notifErr) {
@@ -305,7 +305,9 @@ router.delete('/join-request/:tripId', async (req, res) => {
       return res.status(200).json({ ok: true, data: { message: 'Join request cancelled' } });
     }
 
+    const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { creatorId: true } });
     const result = await releaseSeatAndLeave(existing.id, null);
+    if (trip) await clearJoinRequestAlert(trip.creatorId, existing.id, req.app.get('socketio'));
     if (!result.ok) {
       return res.status(200).json({ ok: true, data: { message: 'Join request cancelled' } });
     }
@@ -344,15 +346,16 @@ router.get('/incoming-requests', async (req, res) => {
   try {
     const organizerId = requireUserId(req);
 
-    // Dismiss join request notifications once the organizer opens / views incoming requests
-    await prisma.notification.deleteMany({
-      where: {
-        userId: organizerId,
-        joinRequestId: { not: null },
-      },
-    }).catch((err) => {
-      logger.warn('[Interactions] Failed to clear join request notifications:', err);
-    });
+    // Read-only. This used to delete every notification of the caller's
+    // that carried a joinRequestId as a side effect — and the app calls
+    // this endpoint in the background on launch and on every foreground to
+    // count pending approvals. So the organizer's "New join request" alert
+    // was wiped the instant the app opened, before the bell or the
+    // Notifications & Alerts list could ever show it (the push badge on
+    // the app icon was the only trace left). It also took the caller's own
+    // PAYMENT_REQUIRED alerts for trips they had asked to join with it. The
+    // alert is now cleared when the request is actually resolved — see
+    // clearJoinRequestAlert below.
 
     const requests = await prisma.joinRequest.findMany({
       take: parsedQuery.data.limit,
@@ -405,6 +408,25 @@ router.get('/incoming-requests', async (req, res) => {
   }
 });
 
+// A "New join request" alert is resolved once the organizer approves or
+// declines that request, or the traveller withdraws it — not before. Only
+// the organizer's JOIN_REQUEST row is removed; the traveller's own
+// PAYMENT_REQUIRED row shares the joinRequestId and must survive.
+async function clearJoinRequestAlert(
+  organizerId: string,
+  joinRequestId: string,
+  io?: { to: (room: string) => { emit: (event: string, payload: unknown) => void } },
+) {
+  try {
+    const { count } = await prisma.notification.deleteMany({
+      where: { userId: organizerId, joinRequestId, category: 'JOIN_REQUEST' },
+    });
+    if (count > 0) io?.to(organizerId).emit('notificationRead', { joinRequestId });
+  } catch (err) {
+    logger.warn('[Interactions] Failed to clear join request alert:', err);
+  }
+}
+
 const statusChangeSchema = z.object({
   status: z.enum(['APPROVED', 'REJECTED']),
 });
@@ -451,6 +473,7 @@ const handleStatusChange = async (req: Request, res: Response) => {
       if (!released.ok) {
         return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Join request not found' } });
       }
+      await clearJoinRequestAlert(tokenUserId, request.id, req.app.get('socketio'));
 
       // Unlike APPROVED and AWAITING_PAYMENT below, this branch previously
       // returned with no Notification row, no socket emit, and no push —
@@ -501,6 +524,7 @@ const handleStatusChange = async (req: Request, res: Response) => {
         where: { id: request.id },
         data: { status: 'AWAITING_PAYMENT' },
       });
+      await clearJoinRequestAlert(tokenUserId, request.id, req.app.get('socketio'));
 
       const io = req.app.get('socketio');
       if (io) {
@@ -569,6 +593,7 @@ const handleStatusChange = async (req: Request, res: Response) => {
     }
 
     const targetChatRoomId = claim.chatRoomId;
+    await clearJoinRequestAlert(tokenUserId, request.id, req.app.get('socketio'));
 
     // Get applicant details to use their name in the message
     const applicantUser = await prisma.user.findUnique({
