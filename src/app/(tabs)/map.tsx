@@ -11,6 +11,9 @@ import { apiService, type TransitMode } from '@/services/api';
 import { formatTransitTime } from '@/lib/transit-time';
 import { RouteErrorFallback } from '@/components/route-error-fallback';
 import { eventBus } from '@/services/event-bus';
+import { resolveRoute, type ResolvedRoute } from '@/services/map-routing';
+import { formatDistanceKm, ROUTE_STYLES, travelModeForTransit } from '@/lib/map-geometry';
+import { RouteMetricsCard, RoutePlannerCard, useRoutePlanner } from '@/components/map/RoutePlanner';
 import AlertCircle from 'lucide-react-native/icons/circle-alert';
 import AlertTriangle from 'lucide-react-native/icons/triangle-alert';
 import ArrowLeft from 'lucide-react-native/icons/arrow-left';
@@ -33,8 +36,6 @@ import Check from 'lucide-react-native/icons/check';
 import User from 'lucide-react-native/icons/user';
 import Users from 'lucide-react-native/icons/users';
 import X from 'lucide-react-native/icons/x';
-import SearchIcon from 'lucide-react-native/icons/search';
-import MapPinIcon from 'lucide-react-native/icons/map-pin';
 import React, { useEffect, useMemo, useRef, useState, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -48,8 +49,6 @@ import {
   StatusBar,
   LayoutAnimation,
   Linking,
-  TextInput,
-  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
@@ -459,15 +458,33 @@ function buildMapHTML(
         };
       }
 
-      // Route polyline & segments with click and hover interactions
+      // Route polyline & segments with click and hover interactions.
+      // Each leg starts as a straight line between its two stops and is
+      // upgraded in place (SET_TRIP_GEOMETRY) once React has resolved the
+      // real road / rail / flight geometry for it, so the map is never
+      // blank while routing runs and a failed lookup simply leaves the
+      // straight line.
+      var DEFAULT_LEG_STYLE = { color: '#8B5CF6', weightScale: 1, dashArray: null };
+      var legCoords = [];
+      var legStyles = [];
+      for (var li = 0; li < pathPoints.length - 1; li++) {
+        legCoords.push([pathPoints[li], pathPoints[li + 1]]);
+        legStyles.push(DEFAULT_LEG_STYLE);
+      }
+      function routeBoundsPoints() {
+        var pts = [];
+        legCoords.forEach(function(c) { pts = pts.concat(c); });
+        return pts.length > 1 ? pts : pathPoints;
+      }
+
       var polylineSegments = [];
       var shadowSegments = [];
       if (pathPoints.length > 1) {
         for (var i = 0; i < pathPoints.length - 1; i++) {
           (function(segmentIdx) {
-            var segPoints = [pathPoints[segmentIdx], pathPoints[segmentIdx+1]];
+            var segPoints = legCoords[segmentIdx];
             var w = getWeights(map.getZoom());
-            
+
             var shadow = L.polyline(segPoints, {
               color: '#8B5CF6', weight: w.sw, opacity: 0.08,
               smoothFactor: 1.2, lineCap: 'round', lineJoin: 'round',
@@ -483,11 +500,13 @@ function buildMapHTML(
 
             segmentPoly.on('mouseover', function() {
               var currentW = getWeights(map.getZoom());
-              this.setStyle({ color: '#8B5CF6', weight: currentW.rw * 1.2, opacity: 0.95 });
+              var st = legStyles[segmentIdx];
+              this.setStyle({ color: st.color, weight: currentW.rw * st.weightScale * 1.2, opacity: 0.95 });
             });
             segmentPoly.on('mouseout', function() {
               var currentW = getWeights(map.getZoom());
-              this.setStyle({ color: '#8B5CF6', weight: currentW.rw, opacity: 0.75 });
+              var st = legStyles[segmentIdx];
+              this.setStyle({ color: st.color, weight: currentW.rw * st.weightScale, opacity: 0.75 });
             });
             segmentPoly.on('click', function() {
               var msg = JSON.stringify({ type: 'CHECKPOINT_CLICKED', index: segmentIdx });
@@ -505,25 +524,131 @@ function buildMapHTML(
       // Adjust line weights dynamically depending on the current zoom level
       map.on('zoomend', function() {
         var w = getWeights(map.getZoom());
-        shadowSegments.forEach(function(p) { p.setStyle({ weight: w.sw }); });
-        polylineSegments.forEach(function(p) { p.setStyle({ weight: w.rw }); });
+        shadowSegments.forEach(function(p, idx) { p.setStyle({ weight: w.sw * legStyles[idx].weightScale }); });
+        polylineSegments.forEach(function(p, idx) { p.setStyle({ weight: w.rw * legStyles[idx].weightScale }); });
         if (activeLegPolyline) {
           activeLegPolyline.setStyle({ weight: w.hw });
         }
+        if (searchRouteLine) {
+          searchRouteLine.setStyle({ weight: w.rw * 1.15 * searchRouteScale });
+        }
+        if (searchRouteShadow) {
+          searchRouteShadow.setStyle({ weight: w.sw * searchRouteScale });
+        }
       });
+
+      // Swap each leg's straight placeholder for its resolved geometry and
+      // mode styling (colour, width, dashes for rail/flight).
+      function applyTripGeometry(legs) {
+        if (!Array.isArray(legs)) return;
+        var w = getWeights(map.getZoom());
+        legs.forEach(function(leg, idx) {
+          if (!leg || idx >= polylineSegments.length) return;
+          if (Array.isArray(leg.coords) && leg.coords.length > 1) legCoords[idx] = leg.coords;
+          legStyles[idx] = leg.style || DEFAULT_LEG_STYLE;
+          var st = legStyles[idx];
+          polylineSegments[idx].setLatLngs(legCoords[idx]);
+          polylineSegments[idx].setStyle({ color: st.color, weight: w.rw * st.weightScale, dashArray: st.dashArray });
+          shadowSegments[idx].setLatLngs(legCoords[idx]);
+          shadowSegments[idx].setStyle({ color: st.color, weight: w.sw * st.weightScale });
+        });
+        if (activeLegPolyline && activeLegIdx !== null) {
+          activeLegPolyline.setLatLngs(legCoords[activeLegIdx]);
+        }
+      }
+
+      // Direct Search Mode: one routed line with start/end pins, drawn
+      // independently of any trip route.
+      var searchRouteLine = null;
+      var searchRouteShadow = null;
+      var searchRouteScale = 1;
+      var searchMarkers = [];
+      function endpointIcon(kind) {
+        var isOrigin = kind === 'origin';
+        var bg = isOrigin ? '#0066FF' : '#EF4444';
+        var shape = isOrigin
+          ? 'width:22px;height:22px;border-radius:11px;'
+          : 'width:26px;height:26px;border-radius:13px 13px 13px 2px;transform:rotate(-45deg);';
+        var dot = isOrigin ? 10 : 8;
+        return L.divIcon({
+          html: '<div style="' + shape + 'background:' + bg + ';border:2.5px solid #FFF;' +
+            'box-shadow:0 3px 10px rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;">' +
+            '<div style="width:' + dot + 'px;height:' + dot + 'px;border-radius:' + (dot / 2) + 'px;background:#FFF;"></div>' +
+            '</div>',
+          className: '',
+          iconSize: isOrigin ? [22, 22] : [26, 26],
+          iconAnchor: isOrigin ? [11, 11] : [13, 30],
+          tooltipAnchor: [0, isOrigin ? -12 : -30],
+        });
+      }
+      function clearSearchRoute() {
+        if (searchRouteLine) { map.removeLayer(searchRouteLine); searchRouteLine = null; }
+        if (searchRouteShadow) { map.removeLayer(searchRouteShadow); searchRouteShadow = null; }
+        searchMarkers.forEach(function(m) { map.removeLayer(m); });
+        searchMarkers = [];
+      }
+      function searchRouteBounds() {
+        var pts = [];
+        if (searchRouteLine) pts = pts.concat(searchRouteLine.getLatLngs());
+        searchMarkers.forEach(function(m) { pts.push(m.getLatLng()); });
+        return pts;
+      }
+      // Padded for the planner card on top and the metrics card below, so
+      // both pins and the whole line stay visible between them.
+      function fitSearchRoute(animate) {
+        var pts = searchRouteBounds();
+        if (pts.length > 1) {
+          map.fitBounds(L.latLngBounds(pts), {
+            paddingTopLeft: [40, 240], paddingBottomRight: [70, 250],
+            maxZoom: 15, animate: !!animate, duration: 0.9
+          });
+        } else if (pts.length === 1) {
+          map.flyTo(pts[0], 13, { animate: !!animate, duration: 0.85 });
+        }
+      }
+      function setSearchRoute(data) {
+        clearSearchRoute();
+        if (!data) return;
+        var w = getWeights(map.getZoom());
+        var st = data.style || DEFAULT_LEG_STYLE;
+        searchRouteScale = st.weightScale || 1;
+        if (Array.isArray(data.coords) && data.coords.length > 1) {
+          searchRouteShadow = L.polyline(data.coords, {
+            color: st.color, weight: w.sw * searchRouteScale, opacity: 0.12,
+            lineCap: 'round', lineJoin: 'round', interactive: false
+          }).addTo(map);
+          searchRouteLine = L.polyline(data.coords, {
+            color: st.color, weight: w.rw * 1.15 * searchRouteScale, opacity: 0.9,
+            dashArray: st.dashArray, lineCap: 'round', lineJoin: 'round', interactive: false
+          }).addTo(map);
+        }
+        [['origin', data.origin], ['destination', data.destination]].forEach(function(pair) {
+          var p = pair[1];
+          if (!p || typeof p.lat !== 'number' || typeof p.lng !== 'number') return;
+          var m = L.marker([p.lat, p.lng], { icon: endpointIcon(pair[0]), zIndexOffset: 3000 }).addTo(map);
+          if (p.label) {
+            m.bindTooltip(escapeHtml(p.label), { direction: 'top', opacity: 1 });
+          }
+          searchMarkers.push(m);
+        });
+        if (data.fit !== false) fitSearchRoute(true);
+      }
 
       // Stop blinking active leg on map interaction
       map.on('mousedown touchstart wheel dragstart click', makeSolid);
 
       // Draw active leg highlight (yellow highlight color and dynamic width)
       var activeLegPolyline = null;
+      var activeLegIdx = null;
       function highlightLeg(legIdx) {
         if (activeLegPolyline) {
           map.removeLayer(activeLegPolyline);
           activeLegPolyline = null;
         }
+        activeLegIdx = null;
         if (legIdx !== null && legIdx >= 0 && legIdx < pathPoints.length - 1) {
-          var legPoints = [pathPoints[legIdx], pathPoints[legIdx+1]];
+          activeLegIdx = legIdx;
+          var legPoints = legCoords[legIdx];
           var w = getWeights(map.getZoom());
           activeLegPolyline = L.polyline(legPoints, {
             color: '#FFCC00',
@@ -816,6 +941,8 @@ function buildMapHTML(
           if (data.type === 'FILTER') applyFilter(data.filter);
           if (data.type === 'SET_PINS') renderPins(data.pins || []);
           if (data.type === 'SET_HAZARDS') renderHazards(data.hazards || []);
+          if (data.type === 'SET_TRIP_GEOMETRY') applyTripGeometry(data.legs);
+          if (data.type === 'SET_SEARCH_ROUTE') setSearchRoute(data.route || null);
           if (data.type === 'LOCATE_SELF') locateUser(data.lat, data.lng);
           if (data.type === 'ZOOM_IN') map.zoomIn();
           if (data.type === 'ZOOM_OUT') map.zoomOut();
@@ -825,9 +952,11 @@ function buildMapHTML(
               activeLegPolyline = null;
             }
             if (pathPoints.length > 1) {
-              map.fitBounds(pathPoints, { padding: [60, 60], animate: true, duration: 0.9 });
+              map.fitBounds(routeBoundsPoints(), { padding: [60, 60], animate: true, duration: 0.9 });
             } else if (pathPoints.length > 0) {
               map.flyTo(pathPoints[0], 7, { animate: true, duration: 0.85 });
+            } else if (searchRouteBounds().length > 0) {
+              fitSearchRoute(true);
             } else {
               map.flyTo([27.5650, 77.7008], 7, { animate: true, duration: 0.85 });
             }
@@ -844,7 +973,7 @@ function buildMapHTML(
             var idx = data.index;
             highlightLeg(idx);
             if (pathPoints.length > 1) {
-              map.fitBounds(pathPoints, { padding: [60, 60], animate: true, duration: 0.9 });
+              map.fitBounds(routeBoundsPoints(), { padding: [60, 60], animate: true, duration: 0.9 });
             } else if (pathPoints.length > 0) {
               map.setView(pathPoints[0], 6);
             }
@@ -1001,10 +1130,6 @@ function MapScreen() {
 
   const webViewRef = useRef<WebView>(null);
   const sosPulse = useState(() => new Animated.Value(1))[0];
-
-  // Plain map-use search. Matches the pins the server already returned, so
-  // a result always has real coordinates behind it.
-  const [placeQuery, setPlaceQuery] = useState('');
 
   useEffect(() => {
     void (async () => {
@@ -1173,6 +1298,40 @@ function MapScreen() {
     [activeRouteCoords, t],
   );
 
+  // Realistic geometry for each leg, by the mode the organizer chose for it:
+  // road routing for cabs/buses, rail routing (or a dashed approximate
+  // curve) for trains, a great-circle arc for flights. Held in plain state
+  // rather than React Query on purpose — every query here is persisted to
+  // AsyncStorage, and thousands of route points per leg do not belong
+  // there; map-routing keeps its own in-memory cache instead. Until this
+  // resolves (or if every provider fails) the legs stay straight lines.
+  const legGeometryKey = useMemo(
+    () =>
+      activeRouteCoords
+        .map((p) => `${p.latitude.toFixed(5)},${p.longitude.toFixed(5)},${p.transitMode ?? ''}`)
+        .join('|'),
+    [activeRouteCoords],
+  );
+  const [tripLegRoutes, setTripLegRoutes] = useState<{ key: string; routes: ResolvedRoute[] } | null>(null);
+  useEffect(() => {
+    if (activeRouteCoords.length < 2) return;
+    let cancelled = false;
+    const key = legGeometryKey;
+    void Promise.all(
+      activeRouteCoords
+        .slice(1)
+        .map((end, i) => resolveRoute(travelModeForTransit(end.transitMode), activeRouteCoords[i], end)),
+    ).then((routes) => {
+      if (!cancelled) setTripLegRoutes({ key, routes });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeRouteCoords, legGeometryKey]);
+  // Only geometry for the route currently on screen — never a previous
+  // trip's legs drawn onto this one's stops.
+  const legRoutes = tripLegRoutes?.key === legGeometryKey ? tripLegRoutes.routes : null;
+
   // SOS pulse animation
   useEffect(() => {
     Animated.loop(
@@ -1242,98 +1401,6 @@ function MapScreen() {
     webViewRef.current?.postMessage(JSON.stringify({ type: 'SET_PINS', pins: mapPins }));
   }, [mapPins]);
 
-  // Pins the server already returned that match what is being typed —
-  // guides, groups and attractions the app itself knows about.
-  const matchingPins = useMemo(() => {
-    const q = placeQuery.trim().toLowerCase();
-    if (q.length < 2 || !mapPins) return [];
-    return mapPins
-      .filter((pin) => pin.name.toLowerCase().includes(q) || (pin.detail ?? '').toLowerCase().includes(q))
-      .slice(0, 3)
-      .map((pin) => ({
-        id: `pin-${pin.id}`,
-        name: pin.name,
-        detail: pin.detail ?? '',
-        latitude: pin.latitude,
-        longitude: pin.longitude,
-      }));
-  }, [placeQuery, mapPins]);
-
-  // Real places, geocoded. Searching only the app's own pins meant typing a
-  // city name found nothing at all — the map could not take you anywhere it
-  // did not already have a pin for. This is the same OpenStreetMap lookup
-  // the create screen uses for trip cities, so a result always carries real
-  // coordinates rather than an invented point.
-  const [geoResults, setGeoResults] = useState<
-    { id: string; name: string; detail: string; latitude: number; longitude: number }[]
-  >([]);
-  const [searching, setSearching] = useState(false);
-
-  useEffect(() => {
-    const q = placeQuery.trim();
-    if (q.length < 3) {
-      setGeoResults([]);
-      setSearching(false);
-      return;
-    }
-
-    let cancelled = false;
-    setSearching(true);
-    // Debounced: Nominatim asks callers not to fire a request per keystroke.
-    const timer = setTimeout(async () => {
-      try {
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=json&limit=6&q=${encodeURIComponent(q)}`,
-          { headers: { 'User-Agent': 'YatrenzoApp/1.0' } },
-        );
-        const rows = (await res.json()) as {
-          place_id: number;
-          display_name: string;
-          lat: string;
-          lon: string;
-          name?: string;
-        }[];
-        if (cancelled) return;
-        setGeoResults(
-          (rows ?? [])
-            .map((r) => {
-              const lat = parseFloat(r.lat);
-              const lng = parseFloat(r.lon);
-              if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-              const parts = r.display_name.split(',').map((x) => x.trim());
-              return {
-                id: `osm-${r.place_id}`,
-                name: r.name || parts[0] || r.display_name,
-                detail: parts.slice(1).join(', '),
-                latitude: lat,
-                longitude: lng,
-              };
-            })
-            .filter((x): x is NonNullable<typeof x> => x !== null),
-        );
-      } catch (e) {
-        if (!cancelled) {
-          // A failed lookup leaves the list empty rather than showing a
-          // guessed location.
-          logger.warn('[Map] Place search failed:', e);
-          setGeoResults([]);
-        }
-      } finally {
-        if (!cancelled) setSearching(false);
-      }
-    }, 350);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [placeQuery]);
-
-  const placeResults = useMemo(
-    () => [...matchingPins, ...geoResults].slice(0, 7),
-    [matchingPins, geoResults],
-  );
-
   useEffect(() => {
     if (!mapHazards) return;
     webViewRef.current?.postMessage(JSON.stringify({ type: 'SET_HAZARDS', hazards: mapHazards }));
@@ -1381,6 +1448,25 @@ function MapScreen() {
     };
   }, [focusLat, focusLng, focusLabel, isSos, matchedSos]);
 
+  // Direct Search Mode — the map opened on its own, with no trip. The
+  // From/To planner replaces the single place search; its suggestions
+  // still include the guides, groups and attractions this map already
+  // shows, ahead of OpenStreetMap results. Not shown while an SOS location
+  // is being focused, so nothing pulls the camera away from it.
+  const isSearchMode = !routeTripId && !activeFocus?.isSos;
+  const localPlaces = useMemo(
+    () =>
+      (mapPins ?? []).map((pin) => ({
+        id: `pin-${pin.id}`,
+        name: pin.name,
+        detail: pin.detail ?? '',
+        latitude: pin.latitude,
+        longitude: pin.longitude,
+      })),
+    [mapPins],
+  );
+  const planner = useRoutePlanner({ enabled: isSearchMode && isFocused, localPlaces });
+
   // Opened from home SOS alert, notification banner, or chat location card:
   // Fire FLY_TO both immediately and with staggered retry timers to ensure Leaflet
   // catches the coordinates regardless of network latency or WebView mount delays.
@@ -1406,6 +1492,51 @@ function MapScreen() {
       clearTimeout(t3);
     };
   }, [activeFocus, searchTimestamp]);
+
+  // Route geometry pushed into Leaflet. Kept in a ref as well so it can be
+  // re-sent on MAP_READY: the WebView is rebuilt whenever the tile layer or
+  // the trip's stops change, and is unmounted while the tab is hidden.
+  const tripGeometryMessage = useMemo(
+    () =>
+      legRoutes
+        ? {
+            type: 'SET_TRIP_GEOMETRY',
+            legs: legRoutes.map((r) => ({
+              coords: r.coords.map((c) => [c.latitude, c.longitude]),
+              style: ROUTE_STYLES[r.mode],
+            })),
+          }
+        : null,
+    [legRoutes],
+  );
+
+  const { from: planFrom, to: planTo, route: planRoute, mode: planMode } = planner;
+  const searchRouteMessage = useMemo(() => {
+    if (!isSearchMode || (!planFrom && !planTo)) return { type: 'SET_SEARCH_ROUTE', route: null };
+    const endpoint = (e: typeof planFrom) => (e ? { lat: e.latitude, lng: e.longitude, label: e.label } : null);
+    return {
+      type: 'SET_SEARCH_ROUTE',
+      route: {
+        origin: endpoint(planFrom),
+        destination: endpoint(planTo),
+        coords: planRoute ? planRoute.coords.map((c) => [c.latitude, c.longitude]) : [],
+        style: ROUTE_STYLES[planRoute?.mode ?? planMode],
+        // Only frame the camera once there is something to frame: a lone
+        // "current location" pin should not yank the map around on open.
+        fit: !!(planFrom && planTo),
+      },
+    };
+  }, [isSearchMode, planFrom, planTo, planRoute, planMode]);
+
+  const latestRouteMessages = useRef<{ trip: object | null; search: object }>({ trip: null, search: searchRouteMessage });
+  useEffect(() => {
+    latestRouteMessages.current.trip = tripGeometryMessage;
+    if (tripGeometryMessage) webViewRef.current?.postMessage(JSON.stringify(tripGeometryMessage));
+  }, [tripGeometryMessage]);
+  useEffect(() => {
+    latestRouteMessages.current.search = searchRouteMessage;
+    webViewRef.current?.postMessage(JSON.stringify(searchRouteMessage));
+  }, [searchRouteMessage]);
 
   // Post filter updates to Leaflet
   useEffect(() => {
@@ -1449,6 +1580,15 @@ function MapScreen() {
   // measurement) and the panel also showed a fixed "65 km/h" for every trip
   // as if it were that trip's speed. Nothing here is shown unless it is
   // derived from real coordinates or the real timeline.
+  // Once every leg has been routed, the total is the routed distance;
+  // until then (or if any leg fell back) it stays the labelled
+  // straight-line sum.
+  const routedDistance = useMemo(() => {
+    if (!legRoutes || legRoutes.length === 0) return null;
+    const total = legRoutes.reduce((sum, r) => sum + r.distanceKm, 0);
+    return { km: Math.round(total), approximate: legRoutes.some((r) => r.isApproximate) };
+  }, [legRoutes]);
+
   const routeDistanceKm = useMemo(() => {
     if (activeRouteCoords.length < 2) return null;
     let total = 0;
@@ -1464,6 +1604,8 @@ function MapScreen() {
     const minutes = activeRouteCoords.reduce((sum, p) => sum + (p.transitTimeMinutes ?? 0), 0);
     return formatTransitTime(minutes);
   }, [activeRouteCoords]);
+
+  const selectedLegRoute = selectedLegIndex !== null ? legRoutes?.[selectedLegIndex] ?? null : null;
 
   const nextStopName = activeTrip ? (activeTrip.cities[1] || activeTrip.cities[0]) : null;
   const isMyTrip = isLoggedIn && !!(activeTrip && profile && profile.id && activeTrip.creatorId && activeTrip.creatorId === profile.id);
@@ -1515,6 +1657,9 @@ function MapScreen() {
                 } else if (data.type === 'GEOLOCATION_ERROR') {
                   toast(typeof data.message === 'string' ? data.message : t('map.couldNotReadLocation'), 'error');
                 } else if (data.type === 'MAP_READY') {
+                  const { trip, search } = latestRouteMessages.current;
+                  if (trip) postMapMessage(trip);
+                  postMapMessage(search);
                   if (activeFocus) {
                     postMapMessage({
                       type: 'FLY_TO',
@@ -1585,76 +1730,12 @@ function MapScreen() {
 
             {/* OPTION 1: ROUTE ITINERARY SELECTOR DROPDOWN */}
             {!activeTrip ? (
-              /* Plain map use: the search takes the route selector's place —
-                 the route picker has nothing to pick when no trip is open.
-                 It occupies that slot only, so the back button and the map
-                 selector beside it stay visible and clickable. */
-              <View style={styles.dropdownContainer}>
-                <View style={styles.mapSearchBar}>
-                  <SearchIcon size={15} color="#8B949E" />
-                  <TextInput
-                    style={styles.mapSearchInput}
-                    value={placeQuery}
-                    onChangeText={setPlaceQuery}
-                    placeholder={t('map.searchPlaceholder', 'Search Place')}
-                    placeholderTextColor="#8B949E"
-                    returnKeyType="search"
-                  />
-                  {placeQuery.length > 0 && (
-                    <TouchableOpacity
-                      onPress={() => setPlaceQuery('')}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                      accessibilityRole="button"
-                      accessibilityLabel={t('common.clear', 'Clear')}
-                    >
-                      <X size={14} color="#8B949E" />
-                    </TouchableOpacity>
-                  )}
-                </View>
-
-                {placeQuery.trim().length >= 3 && placeResults.length === 0 && (
-                  <View style={styles.mapSearchResults}>
-                    <View style={styles.mapSearchResultRow}>
-                      <Text style={styles.mapSearchResultDetail}>
-                        {searching
-                          ? t('map.searching', 'Searching...')
-                          : t('map.noPlacesFound', 'No matching place found')}
-                      </Text>
-                    </View>
-                  </View>
-                )}
-
-                {placeResults.length > 0 && (
-                  <View style={styles.mapSearchResults}>
-                    {placeResults.map((pin) => (
-                      <TouchableOpacity
-                        key={pin.id}
-                        style={styles.mapSearchResultRow}
-                        onPress={() => {
-                          Keyboard.dismiss();
-                          setPlaceQuery('');
-                          setGeoResults([]);
-                          // Same FLY_TO the SOS banner and trip deep links
-                          // use: drops a labelled marker and zooms to it.
-                          webViewRef.current?.postMessage(
-                            JSON.stringify({ type: 'FLY_TO', lat: pin.latitude, lng: pin.longitude, label: pin.name }),
-                          );
-                        }}
-                        accessibilityRole="button"
-                        accessibilityLabel={pin.name}
-                      >
-                        <MapPinIcon size={13} color="#0066FF" />
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.mapSearchResultName} numberOfLines={1}>{pin.name}</Text>
-                          {!!pin.detail && (
-                            <Text style={styles.mapSearchResultDetail} numberOfLines={1}>{pin.detail}</Text>
-                          )}
-                        </View>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-              </View>
+              /* No trip open: the From/To route planner sits in its own
+                 full-width row below this one (it needs the room), so this
+                 slot stays empty and the map selector beside it spans the
+                 bar. While a requested trip is still loading the slot is
+                 simply held open. */
+              null
             ) : (
               <>
             <View style={styles.dropdownContainer}>
@@ -1789,6 +1870,13 @@ function MapScreen() {
               )}
             </View>
           </View>
+
+          {/* DIRECT SEARCH MODE: From / To / travel mode */}
+          {isSearchMode && (
+            <View style={styles.plannerRow}>
+              <RoutePlannerCard planner={planner} />
+            </View>
+          )}
         </SafeAreaView>
 
 
@@ -1897,6 +1985,9 @@ function MapScreen() {
 
 
 
+        {/* DIRECT SEARCH MODE: distance / ETA for the planned route */}
+        {isSearchMode && <RouteMetricsCard planner={planner} />}
+
         {activeTrip && (
           <>
         {/* BOTTOM TRIP INFO CARD / SEGMENT NAVIGATION CARD */}
@@ -1978,8 +2069,14 @@ function MapScreen() {
                       <>
                         <View style={styles.bottomStatItem}>
                           <Navigation size={11} color="#8B949E" />
-                          <Text style={styles.bottomStatLabel}>{t('map.straightLineDistance')}</Text>
-                          <Text style={styles.bottomStatVal}>{routeDistanceKm} km</Text>
+                          <Text style={styles.bottomStatLabel}>
+                            {routedDistance ? t('map.routeDistance', 'Distance') : t('map.straightLineDistance')}
+                          </Text>
+                          <Text style={styles.bottomStatVal}>
+                            {routedDistance
+                              ? `${routedDistance.approximate ? '≈ ' : ''}${routedDistance.km} km`
+                              : `${routeDistanceKm} km`}
+                          </Text>
                         </View>
                         <View style={styles.bottomStatDivider} />
                       </>
@@ -2129,7 +2226,11 @@ function MapScreen() {
                             })
                           : ''}
                       </Text>
-                      <Text style={styles.segmentRoadText}>{t('map.straightLineDistance')}</Text>
+                      <Text style={styles.segmentRoadText}>
+                        {selectedLegRoute && !selectedLegRoute.isApproximate
+                          ? t('map.routeDistance', 'Distance')
+                          : t('map.straightLineDistance')}
+                      </Text>
                     </View>
 
                     {!isBottomPanelCollapsed && (
@@ -2143,7 +2244,11 @@ function MapScreen() {
                         <View style={styles.statsGridRow}>
                           <View style={styles.statsGridCol}>
                             <Compass size={11} color="#0066FF" />
-                            <Text style={styles.statsGridVal}>{legDetails?.distance}</Text>
+                            <Text style={styles.statsGridVal}>
+                              {selectedLegRoute && selectedLegRoute.source !== 'straight'
+                                ? `${selectedLegRoute.isApproximate ? '≈ ' : ''}${formatDistanceKm(selectedLegRoute.distanceKm)}`
+                                : legDetails?.distance}
+                            </Text>
                           </View>
                           <View style={styles.statsGridDivider} />
                           <View style={styles.statsGridCol}>
@@ -2241,7 +2346,11 @@ function MapScreen() {
                   </TouchableOpacity>
                 </View>
 
-                <Text style={styles.navHandoffNote}>{t('map.navHandoffNote')}</Text>
+                <Text style={styles.navHandoffNote}>
+                  {selectedLegRoute && selectedLegRoute.source !== 'straight'
+                    ? t('map.navHandoffNoteRouted', 'The map shows an overview of this leg. Open it in your maps app for turn-by-turn directions.')
+                    : t('map.navHandoffNote')}
+                </Text>
 
                 <TouchableOpacity
                   style={styles.startDrivingBtn}
@@ -2319,56 +2428,6 @@ function MapScreen() {
 }
 
 const styles = StyleSheet.create({
-  // Sits inside the top row, in the route selector's slot — same dark
-  // treatment and height as the dropdown beside it, so the row reads as one
-  // bar rather than a card floating over it.
-  mapSearchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    backgroundColor: 'rgba(13, 17, 23, 0.95)',
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    minHeight: MIN_TOUCH_TARGET,
-    borderWidth: 1,
-    borderColor: 'rgba(48, 54, 61, 0.6)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 6,
-  },
-  mapSearchInput: {
-    flex: 1,
-    fontSize: 12.5,
-    fontWeight: '600',
-    color: C.white,
-    padding: 0,
-  },
-  mapSearchResults: {
-    position: 'absolute',
-    top: 46,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(13, 17, 23, 0.98)',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(48, 54, 61, 0.8)',
-    overflow: 'hidden',
-    zIndex: 1000,
-    elevation: 12,
-  },
-  mapSearchResultRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 9,
-    paddingHorizontal: 11,
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(48, 54, 61, 0.8)',
-  },
-  mapSearchResultName: { fontSize: 12.5, fontWeight: '700', color: C.white },
-  mapSearchResultDetail: { fontSize: 11, color: '#8B949E', marginTop: 1 },
   screenRoot: {
     flex: 1,
     backgroundColor: '#0D1117',
@@ -2393,6 +2452,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 8,
     gap: 8,
+    // Above the route planner row, so the map selector's open dropdown
+    // draws over the planner card rather than under it.
+    zIndex: 2,
+  },
+  plannerRow: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    zIndex: 1,
   },
   backButton: {
     padding: 8,
