@@ -1,3 +1,4 @@
+import type { JoinRequestStatus, Prisma } from '@prisma/client';
 import prisma from './db';
 import { logger } from '../lib/logger';
 
@@ -96,7 +97,7 @@ function isTransactionContention(e: unknown): boolean {
  * there is no reason to re-read them); callers that did not claim pass null
  * and this only looks the room up.
  */
-async function ensureChatRoomMembership(
+export async function ensureChatRoomMembership(
   tripId: string,
   userId: string,
   tripMeta: { name: string; creatorId: string } | null,
@@ -249,7 +250,7 @@ export async function claimSeatAndJoin(
       const joinRequest = opts.existingJoinRequestId
         ? await tx.joinRequest.update({
             where: { id: opts.existingJoinRequestId },
-            data: { status: 'APPROVED' },
+            data: { status: 'CONFIRMED' },
             select: { id: true },
           })
         : await tx.joinRequest.upsert({
@@ -257,13 +258,13 @@ export async function claimSeatAndJoin(
             create: {
               tripId,
               userId,
-              status: 'APPROVED',
+              status: 'CONFIRMED',
               fromCity: opts.fromCity ?? null,
               toCity: opts.toCity ?? null,
               adjustedPrice: opts.adjustedPrice ?? null,
               partySize,
             },
-            update: { status: 'APPROVED', partySize },
+            update: { status: 'CONFIRMED', partySize },
             select: { id: true },
           });
 
@@ -331,21 +332,195 @@ export async function claimSeatAndJoin(
   }
 }
 
+// ── Paid-booking primitives ────────────────────────────────────────────────
+//
+// The paid flow splits "a seat is taken" from "a member is admitted":
+//   1. Payment captured  → holdSeatsForRequest: seats leave availableSeats and
+//      the request becomes PAYMENT_COMPLETED. Nobody can pay for a seat that
+//      does not exist, but the traveller is NOT a member yet.
+//   2. Organizer verifies the token and submits allocations →
+//      admitAllocatedMember: TripMember + allocations + CONFIRMED, then the
+//      group chat. No seat moves here — it was already held.
+// Free trips do the same, with step 1 triggered by the organizer's approval
+// (→ ALLOCATION_PENDING) instead of a payment.
+
+/** Statuses in which a request's partySize is counted against availableSeats. */
+export const SEAT_HOLDING_STATUSES: JoinRequestStatus[] = ['PAYMENT_COMPLETED', 'ALLOCATION_PENDING', 'CONFIRMED'];
+
+export type HoldSeatsResult =
+  | { ok: true }
+  | { ok: false; reason: 'INVALID_STATUS' | 'TRIP_FULL' | 'BUSY' };
+
+/**
+ * Atomically moves a join request from one of `fromStatuses` to `toStatus`
+ * and takes its partySize out of the trip's availableSeats — both or
+ * neither. `extra` runs inside the same transaction (e.g. marking the
+ * payment order captured and issuing its token), so a payment can never be
+ * recorded against a seat that was not actually held.
+ *
+ * The status change is a conditional updateMany, so two concurrent captures
+ * of the same payment (verify endpoint + webhook) cannot both hold seats:
+ * the second matches zero rows and gets INVALID_STATUS.
+ */
+export async function holdSeatsForRequest(
+  joinRequestId: string,
+  opts: {
+    fromStatuses: JoinRequestStatus[];
+    toStatus: 'PAYMENT_COMPLETED' | 'ALLOCATION_PENDING';
+    extra?: (tx: Prisma.TransactionClient) => Promise<void>;
+  },
+): Promise<HoldSeatsResult> {
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const request = await tx.joinRequest.findUnique({
+        where: { id: joinRequestId },
+        select: { tripId: true, partySize: true },
+      });
+      if (!request) return { ok: false as const, reason: 'INVALID_STATUS' as const };
+
+      const moved = await tx.joinRequest.updateMany({
+        where: { id: joinRequestId, status: { in: opts.fromStatuses } },
+        data: { status: opts.toStatus },
+      });
+      if (moved.count === 0) return { ok: false as const, reason: 'INVALID_STATUS' as const };
+
+      const partySize = Math.max(1, request.partySize);
+      const claimed = await tx.$executeRaw`
+        UPDATE "Trip"
+           SET "availableSeats" = "availableSeats" - ${partySize}
+         WHERE "id" = ${request.tripId}
+           AND "availableSeats" >= ${partySize}
+      `;
+      // Throwing rolls back the status change above with it.
+      if (claimed === 0) throw new SeatUnavailableError();
+
+      if (opts.extra) await opts.extra(tx);
+      return { ok: true as const };
+    }, SEAT_TX_OPTIONS);
+  } catch (e) {
+    if (e instanceof SeatUnavailableError) return { ok: false, reason: 'TRIP_FULL' };
+    if (isTransactionContention(e)) return { ok: false, reason: 'BUSY' };
+    throw e;
+  }
+}
+
+export type AllocationInput = {
+  tripTimelineStopId?: string | null;
+  dayNumber: number;
+  checkpointName: string;
+  hotelName?: string | null;
+  roomNumber?: string | null;
+  transitType?: string | null;
+  vehicleNumber?: string | null;
+  seatNumber?: string | null;
+  assemblyTime?: string | null;
+  notes?: string | null;
+};
+
+export type AdmitResult =
+  | { ok: true; tripMemberId: string; chatRoomId: string | null }
+  | { ok: false; reason: 'INVALID_STATUS' | 'ALREADY_MEMBER' };
+
+/**
+ * Turns a seat-holding, organizer-verified request into a confirmed member:
+ * TripMember row (with the booking token), every per-stop allocation, the
+ * request marked CONFIRMED and the payment order marked verified — in one
+ * transaction. Group chat membership follows outside it (idempotent, and
+ * not seat-critical — see claimSeatAndJoin).
+ */
+export async function admitAllocatedMember(opts: {
+  joinRequestId: string;
+  bookingReferenceToken: string | null;
+  allocations: AllocationInput[];
+}): Promise<AdmitResult> {
+  const result = await prisma.$transaction(async (tx) => {
+    const request = await tx.joinRequest.findUnique({
+      where: { id: opts.joinRequestId },
+      select: { tripId: true, userId: true, partySize: true, trip: { select: { name: true, creatorId: true } } },
+    });
+    if (!request) return { ok: false as const, reason: 'INVALID_STATUS' as const };
+
+    const existing = await tx.tripMember.findUnique({
+      where: { tripId_userId: { tripId: request.tripId, userId: request.userId } },
+      select: { id: true },
+    });
+    if (existing) return { ok: false as const, reason: 'ALREADY_MEMBER' as const };
+
+    const moved = await tx.joinRequest.updateMany({
+      where: { id: opts.joinRequestId, status: { in: ['PAYMENT_COMPLETED', 'ALLOCATION_PENDING'] } },
+      data: { status: 'CONFIRMED' },
+    });
+    if (moved.count === 0) return { ok: false as const, reason: 'INVALID_STATUS' as const };
+
+    // The roster's single room/seat columns predate per-stop allocations;
+    // they get the first stop's values so the existing roster view keeps
+    // showing something true.
+    const first = opts.allocations[0];
+    const member = await tx.tripMember.create({
+      data: {
+        tripId: request.tripId,
+        userId: request.userId,
+        role: 'MEMBER',
+        partySize: Math.max(1, request.partySize),
+        bookingReferenceToken: opts.bookingReferenceToken,
+        roomAllocated: first?.roomNumber ?? null,
+        seatAllocated: first?.seatNumber ?? null,
+      },
+      select: { id: true },
+    });
+
+    await tx.tripMemberAllocation.createMany({
+      data: opts.allocations.map((a) => ({
+        tripMemberId: member.id,
+        tripTimelineStopId: a.tripTimelineStopId ?? null,
+        dayNumber: a.dayNumber,
+        checkpointName: a.checkpointName,
+        hotelName: a.hotelName ?? null,
+        roomNumber: a.roomNumber ?? null,
+        transitType: a.transitType ?? null,
+        vehicleNumber: a.vehicleNumber ?? null,
+        seatNumber: a.seatNumber ?? null,
+        assemblyTime: a.assemblyTime ?? null,
+        notes: a.notes ?? null,
+      })),
+    });
+
+    await tx.tripPaymentOrder.updateMany({
+      where: { joinRequestId: opts.joinRequestId },
+      data: { isVerifiedByOrganizer: true, verifiedAt: new Date() },
+    });
+
+    return {
+      ok: true as const,
+      tripMemberId: member.id,
+      tripId: request.tripId,
+      userId: request.userId,
+      tripMeta: request.trip,
+    };
+  }, SEAT_TX_OPTIONS);
+
+  if (!result.ok) return result;
+
+  const chatRoomId = await ensureChatRoomMembership(result.tripId, result.userId, result.tripMeta);
+  return { ok: true, tripMemberId: result.tripMemberId, chatRoomId };
+}
+
 export type ReleaseSeatResult =
   | { ok: true; released: boolean }
   | { ok: false; reason: 'JOIN_REQUEST_NOT_FOUND' };
 
 /**
- * Undoes a previously-claimed seat: restores availableSeats, removes the
- * TripMember row and their chat-room membership. Used when an approved
- * request is rejected after the fact, or withdrawn by the member. Idempotent
- * — calling this on a request that was never approved (still PENDING, no
- * seat was ever consumed) just updates the status with no seat/member
- * changes, since there is nothing to release.
+ * Undoes a request: sets `targetStatus` (or deletes the row when null) and,
+ * if it was holding seats, returns them and removes the TripMember row (its
+ * allocations cascade with it) and the group-chat membership.
+ *
+ * Race-safe: the status change is conditional on the status that was read,
+ * so two concurrent releases of the same request cannot both return its
+ * seats — the loser matches zero rows and does nothing.
  */
 export async function releaseSeatAndLeave(
   joinRequestId: string,
-  targetStatus: 'REJECTED' | null
+  targetStatus: JoinRequestStatus | null,
 ): Promise<ReleaseSeatResult> {
   return prisma.$transaction(async (tx) => {
     const request = await tx.joinRequest.findUnique({ where: { id: joinRequestId } });
@@ -353,16 +528,18 @@ export async function releaseSeatAndLeave(
       return { ok: false as const, reason: 'JOIN_REQUEST_NOT_FOUND' as const };
     }
 
-    const wasApproved = request.status === 'APPROVED';
+    const wasHolding = SEAT_HOLDING_STATUSES.includes(request.status);
 
-    if (targetStatus) {
-      await tx.joinRequest.update({ where: { id: joinRequestId }, data: { status: targetStatus } });
-    } else {
-      await tx.joinRequest.delete({ where: { id: joinRequestId } });
-    }
+    const changed = targetStatus
+      ? await tx.joinRequest.updateMany({
+          where: { id: joinRequestId, status: request.status },
+          data: { status: targetStatus },
+        })
+      : await tx.joinRequest.deleteMany({ where: { id: joinRequestId, status: request.status } });
+    if (changed.count === 0) return { ok: true as const, released: false };
 
-    if (!wasApproved) {
-      // Never consumed a seat (still PENDING) — nothing to release.
+    if (!wasHolding) {
+      // Never held a seat (PENDING / PAYMENT_PENDING) — nothing to release.
       return { ok: true as const, released: false };
     }
 
@@ -370,6 +547,7 @@ export async function releaseSeatAndLeave(
       where: { tripId_userId: { tripId: request.tripId, userId: request.userId } },
     });
     if (member) {
+      // TripMemberAllocation rows cascade with the member.
       await tx.tripMember.delete({ where: { id: member.id } });
     }
 
@@ -380,12 +558,8 @@ export async function releaseSeatAndLeave(
       });
     }
 
-    // Seat count only ever increases back toward totalSeats here, and only
-    // for a trip that unambiguously had this member counted against it, so
-    // this cannot push availableSeats past totalSeats in normal operation.
-    // Released by the request's own stored partySize (member.partySize is
-    // the same value, copied at claim time) — a family of 4 that leaves
-    // must return all 4 seats, not just 1.
+    // Returned by the request's own stored partySize — a family of 4 that
+    // leaves returns all 4 seats.
     const releasedSeats = member?.partySize ?? request.partySize;
     await tx.trip.update({
       where: { id: request.tripId },

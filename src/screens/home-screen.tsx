@@ -557,7 +557,7 @@ function FeaturedTripsCarouselBase({
   onRequestAuth: (reason: AuthReason) => void;
 }) {
   const { t } = useTranslation();
-  const { trips, dataStatus, refreshTrips, isLoggedIn, joinTrip, requestedTrips, profile } = useApp();
+  const { trips, dataStatus, refreshTrips, isLoggedIn, requestedTrips, profile } = useApp();
   const router = useRouter();
   const carouselRef = useRef<ScrollView>(null);
   const isInteracting = useRef(false);
@@ -608,10 +608,10 @@ function FeaturedTripsCarouselBase({
       onRequestAuth('JOIN_TRIP');
       return;
     }
-    // The real join flow: POST /interactions/join-request through
-    // AppContext, which owns the optimistic `requestedTrips` entry, the
-    // rollback on failure and the offline queue.
-    joinTrip(trip.id);
+    // Booking needs the traveller to read the trip's rules and cancellation
+    // policy and tick the consent box first, so the card's button opens the
+    // details sheet ("View Details & Join") rather than booking directly.
+    onOpenTrip(trip);
   };
 
   if (dataStatus.trips === 'loading') {

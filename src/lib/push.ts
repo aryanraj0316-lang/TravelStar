@@ -161,6 +161,11 @@ export function routeForNotificationData(data: Record<string, unknown> | undefin
       return joinRequestId
         ? `/trip-payment?joinRequestId=${encodeURIComponent(joinRequestId)}`
         : '/bookings';
+    // Booking receipts and confirmations: the traveller's Trip Pass.
+    case 'trip-pass':
+      return tripId ? `/trip-pass?tripId=${encodeURIComponent(tripId)}` : '/bookings';
+    case 'bookings':
+      return '/bookings';
     // A trip enquiry is organizer work, so it opens that trip's Chats &
     // Approvals tab in the organizer portal rather than the chat inbox.
     // A join request opens the Approvals sub-tab instead of the chat list.

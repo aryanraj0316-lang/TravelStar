@@ -1,5 +1,6 @@
 import request from 'supertest';
 import app from '../src/app';
+import { bookAsMember } from './book-member';
 import prisma from '../src/services/db';
 import { uniqueTestPhone } from './test-phone';
 
@@ -101,7 +102,7 @@ describe('POST /api/v1/trips/:tripId/itinerary', () => {
     const organizer = await registerAndLogin('post-owner');
     const member = await registerAndLogin('post-member');
     const tripId = await createTrip(organizer.token);
-    await request(app).post(`/api/v1/trips/${tripId}/join`).set('Authorization', `Bearer ${member.token}`).send({});
+    await bookAsMember(tripId, member.token);
 
     const post = await addDay(member.token, tripId, 'Sneaky day', 'Not mine to add');
     expect(post.status).toBe(403);
@@ -125,7 +126,7 @@ describe('POST /api/v1/trips/:tripId/itinerary', () => {
     const organizer = await registerAndLogin('post-persist-owner');
     const member = await registerAndLogin('post-persist-member');
     const tripId = await createTrip(organizer.token);
-    await request(app).post(`/api/v1/trips/${tripId}/join`).set('Authorization', `Bearer ${member.token}`).send({});
+    await bookAsMember(tripId, member.token);
 
     const first = await addDay(organizer.token, tripId, 'Arrival', 'Airport pickup, hotel check-in.');
     const second = await addDay(organizer.token, tripId, 'Trek', 'Guided 6km forest trek.');
@@ -149,7 +150,7 @@ describe('DELETE /api/v1/trips/:tripId/itinerary/:dayId', () => {
     const organizer = await registerAndLogin('del-owner');
     const member = await registerAndLogin('del-member');
     const tripId = await createTrip(organizer.token);
-    await request(app).post(`/api/v1/trips/${tripId}/join`).set('Authorization', `Bearer ${member.token}`).send({});
+    await bookAsMember(tripId, member.token);
     const day = await addDay(organizer.token, tripId, 'Arrival', 'Airport pickup.');
 
     const res = await request(app)

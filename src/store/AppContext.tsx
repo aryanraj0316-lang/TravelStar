@@ -16,6 +16,7 @@ import { apiService, clearTokens, ApiError, type CreateTripInput, type SosTrigge
 import { socketService } from '../services/socket';
 import { eventBus } from '../services/event-bus';
 import type { JoinRequestSummary, JoinRequestStatus, IncomingJoinRequest, AppNotification, ChatRoomSummary, StoryPayload } from '@/types/api';
+import { ACTIVE_BOOKING_STATUSES } from '@/types/api';
 
 export interface JoinTripOpts {
   midway?: boolean;
@@ -26,6 +27,8 @@ export interface JoinTripOpts {
   fromStopId?: string;
   toStopId?: string;
   joiningDate?: string;
+  /** Ticked "I agree to the Trip Rules, Guidelines and Cancellation Policy". */
+  acceptedTerms?: boolean;
 }
 
 // Registered once at module scope — apiService is a stable singleton, and
@@ -255,7 +258,13 @@ interface AppContextType {
   logout: () => void;
   trips: Trip[];
   addTrip: (trip: CreateTripInput) => Promise<Trip | null>;
-  joinTrip: (tripId: string, opts?: JoinTripOpts) => void;
+  /**
+   * Books a trip (POST /interactions/join-request). Resolves with the
+   * server's booking row — PAYMENT_PENDING for a paid trip, which the
+   * caller sends to the payment screen; PENDING for a free one — or null
+   * when it failed or was queued offline.
+   */
+  joinTrip: (tripId: string, opts?: JoinTripOpts) => Promise<JoinRequestSummary | null>;
   cancelJoinRequest: (tripId: string) => void;
   guides: Guide[];
   messages: Message[];
@@ -289,8 +298,9 @@ interface AppContextType {
   setRequestedTrips: React.Dispatch<React.SetStateAction<Set<string>>>;
   /**
    * The requester's own join request for each trip they have requested to
-   * join, keyed by tripId — the real status (PENDING/AWAITING_PAYMENT/
-   * APPROVED/REJECTED), not just membership in `requestedTrips`. Added
+   * join, keyed by tripId — the real booking status (PENDING /
+   * PAYMENT_PENDING / PAYMENT_COMPLETED / ALLOCATION_PENDING / CONFIRMED /
+   * REJECTED / CANCELLED / REFUNDED), not just membership in `requestedTrips`. Added
    * because `requestedTrips` alone cannot distinguish "still waiting" from
    * "the organizer already approved this" — see TripDetailModal.tsx.
    */
@@ -561,7 +571,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .then((reqs) => {
         if (reqs && reqs.length > 0) {
           const tripIds = reqs
-            .filter((r: JoinRequestSummary) => r.status === 'PENDING' || r.status === 'APPROVED' || r.status === 'AWAITING_PAYMENT')
+            .filter((r: JoinRequestSummary) => ACTIVE_BOOKING_STATUSES.includes(r.status))
             .map((r: JoinRequestSummary) => r.tripId);
           setRequestedTrips(new Set(tripIds));
           // Keyed by tripId, carrying the real status — see joinRequestStatuses'
@@ -1003,12 +1013,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const unsubNotification = socketService.onNotification((data) => {
       // Refresh notification badge count
       checkUnreadNotifications();
-      // A join request's status (APPROVED/AWAITING_PAYMENT/REJECTED) only
-      // ever changed here on the next login/focus/addedToChat — this event
-      // fires for all three, including AWAITING_PAYMENT and REJECTED, which
-      // have no addedToChat side effect at all, so TripDetailModal kept
-      // showing "awaiting organizer" (or "request to join") long after the
-      // organizer had actually answered.
+      // A booking's status (payment verified, allocated/confirmed,
+      // rejected, refunded) changes on the server; every one of those sends
+      // a trip notification, so refetch on any of them — otherwise
+      // TripDetailModal keeps showing a stale state long after the
+      // organizer or the payment has moved it on.
       if (data.tripId) {
         reloadJoinRequests();
       }
@@ -1157,11 +1166,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [refreshTrips],
   );
 
-  const joinTrip = useCallback((tripId: string, opts?: JoinTripOpts) => {
+  const joinTrip = useCallback((tripId: string, opts?: JoinTripOpts): Promise<JoinRequestSummary | null> => {
     // Optimistic UI: mark as "requested", but do NOT touch availableSeats/membersCount here.
-    // Seats are only decremented on the backend once the organizer approves the JoinRequest
-    // (see /interactions/join-request/:id/status). Decrementing locally here caused seats
-    // to be counted twice — once fraudulently on request, once for real on approval.
+    // Seats are only taken on the backend once the booking is paid (or, for a
+    // free trip, approved). Decrementing locally here caused seats to be
+    // counted twice.
     setRequestedTrips((prev) => {
       const next = new Set(prev);
       next.add(tripId);
@@ -1188,14 +1197,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
     // adjustedPrice is never sent — the server computes and owns it
     // (docs/REMEDIATION.md §8.6); the client only proposes a segment.
-    apiService
+    return apiService
       .createJoinRequest(tripId, opts)
-      .then(() => {
-        toast('Join request sent', 'success');
+      .then((created) => {
+        // A paid booking goes straight to the payment screen (the caller
+        // navigates); only a free trip's request is "sent" to the organizer.
+        if (created?.status === 'PENDING') toast('Join request sent', 'success');
+        if (created) {
+          setJoinRequestStatuses((prev) => new Map(prev).set(tripId, created));
+        }
         // Replaces the optimistic entry above with the server's real row
         // (real id, real computed adjustedPrice) rather than leaving the
         // client-guessed placeholder in place indefinitely.
         reloadJoinRequests();
+        return created ?? null;
       })
       .catch((e) => {
         if (isOfflineFailure(e)) {
@@ -1204,7 +1219,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             logger.warn('[Trips] Failed to queue join request:', qe),
           );
           toast("You're offline — your join request will send once you reconnect.", 'info');
-          return;
+          return null;
         }
         logger.warn('[Trips] Join request failed, rolling back:', e);
         setRequestedTrips((prev) => {
@@ -1218,6 +1233,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return next;
         });
         toast(errorToastMessage(e, 'Could not send the join request.'), 'error');
+        return null;
       });
   }, [reloadJoinRequests]);
 

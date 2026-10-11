@@ -5,8 +5,8 @@ import { uniqueTestPhone } from './test-phone';
 
 /**
  * End-to-end walk of the Group Organizer role view
- * (src/app/group-organizer.tsx): create a trip, take a join request through
- * approval, drive the roster and itinerary tools, broadcast an announcement,
+ * (src/app/group-organizer.tsx): create a trip, take a booking through
+ * payment and organizer allocation, drive the roster and itinerary tools, broadcast an announcement,
  * and confirm each one both persists and reaches the member's side.
  */
 
@@ -79,36 +79,26 @@ describe('roster before anyone joins', () => {
   });
 });
 
-describe('join request approval chain', () => {
+describe('booking → payment → organizer allocation chain', () => {
   let requestId: string;
+  let token: string;
 
-  it('accepts a join request from a traveller', async () => {
+  it('takes a booking from a traveller straight to payment', async () => {
     const res = await request(app)
       .post('/api/v1/interactions/join-request')
       .set(auth(joiner.token))
-      .send({ tripId, message: 'Would love to come along' });
+      .send({ tripId, acceptedTerms: true });
     expect(res.status).toBe(201);
+    expect(res.body.data.status).toBe('PAYMENT_PENDING');
+    requestId = res.body.data.id;
   });
 
-  it('surfaces it in the organizer inbox', async () => {
+  it('shows it in the organizer inbox with its real status', async () => {
     const res = await request(app).get('/api/v1/interactions/incoming-requests').set(auth(organizer.token));
     expect(res.status).toBe(200);
     const row = res.body.data.find((r: { userId: string }) => r.userId === joiner.userId);
     expect(row).toBeDefined();
-    expect(row.status).toBe('PENDING');
-    requestId = row.id;
-  });
-
-  // Listing incoming requests (which the app does in the background on
-  // every launch to count pending approvals) used to delete the organizer's
-  // join-request alert, so it never reached their Notifications & Alerts.
-  it('keeps the organizer alert after the inbox has been listed', async () => {
-    const res = await request(app).get('/api/v1/notifications').set(auth(organizer.token));
-    expect(res.status).toBe(200);
-    const alert = (res.body.data as { category: string; joinRequestId: string | null }[]).find(
-      (n) => n.category === 'JOIN_REQUEST' && n.joinRequestId === requestId,
-    );
-    expect(alert).toBeDefined();
+    expect(row.status).toBe('PAYMENT_PENDING');
   });
 
   it('does not show that inbox to anyone else', async () => {
@@ -117,40 +107,52 @@ describe('join request approval chain', () => {
     expect(res.body.data.find((r: { tripId: string }) => r.tripId === tripId)).toBeUndefined();
   });
 
-  it('refuses approval from a non-organizer', async () => {
+  it('alerts the organizer with the token once paid — and keeps that alert after the inbox is listed', async () => {
+    const paid = await request(app).post('/api/v1/trip-payments/pay').set(auth(joiner.token)).send({ joinRequestId: requestId });
+    expect(paid.status).toBe(200);
+    token = paid.body.data.verificationToken;
+    expect(paid.body.data.chatRoomId).toBeNull();
+
+    await request(app).get('/api/v1/interactions/incoming-requests').set(auth(organizer.token));
+    const res = await request(app).get('/api/v1/notifications').set(auth(organizer.token));
+    const alert = (res.body.data as { category: string; joinRequestId: string | null; content: string }[]).find(
+      (n) => n.category === 'PAYMENT_SUCCESS' && n.joinRequestId === requestId,
+    );
+    expect(alert).toBeDefined();
+    expect(alert!.content).toContain(token);
+  });
+
+  it('refuses allocation from a non-organizer', async () => {
     const res = await request(app)
-      .post(`/api/v1/interactions/join-request/${requestId}/status`)
+      .post(`/api/v1/trips/${tripId}/approve-and-allocate`)
       .set(auth(outsider.token))
-      .send({ status: 'APPROVED' });
+      .send({
+        joinRequestId: requestId,
+        verificationToken: token,
+        allocations: [{ dayNumber: 1, checkpointName: 'Manali', hotelName: 'H', roomNumber: '1', vehicleNumber: 'V', seatNumber: '1' }],
+      });
     expect(res.status).toBe(403);
   });
 
-  it('approves and seats the traveller', async () => {
-    // This trip charges a fee, so acceptance asks the traveller to pay
-    // rather than seating them outright — the seat is theirs once paid for.
-    const res = await request(app)
-      .post(`/api/v1/interactions/join-request/${requestId}/status`)
-      .set(auth(organizer.token))
-      .send({ status: 'APPROVED' });
-    expect(res.status).toBe(200);
-    expect(res.body.data.status).toBe('AWAITING_PAYMENT');
-
-    const paid = await request(app)
-      .post('/api/v1/trip-payments/pay')
-      .set(auth(joiner.token))
-      .send({ joinRequestId: requestId });
-    expect(paid.status).toBe(200);
-    expect(paid.body.data.chatRoomId).toBeTruthy();
-
-    const settled = await prisma.joinRequest.findUnique({ where: { id: requestId } });
-    expect(settled?.status).toBe('APPROVED');
+  it('keeps a paid-but-unallocated traveller off the roster', async () => {
+    const res = await request(app).get(`/api/v1/trips/${tripId}/members`).set(auth(organizer.token));
+    expect(res.body.data.find((m: { userId: string }) => m.userId === joiner.userId)).toBeUndefined();
   });
 
-  it('clears the organizer alert once the request is answered', async () => {
-    const left = await prisma.notification.count({
-      where: { userId: organizer.userId, joinRequestId: requestId, category: 'JOIN_REQUEST' },
-    });
-    expect(left).toBe(0);
+  it('confirms the traveller once the organizer allocates', async () => {
+    const res = await request(app)
+      .post(`/api/v1/trips/${tripId}/approve-and-allocate`)
+      .set(auth(organizer.token))
+      .send({
+        joinRequestId: requestId,
+        verificationToken: token,
+        allocations: [
+          { dayNumber: 1, checkpointName: 'Manali', hotelName: 'Hotel Snow View', roomNumber: 'Room 304', vehicleNumber: 'HP-01-1234', seatNumber: '14' },
+        ],
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.data.chatRoomId).toBeTruthy();
+    expect((await prisma.joinRequest.findUnique({ where: { id: requestId } }))?.status).toBe('CONFIRMED');
   });
 
   it('puts the traveller on the roster', async () => {
@@ -161,20 +163,16 @@ describe('join request approval chain', () => {
     expect(member.checkedIn).toBe(false);
   });
 
-  it('tells the traveller they were accepted', async () => {
+  it('tells the traveller they are confirmed and in the group chat', async () => {
     const res = await request(app).get('/api/v1/notifications').set(auth(joiner.token));
     expect(res.status).toBe(200);
     const rows = res.body.data as { category: string; content: string }[];
-    // On a paid trip the "you are in" moment is the payment landing, so that
-    // is the notification carrying it; a free trip still says JOIN_ACCEPTED.
-    const welcome = rows.find(
-      (n) => n.category === 'PAYMENT_SUCCESS' || n.category === 'JOIN_ACCEPTED',
-    );
+    const welcome = rows.find((n) => n.category === 'JOIN_ACCEPTED');
     expect(welcome).toBeTruthy();
     expect(welcome!.content).toContain('group chat');
   });
 
-  it('will not double-approve the same request', async () => {
+  it('will not approve a request that is not pending', async () => {
     const res = await request(app)
       .post(`/api/v1/interactions/join-request/${requestId}/status`)
       .set(auth(organizer.token))

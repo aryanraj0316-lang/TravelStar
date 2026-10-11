@@ -1,5 +1,6 @@
 import request from 'supertest';
 import app from '../src/app';
+import { bookAsMember } from './book-member';
 import prisma from '../src/services/db';
 import { uniqueTestPhone } from './test-phone';
 
@@ -53,7 +54,7 @@ describe('Trip expenses (§8.12)', () => {
     const organizer = await registerAndLogin('org');
     const joiner = await registerAndLogin('joiner');
     const tripId = await createTrip(organizer.token, `Expense Trip ${runId}`);
-    await request(app).post(`/api/v1/trips/${tripId}/join`).set('Authorization', `Bearer ${joiner.token}`).send({});
+    await bookAsMember(tripId, joiner.token);
 
     await request(app).post(`/api/v1/trips/${tripId}/expenses`).set('Authorization', `Bearer ${organizer.token}`).send({ description: 'Fuel', amount: 1000, category: 'TRANSPORT' });
     await request(app).post(`/api/v1/trips/${tripId}/expenses`).set('Authorization', `Bearer ${joiner.token}`).send({ description: 'Snacks', amount: 200 });

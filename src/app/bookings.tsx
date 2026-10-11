@@ -100,6 +100,7 @@ function BookingCard({
   onTrackLive: () => void;
 }) {
   const { t } = useTranslation();
+  const router = useRouter();
   return (
     <View style={styles.bookingCard}>
       {/* Card Image Header */}
@@ -194,6 +195,21 @@ function BookingCard({
           >
             <MessageCircle size={14} color={C.white} style={{ marginRight: 2 }} />
             <Text style={styles.actionBtnText}>{t('bookings.openTripChat')}</Text>
+          </TouchableOpacity>
+        ) : null}
+
+        {/* The member's own seat / room / vehicle assignments and booking
+            token — only travellers have one; organizers manage everyone's. */}
+        {booking.memberRole === 'MEMBER' ? (
+          <TouchableOpacity
+            activeOpacity={0.8}
+            style={styles.passBtn}
+            onPress={() => router.push({ pathname: '/trip-pass', params: { tripId: booking.id } })}
+            accessibilityRole="button"
+            accessibilityLabel={t('bookings.viewTripPass', 'View Trip Pass')}
+          >
+            <Text style={styles.passBtnText}>{t('bookings.viewTripPass', 'View Trip Pass')}</Text>
+            <ChevronRight size={14} color={C.blue} />
           </TouchableOpacity>
         ) : null}
       </View>
@@ -457,6 +473,18 @@ export default function BookingsScreen() {
 }
 
 const styles = StyleSheet.create({
+  passBtn: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    minHeight: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.blue,
+  },
+  passBtnText: { color: C.blue, fontSize: 13.5, fontWeight: '700' },
   container: {
     flex: 1,
     backgroundColor: C.bg,

@@ -5,7 +5,6 @@ import { RecommendationService } from '../../services/recommendation';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 import { requireUserId } from '../../lib/auth-context';
-import { claimSeatAndJoin } from '../../services/trip-membership';
 import { calculateMidwayPrice } from '../../services/midway-pricing';
 import { coordsForCity, haversineKm, stateForCity } from '../../lib/india-city-coords';
 import { boundingBox, resolveTripCoordinates } from '../../lib/trip-coordinates';
@@ -695,16 +694,33 @@ router.get('/mine/payment-summaries', async (req, res) => {
   try {
     const orders = await prisma.tripPaymentOrder.findMany({
       where: { joinRequest: { trip: { creatorId: userId } } },
-      select: { amount: true, status: true, joinRequest: { select: { tripId: true } } },
+      select: {
+        amount: true,
+        status: true,
+        platformFee: true,
+        refundedAmount: true,
+        joinRequest: { select: { tripId: true } },
+      },
     });
 
-    const byTrip = new Map<string, { collected: number; capturedCount: number; pendingCount: number }>();
+    // collected      — money still held after refunds (what travellers paid, net)
+    // platformFees   — the 4.5% share of that the platform keeps
+    // organizerShare — what the organizer is owed: net collected − platform fee
+    //                  (orders from before the split carry no fee)
+    type Entry = { collected: number; platformFees: number; organizerShare: number; capturedCount: number; pendingCount: number };
+    const byTrip = new Map<string, Entry>();
     for (const order of orders) {
       const tripId = order.joinRequest.tripId;
-      const entry = byTrip.get(tripId) ?? { collected: 0, capturedCount: 0, pendingCount: 0 };
-      if (order.status === 'CAPTURED') {
-        entry.collected += Number(order.amount);
-        entry.capturedCount += 1;
+      const entry = byTrip.get(tripId) ?? { collected: 0, platformFees: 0, organizerShare: 0, capturedCount: 0, pendingCount: 0 };
+      if (order.status === 'CAPTURED' || order.status === 'PARTIALLY_REFUNDED' || order.status === 'REFUNDED') {
+        const net = Math.max(0, Number(order.amount) - Number(order.refundedAmount ?? 0));
+        if (net > 0) {
+          const fee = Math.min(net, Number(order.platformFee ?? 0));
+          entry.collected += net;
+          entry.platformFees += fee;
+          entry.organizerShare += net - fee;
+        }
+        if (order.status === 'CAPTURED') entry.capturedCount += 1;
       } else if (order.status === 'CREATED' || order.status === 'PENDING') {
         entry.pendingCount += 1;
       }
@@ -714,6 +730,8 @@ router.get('/mine/payment-summaries', async (req, res) => {
     const data = [...byTrip.entries()].map(([tripId, s]) => ({
       tripId,
       collected: s.collected.toFixed(2),
+      platformFees: s.platformFees.toFixed(2),
+      organizerShare: s.organizerShare.toFixed(2),
       capturedCount: s.capturedCount,
       pendingCount: s.pendingCount,
     }));
@@ -1034,63 +1052,19 @@ router.post('/cover-upload-url', async (req, res) => {
   }
 });
 
-// Instant join — PUBLIC trips only. PRIVATE/INVITE_ONLY trips require the
-// creator's approval via POST /interactions/join-request, which shares the
-// same seat-claiming logic (services/trip-membership.ts) so both paths are
-// race-safe the same way — see docs/REMEDIATION.md §5.4.
-router.post('/:id/join', async (req, res) => {
-  const tripId = req.params.id;
-  const userId = requireUserId(req);
-
-  try {
-    const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { privacy: true } });
-    if (!trip) {
-      return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found.' } });
-    }
-    if (trip.privacy !== 'PUBLIC') {
-      return res.status(400).json({
-        ok: false,
-        error: {
-          code: 'APPROVAL_REQUIRED',
-          message: "This trip requires the organiser's approval. Send a join request instead.",
-        },
-      });
-    }
-
-    const result = await claimSeatAndJoin(tripId, userId);
-
-    if (!result.ok) {
-      if (result.reason === 'TRIP_NOT_FOUND') {
-        return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found.' } });
-      }
-      if (result.reason === 'BUSY') {
-        // The database was too contended to start the transaction; nothing
-        // was written. This is explicitly NOT reported as TRIP_FULL — that
-        // would tell a user a trip was sold out when it was not
-        // (docs/REMEDIATION.md §5.4).
-        res.setHeader('Retry-After', '2');
-        return res.status(503).json({
-          ok: false,
-          error: { code: 'SERVICE_BUSY', message: 'Too many people are joining right now. Please try again.' },
-        });
-      }
-      return res
-        .status(409)
-        .json({ ok: false, error: { code: 'TRIP_FULL', message: 'No available seats on this trip.' } });
-    }
-
-    const updated = await prisma.trip.findUnique({ where: { id: tripId }, include: TRIP_INCLUDE });
-    return res.status(200).json({
-      ok: true,
-      data: {
-        trip: updated ? mapTrip(updated, userId) : null,
-        message: result.alreadyMember ? 'You are already a member of this trip.' : 'Successfully joined trip.',
-      },
-    });
-  } catch (err) {
-    logger.error('[Trips] Join error:', err);
-    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to join trip.' } });
-  }
+// Instant join — retired. Every booking now goes through
+// POST /interactions/join-request (consent) → payment (verification token)
+// → the organizer's allocation, and only then membership and the group
+// chat. Seating someone here would skip payment and allocation entirely, so
+// this answers 410 with the path to use instead. The app never called it.
+router.post('/:id/join', async (_req, res) => {
+  return res.status(410).json({
+    ok: false,
+    error: {
+      code: 'BOOKING_REQUIRED',
+      message: 'Joining a trip now requires booking it: POST /interactions/join-request, then payment and organizer allocation.',
+    },
+  });
 });
 
 const updateTripSchema = z.object({

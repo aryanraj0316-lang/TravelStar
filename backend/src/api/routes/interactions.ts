@@ -1,12 +1,14 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 import { cursorPageQuerySchema } from '../../lib/pagination';
 import { sendPushToUsers, unreadCountFor } from '../../lib/push';
 import { requireUserId } from '../../lib/auth-context';
-import { claimSeatAndJoin, releaseSeatAndLeave } from '../../services/trip-membership';
-import { isRazorpayConfigured, refundToWallet } from '../../services/trip-payments';
+import { holdSeatsForRequest } from '../../services/trip-membership';
+import { amountForRequest } from '../../services/trip-payments';
+import { cancelBooking, rejectBooking } from '../../services/trip-cancellation';
 import { calculateMidwayPrice } from '../../services/midway-pricing';
 
 const router = Router();
@@ -92,13 +94,23 @@ const joinRequestSchema = z.object({
   fromStopId: z.string().uuid().optional(),
   toStopId: z.string().uuid().optional(),
   joiningDate: z.coerce.date().optional(),
+  // "I have read and agree to the Trip Rules, Guidelines, and Cancellation
+  // Policy." Recorded when given. Optional only so app builds from before
+  // the consent step keep working; current clients always send true.
+  acceptedTerms: z.boolean().optional(),
 });
 
-// Create a join request
+// Statuses after which the same traveller may book the trip again.
+const REBOOKABLE_STATUSES = new Set(['REJECTED', 'CANCELLED', 'REFUNDED']);
+
+// Create a join request (a booking). Paid trips go straight to
+// PAYMENT_PENDING — the traveller pays first, and the organizer acts on the
+// paid booking (verifies the token, allocates). Free trips wait for the
+// organizer as PENDING.
 router.post('/join-request', async (req, res) => {
   const parsed = joinRequestSchema.safeParse(req.body);
   if (!parsed.success) return validationError(res, parsed.error.issues);
-  const { tripId, midway, fromCity, toCity, familyMemberCount, fromStopId, toStopId, joiningDate } = parsed.data;
+  const { tripId, midway, fromCity, toCity, familyMemberCount, fromStopId, toStopId, joiningDate, acceptedTerms } = parsed.data;
   // Identity always comes from the token — a caller cannot file a request as
   // someone else by putting a userId in the body.
   const userId = requireUserId(req);
@@ -119,11 +131,10 @@ router.post('/join-request', async (req, res) => {
       },
     });
 
-    // A REJECTED request is not a live duplicate — the user is allowed to
-    // ask again (the "Request Again" button in TripDetailModal depends on
-    // this). Any other existing status (PENDING/AWAITING_PAYMENT/APPROVED)
-    // is a real in-flight or settled request, so it is returned unchanged.
-    if (existing && existing.status !== 'REJECTED') {
+    // A rejected or cancelled booking is not a live duplicate — the user may
+    // book again. Any other existing status is a real in-flight or settled
+    // booking, so it is returned unchanged.
+    if (existing && !REBOOKABLE_STATUSES.has(existing.status)) {
       return res.status(200).json({ ok: true, data: { ...existing, message: 'Join request already exists' } });
     }
 
@@ -168,8 +179,10 @@ router.post('/join-request', async (req, res) => {
     // upsert, not create: a previously REJECTED row for this (tripId,
     // userId) pair still exists and must be reused — the @@unique
     // constraint means a plain create() would 500 on a P2002 conflict.
+    const isPaid = amountForRequest({ adjustedPrice: adjustedPrice === null ? null : new Prisma.Decimal(adjustedPrice), partySize }, trip.budget).gt(0);
     const requestData = {
-      status: 'PENDING' as const,
+      status: isPaid ? ('PAYMENT_PENDING' as const) : ('PENDING' as const),
+      termsAcceptedAt: acceptedTerms ? new Date() : null,
       fromCity: midway ? fromCity! : null,
       toCity: midway ? toCity! : null,
       adjustedPrice,
@@ -185,8 +198,15 @@ router.post('/join-request', async (req, res) => {
       update: requestData,
     });
 
-    // Notify trip organizer about the submitted join request so it lands in their
-    // Notification & Alerts feed on the home screen
+    // A paid booking reaches the organizer once it is paid (with its
+    // verification token — see trip-payments.ts); an unpaid checkout is not
+    // something for them to act on.
+    if (isPaid) {
+      return res.status(201).json({ ok: true, data: joinReq });
+    }
+
+    // Free trip: notify the organizer so it lands in their Notification &
+    // Alerts feed on the home screen.
     try {
       const traveller = await prisma.user.findUnique({
         where: { id: userId },
@@ -297,22 +317,33 @@ router.delete('/join-request/:tripId', async (req, res) => {
   try {
     const userId = requireUserId(req);
 
-    const existing = await prisma.joinRequest.findUnique({
-      where: { tripId_userId: { tripId, userId } },
-    });
-
-    if (!existing) {
-      return res.status(200).json({ ok: true, data: { message: 'Join request cancelled' } });
-    }
-
-    const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { creatorId: true } });
-    const result = await releaseSeatAndLeave(existing.id, null);
-    if (trip) await clearJoinRequestAlert(trip.creatorId, existing.id, req.app.get('socketio'));
+    // Every cancellation goes through the tiered refund policy
+    // (services/trip-cancellation.ts): unpaid requests are just withdrawn;
+    // paid ones are refunded per policy, then seats, membership,
+    // allocations and group chat are released.
+    const result = await cancelBooking({ tripId, userId, io: req.app.get('socketio') });
     if (!result.ok) {
-      return res.status(200).json({ ok: true, data: { message: 'Join request cancelled' } });
+      if (result.reason === 'NOT_FOUND') {
+        return res.status(200).json({ ok: true, data: { message: 'Join request cancelled' } });
+      }
+      if (result.reason === 'REFUND_FAILED') {
+        return res.status(502).json({
+          ok: false,
+          error: { code: 'REFUND_FAILED', message: result.message ?? 'The refund could not be processed. Nothing was cancelled — please try again.' },
+        });
+      }
+      return res.status(409).json({ ok: false, error: { code: 'NOT_CANCELLABLE', message: 'This booking cannot be cancelled.' } });
     }
 
-    return res.status(200).json({ ok: true, data: { message: 'Join request cancelled' } });
+    return res.status(200).json({
+      ok: true,
+      data: {
+        message: 'Booking cancelled',
+        status: result.status,
+        refundAmount: result.refundAmount,
+        tier: result.tier,
+      },
+    });
   } catch (err) {
     logger.warn('[Interactions] Cancel join request error:', err);
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to cancel join request' } });
@@ -463,14 +494,16 @@ const handleStatusChange = async (req: Request, res: Response) => {
     }
 
     if (status === 'REJECTED') {
-      const paymentOrder = await prisma.tripPaymentOrder.findUnique({
-        where: { joinRequestId: request.id },
-      });
-      if (paymentOrder && paymentOrder.status === 'CAPTURED') {
-        await refundToWallet(paymentOrder.id);
-      }
-      const released = await releaseSeatAndLeave(request.id, 'REJECTED');
-      if (!released.ok) {
+      // A paid booking is refunded in full to the original payment method
+      // before its seats are released.
+      const rejected = await rejectBooking(request.id);
+      if (!rejected.ok) {
+        if (rejected.reason === 'REFUND_FAILED') {
+          return res.status(502).json({
+            ok: false,
+            error: { code: 'REFUND_FAILED', message: rejected.message ?? 'The refund could not be processed. Nothing was changed — please try again.' },
+          });
+        }
         return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Join request not found' } });
       }
       await clearJoinRequestAlert(tokenUserId, request.id, req.app.get('socketio'));
@@ -511,6 +544,8 @@ const handleStatusChange = async (req: Request, res: Response) => {
     // /initiate for the same rule applied to the actual charge.
     const perPersonFee = request.adjustedPrice ? Number(request.adjustedPrice) : Number(request.trip.budget);
     const fee = perPersonFee * request.partySize;
+    // Paid trips: a PENDING request can only be one made before the
+    // pay-first flow — approving it moves it to PAYMENT_PENDING, as before.
     // Whether a seat must be paid for is a property of the trip, not of which
     // gateways happen to be credentialled. This used to also require
     // isRazorpayConfigured(), so on a deployment with no Razorpay keys an
@@ -522,7 +557,7 @@ const handleStatusChange = async (req: Request, res: Response) => {
     if (fee > 0) {
       await prisma.joinRequest.update({
         where: { id: request.id },
-        data: { status: 'AWAITING_PAYMENT' },
+        data: { status: 'PAYMENT_PENDING' },
       });
       await clearJoinRequestAlert(tokenUserId, request.id, req.app.get('socketio'));
 
@@ -566,131 +601,55 @@ const handleStatusChange = async (req: Request, res: Response) => {
       });
 
       const updated = await prisma.joinRequest.findUnique({ where: { id: request.id } });
-      return res.status(200).json({ ok: true, data: { ...updated, status: 'AWAITING_PAYMENT', chatRoomId: null } });
+      return res.status(200).json({ ok: true, data: { ...updated, status: 'PAYMENT_PENDING', chatRoomId: null } });
     }
 
-    const claim = await claimSeatAndJoin(request.tripId, request.userId, {
-      existingJoinRequestId: request.id,
-      fromCity: request.fromCity,
-      toCity: request.toCity,
-      adjustedPrice: request.adjustedPrice ? Number(request.adjustedPrice) : null,
-      partySize: request.partySize,
-    });
-
-    if (!claim.ok) {
-      if (claim.reason === 'TRIP_NOT_FOUND') {
-        return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found.' } });
-      }
-      if (claim.reason === 'BUSY') {
-        // See the same branch in trips.ts — never reported as TRIP_FULL.
+    // Free trip: approval holds the party's seats and hands the request to
+    // the organizer's allocation form. Membership and the group chat follow
+    // only once allocations are submitted (POST /trips/:id/approve-and-allocate).
+    const held = await holdSeatsForRequest(request.id, { fromStatuses: ['PENDING'], toStatus: 'ALLOCATION_PENDING' });
+    if (!held.ok) {
+      if (held.reason === 'BUSY') {
         res.setHeader('Retry-After', '2');
         return res.status(503).json({
           ok: false,
           error: { code: 'SERVICE_BUSY', message: 'The database is busy. Please approve this request again.' },
         });
       }
-      return res.status(409).json({ ok: false, error: { code: 'TRIP_FULL', message: 'No available seats on this trip.' } });
+      if (held.reason === 'TRIP_FULL') {
+        return res.status(409).json({ ok: false, error: { code: 'TRIP_FULL', message: 'No available seats on this trip.' } });
+      }
+      return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Join request is not pending' } });
     }
-
-    const targetChatRoomId = claim.chatRoomId;
     await clearJoinRequestAlert(tokenUserId, request.id, req.app.get('socketio'));
 
-    // Get applicant details to use their name in the message
-    const applicantUser = await prisma.user.findUnique({
-      where: { id: request.userId },
-      include: { profile: true },
-    });
-    const applicantName = applicantUser?.profile
-      ? `${applicantUser.profile.firstName} ${applicantUser.profile.lastName}`.trim()
-      : (applicantUser?.email ? applicantUser.email.split('@')[0] : 'Traveler');
-
-    const systemMsgContent = `${applicantName} has joined the group`;
-
-    if (targetChatRoomId) {
-      // Save system message to database
-      await prisma.message.create({
-        data: {
-          chatRoomId: targetChatRoomId,
-          senderId: request.trip.creatorId,
-          content: systemMsgContent,
-          mediaType: 'NONE',
-          isSystem: true,
-        },
-      });
-
-      // Emit new message event to all active socket connections
+    {
+      const title = 'Request approved — ' + request.trip.name;
+      const content = `Your seat on ${request.trip.name} is reserved. The organizer is assigning your seat and rooms — you'll get your Trip Pass and group chat access next.`;
       const io = req.app.get('socketio');
-      if (io) {
-        io.to(targetChatRoomId).emit('messageReceived', {
-          roomId: targetChatRoomId,
-          message: {
-            id: `sys-${Date.now()}`,
-            senderName: 'System',
-            senderRole: 'SYSTEM',
-            content: systemMsgContent,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            mediaType: 'NONE',
-            // The DB row is isSystem: true, but this live payload omitted
-            // it — chat.tsx's unread-badge check tests isSystem specifically
-            // (not senderRole), so a join announcement bumped the per-room
-            // badge to 1 while GET /chats (which excludes isSystem rows) and
-            // the tab dot both correctly reported zero unread.
-            isSystem: true,
-          }
-        });
-
-        // Emit addedToChat live socket event to user's personal room
-        io.to(request.userId).emit('addedToChat', {
-          tripId: request.tripId,
-          chatRoomId: targetChatRoomId,
-          tripName: request.trip.name,
-        });
-
-        // Emit live notificationReceived event to user's personal room
-        io.to(request.userId).emit('notificationReceived', {
-          id: `notif-${Date.now()}`,
-          userId: request.userId,
-          type: 'TRIP',
-          category: 'JOIN_ACCEPTED',
-          title: 'Join Request Accepted',
-          content: `You have been accepted into ${request.trip.name} by the organizer and added to the group chat.`,
-          unread: true,
-          tripId: request.tripId,
-          chatRoomId: targetChatRoomId,
-        });
-      }
-    }
-
-    // Merged single notification: Trip acceptance + Group chat addition
-    await prisma.notification.create({
-      data: {
+      const created = await prisma.notification.create({
+        data: { userId: request.userId, type: 'TRIP', category: 'JOIN_ACCEPTED', title, content, time: 'Just now', unread: true, tripId: request.tripId },
+      });
+      io?.to(request.userId).emit('notificationReceived', {
+        id: created.id,
         userId: request.userId,
         type: 'TRIP',
         category: 'JOIN_ACCEPTED',
-        title: 'Join Request Accepted',
-        content: `You have been accepted into ${request.trip.name} by the organizer and added to the group chat.`,
-        time: 'Just now',
+        title,
+        content,
         unread: true,
         tripId: request.tripId,
-        chatRoomId: targetChatRoomId,
-      },
-    });
+      });
+      await sendPushToUsers([request.userId], 'TRIP', {
+        title,
+        body: content,
+        data: { screen: 'trip-pass', tripId: request.tripId },
+        badge: await unreadCountFor(request.userId),
+      });
+    }
 
-    // Real push on top of the feed row above (docs/REMEDIATION.md
-    // §8.18 — these used to be in-app-only, so an approved traveller
-    // learned about it whenever they next happened to open the app).
-    // Awaited but never throwing: sendPushToUsers swallows its own
-    // failures, since a push problem must not fail an approval that has
-    // already been committed.
-    await sendPushToUsers([request.userId], 'TRIP', {
-      title: 'Join Request Accepted',
-      body: `You have been accepted into ${request.trip.name} by the organizer and added to the group chat.`,
-      data: { screen: 'trip', tripId: request.tripId, chatRoomId: targetChatRoomId ?? '' },
-      badge: await unreadCountFor(request.userId),
-    });
-
-    const updated = await prisma.joinRequest.findUnique({ where: { id: claim.joinRequestId } });
-    return res.status(200).json({ ok: true, data: { ...updated, chatRoomId: targetChatRoomId } });
+    const approved = await prisma.joinRequest.findUnique({ where: { id: request.id } });
+    return res.status(200).json({ ok: true, data: { ...approved, status: 'ALLOCATION_PENDING', chatRoomId: null } });
   } catch (err) {
     logger.warn('[Interactions] Update join request status error:', err);
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to update join request status' } });

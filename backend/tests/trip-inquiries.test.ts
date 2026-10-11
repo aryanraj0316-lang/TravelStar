@@ -373,26 +373,32 @@ describe('Trip enquiries', () => {
       .set('Authorization', `Bearer ${asker.token}`)
       .send({ tripId });
 
-    await request(app)
+    const booked = await request(app)
       .post('/api/v1/interactions/join-request')
       .set('Authorization', `Bearer ${asker.token}`)
-      .send({ tripId });
+      .send({ tripId, acceptedTerms: true });
 
     const list = await request(app)
       .get(`/api/v1/trips/${tripId}/inquiries`)
       .set('Authorization', `Bearer ${organizer.token}`);
     expect(list.status).toBe(200);
     expect(list.body.data[0].hasJoinRequest).toBe(true);
-    expect(list.body.data[0].joinRequestStatus).toBe('PENDING');
+    // A paid trip is booked pay-first.
+    expect(list.body.data[0].joinRequestStatus).toBe('PAYMENT_PENDING');
 
-    // JOIN_REQUEST was missing from the NotificationCategory enum, so this
-    // write threw on every single join request and the organizer was never
-    // told anyone had asked for a seat.
-    const joinNotifs = await prisma.notification.findMany({
-      where: { userId: organizer.userId, tripId, category: 'JOIN_REQUEST' },
+    // The organizer hears about a paid booking once it is paid — with the
+    // verification token they allocate against — not while it is unpaid.
+    const paid = await request(app)
+      .post('/api/v1/trip-payments/pay')
+      .set('Authorization', `Bearer ${asker.token}`)
+      .send({ joinRequestId: booked.body.data.id });
+    expect(paid.status).toBe(200);
+    const paymentNotifs = await prisma.notification.findMany({
+      where: { userId: organizer.userId, tripId, category: 'PAYMENT_SUCCESS' },
     });
-    expect(joinNotifs).toHaveLength(1);
-    expect(joinNotifs[0]!.joinRequestId).toBeTruthy();
+    expect(paymentNotifs).toHaveLength(1);
+    expect(paymentNotifs[0]!.joinRequestId).toBe(booked.body.data.id);
+    expect(paymentNotifs[0]!.content).toContain(paid.body.data.verificationToken);
   }, 90_000);
 
   it('summarizes pending enquiries across every trip the organizer runs, for the home-screen badge', async () => {

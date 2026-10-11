@@ -30,12 +30,21 @@ enum PrivacySetting {
   INVITE_ONLY
 }
 
+/// The booking lifecycle. Seats are HELD (counted against availableSeats)
+/// exactly while a request is PAYMENT_COMPLETED, ALLOCATION_PENDING or
+/// CONFIRMED; a TripMember row and group-chat membership exist only once it
+/// is CONFIRMED — i.e. after the organizer has verified the payment token
+/// and submitted the traveller's per-stop allocations.
 enum JoinRequestStatus {
-  PENDING
-  AWAITING_PAYMENT
-  APPROVED
+  PENDING            // Free trip: waiting for the organizer
+  PAYMENT_PENDING    // Paid trip: terms accepted, payment not yet captured
+  PAYMENT_COMPLETED  // Paid; verification token issued; seats held
+  ALLOCATION_PENDING // Organizer verified (token, or approved a free trip); seats held
+  CONFIRMED          // Allocations submitted; member + group chat
   REJECTED
   WAITLISTED
+  CANCELLED          // Cancelled with no refund due
+  REFUNDED           // Cancelled with a full or partial refund
 }
 
 enum BookingType {
@@ -540,9 +549,40 @@ model TripMember {
   // approval time so the roster reflects what was actually claimed even if
   // the request row is later edited.
   partySize Int @default(1)
+  // The payment verification token this membership was confirmed against
+  // (copied from TripPaymentOrder.verificationToken at allocation). Null for
+  // free trips and for members who joined before tokens existed.
+  bookingReferenceToken String? @unique
+  allocations           TripMemberAllocation[]
 
   @@unique([tripId, userId])
   @@index([userId])
+}
+
+// What the organizer assigned one confirmed member at one day/checkpoint:
+// where they sleep and how they travel. Written in one batch by
+// POST /trips/:tripId/approve-and-allocate and shown to the traveller as
+// their Trip Pass. Deleted with the membership on cancellation.
+model TripMemberAllocation {
+  id                 String            @id @default(uuid())
+  tripMemberId       String
+  tripMember         TripMember        @relation(fields: [tripMemberId], references: [id], onDelete: Cascade)
+  tripTimelineStopId String?
+  tripTimelineStop   TripTimelineStop? @relation(fields: [tripTimelineStopId], references: [id], onDelete: SetNull)
+  dayNumber          Int
+  checkpointName     String
+  hotelName          String?
+  roomNumber         String?
+  transitType        String?
+  vehicleNumber      String?
+  seatNumber         String?
+  assemblyTime       String?
+  notes              String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@index([tripMemberId])
+  @@index([tripTimelineStopId])
 }
 
 model JoinRequest {
@@ -574,6 +614,10 @@ model JoinRequest {
   fromStop          TripTimelineStop? @relation("JoinRequestFromStop", fields: [fromStopId], references: [id], onDelete: SetNull)
   toStopId          String?
   toStop            TripTimelineStop? @relation("JoinRequestToStop", fields: [toStopId], references: [id], onDelete: SetNull)
+  // When the traveller ticked "I have read and agree to the Trip Rules,
+  // Guidelines, and Cancellation Policy" before booking. Null for requests
+  // made before the consent step existed.
+  termsAcceptedAt   DateTime?
 
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
@@ -805,6 +849,7 @@ model TripTimelineStop {
   updatedAt          DateTime     @updatedAt
 
   fromStopRequests JoinRequest[] @relation("JoinRequestFromStop")
+  memberAllocations TripMemberAllocation[]
   guideBookings    Booking[]
   toStopRequests   JoinRequest[] @relation("JoinRequestToStop")
   assignedGuides   TripTimelineStopGuide[]
@@ -1489,9 +1534,10 @@ enum QuoteStatus {
 enum TripPaymentOrderStatus {
   CREATED    // Razorpay order created; waiting for the traveller to pay
   PENDING    // Traveller has opened the checkout; payment in flight
-  CAPTURED   // Payment verified and seat claimed
+  CAPTURED   // Payment verified, token issued and seats held
   FAILED     // Payment failed or expired
-  REFUNDED   // Payment was refunded to wallet (post-rejection or cancellation)
+  REFUNDED   // Fully refunded (rejection, trip full, or cancellation)
+  PARTIALLY_REFUNDED // Part refunded under the cancellation policy
 }
 
 model TripPaymentOrder {
@@ -1510,6 +1556,20 @@ model TripPaymentOrder {
   idempotencyKey    String                 @unique
   walletDebit       Decimal?               @db.Decimal(12, 2)
   gatewayDebit      Decimal?               @db.Decimal(12, 2)
+  // Escrow split, fixed when the order is created: the platform keeps 4.5%
+  // of the amount; the organizer is owed the remaining 95.5%. Null on
+  // orders created before the split existed.
+  platformFee       Decimal?               @db.Decimal(12, 2)
+  organizerAmount   Decimal?               @db.Decimal(12, 2)
+  // Issued when payment is captured (e.g. TST-8F92A1). The organizer must
+  // quote it back to allocate the traveller — proof the seat was paid for.
+  verificationToken     String?            @unique
+  isVerifiedByOrganizer Boolean            @default(false)
+  verifiedAt            DateTime?
+  // Cancellation refunds (services/trip-cancellation.ts).
+  refundedAmount    Decimal?               @db.Decimal(12, 2)
+  razorpayRefundId  String?
+  refundedAt        DateTime?
   createdAt         DateTime               @default(now())
   updatedAt         DateTime               @updatedAt
 

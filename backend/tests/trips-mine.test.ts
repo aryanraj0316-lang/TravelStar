@@ -1,5 +1,6 @@
 import request from 'supertest';
 import app from '../src/app';
+import { bookAsMember } from './book-member';
 import prisma from '../src/services/db';
 import { uniqueTestPhone } from './test-phone';
 
@@ -88,10 +89,7 @@ describe('GET /api/v1/trips/mine', () => {
     expect(strangerTripRes.status).toBe(201);
     createdTripIds.push(strangerTripRes.body.data.id);
 
-    const joinRes = await request(app)
-      .post(`/api/v1/trips/${organizedTripId}/join`)
-      .set('Authorization', `Bearer ${joiner.token}`)
-      .send({});
+    const joinRes = await bookAsMember(organizedTripId, joiner.token);
     expect(joinRes.status).toBe(200);
 
     // Organizer sees their own trip, with ORGANIZER role and no TripMember row needed.

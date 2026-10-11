@@ -1,5 +1,6 @@
 import { Avatar, Button, CoverImage, Input, ScreenEmpty, Sheet } from '@/components/ui';
 import { formatDateShort, formatRelative } from '@/lib/datetime';
+import OrganizerAllocationModal from '@/components/OrganizerAllocationModal';
 import { formatINR, parseMoney, type Money } from '@/lib/money';
 import { tripCoverImage } from '@/lib/trip-display';
 import { errorToastMessage, showPrompt, toast, useConfirm } from '@/lib/feedback';
@@ -14,7 +15,7 @@ import { useApp, type Trip } from '@/store/AppContext';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { socketService } from '@/services/socket';
 import { eventBus } from '@/services/event-bus';
-import type { AppNotification, ChatMessage, IncomingJoinRequest, PublicGuide, ReceivedGuideQuote, TripGuideMatches, TripInquiryThread, TripMemberRow } from '@/types/api';
+import type { AppNotification, ChatMessage, IncomingJoinRequest, JoinRequestStatus, PublicGuide, ReceivedGuideQuote, TripGuideMatches, TripInquiryThread, TripMemberRow } from '@/types/api';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Activity from 'lucide-react-native/icons/activity';
@@ -184,9 +185,43 @@ const STATUS_LABEL_KEYS: Record<ActiveTour['status'], string> = {
 
 const INQUIRY_STATUS_LABEL_KEYS: Record<NonNullable<TripInquiryThread['joinRequestStatus']>, string> = {
   PENDING: 'groupOrganizer.inquiryStatusPending',
-  AWAITING_PAYMENT: 'groupOrganizer.inquiryStatusAwaitingPayment',
-  APPROVED: 'groupOrganizer.inquiryStatusApproved',
+  PAYMENT_PENDING: 'groupOrganizer.inquiryStatusAwaitingPayment',
+  PAYMENT_COMPLETED: 'groupOrganizer.inquiryStatusPaid',
+  ALLOCATION_PENDING: 'groupOrganizer.inquiryStatusVerified',
+  CONFIRMED: 'groupOrganizer.inquiryStatusApproved',
   REJECTED: 'groupOrganizer.inquiryStatusRejected',
+  WAITLISTED: 'groupOrganizer.inquiryStatusPending',
+  CANCELLED: 'groupOrganizer.inquiryStatusCancelled',
+  REFUNDED: 'groupOrganizer.inquiryStatusCancelled',
+};
+
+// The Approvals tab's filters. "To allocate" is both paid-but-unallocated
+// states — the organizer's to-do list.
+type RequestFilter = 'ALL' | 'PENDING' | 'PAYMENT_PENDING' | 'TO_ALLOCATE' | 'CONFIRMED' | 'REJECTED';
+const TO_ALLOCATE: readonly JoinRequestStatus[] = ['PAYMENT_COMPLETED', 'ALLOCATION_PENDING'];
+function matchesRequestFilter(status: JoinRequestStatus, filter: RequestFilter): boolean {
+  if (filter === 'ALL') return true;
+  if (filter === 'TO_ALLOCATE') return TO_ALLOCATE.includes(status);
+  if (filter === 'REJECTED') return status === 'REJECTED' || status === 'CANCELLED' || status === 'REFUNDED';
+  return status === filter;
+}
+type BadgeTone = 'approved' | 'rejected' | 'awaiting' | 'pending';
+function requestBadgeTone(status: JoinRequestStatus): BadgeTone {
+  if (status === 'CONFIRMED') return 'approved';
+  if (status === 'REJECTED' || status === 'CANCELLED' || status === 'REFUNDED') return 'rejected';
+  if (status === 'PENDING' || status === 'WAITLISTED') return 'pending';
+  return 'awaiting';
+}
+const REQUEST_STATUS_LABEL: Record<JoinRequestStatus, string> = {
+  PENDING: 'PENDING',
+  PAYMENT_PENDING: 'AWAITING PAY',
+  PAYMENT_COMPLETED: 'PAID · ALLOCATE',
+  ALLOCATION_PENDING: 'VERIFIED · ALLOCATE',
+  CONFIRMED: 'CONFIRMED',
+  REJECTED: 'DECLINED',
+  WAITLISTED: 'WAITLISTED',
+  CANCELLED: 'CANCELLED',
+  REFUNDED: 'REFUNDED',
 };
 
 export type GroupOrganizerTab = 'console' | 'chat';
@@ -431,7 +466,9 @@ export default function GroupOrganizerScreen() {
     (params.tab as GroupOrganizerTab) === 'chat' ? 'chat' : 'console',
   );
   const [creationSubTab, setCreationSubTab] = useState<CreationSubTab>('dashboard');
-  const [requestFilter, setRequestFilter] = useState<'ALL' | 'PENDING' | 'AWAITING_PAYMENT' | 'APPROVED' | 'REJECTED'>('ALL');
+  const [requestFilter, setRequestFilter] = useState<RequestFilter>('ALL');
+  // Verify-token & allocation sheet: which trip, and optionally which booking.
+  const [allocationTarget, setAllocationTarget] = useState<{ tripId: string; joinRequestId: string | null } | null>(null);
 
 
 
@@ -1960,12 +1997,13 @@ export default function GroupOrganizerScreen() {
 
   const handleApproveRequest = async (reqId: string, userName: string, avatar?: string) => {
     markRequestAsSeen(reqId);
-    let nextStatus: 'APPROVED' | 'AWAITING_PAYMENT' = 'APPROVED';
+    // Approving never seats anyone any more: a free trip's request moves to
+    // ALLOCATION_PENDING (seat held, now assign seat & rooms); an old paid
+    // request moves to PAYMENT_PENDING.
+    let nextStatus: JoinRequestStatus = 'ALLOCATION_PENDING';
     try {
-      const res: any = await apiService.updateJoinRequestStatus(reqId, 'APPROVED');
-      if (res?.status === 'AWAITING_PAYMENT') {
-        nextStatus = 'AWAITING_PAYMENT';
-      }
+      const res = (await apiService.updateJoinRequestStatus(reqId, 'APPROVED')) as { status?: JoinRequestStatus } | null;
+      if (res?.status) nextStatus = res.status;
     } catch (e) {
       // A failed approval must not report success and flip the row locally:
       // the organizer would believe someone is on the trip who never got a
@@ -1982,13 +2020,12 @@ export default function GroupOrganizerScreen() {
       }
       return updated;
     });
-    if (nextStatus === 'AWAITING_PAYMENT') {
+    if (nextStatus === 'PAYMENT_PENDING') {
       toast(`Approved! Awaiting payment from ${userName}`, 'info');
     } else {
-      toast(t('groupOrganizer.requestApproved', { name: userName, tour: selectedCreation?.name || currentTour.groupName }), 'success');
-      if (selectedCreation) {
-        fetchTourMembers(selectedCreation.id);
-      }
+      toast(`Seat reserved for ${userName} — now assign their seat and rooms.`, 'success');
+      const tripId = rawJoinRequests.find((r) => r.id === reqId)?.tripId ?? selectedCreation?.id;
+      if (tripId) setAllocationTarget({ tripId, joinRequestId: reqId });
     }
   };
 
@@ -2931,25 +2968,13 @@ export default function GroupOrganizerScreen() {
                                   <View
                                     style={[
                                       styles.requestStatusBadge,
-                                      chipStatus === 'APPROVED'
-                                        ? styles.requestStatusApproved
-                                        : chipStatus === 'REJECTED'
-                                        ? styles.requestStatusRejected
-                                        : chipStatus === 'AWAITING_PAYMENT'
-                                        ? styles.requestStatusAwaiting
-                                        : styles.requestStatusPending,
+                                      badgeStyles[requestBadgeTone(chipStatus)].box,
                                     ]}
                                   >
                                     <Text
                                       style={[
                                         styles.requestStatusBadgeText,
-                                        chipStatus === 'APPROVED'
-                                          ? styles.requestStatusApprovedText
-                                          : chipStatus === 'REJECTED'
-                                          ? styles.requestStatusRejectedText
-                                          : chipStatus === 'AWAITING_PAYMENT'
-                                          ? styles.requestStatusAwaitingText
-                                          : styles.requestStatusPendingText,
+                                        badgeStyles[requestBadgeTone(chipStatus)].text,
                                       ]}
                                     >
                                       {t(INQUIRY_STATUS_LABEL_KEYS[chipStatus])}
@@ -3019,25 +3044,48 @@ export default function GroupOrganizerScreen() {
                     return null;
                   })()}
 
+                  {/* Paid bookings waiting on the organizer: verify the token,
+                      assign seat & rooms, and they join the group chat. */}
+                  {(() => {
+                    const toAllocate = rawJoinRequests.filter(
+                      (r) => r.tripId === selectedCreation.id && TO_ALLOCATE.includes(r.status),
+                    ).length;
+                    if (toAllocate === 0) return null;
+                    return (
+                      <TouchableOpacity
+                        style={styles.allocationBanner}
+                        onPress={() => setAllocationTarget({ tripId: selectedCreation.id, joinRequestId: null })}
+                        activeOpacity={0.85}
+                        accessibilityRole="button"
+                      >
+                        <Check size={16} color={C.white} />
+                        <Text style={styles.allocationBannerText}>
+                          {`${toAllocate} paid booking${toAllocate === 1 ? '' : 's'} to verify & allocate`}
+                        </Text>
+                        <Text style={styles.allocationBannerCta}>Open ›</Text>
+                      </TouchableOpacity>
+                    );
+                  })()}
+
                   {/* Requests Filter Pills - Exactly 1 Row, Non-Wrapping, Stacking at Same Level */}
                   <View style={styles.requestsFilterRow}>
-                    {[
+                    {([
                       { key: 'ALL', label: 'All' },
+                      { key: 'TO_ALLOCATE', label: 'To Allocate' },
                       { key: 'PENDING', label: 'Pending' },
-                      { key: 'AWAITING_PAYMENT', label: 'Awaiting Pay' },
-                      { key: 'APPROVED', label: 'Accepted' },
-                      { key: 'REJECTED', label: 'Declined' },
-                    ].map((filter) => {
+                      { key: 'PAYMENT_PENDING', label: 'Awaiting Pay' },
+                      { key: 'CONFIRMED', label: 'Confirmed' },
+                      { key: 'REJECTED', label: 'Closed' },
+                    ] as { key: RequestFilter; label: string }[]).map((filter) => {
                       const isSel = requestFilter === filter.key;
-                      const count =
-                        filter.key === 'ALL'
-                          ? rawJoinRequests.filter((r) => r.tripId === selectedCreation.id).length
-                          : rawJoinRequests.filter((r) => r.tripId === selectedCreation.id && r.status === filter.key).length;
+                      const count = rawJoinRequests.filter(
+                        (r) => r.tripId === selectedCreation.id && matchesRequestFilter(r.status, filter.key),
+                      ).length;
                       return (
                         <TouchableOpacity
                           key={filter.key}
                           style={[styles.requestFilterPill, isSel && styles.requestFilterPillActive]}
-                          onPress={() => setRequestFilter(filter.key as any)}
+                          onPress={() => setRequestFilter(filter.key)}
                           activeOpacity={0.8}
                           accessibilityRole="button"
                           accessibilityLabel={`${filter.label} filter, ${count} items`}
@@ -3057,7 +3105,7 @@ export default function GroupOrganizerScreen() {
                   {(() => {
                     const tripRequests = rawJoinRequests
                       .filter((r) => r.tripId === selectedCreation.id)
-                      .filter((r) => requestFilter === 'ALL' || r.status === requestFilter);
+                      .filter((r) => matchesRequestFilter(r.status, requestFilter));
 
                     if (tripRequests.length === 0) {
                       return (
@@ -3066,12 +3114,14 @@ export default function GroupOrganizerScreen() {
                           <Text style={styles.emptyRequestsBoxTitle}>
                             {requestFilter === 'PENDING'
                               ? 'No pending join requests'
-                              : requestFilter === 'AWAITING_PAYMENT'
-                              ? 'No requests awaiting payment'
-                              : requestFilter === 'APPROVED'
-                              ? 'No accepted travelers yet'
+                              : requestFilter === 'PAYMENT_PENDING'
+                              ? 'No bookings awaiting payment'
+                              : requestFilter === 'TO_ALLOCATE'
+                              ? 'Nobody is waiting for allocation'
+                              : requestFilter === 'CONFIRMED'
+                              ? 'No confirmed travelers yet'
                               : requestFilter === 'REJECTED'
-                              ? 'No declined requests'
+                              ? 'No declined or cancelled bookings'
                               : 'No requests received for this journey yet'}
                           </Text>
                           <Text style={styles.emptyRequestsBoxSub}>
@@ -3093,28 +3143,16 @@ export default function GroupOrganizerScreen() {
                                   <View
                                     style={[
                                       styles.requestStatusBadge,
-                                      req.status === 'APPROVED'
-                                        ? styles.requestStatusApproved
-                                        : req.status === 'REJECTED'
-                                        ? styles.requestStatusRejected
-                                        : req.status === 'AWAITING_PAYMENT'
-                                        ? styles.requestStatusAwaiting
-                                        : styles.requestStatusPending,
+                                      badgeStyles[requestBadgeTone(req.status)].box,
                                     ]}
                                   >
                                     <Text
                                       style={[
                                         styles.requestStatusBadgeText,
-                                        req.status === 'APPROVED'
-                                          ? styles.requestStatusApprovedText
-                                          : req.status === 'REJECTED'
-                                          ? styles.requestStatusRejectedText
-                                          : req.status === 'AWAITING_PAYMENT'
-                                          ? styles.requestStatusAwaitingText
-                                          : styles.requestStatusPendingText,
+                                        badgeStyles[requestBadgeTone(req.status)].text,
                                       ]}
                                     >
-                                      {req.status === 'APPROVED' ? 'ACCEPTED' : req.status === 'REJECTED' ? 'DECLINED' : req.status === 'AWAITING_PAYMENT' ? 'AWAITING PAY' : 'PENDING'}
+                                      {REQUEST_STATUS_LABEL[req.status] ?? req.status}
                                     </Text>
                                   </View>
                                 </View>
@@ -3174,7 +3212,31 @@ export default function GroupOrganizerScreen() {
                               </View>
                             ) : null}
 
-                            {(req.status === 'PENDING' || req.status === 'AWAITING_PAYMENT') && (
+                            {TO_ALLOCATE.includes(req.status) && (
+                              <View style={styles.requestActionRow}>
+                                <TouchableOpacity
+                                  style={styles.requestAcceptBtn}
+                                  onPress={() => setAllocationTarget({ tripId: req.tripId, joinRequestId: req.id })}
+                                  activeOpacity={0.8}
+                                  accessibilityRole="button"
+                                >
+                                  <Check size={14} color={C.white} />
+                                  <Text style={styles.requestAcceptBtnText}>Verify Token & Allocate</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  style={styles.requestRejectBtn}
+                                  onPress={() => handleRejectRequest(req.id, req.applicantName || 'Traveler')}
+                                  activeOpacity={0.8}
+                                  accessibilityRole="button"
+                                  accessibilityLabel="Decline and refund in full"
+                                >
+                                  <X size={14} color={'#DC2626'} />
+                                  <Text style={styles.requestRejectBtnText}>Decline & Refund</Text>
+                                </TouchableOpacity>
+                              </View>
+                            )}
+
+                            {(req.status === 'PENDING' || req.status === 'PAYMENT_PENDING') && (
                               <View style={styles.requestActionRow}>
                                 {req.status === 'PENDING' && (
                                   <TouchableOpacity
@@ -4463,6 +4525,18 @@ export default function GroupOrganizerScreen() {
       )}
 
       {/* CREATE NEW TOUR SHEET */}
+      <OrganizerAllocationModal
+        visible={!!allocationTarget}
+        tripId={allocationTarget?.tripId ?? null}
+        initialJoinRequestId={allocationTarget?.joinRequestId ?? null}
+        onClose={() => setAllocationTarget(null)}
+        onConfirmed={(joinRequestId) => {
+          setRawJoinRequests((prev) => prev.map((r) => (r.id === joinRequestId ? { ...r, status: 'CONFIRMED' } : r)));
+          const tripId = allocationTarget?.tripId;
+          if (tripId) fetchTourMembers(tripId);
+        }}
+      />
+
       <Sheet visible={showCreateModal} onClose={() => setShowCreateModal(false)} title={t('groupOrganizer.launchNewTourGroup')}>
         <Text style={styles.modalDesc}>{t('groupOrganizer.launchNewTourGroupDesc')}</Text>
 
@@ -5556,6 +5630,18 @@ const styles = StyleSheet.create({
   requestStatusPending: {
     backgroundColor: '#FEF3C7',
   },
+  allocationBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: C.blue,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 10,
+  },
+  allocationBannerText: { flex: 1, color: C.white, fontSize: 13.5, fontWeight: '800' },
+  allocationBannerCta: { color: C.white, fontSize: 13, fontWeight: '800' },
   requestStatusAwaiting: {
     backgroundColor: '#FEF3C7',
   },
@@ -9567,3 +9653,10 @@ const styles = StyleSheet.create({
   },
 
 });
+
+const badgeStyles = {
+  approved: { box: styles.requestStatusApproved, text: styles.requestStatusApprovedText },
+  rejected: { box: styles.requestStatusRejected, text: styles.requestStatusRejectedText },
+  awaiting: { box: styles.requestStatusAwaiting, text: styles.requestStatusAwaitingText },
+  pending: { box: styles.requestStatusPending, text: styles.requestStatusPendingText },
+} as const;

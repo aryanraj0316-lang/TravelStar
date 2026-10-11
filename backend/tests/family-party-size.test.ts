@@ -62,20 +62,12 @@ describe('Family Connect Midway party-size seat claiming', () => {
     const joinRes = await request(app)
       .post('/api/v1/interactions/join-request')
       .set('Authorization', `Bearer ${requester.token}`)
-      .send({ tripId, familyMemberCount: 3 });
+      .send({ tripId, familyMemberCount: 3, acceptedTerms: true });
     expect(joinRes.status).toBe(201);
     expect(joinRes.body.data.partySize).toBe(4);
+    // A paid trip is booked pay-first: no organizer approval before payment.
+    expect(joinRes.body.data.status).toBe('PAYMENT_PENDING');
     const joinRequestId = joinRes.body.data.id;
-
-    // A party of 4 against a trip that only has 5 seats total is fine to
-    // approve. This trip charges a fee, so approval asks for payment rather
-    // than seating the party — the seats are claimed when it is paid for.
-    const approveRes = await request(app)
-      .post(`/api/v1/interactions/join-request/${joinRequestId}/status`)
-      .set('Authorization', `Bearer ${organizer.token}`)
-      .send({ status: 'APPROVED' });
-    expect(approveRes.status).toBe(200);
-    expect(approveRes.body.data.status).toBe('AWAITING_PAYMENT');
 
     // The whole party is charged for, not just the requester: 1000 × 4.
     const paid = await request(app)
@@ -85,15 +77,29 @@ describe('Family Connect Midway party-size seat claiming', () => {
     expect(paid.status).toBe(200);
     expect(Number(paid.body.data.amount)).toBe(4000);
 
-    const afterApprove = await prisma.trip.findUnique({ where: { id: tripId }, select: { availableSeats: true } });
-    expect(afterApprove?.availableSeats).toBe(1); // 5 - 4
+    // Payment holds all 4 seats at once...
+    const afterPayment = await prisma.trip.findUnique({ where: { id: tripId }, select: { availableSeats: true } });
+    expect(afterPayment?.availableSeats).toBe(1); // 5 - 4
+
+    // ...and the organizer's allocation admits the party as one member.
+    const allocated = await request(app)
+      .post(`/api/v1/trips/${tripId}/approve-and-allocate`)
+      .set('Authorization', `Bearer ${organizer.token}`)
+      .send({
+        joinRequestId,
+        verificationToken: paid.body.data.verificationToken,
+        allocations: [{ dayNumber: 1, checkpointName: 'Jaipur', hotelName: 'Haveli', roomNumber: '201-202', vehicleNumber: 'RJ-14-1234', seatNumber: '1-4' }],
+      });
+    expect(allocated.status).toBe(200);
+    // Allocation consumes no further seats.
+    expect((await prisma.trip.findUnique({ where: { id: tripId }, select: { availableSeats: true } }))?.availableSeats).toBe(1);
 
     const member = await prisma.tripMember.findUnique({
       where: { tripId_userId: { tripId, userId: requester.userId } },
     });
     expect(member?.partySize).toBe(4);
 
-    // Withdrawing releases all 4 seats, not just 1.
+    // Cancelling releases all 4 seats, not just 1 (and refunds per policy).
     const cancelRes = await request(app)
       .delete(`/api/v1/interactions/join-request/${tripId}`)
       .set('Authorization', `Bearer ${requester.token}`);
@@ -111,8 +117,9 @@ describe('Family Connect Midway party-size seat claiming', () => {
     const end = new Date(start.getTime() + 4 * 24 * 60 * 60 * 1000);
 
     // Created directly because POST /trips requires a positive budget: this
-    // trip is free on purpose, so approval seats the party immediately and
-    // the test stays about the roster rather than about payment.
+    // trip is free on purpose, so the test stays about the roster rather than
+    // about payment. Free trips: approval reserves the seats, allocation
+    // admits the party.
     const createdTrip = await prisma.trip.create({
       data: {
         creatorId: organizer.userId,
@@ -140,10 +147,19 @@ describe('Family Connect Midway party-size seat claiming', () => {
       .send({ tripId, familyMemberCount: 2 });
     const joinRequestId = joinRes.body.data.id;
 
-    await request(app)
+    const approved = await request(app)
       .post(`/api/v1/interactions/join-request/${joinRequestId}/status`)
       .set('Authorization', `Bearer ${organizer.token}`)
       .send({ status: 'APPROVED' });
+    expect(approved.body.data.status).toBe('ALLOCATION_PENDING');
+    const allocated = await request(app)
+      .post(`/api/v1/trips/${tripId}/approve-and-allocate`)
+      .set('Authorization', `Bearer ${organizer.token}`)
+      .send({
+        joinRequestId,
+        allocations: [{ dayNumber: 1, checkpointName: 'Goa', hotelName: 'Beach Hut', roomNumber: '7', vehicleNumber: 'GA-01-1', seatNumber: '1-3' }],
+      });
+    expect(allocated.status).toBe(200);
 
     const roster = await request(app)
       .get(`/api/v1/trips/${tripId}/members`)

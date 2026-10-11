@@ -16,8 +16,7 @@ import ArrowLeft from 'lucide-react-native/icons/arrow-left';
 import CheckCircle2 from 'lucide-react-native/icons/circle-check';
 import CreditCard from 'lucide-react-native/icons/credit-card';
 import Info from 'lucide-react-native/icons/info';
-import ShieldCheck from 'lucide-react-native/icons/shield-check';
-import Wallet from 'lucide-react-native/icons/wallet';
+import Ticket from 'lucide-react-native/icons/ticket';
 import { ScreenError, ScreenLoading } from '@/components/ui/ScreenState';
 import { toast, useConfirm } from '@/lib/feedback';
 import { formatINR } from '@/lib/money';
@@ -25,13 +24,14 @@ import { apiService } from '@/services/api';
 import { openRazorpayCheckout } from '@/services/razorpay';
 import { useApp } from '@/store/AppContext';
 import { C, fontSize, fontWeight, radii, space } from '@/theme/tokens';
-import type { TripPaymentOrder } from '@/types/api';
+import type { TripPaymentOrder, VerifyPaymentResult } from '@/types/api';
+import { SEAT_HOLDING_STATUSES } from '@/types/api';
 
 export default function TripPaymentScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const params = useLocalSearchParams<{ joinRequestId: string }>();
-  const { setActiveRoomId, refreshTrips, reloadJoinRequests } = useApp();
+  const { refreshTrips, reloadJoinRequests } = useApp();
   const confirm = useConfirm();
 
   const [loading, setLoading] = useState(true);
@@ -39,6 +39,10 @@ export default function TripPaymentScreen() {
   const [order, setOrder] = useState<TripPaymentOrder | null>(null);
   const [payingGateway, setPayingGateway] = useState(false);
   const [payingWallet, setPayingWallet] = useState(false);
+  // Set once a payment succeeds: the receipt with the booking token is shown
+  // in place of the payment methods. Paying never opens the group chat —
+  // that follows the organizer's allocation.
+  const [receipt, setReceipt] = useState<Pick<VerifyPaymentResult, 'verificationToken' | 'amount'> | null>(null);
 
   const insets = useSafeAreaInsets();
   const topInset = Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 0);
@@ -71,50 +75,22 @@ export default function TripPaymentScreen() {
     loadOrder();
   }, [loadOrder]);
 
-  const handlePayDirect = async () => {
-    if (!order || payingWallet) return;
-    const confirmed = await confirm({
-      title: 'Confirm Payment',
-      message: `Pay ${formatINR(order.amount)} to secure your seat on this trip? This amount goes to the organizer's trip budget.`,
-      confirmLabel: 'Pay Now',
-      cancelLabel: 'Cancel',
-    });
-    if (!confirmed) return;
-
-    setPayingWallet(true);
-    try {
-      const res = await apiService.payTripDirect({ joinRequestId: order.joinRequestId });
-      if (res?.joinRequestId) {
-        toast('Payment confirmed! Welcome to the group journey.', 'success');
-        refreshTrips();
-        reloadJoinRequests();
-        if (res.chatRoomId) {
-          setActiveRoomId(res.chatRoomId);
-          router.replace('/chat');
-        } else {
-          router.replace('/bookings');
-        }
-      } else {
-        toast('Payment could not be completed. Please try again.', 'error');
-      }
-    } catch (err: any) {
-      toast(err?.message || 'Payment failed', 'error');
-    } finally {
-      setPayingWallet(false);
-    }
+  // ⚠️ DEVELOPMENT BYPASS — REMOVE BEFORE LAUNCH (with POST /trip-payments/pay).
+  // No money moves, but it runs the real post-payment flow: seat held,
+  // verification token issued, organizer notified to allocate. Only the
+  // paying step itself is skipped.
+  const onPaid = (res: VerifyPaymentResult) => {
+    setReceipt({ verificationToken: res.verificationToken, amount: res.amount });
+    refreshTrips();
+    reloadJoinRequests();
   };
 
-  // Testing-phase shortcut. It does not fabricate a payment: it runs the
-  // very same capture the Pay button does, so the seat, the group chat, the
-  // organizer's collected budget, both notifications and both receipts all
-  // end up exactly as they would after paying. Only the paying step itself
-  // is skipped.
   const handleSkipPayment = async () => {
     if (!order || payingWallet) return;
     const confirmed = await confirm({
       title: 'Skip payment (testing)',
       message:
-        'Continue without paying? Your seat will be confirmed exactly as it would be after a real payment. Intended for testing only.',
+        'Continue without paying? Your booking goes through the real flow (seat held, token issued, organizer asked to allocate) with no money taken. Intended for testing only.',
       confirmLabel: 'Skip & continue',
       cancelLabel: 'Cancel',
     });
@@ -123,18 +99,11 @@ export default function TripPaymentScreen() {
     setPayingWallet(true);
     try {
       const res = await apiService.payTripDirect({ joinRequestId: order.joinRequestId });
-      if (res?.joinRequestId) {
-        toast('Payment skipped — your seat is confirmed.', 'success');
-        refreshTrips();
-        reloadJoinRequests();
-        if (res.chatRoomId) {
-          setActiveRoomId(res.chatRoomId);
-          router.replace('/chat');
-        } else {
-          router.replace('/bookings');
-        }
+      if (res?.verificationToken) {
+        toast('Payment skipped (testing) — booking token issued.', 'success');
+        onPaid(res);
       } else {
-        toast('Could not confirm your seat. Please try again.', 'error');
+        toast('Could not complete the booking. Please try again.', 'error');
       }
     } catch (err: any) {
       toast(err?.message || 'Could not skip payment', 'error');
@@ -175,7 +144,7 @@ export default function TripPaymentScreen() {
       } catch (sdkErr: any) {
         if (sdkErr?.message?.includes('EXPO_GO_UNSUPPORTED')) {
           toast(
-            'Razorpay native checkout requires a Dev Build. Please use Wallet payment in Expo Go preview.',
+            'Razorpay native checkout requires a Dev Build; it is not available in Expo Go.',
             'info',
           );
           setPayingGateway(false);
@@ -196,16 +165,9 @@ export default function TripPaymentScreen() {
           razorpaySignature: checkoutRes.razorpay_signature,
         });
 
-        if (verifyRes?.joinRequestId) {
-          toast('Payment verified! Welcome to the group journey.', 'success');
-          refreshTrips();
-          reloadJoinRequests();
-          if (verifyRes.chatRoomId) {
-            setActiveRoomId(verifyRes.chatRoomId);
-            router.replace('/chat');
-          } else {
-            router.replace('/bookings');
-          }
+        if (verifyRes?.verificationToken) {
+          toast('Payment verified!', 'success');
+          onPaid(verifyRes);
         }
       }
     } catch (err: any) {
@@ -235,7 +197,13 @@ export default function TripPaymentScreen() {
     );
   }
 
-  const isAlreadyPaid = order.status === 'CAPTURED' || order.joinRequestStatus === 'APPROVED';
+  const isAlreadyPaid =
+    !!receipt ||
+    order.status === 'CAPTURED' ||
+    (!!order.joinRequestStatus && SEAT_HOLDING_STATUSES.includes(order.joinRequestStatus));
+  const token = receipt?.verificationToken ?? order.verificationToken ?? null;
+  const isConfirmed = order.joinRequestStatus === 'CONFIRMED';
+  const seatsLabel = (order.partySize ?? 1) > 1 ? ` × ${order.partySize} seats` : '';
 
   return (
     <View style={styles.safe}>
@@ -279,7 +247,7 @@ export default function TripPaymentScreen() {
                   isAlreadyPaid ? styles.statusPillTextPaid : styles.statusPillTextPending,
                 ]}
               >
-                {isAlreadyPaid ? 'CONFIRMED' : 'AWAITING PAYMENT'}
+                {isConfirmed ? 'CONFIRMED' : isAlreadyPaid ? 'PAID' : 'AWAITING PAYMENT'}
               </Text>
             </View>
           </View>
@@ -288,18 +256,25 @@ export default function TripPaymentScreen() {
 
           {/* Amount Display */}
           <View style={styles.amountBox}>
-            <Text style={styles.amountLabel}>Total Payable</Text>
-            <Text style={styles.amountValue}>{formatINR(order.amount)}</Text>
+            <Text style={styles.amountLabel}>{isAlreadyPaid ? 'Amount Paid' : 'Total Payable'}</Text>
+            <Text style={styles.amountValue}>{formatINR(receipt?.amount ?? order.amount)}</Text>
           </View>
 
-          {/* Breakdown items */}
+          {/* Breakdown: the fare is all the traveller pays; the 4.5%
+              platform fee comes out of it (it is not added on top). */}
           <View style={styles.breakdownRow}>
-            <Text style={styles.breakdownLabel}>Seat Joining Contribution</Text>
+            <Text style={styles.breakdownLabel}>{`Trip fare${seatsLabel}`}</Text>
             <Text style={styles.breakdownValue}>{formatINR(order.amount)}</Text>
           </View>
+          {order.platformFee ? (
+            <View style={styles.breakdownRow}>
+              <Text style={styles.breakdownLabel}>Platform fee (4.5%, included)</Text>
+              <Text style={styles.breakdownValue}>{formatINR(order.platformFee)}</Text>
+            </View>
+          ) : null}
           <View style={styles.breakdownRow}>
-            <Text style={styles.breakdownLabel}>Platform Service Fee</Text>
-            <Text style={[styles.breakdownValue, { color: C.green }]}>Free (₹0)</Text>
+            <Text style={styles.breakdownLabel}>Taxes</Text>
+            <Text style={styles.breakdownValue}>Included</Text>
           </View>
         </View>
 
@@ -307,56 +282,36 @@ export default function TripPaymentScreen() {
         {isAlreadyPaid ? (
           <View style={styles.confirmedBox}>
             <CheckCircle2 size={36} color={C.green} />
-            <Text style={styles.confirmedTitle}>Payment Completed</Text>
+            <Text style={styles.confirmedTitle}>{isConfirmed ? 'Booking Confirmed' : 'Payment Verified'}</Text>
+            {token ? (
+              <View style={styles.tokenBadge} accessibilityLabel={`Booking reference token ${token}`}>
+                <Text style={styles.tokenLabel}>BOOKING REFERENCE TOKEN</Text>
+                <Text style={styles.tokenValue} selectable>{token}</Text>
+              </View>
+            ) : null}
             <Text style={styles.confirmedSub}>
-              Your seat has been reserved and your group membership is active.
+              {isConfirmed
+                ? 'Your seat and rooms are assigned. Open your Trip Pass to see them and enter the group chat.'
+                : 'Payment verified! The organizer will verify your token and assign your seat and hotel rooms shortly.'}
             </Text>
             <TouchableOpacity
               style={styles.chatActionBtn}
-              onPress={() => router.navigate('/bookings')}
+              onPress={() => {
+                if (order.tripId) router.replace({ pathname: '/trip-pass', params: { tripId: order.tripId } });
+                else router.replace('/bookings');
+              }}
               activeOpacity={0.85}
+              accessibilityRole="button"
             >
-              <Text style={styles.chatActionBtnText}>View My Journeys</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Ticket size={16} color={C.white} />
+                <Text style={styles.chatActionBtnText}>{isConfirmed ? 'View Trip Pass' : 'View My Booking'}</Text>
+              </View>
             </TouchableOpacity>
           </View>
         ) : (
           <View style={styles.paymentSection}>
             <Text style={styles.sectionHeading}>SELECT PAYMENT METHOD</Text>
-
-            {/* Pay the seat fee. There is no stored balance to fund first —
-                the amount itself is captured and goes straight into the
-                organizer's collected budget for this trip. */}
-            <View style={styles.methodCard}>
-              <View style={styles.methodTop}>
-                <View style={[styles.methodIconWrap, { backgroundColor: '#ECFDF5' }]}>
-                  <Wallet size={22} color={C.green} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.methodTitle}>Pay Seat Fee</Text>
-                  <Text style={styles.methodSub}>
-                    Goes directly to the organizer&apos;s trip budget
-                  </Text>
-                </View>
-              </View>
-
-              <TouchableOpacity
-                style={[styles.payBtn, styles.payBtnGreen]}
-                disabled={payingWallet}
-                onPress={handlePayDirect}
-                activeOpacity={0.85}
-              >
-                {payingWallet ? (
-                  <ActivityIndicator color={C.white} size="small" />
-                ) : (
-                  <>
-                    <ShieldCheck size={18} color={C.white} />
-                    <Text style={styles.payBtnText}>
-                      {`Pay ${formatINR(order.amount)}`}
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
 
             {/* Razorpay Gateway Card */}
             <View style={styles.methodCard}>
@@ -397,7 +352,7 @@ export default function TripPaymentScreen() {
             >
               <Text style={styles.skipPaymentText}>Skip payment for now (testing)</Text>
               <Text style={styles.skipPaymentSub}>
-                Confirms your seat exactly as a real payment would
+                Development only — runs the real booking flow with no money taken
               </Text>
             </TouchableOpacity>
 
@@ -405,7 +360,7 @@ export default function TripPaymentScreen() {
             <View style={styles.guaranteeBox}>
               <Info size={16} color={C.textMuted} />
               <Text style={styles.guaranteeText}>
-                Seats are securely claimed upon payment confirmation. If the organiser cancels or rejects the journey, your fee is automatically refunded to your in-app wallet.
+                Your seat is reserved the moment payment is verified, and you get a booking token. If the organizer rejects the booking you are refunded in full to your original payment method. Cancellations: 95.5% back 7+ days before departure, 50% within 3–7 days, none inside 3 days.
               </Text>
             </View>
           </View>
@@ -657,6 +612,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: space[5],
     paddingVertical: space[3],
     borderRadius: radii.pill,
+  },
+  tokenBadge: {
+    marginTop: space[2],
+    alignItems: 'center',
+    backgroundColor: C.white,
+    borderRadius: radii.md,
+    borderWidth: 2,
+    borderColor: '#16A34A',
+    borderStyle: 'dashed',
+    paddingVertical: space[2],
+    paddingHorizontal: space[5],
+  },
+  tokenLabel: {
+    fontSize: 10,
+    fontWeight: fontWeight.bold,
+    color: '#166534',
+    letterSpacing: 0.8,
+  },
+  tokenValue: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: '#14532D',
+    letterSpacing: 2,
+    marginTop: 2,
   },
   chatActionBtnText: {
     fontSize: fontSize.sm,

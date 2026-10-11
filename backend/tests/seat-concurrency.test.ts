@@ -24,6 +24,11 @@ import { uniqueTestPhone } from './test-phone';
  * This is the test that would actually have caught it: the read-modify-write
  * version passes every sequential test and only fails under real contention.
  *
+ * Seats are now taken when a booking is PAID (services/trip-membership.ts
+ * holdSeatsForRequest), so the race is fifty simultaneous payments for a
+ * ten-seat trip — the same conditional decrement, now at the point where
+ * money moves. Membership itself follows later, on organizer allocation.
+ *
  * Runs against the real configured DATABASE_URL.
  */
 
@@ -74,15 +79,27 @@ describe('Seat booking under concurrency (docs/REMEDIATION.md §5.4)', () => {
     createdTripIds.push(tripId);
     expect(tripRes.body.data.availableSeats).toBe(SEATS);
 
-    // Register the contenders up front so the race itself contains nothing
-    // but the join calls.
+    // Register and book the contenders up front so the race itself contains
+    // nothing but the payment calls.
     const contenders = await Promise.all(
       Array.from({ length: CONTENDERS }, (_, i) => registerAndLogin(`c${i}`)),
     );
+    const bookings = await Promise.all(
+      contenders.map((c) =>
+        request(app)
+          .post('/api/v1/interactions/join-request')
+          .set('Authorization', `Bearer ${c.token}`)
+          .send({ tripId, acceptedTerms: true }),
+      ),
+    );
+    expect(bookings.every((b) => b.status === 201 && b.body.data.status === 'PAYMENT_PENDING')).toBe(true);
 
     const results = await Promise.all(
-      contenders.map((c) =>
-        request(app).post(`/api/v1/trips/${tripId}/join`).set('Authorization', `Bearer ${c.token}`),
+      contenders.map((c, i) =>
+        request(app)
+          .post('/api/v1/trip-payments/pay')
+          .set('Authorization', `Bearer ${c.token}`)
+          .send({ joinRequestId: bookings[i]!.body.data.id }),
       ),
     );
 
@@ -106,14 +123,16 @@ describe('Seat booking under concurrency (docs/REMEDIATION.md §5.4)', () => {
     const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { availableSeats: true } });
     expect(trip?.availableSeats).toBe(0);
 
-    // The seat count and the membership rows must agree — the original bug
-    // decremented the counter without ever creating a TripMember, so a trip
-    // could read as sold out with nobody on it.
-    const memberCount = await prisma.tripMember.count({ where: { tripId } });
-    expect(memberCount).toBe(SEATS);
+    // The seat count and the seat-holding bookings must agree — the original
+    // bug decremented the counter with nothing behind it, so a trip could
+    // read as sold out with nobody on it.
+    const holding = await prisma.joinRequest.count({ where: { tripId, status: 'PAYMENT_COMPLETED' } });
+    expect(holding).toBe(SEATS);
+    // Nobody is a member yet: that only follows the organizer's allocation.
+    expect(await prisma.tripMember.count({ where: { tripId } })).toBe(0);
   }, 120_000);
 
-  it('does not consume a second seat when the same user joins twice', async () => {
+  it('does not consume a second seat when the same user pays twice', async () => {
     const organizer = await registerAndLogin('idem-organizer');
     const joiner = await registerAndLogin('idem-joiner');
 
@@ -136,20 +155,28 @@ describe('Seat booking under concurrency (docs/REMEDIATION.md §5.4)', () => {
     const tripId = tripRes.body.data.id;
     createdTripIds.push(tripId);
 
-    const first = await request(app)
-      .post(`/api/v1/trips/${tripId}/join`)
-      .set('Authorization', `Bearer ${joiner.token}`);
-    const second = await request(app)
-      .post(`/api/v1/trips/${tripId}/join`)
-      .set('Authorization', `Bearer ${joiner.token}`);
+    const booked = await request(app)
+      .post('/api/v1/interactions/join-request')
+      .set('Authorization', `Bearer ${joiner.token}`)
+      .send({ tripId, acceptedTerms: true });
+    const joinRequestId = booked.body.data.id;
+
+    // Two payment calls at once (a double-tapped Pay button).
+    const [first, second] = await Promise.all([
+      request(app).post('/api/v1/trip-payments/pay').set('Authorization', `Bearer ${joiner.token}`).send({ joinRequestId }),
+      request(app).post('/api/v1/trip-payments/pay').set('Authorization', `Bearer ${joiner.token}`).send({ joinRequestId }),
+    ]);
 
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
+    // Both report the same booking token — one payment, not two.
+    expect(first.body.data.verificationToken).toBe(second.body.data.verificationToken);
 
     const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { availableSeats: true } });
     expect(trip?.availableSeats).toBe(1);
 
-    const memberCount = await prisma.tripMember.count({ where: { tripId, userId: joiner.userId } });
-    expect(memberCount).toBe(1);
+    // One captured order, one held seat; membership waits for allocation.
+    expect(await prisma.tripPaymentOrder.count({ where: { joinRequestId, status: 'CAPTURED' } })).toBe(1);
+    expect(await prisma.tripMember.count({ where: { tripId, userId: joiner.userId } })).toBe(0);
   }, 60_000);
 });

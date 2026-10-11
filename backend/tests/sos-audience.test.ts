@@ -1,5 +1,6 @@
 import request from 'supertest';
 import app from '../src/app';
+import { bookAsMember } from './book-member';
 import prisma from '../src/services/db';
 import { resolveSosAudience } from '../src/services/sos-audience';
 import { uniqueTestPhone } from './test-phone';
@@ -73,9 +74,7 @@ describe('SOS', () => {
     const traveller = await registerAndLogin('traveller');
     const tripId = await createTripWithCheckpoint(organizer.token, `SOS Trip ${runId}`);
 
-    const joined = await request(app)
-      .post(`/api/v1/trips/${tripId}/join`)
-      .set('Authorization', `Bearer ${traveller.token}`);
+    const joined = await bookAsMember(tripId, traveller.token);
     expect(joined.status).toBe(200);
 
     const sos = await request(app)
@@ -111,7 +110,7 @@ describe('SOS', () => {
     const organizer = await registerAndLogin('staleorg');
     const traveller = await registerAndLogin('staletraveller');
     const tripId = await createTripWithCheckpoint(organizer.token, `Stale Trip ${runId}`);
-    await request(app).post(`/api/v1/trips/${tripId}/join`).set('Authorization', `Bearer ${traveller.token}`);
+    await bookAsMember(tripId, traveller.token);
 
     const sos = await request(app)
       .post('/api/v1/safety/sos')
@@ -142,7 +141,7 @@ describe('SOS', () => {
     const decoyOrganizer = await registerAndLogin('decoyorg');
 
     const tripId = await createTripWithCheckpoint(organizer.token, `Audience Trip ${runId}`);
-    await request(app).post(`/api/v1/trips/${tripId}/join`).set('Authorization', `Bearer ${traveller.token}`);
+    await bookAsMember(tripId, traveller.token);
 
     // A decoy on a completely different trip must not be told.
     const decoyTripId = await createTripWithCheckpoint(decoyOrganizer.token, `Decoy Trip ${runId}`);
@@ -186,7 +185,7 @@ describe('SOS', () => {
     const traveller = await registerAndLogin('resolvetraveller');
     const outsider = await registerAndLogin('resolveoutsider');
     const tripId = await createTripWithCheckpoint(organizer.token, `Resolve Trip ${runId}`);
-    await request(app).post(`/api/v1/trips/${tripId}/join`).set('Authorization', `Bearer ${traveller.token}`);
+    await bookAsMember(tripId, traveller.token);
 
     const sos = await request(app)
       .post('/api/v1/safety/sos')

@@ -263,6 +263,12 @@ export const InAppNotificationBanner: React.FC = () => {
         pathname: '/trip-payment',
         params: { joinRequestId: notif.joinRequestId },
       });
+    } else if (notif.category === 'PAYMENT_SUCCESS' && notif.joinRequestId && notif.tripId) {
+      // Organizer: a paid booking to verify and allocate.
+      router.push({ pathname: '/group-organizer', params: { tripId: notif.tripId, tab: 'chat', subTab: 'approvals' } });
+    } else if ((notif.category === 'PAYMENT_SUCCESS' || notif.category === 'JOIN_ACCEPTED') && notif.tripId && !notif.chatRoomId) {
+      // Traveller: payment receipt / seat reserved → their Trip Pass.
+      router.push({ pathname: '/trip-pass', params: { tripId: notif.tripId } });
     } else if (notif.category === 'TRIP_ENQUIRY' || notif.category === 'JOIN_REQUEST') {
       router.push({
         pathname: '/group-organizer',

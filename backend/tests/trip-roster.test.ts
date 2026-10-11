@@ -1,5 +1,6 @@
 import request from 'supertest';
 import app from '../src/app';
+import { bookAsMember } from './book-member';
 import prisma from '../src/services/db';
 import { uniqueTestPhone } from './test-phone';
 
@@ -73,7 +74,7 @@ describe('PATCH /api/v1/trips/:id/members/:userId', () => {
     const joiner = await registerAndLogin('roster-joiner');
     const outsider = await registerAndLogin('roster-outsider');
     const tripId = await createTrip(organizer.token);
-    await request(app).post(`/api/v1/trips/${tripId}/join`).set('Authorization', `Bearer ${joiner.token}`).send({});
+    await bookAsMember(tripId, joiner.token);
 
     const res = await request(app)
       .patch(`/api/v1/trips/${tripId}/members/${joiner.userId}`)
@@ -86,7 +87,7 @@ describe('PATCH /api/v1/trips/:id/members/:userId', () => {
     const organizer = await registerAndLogin('roster-empty-body');
     const joiner = await registerAndLogin('roster-empty-body-joiner');
     const tripId = await createTrip(organizer.token);
-    await request(app).post(`/api/v1/trips/${tripId}/join`).set('Authorization', `Bearer ${joiner.token}`).send({});
+    await bookAsMember(tripId, joiner.token);
 
     const res = await request(app)
       .patch(`/api/v1/trips/${tripId}/members/${joiner.userId}`)
@@ -99,7 +100,7 @@ describe('PATCH /api/v1/trips/:id/members/:userId', () => {
     const organizer = await registerAndLogin('roster-persist-owner');
     const joiner = await registerAndLogin('roster-persist-joiner');
     const tripId = await createTrip(organizer.token);
-    await request(app).post(`/api/v1/trips/${tripId}/join`).set('Authorization', `Bearer ${joiner.token}`).send({});
+    await bookAsMember(tripId, joiner.token);
 
     const patchRes = await request(app)
       .patch(`/api/v1/trips/${tripId}/members/${joiner.userId}`)
@@ -143,7 +144,7 @@ describe('POST /api/v1/trips/:id/announcements', () => {
     const organizer = await registerAndLogin('announce-owner');
     const joiner = await registerAndLogin('announce-joiner');
     const tripId = await createTrip(organizer.token);
-    await request(app).post(`/api/v1/trips/${tripId}/join`).set('Authorization', `Bearer ${joiner.token}`).send({});
+    await bookAsMember(tripId, joiner.token);
 
     const res = await request(app)
       .post(`/api/v1/trips/${tripId}/announcements`)
@@ -157,8 +158,8 @@ describe('POST /api/v1/trips/:id/announcements', () => {
     const memberA = await registerAndLogin('announce-real-a');
     const memberB = await registerAndLogin('announce-real-b');
     const tripId = await createTrip(organizer.token);
-    await request(app).post(`/api/v1/trips/${tripId}/join`).set('Authorization', `Bearer ${memberA.token}`).send({});
-    await request(app).post(`/api/v1/trips/${tripId}/join`).set('Authorization', `Bearer ${memberB.token}`).send({});
+    await bookAsMember(tripId, memberA.token);
+    await bookAsMember(tripId, memberB.token);
 
     const postRes = await request(app)
       .post(`/api/v1/trips/${tripId}/announcements`)

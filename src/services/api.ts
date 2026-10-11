@@ -59,6 +59,10 @@ import type {
   VerifyPaymentResult,
   DirectPayResult,
   TripReceipt,
+  MyBooking,
+  PendingAllocations,
+  AllocationSubmission,
+  CancelBookingResult,
 } from '@/types/api';
 
 // Request-ID / idempotency-key generation only needs uniqueness, not
@@ -1205,6 +1209,8 @@ export const apiService = {
       fromStopId?: string;
       toStopId?: string;
       joiningDate?: string;
+      /** The traveller ticked the rules / cancellation-policy consent box. */
+      acceptedTerms?: boolean;
     },
   ): Promise<JoinRequestSummary> {
     return request<JoinRequestSummary>('/interactions/join-request', {
@@ -1592,5 +1598,37 @@ export const apiService = {
   /** Every payment this user was a party to — as payer and as organizer. */
   async getTripReceipts(): Promise<TripReceipt[] | null> {
     return request<TripReceipt[]>('/trip-payments/receipts');
+  },
+
+  // ── Bookings: Trip Pass, allocation, cancellation ─────────────
+  /** The caller's own booking on a trip — status, token, Trip Pass. */
+  async getMyBooking(tripId: string): Promise<MyBooking | null> {
+    return request<MyBooking>(`/trips/${tripId}/my-booking`);
+  },
+
+  async cancelBooking(tripId: string): Promise<CancelBookingResult | null> {
+    return request<CancelBookingResult>(`/trips/${tripId}/cancel-booking`, { method: 'POST' });
+  },
+
+  /** Organizer: bookings awaiting allocation, plus the trip's stops/days. */
+  async getPendingAllocations(tripId: string): Promise<PendingAllocations | null> {
+    return request<PendingAllocations>(`/trips/${tripId}/pending-allocations`);
+  },
+
+  async verifyBookingToken(tripId: string, input: { joinRequestId: string; verificationToken: string }) {
+    return request<{ joinRequestId: string; status: 'ALLOCATION_PENDING'; verified: true }>(`/trips/${tripId}/verify-token`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+
+  async approveAndAllocate(
+    tripId: string,
+    input: { joinRequestId: string; verificationToken?: string; allocations: AllocationSubmission[] },
+  ) {
+    return request<{ joinRequestId: string; status: 'CONFIRMED'; tripMemberId: string; chatRoomId: string | null }>(
+      `/trips/${tripId}/approve-and-allocate`,
+      { method: 'POST', body: JSON.stringify(input) },
+    );
   },
 };

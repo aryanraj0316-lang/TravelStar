@@ -1,5 +1,6 @@
 import request from 'supertest';
 import app from '../src/app';
+import { bookAsMember } from './book-member';
 import prisma from '../src/services/db';
 import { uniqueTestPhone } from './test-phone';
 
@@ -59,9 +60,7 @@ describe('Budget tracker', () => {
     const tripId = await createTrip(organizer.token, `Uneven ${runId}`);
 
     for (const joiner of [second, third]) {
-      const joined = await request(app)
-        .post(`/api/v1/trips/${tripId}/join`)
-        .set('Authorization', `Bearer ${joiner.token}`);
+      const joined = await bookAsMember(tripId, joiner.token);
       expect(joined.status).toBe(200);
     }
 
@@ -100,7 +99,7 @@ describe('Budget tracker', () => {
     const organizer = await registerAndLogin('customorg');
     const friend = await registerAndLogin('customfriend');
     const tripId = await createTrip(organizer.token, `Custom ${runId}`);
-    await request(app).post(`/api/v1/trips/${tripId}/join`).set('Authorization', `Bearer ${friend.token}`);
+    await bookAsMember(tripId, friend.token);
 
     const mismatched = await request(app)
       .post(`/api/v1/trips/${tripId}/expenses`)
@@ -153,7 +152,7 @@ describe('Budget tracker', () => {
     const first = await registerAndLogin('growfirst');
     const late = await registerAndLogin('growlate');
     const tripId = await createTrip(organizer.token, `Growing ${runId}`);
-    await request(app).post(`/api/v1/trips/${tripId}/join`).set('Authorization', `Bearer ${first.token}`);
+    await bookAsMember(tripId, first.token);
 
     await request(app)
       .post(`/api/v1/trips/${tripId}/expenses`)
@@ -167,7 +166,7 @@ describe('Budget tracker', () => {
       (before.body.data.balances as { userId: string; owes: string }[]).find((b) => b.userId === first.userId)!.owes,
     ).toBe('450.00');
 
-    await request(app).post(`/api/v1/trips/${tripId}/join`).set('Authorization', `Bearer ${late.token}`);
+    await bookAsMember(tripId, late.token);
 
     // The split is derived at read time, so it follows the roster.
     const after = await request(app)

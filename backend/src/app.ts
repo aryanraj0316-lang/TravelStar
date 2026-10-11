@@ -20,6 +20,7 @@ import guideRoutes from './api/routes/guides';
 import safetyRoutes from './api/routes/safety';
 import storyRoutes from './api/routes/stories';
 import tripRoutes from './api/routes/trips';
+import tripBookingRoutes from './api/routes/trip-bookings';
 import notificationRoutes from './api/routes/notifications';
 import destinationRoutes from './api/routes/destinations';
 import weatherRoutes from './api/routes/weather';
@@ -181,6 +182,8 @@ app.use('/api/v1', writeLimiter);
 // ── Routes ──────────────────────────────────────────────────────────────────
 
 app.use('/api/v1/auth', authRoutes);
+// Booking allocation / Trip Pass / cancellation endpoints share the /trips prefix.
+app.use('/api/v1/trips', tripBookingRoutes);
 app.use('/api/v1/trips', tripRoutes);
 app.use('/api/v1/guides', guideRoutes);
 app.use('/api/v1/safety', safetyRoutes);

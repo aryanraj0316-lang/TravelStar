@@ -469,6 +469,19 @@ export default function NotificationsScreen() {
       return;
     }
 
+    // A paid booking awaiting allocation (the organizer's alert carries the
+    // joinRequestId) opens that trip's Approvals, where the allocation form
+    // lives. The traveller's own payment receipt / confirmation opens their
+    // Trip Pass, which holds the token, the allocations and the chat button.
+    if (n.category === 'PAYMENT_SUCCESS' && n.joinRequestId && n.tripId) {
+      router.push({ pathname: '/group-organizer', params: { tripId: n.tripId, tab: 'chat', subTab: 'approvals' } });
+      return;
+    }
+    if ((n.category === 'PAYMENT_SUCCESS' || n.category === 'JOIN_ACCEPTED') && n.tripId) {
+      router.push({ pathname: '/trip-pass', params: { tripId: n.tripId } });
+      return;
+    }
+
     // A pre-join enquiry or join request belongs to the organizer portal's Chats &
     // Approvals tab, not the generic chat inbox — answering or reviewing
     // usually means approving or declining that traveller's join request or answering inquiries.

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FlatList, RefreshControl, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { FlatList, Pressable, RefreshControl, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import ArrowLeft from 'lucide-react-native/icons/arrow-left';
@@ -204,6 +204,8 @@ export default function FindGuidesScreen() {
 
   const tripAlreadyRequested = tripId ? requestedTrips.has(tripId) : false;
   const tripRequestStatus = tripId ? joinRequestStatuses.get(tripId)?.status : undefined;
+  // Booking from here needs the same consent as the trip details sheet.
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
 
   const packagesQuery = useQuery({
     queryKey: queryKeys.guidePackages(selected?.id ?? ''),
@@ -318,12 +320,19 @@ export default function FindGuidesScreen() {
     if (!fromStop || !toStop) return;
     // The server owns price math from fromStopId/toStopId; fromCity/toCity
     // ride alongside only because its price-preview formula still keys off them.
-    joinTrip(tripId, {
+    if (!agreedToTerms) return;
+    void joinTrip(tripId, {
       midway: true,
       fromCity: fromStop.city,
       toCity: toStop.city,
       fromStopId: fromStop.id,
       toStopId: toStop.id,
+      acceptedTerms: true,
+    }).then((created) => {
+      // A paid trip is booked pay-first: straight to the payment screen.
+      if (created?.status === 'PAYMENT_PENDING') {
+        router.push({ pathname: '/trip-payment', params: { joinRequestId: created.id } });
+      }
     });
     closeJoinSheet();
   };
@@ -648,18 +657,38 @@ export default function FindGuidesScreen() {
 
             {tripAlreadyRequested ? (
               <Text style={styles.requestSentText}>
-                {tripRequestStatus === 'APPROVED'
+                {tripRequestStatus === 'CONFIRMED'
                   ? t('findGuides.requestApproved')
-                  : tripRequestStatus === 'AWAITING_PAYMENT'
+                  : tripRequestStatus === 'PAYMENT_PENDING'
                     ? t('findGuides.requestAwaitingPayment')
-                    : t('findGuides.requestSent')}
+                    : tripRequestStatus === 'PAYMENT_COMPLETED' || tripRequestStatus === 'ALLOCATION_PENDING'
+                      ? t('findGuides.requestAwaitingAllocation', 'Paid — the organizer is assigning your seat and rooms.')
+                      : t('findGuides.requestSent')}
               </Text>
             ) : (
-              <Button
-                label={isLoggedIn ? t('findGuides.requestJoin') : t('findGuides.signInToJoin')}
-                onPress={confirmJoinCheckpoint}
-                disabled={isLoggedIn && (!joinFromStopId || !joinToStopId)}
-              />
+              <>
+                {isLoggedIn ? (
+                  <Pressable
+                    style={styles.consentRow}
+                    onPress={() => setAgreedToTerms((v) => !v)}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: agreedToTerms }}
+                    hitSlop={6}
+                  >
+                    <View style={[styles.consentBox, agreedToTerms && styles.consentBoxOn]}>
+                      {agreedToTerms ? <Text style={styles.consentTick}>✓</Text> : null}
+                    </View>
+                    <Text style={styles.consentText}>
+                      {t('booking.consentLabel', 'I have read and agree to the Trip Rules, Guidelines, and Cancellation Policy.')}
+                    </Text>
+                  </Pressable>
+                ) : null}
+                <Button
+                  label={isLoggedIn ? t('findGuides.requestJoin') : t('findGuides.signInToJoin')}
+                  onPress={confirmJoinCheckpoint}
+                  disabled={isLoggedIn && (!joinFromStopId || !joinToStopId || !agreedToTerms)}
+                />
+              </>
             )}
           </View>
         )}
@@ -669,6 +698,19 @@ export default function FindGuidesScreen() {
 }
 
 const styles = StyleSheet.create({
+  consentRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginVertical: 8 },
+  consentBox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: C.borderGlow,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  consentBoxOn: { backgroundColor: C.accent, borderColor: C.accent },
+  consentTick: { color: '#FFF', fontWeight: '900', fontSize: 13 },
+  consentText: { flex: 1, fontSize: 12.5, color: C.text, lineHeight: 18, fontWeight: '600' },
   safeArea: { flex: 1, backgroundColor: C.bg },
   topNavRow: {
     flexDirection: 'row',

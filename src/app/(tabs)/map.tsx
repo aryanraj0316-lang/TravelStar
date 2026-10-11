@@ -14,6 +14,7 @@ import { eventBus } from '@/services/event-bus';
 import { resolveRoute, type ResolvedRoute } from '@/services/map-routing';
 import { formatDistanceKm, ROUTE_STYLES, travelModeForTransit } from '@/lib/map-geometry';
 import { RouteMetricsCard, RoutePlannerCard, useRoutePlanner } from '@/components/map/RoutePlanner';
+import TripDetailModal from '@/components/TripDetailModal';
 import AlertCircle from 'lucide-react-native/icons/circle-alert';
 import AlertTriangle from 'lucide-react-native/icons/triangle-alert';
 import ArrowLeft from 'lucide-react-native/icons/arrow-left';
@@ -1060,7 +1061,7 @@ function MapScreen() {
     });
     return unsub;
   }, []);
-  const { triggerSOS, trips, joinTrip, profile, isLoggedIn, requestedTrips, reloadJoinRequests, setNavbarHidden, sosAlerts } = useApp();
+  const { triggerSOS, trips, profile, isLoggedIn, requestedTrips, reloadJoinRequests, setNavbarHidden, sosAlerts } = useApp();
   const { tripId, focusLat, focusLng, focusLabel, isSos, sosId, t: searchTimestamp } = useLocalSearchParams<{
     tripId: string;
     focusLat?: string;
@@ -1118,6 +1119,7 @@ function MapScreen() {
   const [isLocating, setIsLocating] = useState(false);
   const [isBottomPanelCollapsed, setIsBottomPanelCollapsed] = useState(false);
   const [isMainPanelCollapsed, setIsMainPanelCollapsed] = useState(false);
+  const [showTripDetails, setShowTripDetails] = useState(false);
   const toggleItineraryDropdown = () => {
     setIsDropdownOpen(false);
     setIsItineraryOpen((prev) => !prev);
@@ -1985,6 +1987,8 @@ function MapScreen() {
 
 
 
+        <TripDetailModal visible={showTripDetails && !!activeTrip} trip={activeTrip ?? null} onClose={() => setShowTripDetails(false)} />
+
         {/* DIRECT SEARCH MODE: distance / ETA for the planned route */}
         {isSearchMode && <RouteMetricsCard planner={planner} />}
 
@@ -2113,8 +2117,9 @@ function MapScreen() {
                             toast(t('map.noSeatsAvailable'), 'error');
                             return;
                           }
-                          joinTrip(activeTrip.id);
-                          toast(t('map.seatRequested', { name: activeTrip.name }), 'info');
+                          // Booking starts in the trip details sheet, where the
+                          // rules, cancellation policy and consent come first.
+                          setShowTripDetails(true);
                         }}
                         accessibilityRole="button"
                         accessibilityLabel={t('map.requestToJoinTrip')}

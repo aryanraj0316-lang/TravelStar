@@ -28,6 +28,7 @@ import Utensils from 'lucide-react-native/icons/utensils';
 import Bike from 'lucide-react-native/icons/bike';
 import Bus from 'lucide-react-native/icons/bus';
 import Navigation from 'lucide-react-native/icons/navigation';
+import ShieldAlert from 'lucide-react-native/icons/shield-alert';
 import CheckCircle from 'lucide-react-native/icons/circle-check-big';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, type Trip } from '@/store/AppContext';
@@ -41,6 +42,7 @@ import { sectionState } from '@/lib/query-state';
 import { apiService } from '@/services/api';
 import { useQuery } from '@tanstack/react-query';
 import { formatINR } from '@/lib/money';
+import TripBookingActions from '@/components/booking/TripBookingActions';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import type { BudgetTrip } from '@/app/budget-trips';
 import type { NearbyTrip } from '@/types/api';
@@ -68,7 +70,7 @@ export default function TripDetailModal({
   const insets = useSafeAreaInsets();
   const web = useWebLayout();
   const router = useRouter();
-  const { joinTrip, cancelJoinRequest, profile, isLoggedIn, requestedTrips, joinRequestStatuses, setActiveRoomId } = useApp();
+  const { profile, isLoggedIn, setActiveRoomId } = useApp();
 
   const [midwayJoin, setMidwayJoin] = useState(false);
   const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
@@ -130,11 +132,6 @@ export default function TripDetailModal({
     )) || null;
   const price = trip.budget;
   const isMyTrip = isLoggedIn && !!(profile && profile.id && trip.creatorId && trip.creatorId === profile.id);
-  const joinCtaLabel = !isLoggedIn
-    ? t('tripDetailModal.signInToJoin')
-    : midwayJoin
-      ? t('tripDetailModal.requestSegmentJoin')
-      : t('tripDetailModal.requestToJoin');
 
   // TripTimelineStop rows are the app's real "checkpoint" entity (see the
   // plan doc) — organizer-authored, geolocated, and already returned by the
@@ -190,35 +187,9 @@ export default function TripDetailModal({
     return Math.round(defaultPrice * ratio * 0.9);
   };
 
-  const handleRequestJoin = () => {
-    // Joining needs an account: POST /interactions/join-request is behind a
-    // required token, so a guest tapping this used to get a 401 error toast
-    // with no way forward. The app is browse-before-login by design, so the
-    // boundary is the auth screen, not a failed request.
-    if (!isLoggedIn) {
-      onClose();
-      router.push('/auth');
-      return;
-    }
-    // adjustedPrice is deliberately not sent — the server computes and owns
-    // it from the trip's route (docs/REMEDIATION.md §8.6). The preview
-    // shown on the success screen below uses the identical formula
-    // (calculateMidwayPrice above), so it always matches what gets stored.
-    joinTrip(
-      trip.id,
-      midwayJoin
-        ? {
-            midway: true,
-            fromCity: startCity,
-            toCity: endCity,
-            familyMemberCount: familyMemberCount || undefined,
-            fromStopId: fromStopId ?? undefined,
-            toStopId: toStopId ?? undefined,
-            joiningDate: joiningDateIso,
-          }
-        : undefined,
-    );
-
+  // A free trip's request was sent (paid bookings go straight to the
+  // payment screen from TripBookingActions instead).
+  const showFreeRequestSent = () => {
     setJoinedMsg(true);
     setTimeout(() => {
       setJoinedMsg(false);
@@ -229,10 +200,6 @@ export default function TripDetailModal({
       setToStopId(null);
       setJoiningDayIndex(null);
     }, 2200);
-  };
-
-  const handleCancelRequest = () => {
-    cancelJoinRequest(trip.id);
   };
 
   const handleAskOrganizer = async () => {
@@ -379,6 +346,14 @@ export default function TripDetailModal({
                     </View>
                   </View>
                 </View>
+
+                <Text style={styles.durationNote}>
+                  {t('booking.durationDaysNights', {
+                    days: tripDurationDays,
+                    nights: Math.max(0, tripDurationDays - 1),
+                    defaultValue: '{{days}} days / {{nights}} nights',
+                  })}
+                </Text>
 
                 {/* The organizer's own summary of the trip. */}
                 {detail?.description ? (
@@ -563,6 +538,10 @@ export default function TripDetailModal({
                         ? t('tripDetailModal.fuelBike', { value: trip.cabIncluded !== false ? t('tripDetailModal.yes') : t('tripDetailModal.no') })
                         : t('tripDetailModal.acCab', { value: trip.cabIncluded !== false ? t('tripDetailModal.yes') : t('tripDetailModal.no') })}
                     </Text>
+                  </View>
+                  <View style={styles.inclusionCell}>
+                    <ShieldAlert size={12} color={C.greenText} />
+                    <Text style={styles.inclusionText}>{t('booking.emergencySupport', 'Emergency SOS support: Yes')}</Text>
                   </View>
                 </View>
 
@@ -812,137 +791,30 @@ export default function TripDetailModal({
                   </View>
                 </View>
 
-                {/* Action Area — branches on the join request's REAL status
-                    (joinRequestStatuses), not just membership in
-                    requestedTrips. Before this fix, requestedTrips folded
-                    PENDING/APPROVED/AWAITING_PAYMENT into one Set and every
-                    branch here rendered the same "awaiting confirmation"
-                    text even after the organizer had already approved. */}
-                {isMyTrip ? null : (() => {
-                  const myRequest = joinRequestStatuses.get(trip.id);
-                  const status = myRequest?.status;
-
-                  // Reading joinRequestStatuses alone, not requestedTrips —
-                  // requestedTrips deliberately excludes REJECTED (see its
-                  // own doc comment), so gating on it here made the REJECTED
-                  // branch below unreachable: a declined request always fell
-                  // through to "not requested" and the user was never told
-                  // why, only that the button had reset.
-                  if (!status) {
-                    return (
-                      <TouchableOpacity
-                        style={styles.modalSubmitBtn}
-                        onPress={handleRequestJoin}
-                        activeOpacity={0.88}
-                        accessibilityRole="button"
-                        accessibilityLabel={joinCtaLabel}
-                      >
-                        <Text style={styles.modalSubmitBtnText}>{joinCtaLabel}</Text>
-                      </TouchableOpacity>
-                    );
+                {/* Booking: code of conduct, cancellation policy, consent,
+                    and the action that fits this traveller's booking status
+                    — shared with the web sheet (components/booking). */}
+                <TripBookingActions
+                  trip={{ id: trip.id, availableSeats: trip.availableSeats }}
+                  perPersonPrice={midwayJoin && startCity && endCity ? calculateMidwayPrice() : Number(price) || 0}
+                  partySize={midwayJoin ? 1 + familyMemberCount : 1}
+                  requestOpts={
+                    midwayJoin
+                      ? {
+                          midway: true,
+                          fromCity: startCity,
+                          toCity: endCity,
+                          familyMemberCount: familyMemberCount || undefined,
+                          fromStopId: fromStopId ?? undefined,
+                          toStopId: toStopId ?? undefined,
+                          joiningDate: joiningDateIso,
+                        }
+                      : undefined
                   }
-
-                  if (status === 'APPROVED') {
-                    return (
-                      <View style={styles.requestedActionArea}>
-                        <View style={styles.requestedStatusRow}>
-                          <View style={styles.requestedStatusIcon}>
-                            <CheckCircle size={18} color={C.greenText} />
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.requestedStatusTitle}>{t('tripDetailModal.requestApprovedTitle')}</Text>
-                            <Text style={[styles.requestedStatusSub, { color: C.textSecondary }]}>
-                              {t('tripDetailModal.requestApprovedSub', { count: myRequest.partySize })}
-                            </Text>
-                          </View>
-                        </View>
-                      </View>
-                    );
-                  }
-
-                  if (status === 'AWAITING_PAYMENT') {
-                    return (
-                      <View style={styles.requestedActionArea}>
-                        <View style={styles.requestedStatusRow}>
-                          <View style={styles.requestedStatusIcon}>
-                            <CheckCircle size={18} color={C.blueText} />
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.requestedStatusTitle}>{t('tripDetailModal.paymentRequiredTitle')}</Text>
-                            <Text style={[styles.requestedStatusSub, { color: C.textSecondary }]}>
-                              {t('tripDetailModal.paymentRequiredSub')}
-                            </Text>
-                          </View>
-                        </View>
-                        <TouchableOpacity
-                          style={styles.modalSubmitBtn}
-                          onPress={() => {
-                            onClose();
-                            router.push({ pathname: '/trip-payment', params: { joinRequestId: myRequest.id } });
-                          }}
-                          activeOpacity={0.88}
-                          accessibilityRole="button"
-                          accessibilityLabel={t('tripDetailModal.completePayment')}
-                        >
-                          <Text style={styles.modalSubmitBtnText}>{t('tripDetailModal.completePayment')}</Text>
-                        </TouchableOpacity>
-                      </View>
-                    );
-                  }
-
-                  if (status === 'REJECTED') {
-                    return (
-                      <View style={styles.requestedActionArea}>
-                        <View style={styles.requestedStatusRow}>
-                          <View style={styles.requestedStatusIcon}>
-                            <X size={18} color={C.redText} />
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.requestedStatusTitle}>{t('tripDetailModal.requestRejectedTitle')}</Text>
-                            <Text style={[styles.requestedStatusSub, { color: C.textSecondary }]}>
-                              {t('tripDetailModal.requestRejectedSub')}
-                            </Text>
-                          </View>
-                        </View>
-                        <TouchableOpacity
-                          style={styles.modalSubmitBtn}
-                          onPress={handleRequestJoin}
-                          activeOpacity={0.88}
-                          accessibilityRole="button"
-                          accessibilityLabel={t('tripDetailModal.requestAgain')}
-                        >
-                          <Text style={styles.modalSubmitBtnText}>{t('tripDetailModal.requestAgain')}</Text>
-                        </TouchableOpacity>
-                      </View>
-                    );
-                  }
-
-                  // PENDING — the original "awaiting confirmation" state.
-                  return (
-                    <View style={styles.requestedActionArea}>
-                      <View style={styles.requestedStatusRow}>
-                        <View style={styles.requestedStatusIcon}>
-                          <CheckCircle size={18} color={C.greenText} />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.requestedStatusTitle}>{t('tripDetailModal.requestSubmittedTitle')}</Text>
-                          <Text style={[styles.requestedStatusSub, { color: C.textSecondary }]}>
-                            {t('tripDetailModal.awaitingConfirmation')}
-                          </Text>
-                        </View>
-                      </View>
-                      <TouchableOpacity
-                        style={styles.cancelRequestBtn}
-                        onPress={handleCancelRequest}
-                        activeOpacity={0.8}
-                        accessibilityRole="button"
-                        accessibilityLabel={t('tripDetailModal.withdrawRequest')}
-                      >
-                        <Text style={styles.cancelRequestBtnText}>{t('tripDetailModal.withdrawRequest')}</Text>
-                      </TouchableOpacity>
-                    </View>
-                  );
-                })()}
+                  isMyTrip={isMyTrip}
+                  onClose={onClose}
+                  onFreeRequestSent={showFreeRequestSent}
+                />
               </ScrollView>
             </>
           )}
@@ -954,6 +826,7 @@ export default function TripDetailModal({
 }
 
 const styles = StyleSheet.create({
+  durationNote: { fontSize: 12, color: C.textSecondary, fontWeight: '600', marginTop: 6 },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.55)',

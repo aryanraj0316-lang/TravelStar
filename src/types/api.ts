@@ -300,7 +300,33 @@ export interface TripExpenses {
   balances: TripExpenseBalance[];
 }
 
-export type JoinRequestStatus = 'PENDING' | 'AWAITING_PAYMENT' | 'APPROVED' | 'REJECTED';
+/**
+ * The booking lifecycle (see backend schema.prisma JoinRequestStatus).
+ * Paid trips: PAYMENT_PENDING → PAYMENT_COMPLETED (token issued, seat held)
+ *   → ALLOCATION_PENDING (organizer verified) → CONFIRMED (Trip Pass + chat).
+ * Free trips: PENDING → ALLOCATION_PENDING (approved) → CONFIRMED.
+ */
+export type JoinRequestStatus =
+  | 'PENDING'
+  | 'PAYMENT_PENDING'
+  | 'PAYMENT_COMPLETED'
+  | 'ALLOCATION_PENDING'
+  | 'CONFIRMED'
+  | 'REJECTED'
+  | 'WAITLISTED'
+  | 'CANCELLED'
+  | 'REFUNDED';
+
+/** Statuses in which the traveller holds seats on the trip. */
+export const SEAT_HOLDING_STATUSES: readonly JoinRequestStatus[] = ['PAYMENT_COMPLETED', 'ALLOCATION_PENDING', 'CONFIRMED'];
+/** Statuses that are a live booking (anything not closed). */
+export const ACTIVE_BOOKING_STATUSES: readonly JoinRequestStatus[] = [
+  'PENDING',
+  'PAYMENT_PENDING',
+  'PAYMENT_COMPLETED',
+  'ALLOCATION_PENDING',
+  'CONFIRMED',
+];
 
 export interface JoinRequestSummary {
   id: string;
@@ -752,7 +778,7 @@ export interface MessageResponse {
 
 // ── Trip Payments ─────────────────────────────────────────────────────────
 
-export type TripPaymentOrderStatus = 'CREATED' | 'PENDING' | 'CAPTURED' | 'FAILED' | 'REFUNDED';
+export type TripPaymentOrderStatus = 'CREATED' | 'PENDING' | 'CAPTURED' | 'FAILED' | 'REFUNDED' | 'PARTIALLY_REFUNDED';
 
 export interface TripPaymentOrder {
   id: string;
@@ -764,6 +790,13 @@ export interface TripPaymentOrder {
   razorpayOrderId: string | null;
   walletDebit: Money | null;
   gatewayDebit: Money | null;
+  /** 4.5% platform fee / 95.5% organizer share of `amount`. */
+  platformFee?: Money | null;
+  organizerAmount?: Money | null;
+  /** Issued once payment is captured, e.g. "TST-8F92A1". */
+  verificationToken?: string | null;
+  tripId?: string;
+  partySize?: number;
   tripName?: string;
   joinRequestStatus?: JoinRequestStatus;
   walletBalance?: Money;
@@ -776,17 +809,21 @@ export interface InitiatePaymentResult {
   keyId?: string;
 }
 
+/**
+ * The result of any successful payment (Razorpay, wallet or the test
+ * bypass). The traveller now holds a seat and a verification token; they
+ * are NOT a member yet — chatRoomId stays null until the organizer
+ * allocates them.
+ */
 export interface VerifyPaymentResult {
   joinRequestId: string;
-  chatRoomId: string | null;
+  verificationToken: string;
+  amount: Money;
+  status: 'PAYMENT_COMPLETED';
+  chatRoomId: null;
 }
 
-export interface DirectPayResult {
-  joinRequestId: string;
-  chatRoomId: string | null;
-  /** The amount actually captured, in rupees. */
-  amount: Money;
-}
+export type DirectPayResult = VerifyPaymentResult;
 
 /**
  * One captured trip payment, from the point of view of whoever is asking:
@@ -809,4 +846,100 @@ export interface TripReceipt {
   tripCities: string[];
   counterpartyName: string;
   counterpartyRole: 'Organizer' | 'Traveller';
+  platformFee: Money | null;
+  organizerAmount: Money | null;
+  verificationToken: string | null;
+  status: TripPaymentOrderStatus;
+  refundedAmount: Money | null;
+  refundedAt: IsoDateTime | null;
+  bookingStatus: JoinRequestStatus;
+}
+
+// ── Bookings: allocation, Trip Pass, cancellation ─────────────────────
+
+/** One day/checkpoint assignment on a traveller's Trip Pass. */
+export interface TripAllocation {
+  id?: string;
+  tripTimelineStopId?: string;
+  dayNumber: number;
+  checkpointName: string;
+  hotelName: string | null;
+  roomNumber: string | null;
+  transitType: string | null;
+  vehicleNumber: string | null;
+  seatNumber: string | null;
+  assemblyTime: string | null;
+  notes: string | null;
+}
+
+export type RefundTier = 'FULL_LESS_FEE' | 'HALF' | 'NONE';
+
+/** GET /trips/:tripId/my-booking — the traveller's own booking / Trip Pass. */
+export interface MyBooking {
+  joinRequestId: string;
+  status: JoinRequestStatus;
+  partySize: number;
+  trip: { id: string; name: string; startDate: IsoDateTime; endDate: IsoDateTime; meetingPoint: string };
+  payment: {
+    amount: Money;
+    platformFee: Money | null;
+    organizerAmount: Money | null;
+    status: TripPaymentOrderStatus;
+    gateway: string;
+    verificationToken: string | null;
+    paidAt: IsoDateTime | null;
+    refundedAmount: Money | null;
+  } | null;
+  amountDue: Money | null;
+  bookingReferenceToken: string | null;
+  allocations: TripAllocation[];
+  chatRoomId: string | null;
+  cancellation: { tier: RefundTier; refundPercent: number; refundAmount: Money; hoursBeforeStart: number };
+}
+
+/** One traveller awaiting the organizer's allocation. */
+export interface PendingAllocationTraveller {
+  joinRequestId: string;
+  userId: string;
+  name: string;
+  avatarUrl: string | null;
+  status: JoinRequestStatus;
+  partySize: number;
+  fromCity: string | null;
+  toCity: string | null;
+  verificationToken: string | null;
+  requiresToken: boolean;
+  tokenVerified: boolean;
+  amountPaid: Money | null;
+  organizerAmount: Money | null;
+  paidAt: IsoDateTime | null;
+}
+
+/** GET /trips/:tripId/pending-allocations (organizer only). */
+export interface PendingAllocations {
+  trip: { id: string; name: string; startDate: IsoDateTime };
+  stops: { id: string; order: number; city: string; stayDays: number; transitMode: string | null }[];
+  itineraryDays: { day: number; title: string }[];
+  travellers: PendingAllocationTraveller[];
+}
+
+export interface AllocationSubmission {
+  tripTimelineStopId?: string;
+  dayNumber: number;
+  checkpointName: string;
+  hotelName: string;
+  roomNumber: string;
+  transitType: string;
+  vehicleNumber: string;
+  seatNumber: string;
+  assemblyTime?: string;
+  notes?: string;
+}
+
+export interface CancelBookingResult {
+  ok: true;
+  status: 'CANCELLED' | 'REFUNDED';
+  refundAmount: Money;
+  tier: RefundTier;
+  seatsReleased: boolean;
 }

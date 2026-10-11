@@ -9,13 +9,71 @@ import {
   getOrCreatePaymentOrder,
   verifyRazorpaySignature,
   verifyWebhookSignature,
-  captureAndClaimSeat,
+  captureAndHoldSeat,
   payFromWallet,
   payDirect,
+  amountForRequest,
+  computeFeeSplit,
+  type PaymentOutcome,
 } from '../../services/trip-payments';
-import { Decimal } from '@prisma/client/runtime/library';
 
 const router = Router();
+
+/**
+ * One response shape for every way of paying (Razorpay verify, wallet,
+ * test bypass). Success carries the verification token the receipt screen
+ * shows; the traveller is NOT a member yet — the organizer allocates next.
+ */
+function sendPaymentOutcome(res: Response, result: PaymentOutcome) {
+  if (result.ok) {
+    return res.status(200).json({
+      ok: true,
+      data: {
+        joinRequestId: result.joinRequestId,
+        verificationToken: result.verificationToken,
+        amount: result.amount,
+        status: 'PAYMENT_COMPLETED',
+        // Kept for older clients, which navigate to the chat when present.
+        // Chat access now only follows the organizer's allocation.
+        chatRoomId: null,
+      },
+    });
+  }
+  switch (result.reason) {
+    case 'ORDER_NOT_FOUND':
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Booking or payment order not found.' } });
+    case 'INSUFFICIENT_BALANCE':
+      return res.status(422).json({ ok: false, error: { code: 'INSUFFICIENT_BALANCE', message: 'Insufficient wallet balance' } });
+    case 'TRIP_FULL':
+      return res.status(409).json({
+        ok: false,
+        error: {
+          code: 'TRIP_FULL',
+          message: result.refunded
+            ? 'The trip filled up while you were paying. Your payment has been refunded in full.'
+            : 'Trip is full',
+        },
+      });
+    case 'TRIP_NOT_FOUND':
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Trip not found' } });
+    case 'BUSY':
+      res.setHeader('Retry-After', '2');
+      return res.status(503).json({ ok: false, error: { code: 'SERVICE_BUSY', message: 'Service busy, please retry' } });
+    case 'ALREADY_REFUNDED':
+      return res.status(409).json({ ok: false, error: { code: 'ALREADY_REFUNDED', message: 'This payment has already been refunded.' } });
+    case 'NOT_PAYABLE':
+    default:
+      return res.status(409).json({
+        ok: false,
+        error: {
+          code: 'INVALID_STATUS',
+          message: result.refunded
+            ? 'This booking is no longer open. Your payment has been refunded in full.'
+            : 'This booking is not awaiting payment.',
+        },
+      });
+  }
+}
 
 function validationError(res: Response, issues: z.ZodIssue[]) {
   return res.status(400).json({
@@ -54,20 +112,27 @@ router.post('/initiate', async (req: Request, res: Response) => {
     return res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'Forbidden' } });
   }
 
-  if (joinRequest.status !== 'AWAITING_PAYMENT') {
+  if (joinRequest.status !== 'PAYMENT_PENDING') {
     return res.status(400).json({
       ok: false,
-      error: { code: 'INVALID_STATUS', message: `Join request is in status '${joinRequest.status}', expected 'AWAITING_PAYMENT'` },
+      error: { code: 'INVALID_STATUS', message: `Booking is in status '${joinRequest.status}', expected 'PAYMENT_PENDING'` },
     });
   }
 
-  // adjustedPrice/budget are per-person; a Family Connect request with
-  // familyMemberCount > 0 owes for the whole party (partySize), not just
-  // the requester. Multiplied as a Decimal, not a floating-point number, to
-  // keep the same money precision the rest of this file relies on.
-  const perPerson = (joinRequest.adjustedPrice ?? joinRequest.trip.budget) as Decimal;
-  const amount = new Decimal(perPerson).mul(joinRequest.partySize);
-  if (!amount || amount.lte(0)) {
+  // Refuse before any money moves when the party can no longer fit. The
+  // authoritative check is still the seat hold at capture (a trip can fill
+  // during checkout; that payment is refunded automatically).
+  if (joinRequest.trip.availableSeats < joinRequest.partySize) {
+    return res.status(409).json({
+      ok: false,
+      error: { code: 'TRIP_FULL', message: `Only ${joinRequest.trip.availableSeats} seat(s) left — not enough for a party of ${joinRequest.partySize}.` },
+    });
+  }
+
+  // adjustedPrice/budget are per-person; a Family Connect party owes for
+  // everyone (partySize). Decimal arithmetic throughout.
+  const amount = amountForRequest(joinRequest, joinRequest.trip.budget);
+  if (amount.lte(0)) {
     return res.status(400).json({
       ok: false,
       error: { code: 'NO_PAYMENT_REQUIRED', message: 'Trip has no fee; payment is not required' },
@@ -94,6 +159,8 @@ router.post('/initiate', async (req: Request, res: Response) => {
       data: {
         orderId: order.razorpayOrderId,
         amount: order.amount.toString(),
+        platformFee: order.platformFee?.toString() ?? null,
+        organizerAmount: order.organizerAmount?.toString() ?? null,
         currency: 'INR',
         keyId: env.RAZORPAY_KEY_ID,
       },
@@ -128,37 +195,14 @@ router.post('/verify', async (req: Request, res: Response) => {
     });
   }
 
-  const result = await captureAndClaimSeat({
+  const result = await captureAndHoldSeat({
     razorpayOrderId,
     razorpayPaymentId,
     signatureVerified: true,
     io: req.app.get('socketio'),
   });
 
-  if (!result.ok) {
-    if (result.reason === 'ORDER_NOT_FOUND') {
-      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Payment order not found' } });
-    }
-    if (result.reason === 'TRIP_FULL') {
-      return res.status(409).json({ ok: false, error: { code: 'TRIP_FULL', message: 'Trip is full' } });
-    }
-    if (result.reason === 'TRIP_NOT_FOUND') {
-      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Trip not found' } });
-    }
-    if (result.reason === 'BUSY') {
-      res.setHeader('Retry-After', '2');
-      return res.status(503).json({ ok: false, error: { code: 'SERVICE_BUSY', message: 'Service busy, please retry' } });
-    }
-    return res.status(400).json({ ok: false, error: { code: 'PAYMENT_FAILED', message: result.reason } });
-  }
-
-  return res.status(200).json({
-    ok: true,
-    data: {
-      joinRequestId: result.joinRequestId,
-      chatRoomId: result.chatRoomId,
-    },
-  });
+  return sendPaymentOutcome(res, result);
 });
 
 // ── POST /trip-payments/wallet-pay ────────────────────────────────────────
@@ -174,42 +218,14 @@ router.post('/wallet-pay', async (req: Request, res: Response) => {
   const userId = requireUserId(req);
 
   const result = await payFromWallet(joinRequestId, userId, req.app.get('socketio'));
-
-  if (!result.ok) {
-    if (result.reason === 'INSUFFICIENT_BALANCE') {
-      return res.status(422).json({
-        ok: false,
-        error: { code: 'INSUFFICIENT_BALANCE', message: 'Insufficient wallet balance' },
-      });
-    }
-    if (result.reason === 'ORDER_NOT_FOUND') {
-      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Join request or order not found' } });
-    }
-    if (result.reason === 'TRIP_FULL') {
-      return res.status(409).json({ ok: false, error: { code: 'TRIP_FULL', message: 'Trip is full' } });
-    }
-    if (result.reason === 'BUSY') {
-      res.setHeader('Retry-After', '2');
-      return res.status(503).json({ ok: false, error: { code: 'SERVICE_BUSY', message: 'Service busy, please retry' } });
-    }
-    return res.status(400).json({ ok: false, error: { code: 'PAYMENT_FAILED', message: result.reason } });
-  }
-
-  return res.status(200).json({
-    ok: true,
-    data: {
-      joinRequestId: result.joinRequestId,
-      chatRoomId: result.chatRoomId,
-    },
-  });
+  return sendPaymentOutcome(res, result);
 });
 
 // ── POST /trip-payments/pay ───────────────────────────────────────────────
-// Captures the seat fee the traveller has paid, for the exact amount this
-// trip charges, and seats them. No stored balance is involved: the captured
-// order IS the money — every "collected" figure in the organizer's portal is
-// summed from these rows, and they are never deleted, so they double as the
-// permanent receipt for both sides (GET /trip-payments/receipts below).
+// ⚠️ DEVELOPMENT BYPASS — REMOVE BEFORE LAUNCH. Completes a booking with no
+// money moving (the app's "Skip payment (testing)" button), running the
+// real post-payment flow: fee split, seat hold, verification token,
+// notifications. See payDirect in services/trip-payments.ts.
 const directPaySchema = z.object({
   joinRequestId: z.string().uuid(),
 });
@@ -222,31 +238,7 @@ router.post('/pay', async (req: Request, res: Response) => {
   const userId = requireUserId(req);
 
   const result = await payDirect(joinRequestId, userId, req.app.get('socketio'));
-
-  if (!result.ok) {
-    if (result.reason === 'ORDER_NOT_FOUND') {
-      return res
-        .status(404)
-        .json({ ok: false, error: { code: 'NOT_FOUND', message: 'Join request not found, or it is not awaiting payment.' } });
-    }
-    if (result.reason === 'TRIP_FULL') {
-      return res.status(409).json({ ok: false, error: { code: 'TRIP_FULL', message: 'Trip is full' } });
-    }
-    if (result.reason === 'BUSY') {
-      res.setHeader('Retry-After', '2');
-      return res.status(503).json({ ok: false, error: { code: 'SERVICE_BUSY', message: 'Service busy, please retry' } });
-    }
-    return res.status(400).json({ ok: false, error: { code: 'PAYMENT_FAILED', message: result.reason } });
-  }
-
-  return res.status(200).json({
-    ok: true,
-    data: {
-      joinRequestId: result.joinRequestId,
-      chatRoomId: result.chatRoomId,
-      amount: result.amount,
-    },
-  });
+  return sendPaymentOutcome(res, result);
 });
 
 // ── GET /trip-payments/receipts ───────────────────────────────────────────
@@ -260,7 +252,9 @@ router.get('/receipts', async (req: Request, res: Response) => {
   try {
     const orders = await prisma.tripPaymentOrder.findMany({
       where: {
-        status: 'CAPTURED',
+        // Refunded orders stay on the list: the payment happened, and the
+        // refund line is part of the same receipt.
+        status: { in: ['CAPTURED', 'REFUNDED', 'PARTIALLY_REFUNDED'] },
         OR: [{ userId }, { joinRequest: { trip: { creatorId: userId } } }],
       },
       orderBy: { updatedAt: 'desc' },
@@ -295,6 +289,15 @@ router.get('/receipts', async (req: Request, res: Response) => {
         // 'PAID' = money this user sent; 'RECEIVED' = money their trip took in.
         direction: paidByMe ? 'PAID' : 'RECEIVED',
         amount: o.amount.toString(),
+        // Fee split. Null on orders from before the split existed, which
+        // went to the organizer in full.
+        platformFee: o.platformFee?.toString() ?? null,
+        organizerAmount: o.organizerAmount?.toString() ?? null,
+        verificationToken: o.verificationToken,
+        status: o.status,
+        refundedAmount: o.refundedAmount?.toString() ?? null,
+        refundedAt: o.refundedAt?.toISOString() ?? null,
+        bookingStatus: o.joinRequest.status,
         gateway: o.gateway,
         seats: o.joinRequest.partySize,
         paidAt: o.updatedAt.toISOString(),
@@ -340,10 +343,10 @@ router.get('/order/:joinRequestId', async (req: Request, res: Response) => {
 
   const order = joinRequest.paymentOrder;
   // Same per-person × partySize rule as /initiate — shown before an order
-  // exists yet, so a family join previews the whole party's fee, not just
-  // one person's.
-  const perPerson = (joinRequest.adjustedPrice ?? joinRequest.trip.budget) as Decimal;
-  const amount = perPerson ? new Decimal(perPerson).mul(joinRequest.partySize) : null;
+  // exists, so a family booking previews the whole party's fee.
+  const amount = amountForRequest(joinRequest, joinRequest.trip.budget);
+  const split = order?.platformFee ? { platformFee: order.platformFee, organizerAmount: order.organizerAmount } : computeFeeSplit(amount);
+  const paidStatuses = ['PAYMENT_COMPLETED', 'ALLOCATION_PENDING', 'CONFIRMED'];
 
   return res.status(200).json({
     ok: true,
@@ -351,8 +354,14 @@ router.get('/order/:joinRequestId', async (req: Request, res: Response) => {
       id: order?.id ?? '',
       joinRequestId,
       userId: joinRequest.userId,
-      amount: order ? order.amount.toString() : amount ? amount.toString() : '0.00',
-      status: order?.status ?? (joinRequest.status === 'APPROVED' ? 'CAPTURED' : 'PENDING'),
+      amount: order ? order.amount.toString() : amount.toString(),
+      platformFee: split.platformFee?.toString() ?? null,
+      organizerAmount: split.organizerAmount?.toString() ?? null,
+      // Only shown to the traveller and the trip's organizer (checked above).
+      verificationToken: order?.verificationToken ?? null,
+      status: order?.status ?? (paidStatuses.includes(joinRequest.status) ? 'CAPTURED' : 'PENDING'),
+      tripId: joinRequest.tripId,
+      partySize: joinRequest.partySize,
       gateway: order?.gateway ?? 'RAZORPAY',
       razorpayOrderId: order?.razorpayOrderId ?? null,
       walletDebit: order?.walletDebit ? order.walletDebit.toString() : null,
@@ -389,7 +398,7 @@ router.post('/webhook', async (req: Request, res: Response) => {
     const rzpOrderId = paymentEntity.order_id;
     const rzpPaymentId = paymentEntity.id;
     if (rzpOrderId && rzpPaymentId) {
-      await captureAndClaimSeat({
+      await captureAndHoldSeat({
         razorpayOrderId: rzpOrderId,
         razorpayPaymentId: rzpPaymentId,
         signatureVerified: true,
