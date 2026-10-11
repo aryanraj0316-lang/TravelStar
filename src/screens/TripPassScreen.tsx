@@ -174,7 +174,7 @@ export default function TripPassScreen() {
           <Banner tone="amber" text={t('tripPass.completePaymentBanner', 'Your seat is not reserved until payment is complete.')}>
             <TouchableOpacity
               style={styles.primaryBtn}
-              onPress={() => router.push({ pathname: '/trip-payment', params: { joinRequestId: booking.joinRequestId } })}
+              onPress={() => router.push({ pathname: '/trip-payment', params: { joinRequestId: booking.joinRequestId, autostart: '1' } })}
               accessibilityRole="button"
             >
               <Text style={styles.primaryBtnText}>

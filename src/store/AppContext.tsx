@@ -1167,72 +1167,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   );
 
   const joinTrip = useCallback((tripId: string, opts?: JoinTripOpts): Promise<JoinRequestSummary | null> => {
-    // Optimistic UI: mark as "requested", but do NOT touch availableSeats/membersCount here.
-    // Seats are only taken on the backend once the booking is paid (or, for a
-    // free trip, approved). Decrementing locally here caused seats to be
-    // counted twice.
-    setRequestedTrips((prev) => {
-      const next = new Set(prev);
-      next.add(tripId);
-      return next;
-    });
-    setJoinRequestStatuses((prev) => {
-      const next = new Map(prev);
-      next.set(tripId, {
-        // Replaced with the real id by the reloadJoinRequests() call once
-        // the request lands — nothing reads this placeholder before then.
-        id: '',
-        tripId,
-        status: 'PENDING',
-        fromCity: opts?.fromCity ?? null,
-        toCity: opts?.toCity ?? null,
-        adjustedPrice: null,
-        familyMemberCount: opts?.familyMemberCount ?? 0,
-        partySize: 1 + (opts?.familyMemberCount ?? 0),
-        joiningDate: opts?.joiningDate ?? null,
-        fromStopId: opts?.fromStopId ?? null,
-        toStopId: opts?.toStopId ?? null,
-      });
-      return next;
-    });
-    // adjustedPrice is never sent — the server computes and owns it
-    // (docs/REMEDIATION.md §8.6); the client only proposes a segment.
+    // No optimistic status. This used to write a placeholder PENDING row
+    // before the server answered, which the booking panel rendered as
+    // "Request submitted" — so tapping "Proceed to Payment" on a paid trip
+    // flashed the old request-sent state, and when the request then failed
+    // the rollback dropped the user straight back on the consent screen: a
+    // loop with no payment and no visible reason. The caller shows its own
+    // progress state; the booking is only recorded once the server has
+    // created it, with the server's real status.
+    //
+    // Nor is a booking queued for offline retry any more: a paid booking
+    // must go straight on to payment, so silently creating it later (with
+    // the traveller no longer at the payment step) would only strand it.
     return apiService
       .createJoinRequest(tripId, opts)
       .then((created) => {
-        // A paid booking goes straight to the payment screen (the caller
-        // navigates); only a free trip's request is "sent" to the organizer.
-        if (created?.status === 'PENDING') toast('Join request sent', 'success');
-        if (created) {
-          setJoinRequestStatuses((prev) => new Map(prev).set(tripId, created));
-        }
-        // Replaces the optimistic entry above with the server's real row
-        // (real id, real computed adjustedPrice) rather than leaving the
-        // client-guessed placeholder in place indefinitely.
+        if (!created) return null;
+        // Only a free trip's request is "sent" to the organizer; a paid
+        // booking goes straight to payment (the caller navigates).
+        if (created.status === 'PENDING') toast('Join request sent', 'success');
+        setRequestedTrips((prev) => new Set(prev).add(tripId));
+        setJoinRequestStatuses((prev) => new Map(prev).set(tripId, created));
         reloadJoinRequests();
-        return created ?? null;
+        return created;
       })
       .catch((e) => {
         if (isOfflineFailure(e)) {
-          logger.warn('[Trips] Join request offline, queued for retry:', e);
-          enqueueMutation('join-request', { tripId, ...opts }).catch((qe) =>
-            logger.warn('[Trips] Failed to queue join request:', qe),
-          );
-          toast("You're offline — your join request will send once you reconnect.", 'info');
+          logger.warn('[Trips] Booking failed — offline:', e);
+          toast("You're offline. Connect to the internet to book this trip.", 'error');
           return null;
         }
-        logger.warn('[Trips] Join request failed, rolling back:', e);
-        setRequestedTrips((prev) => {
-          const next = new Set(prev);
-          next.delete(tripId);
-          return next;
-        });
-        setJoinRequestStatuses((prev) => {
-          const next = new Map(prev);
-          next.delete(tripId);
-          return next;
-        });
-        toast(errorToastMessage(e, 'Could not send the join request.'), 'error');
+        logger.warn('[Trips] Booking failed:', e);
+        toast(errorToastMessage(e, 'Could not start your booking. Please try again.'), 'error');
         return null;
       });
   }, [reloadJoinRequests]);

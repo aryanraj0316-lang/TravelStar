@@ -64,6 +64,7 @@ import type {
   AllocationSubmission,
   CancelBookingResult,
 } from '@/types/api';
+import { normalizeJoinRequestStatus } from '@/types/api';
 
 // Request-ID / idempotency-key generation only needs uniqueness, not
 // cryptographic randomness, so this avoids pulling in expo-crypto for one
@@ -1213,14 +1214,16 @@ export const apiService = {
       acceptedTerms?: boolean;
     },
   ): Promise<JoinRequestSummary> {
-    return request<JoinRequestSummary>('/interactions/join-request', {
+    const created = await request<JoinRequestSummary>('/interactions/join-request', {
       method: 'POST',
       body: JSON.stringify({ tripId, ...opts }),
     });
+    return created ? { ...created, status: normalizeJoinRequestStatus(created.status) } : created;
   },
 
   async getJoinRequests(): Promise<JoinRequestSummary[] | null> {
-    return request<JoinRequestSummary[]>('/interactions/join-requests');
+    const rows = await request<JoinRequestSummary[]>('/interactions/join-requests');
+    return rows ? rows.map((r) => ({ ...r, status: normalizeJoinRequestStatus(r.status) })) : rows;
   },
 
   async cancelJoinRequest(tripId: string): Promise<MessageResponse | null> {
@@ -1230,7 +1233,8 @@ export const apiService = {
   },
 
   async getIncomingRequests(): Promise<IncomingJoinRequest[] | null> {
-    return request<IncomingJoinRequest[]>('/interactions/incoming-requests');
+    const rows = await request<IncomingJoinRequest[]>('/interactions/incoming-requests');
+    return rows ? rows.map((r) => ({ ...r, status: normalizeJoinRequestStatus(r.status) })) : rows;
   },
 
   async updateJoinRequestStatus(requestId: string, status: 'APPROVED' | 'REJECTED'): Promise<MessageResponse | null> {
@@ -1554,7 +1558,8 @@ export const apiService = {
   },
   // ── Trip Payments ──────────────────────────────
   async getTripPaymentOrder(joinRequestId: string): Promise<TripPaymentOrder | null> {
-    return request<TripPaymentOrder>(`/trip-payments/order/${joinRequestId}`);
+    const order = await request<TripPaymentOrder>(`/trip-payments/order/${joinRequestId}`);
+    return order?.joinRequestStatus ? { ...order, joinRequestStatus: normalizeJoinRequestStatus(order.joinRequestStatus) } : order;
   },
 
   async initiateTripPayment(input: { joinRequestId: string; idempotencyKey: string }): Promise<InitiatePaymentResult | null> {

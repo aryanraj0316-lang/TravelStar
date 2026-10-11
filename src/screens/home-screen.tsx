@@ -783,7 +783,7 @@ function FeaturedTripsCarouselBase({
                     accessibilityState={{ disabled: alreadyRequested }}
                     accessibilityLabel={alreadyRequested ? t('home.joinRequested') : t('home.joinNow')}
                   >
-                    <Text style={[styles.joinBtnText, alreadyRequested && styles.joinBtnRequestedText]}>
+                    <Text style={[styles.joinBtnText, alreadyRequested && styles.joinBtnRequestedText]} numberOfLines={2}>
                       {alreadyRequested ? t('home.joinRequested') : t('home.joinNow')}
                     </Text>
                   </TouchableOpacity>
@@ -2263,9 +2263,11 @@ const styles = StyleSheet.create({
   joinBtn: {
     backgroundColor: C.blue,
     minHeight: MIN_TOUCH_TARGET,
-    width: 110,
-    paddingVertical: 5,
-    paddingHorizontal: 8,
+    minWidth: 110,
+    maxWidth: 150,
+    flexShrink: 0,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
     borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
@@ -2275,6 +2277,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     textAlign: 'center',
+    lineHeight: 15,
   },
   // The already-requested state of the join CTA. Filled grey rather than
   // brand blue, so it does not read as a second chance to request.

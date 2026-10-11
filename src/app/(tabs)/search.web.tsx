@@ -356,8 +356,9 @@ function TripResultCard({
                 accessibilityRole="button"
                 accessibilityLabel={t('search.requestToJoin')}
               >
-                <Text style={styles.joinBtnText} numberOfLines={1}>{t('search.requestToJoin')}</Text>
-                <ChevronRight size={11} color="#FFF" style={{ marginLeft: 2 }} />
+                <Text style={[styles.joinBtnText, styles.joinBtnTextWrap]} numberOfLines={2}>
+                  {t('search.requestToJoin')}
+                </Text>
               </TouchableOpacity>
             )}
           </View>
@@ -2232,8 +2233,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: C.blue,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
     borderRadius: 8,
     gap: 3,
     flexShrink: 0,
@@ -2243,6 +2244,13 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 12,
     fontWeight: '700',
+  },
+  // The CTA label wraps onto two centred lines rather than being clipped
+  // in the card's fixed-width action column.
+  joinBtnTextWrap: {
+    flexShrink: 1,
+    textAlign: 'center',
+    lineHeight: 15,
   },
 
   ctaBannerContainer: {

@@ -317,6 +317,19 @@ export type JoinRequestStatus =
   | 'CANCELLED'
   | 'REFUNDED';
 
+/**
+ * Maps the pre-migration status names a not-yet-updated server (or cached
+ * data) can still send onto the current ones — AWAITING_PAYMENT became
+ * PAYMENT_PENDING and APPROVED became CONFIRMED. Without this an old value
+ * matched no booking state, so the booking panel fell through to "not
+ * booked" and offered "Proceed to Payment" again for a booking that existed.
+ */
+export function normalizeJoinRequestStatus(status: string | null | undefined): JoinRequestStatus {
+  if (status === 'AWAITING_PAYMENT') return 'PAYMENT_PENDING';
+  if (status === 'APPROVED') return 'CONFIRMED';
+  return (status ?? 'PENDING') as JoinRequestStatus;
+}
+
 /** Statuses in which the traveller holds seats on the trip. */
 export const SEAT_HOLDING_STATUSES: readonly JoinRequestStatus[] = ['PAYMENT_COMPLETED', 'ALLOCATION_PENDING', 'CONFIRMED'];
 /** Statuses that are a live booking (anything not closed). */

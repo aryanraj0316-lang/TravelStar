@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -20,7 +20,7 @@ import Ticket from 'lucide-react-native/icons/ticket';
 import { ScreenError, ScreenLoading } from '@/components/ui/ScreenState';
 import { toast, useConfirm } from '@/lib/feedback';
 import { formatINR } from '@/lib/money';
-import { apiService } from '@/services/api';
+import { ApiError, apiService } from '@/services/api';
 import { openRazorpayCheckout } from '@/services/razorpay';
 import { useApp } from '@/store/AppContext';
 import { C, fontSize, fontWeight, radii, space } from '@/theme/tokens';
@@ -30,7 +30,8 @@ import { SEAT_HOLDING_STATUSES } from '@/types/api';
 export default function TripPaymentScreen() {
   const { t } = useTranslation();
   const router = useRouter();
-  const params = useLocalSearchParams<{ joinRequestId: string }>();
+  // autostart=1: arrived from "Proceed to Payment" — open the checkout at once.
+  const params = useLocalSearchParams<{ joinRequestId: string; autostart?: string }>();
   const { refreshTrips, reloadJoinRequests } = useApp();
   const confirm = useConfirm();
 
@@ -43,6 +44,11 @@ export default function TripPaymentScreen() {
   // in place of the payment methods. Paying never opens the group chat —
   // that follows the organizer's allocation.
   const [receipt, setReceipt] = useState<Pick<VerifyPaymentResult, 'verificationToken' | 'amount'> | null>(null);
+  // Why the last checkout attempt did not complete, with a retry right
+  // beside it — a cancelled or failed payment never silently resets.
+  const [paymentNotice, setPaymentNotice] = useState<{ tone: 'info' | 'error'; text: string } | null>(null);
+  // The automatic checkout opens once per visit, never again on re-render.
+  const autostartedRef = useRef(false);
 
   const insets = useSafeAreaInsets();
   const topInset = Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 0);
@@ -115,67 +121,100 @@ export default function TripPaymentScreen() {
   const handlePayRazorpay = async () => {
     if (!order || payingGateway) return;
     setPayingGateway(true);
+    setPaymentNotice(null);
 
+    // Step B: create (or reuse) the gateway order on the server.
+    let init;
     try {
-      const idempotencyKey = 'pay-' + order.joinRequestId + '-' + Date.now();
-      const init = await apiService.initiateTripPayment({
+      init = await apiService.initiateTripPayment({
         joinRequestId: order.joinRequestId,
-        idempotencyKey,
+        // The server reuses this booking's open Razorpay order, so a retry
+        // never creates a second charge.
+        idempotencyKey: 'pay-' + order.joinRequestId + '-' + Date.now(),
       });
-
-      if (!init?.orderId) {
-        toast('Failed to initialize payment gateway order', 'error');
-        setPayingGateway(false);
-        return;
+    } catch (err) {
+      setPayingGateway(false);
+      if (err instanceof ApiError && err.statusCode === 503) {
+        setPaymentNotice({ tone: 'error', text: 'Online payment is not available right now. Please try again shortly.' });
+      } else if (err instanceof ApiError && err.code === 'TRIP_FULL') {
+        setPaymentNotice({ tone: 'error', text: err.message || 'This trip no longer has enough seats.' });
+      } else {
+        setPaymentNotice({ tone: 'error', text: err instanceof Error && err.message ? err.message : 'Could not start the payment.' });
       }
+      return;
+    }
+    if (!init?.orderId) {
+      setPayingGateway(false);
+      setPaymentNotice({ tone: 'error', text: 'Could not start the payment. Please try again.' });
+      return;
+    }
 
-      let checkoutRes;
-      try {
-        const amountPaise = Math.round(Number(init.amount) * 100);
-        checkoutRes = await openRazorpayCheckout({
-          key: init.keyId || '',
-          amount: amountPaise,
-          currency: 'INR',
-          name: 'Yatrenzo',
-          description: `Trip joining fee for ${order.tripName || 'group trip'}`,
-          order_id: init.orderId,
-          theme: { color: C.blue },
-        });
-      } catch (sdkErr: any) {
-        if (sdkErr?.message?.includes('EXPO_GO_UNSUPPORTED')) {
-          toast(
-            'Razorpay native checkout requires a Dev Build; it is not available in Expo Go.',
-            'info',
-          );
-          setPayingGateway(false);
-          return;
-        }
-        if (sdkErr?.message?.includes('PAYMENT_CANCELLED')) {
-          toast('Payment cancelled', 'info');
-          setPayingGateway(false);
-          return;
-        }
-        throw sdkErr;
+    // Step C: open the gateway with that order.
+    let checkoutRes;
+    try {
+      checkoutRes = await openRazorpayCheckout({
+        key: init.keyId || '',
+        amount: Math.round(Number(init.amount) * 100),
+        currency: 'INR',
+        name: 'Yatrenzo',
+        description: `Trip booking — ${order.tripName || 'group trip'}`,
+        order_id: init.orderId,
+        theme: { color: C.blue },
+      });
+    } catch (sdkErr) {
+      setPayingGateway(false);
+      const msg = sdkErr instanceof Error ? sdkErr.message : String(sdkErr);
+      if (msg.includes('EXPO_GO_UNSUPPORTED')) {
+        setPaymentNotice({ tone: 'error', text: 'Card/UPI checkout needs the installed app build; it is not available in Expo Go.' });
+      } else if (msg.includes('PAYMENT_CANCELLED')) {
+        // Step F: cancelled — nothing was charged; offer the retry.
+        setPaymentNotice({ tone: 'info', text: 'Payment cancelled. Nothing was charged — tap "Pay with Razorpay" to try again.' });
+      } else {
+        setPaymentNotice({ tone: 'error', text: 'The payment did not go through. You have not been charged — please try again.' });
       }
+      return;
+    }
 
-      if (checkoutRes?.razorpay_signature) {
-        const verifyRes = await apiService.verifyTripPayment({
-          razorpayOrderId: checkoutRes.razorpay_order_id,
-          razorpayPaymentId: checkoutRes.razorpay_payment_id,
-          razorpaySignature: checkoutRes.razorpay_signature,
-        });
-
-        if (verifyRes?.verificationToken) {
-          toast('Payment verified!', 'success');
-          onPaid(verifyRes);
-        }
-      }
-    } catch (err: any) {
-      toast(err?.message || 'Payment failed', 'error');
+    // Step E: confirm it server-side, then show the receipt.
+    try {
+      if (!checkoutRes?.razorpay_signature) throw new Error('Missing payment signature');
+      const verifyRes = await apiService.verifyTripPayment({
+        razorpayOrderId: checkoutRes.razorpay_order_id,
+        razorpayPaymentId: checkoutRes.razorpay_payment_id,
+        razorpaySignature: checkoutRes.razorpay_signature,
+      });
+      if (!verifyRes?.verificationToken) throw new Error('Payment could not be confirmed');
+      toast('Payment successful!', 'success');
+      onPaid(verifyRes);
+    } catch (err) {
+      // The money may have been taken even though confirmation failed here
+      // (e.g. the connection dropped); Razorpay's webhook confirms it on the
+      // server. Re-check rather than inviting a second payment.
+      setPaymentNotice({
+        tone: 'error',
+        text:
+          err instanceof ApiError && err.code === 'TRIP_FULL'
+            ? err.message
+            : 'We could not confirm your payment yet. If you were charged it will confirm automatically — refreshing your booking…',
+      });
+      void loadOrder();
     } finally {
       setPayingGateway(false);
     }
   };
+
+  // Step A → C in one tap: arriving from "Proceed to Payment" opens the
+  // checkout straight away (once), instead of making the traveller find
+  // and tap a second Pay button.
+  useEffect(() => {
+    if (params.autostart !== '1' || autostartedRef.current || !order || receipt) return;
+    const paid = order.status === 'CAPTURED' || (!!order.joinRequestStatus && SEAT_HOLDING_STATUSES.includes(order.joinRequestStatus));
+    if (paid) return;
+    autostartedRef.current = true;
+    void handlePayRazorpay();
+    // handlePayRazorpay is recreated every render; the ref makes this run once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order, params.autostart, receipt]);
 
   if (loading) {
     return (
@@ -313,6 +352,18 @@ export default function TripPaymentScreen() {
           <View style={styles.paymentSection}>
             <Text style={styles.sectionHeading}>SELECT PAYMENT METHOD</Text>
 
+            {payingGateway ? (
+              <View style={styles.noticeBox}>
+                <ActivityIndicator size="small" color={C.blue} />
+                <Text style={styles.noticeText}>Opening secure checkout…</Text>
+              </View>
+            ) : paymentNotice ? (
+              <View style={[styles.noticeBox, paymentNotice.tone === 'error' && styles.noticeBoxError]} accessibilityLiveRegion="polite">
+                <Info size={16} color={paymentNotice.tone === 'error' ? C.redText : C.blueText} />
+                <Text style={[styles.noticeText, paymentNotice.tone === 'error' && { color: C.redText }]}>{paymentNotice.text}</Text>
+              </View>
+            ) : null}
+
             {/* Razorpay Gateway Card */}
             <View style={styles.methodCard}>
               <View style={styles.methodTop}>
@@ -336,7 +387,7 @@ export default function TripPaymentScreen() {
                 ) : (
                   <>
                     <CreditCard size={18} color={C.white} />
-                    <Text style={styles.payBtnText}>Pay with Razorpay</Text>
+                    <Text style={styles.payBtnText}>{paymentNotice ? 'Try again — Pay with Razorpay' : 'Pay with Razorpay'}</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -371,6 +422,16 @@ export default function TripPaymentScreen() {
 }
 
 const styles = StyleSheet.create({
+  noticeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[2],
+    backgroundColor: C.blueGlow,
+    borderRadius: radii.md,
+    padding: space[3],
+  },
+  noticeBoxError: { backgroundColor: C.roseGlow },
+  noticeText: { flex: 1, fontSize: fontSize.sm, color: C.blueText, lineHeight: 19, fontWeight: fontWeight.semibold },
   skipPaymentBtn: {
     marginTop: 4,
     paddingVertical: 12,

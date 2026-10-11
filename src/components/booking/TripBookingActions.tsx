@@ -81,6 +81,9 @@ export default function TripBookingActions({
   const [agreed, setAgreed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [openingChat, setOpeningChat] = useState(false);
+  // Why the last attempt did not go through, shown under the button so a
+  // failure never looks like the screen simply reset itself.
+  const [bookError, setBookError] = useState<string | null>(null);
 
   if (isMyTrip) return null;
 
@@ -120,15 +123,42 @@ export default function TripBookingActions({
       return;
     }
     if (!agreed || submitting) return;
+    setBookError(null);
     setSubmitting(true);
     try {
       const created = await joinTrip(trip.id, { ...(requestOpts ?? {}), acceptedTerms: true });
-      if (!created) return;
-      if (created.status === 'PAYMENT_PENDING') {
-        onClose();
-        router.push({ pathname: '/trip-payment', params: { joinRequestId: created.id } });
-      } else if (created.status === 'PENDING') {
-        onFreeRequestSent();
+      if (!created) {
+        // joinTrip already toasted the reason; keep it on screen too.
+        setBookError(t('booking.bookingFailed', 'We could not start your booking. Please check your connection and try again.'));
+        return;
+      }
+      switch (created.status) {
+        case 'PAYMENT_PENDING':
+          // Straight into the payment gateway: the payment screen opens the
+          // checkout itself on arrival (autostart), with retry and receipt.
+          onClose();
+          router.push({ pathname: '/trip-payment', params: { joinRequestId: created.id, autostart: '1' } });
+          return;
+        case 'PENDING':
+          if (isPaid) {
+            // A paid trip must never land in the old "request sent" state.
+            // Only a server still running the pre-payment flow answers
+            // this, so say so rather than pretend a request was sent.
+            setBookError(
+              t('booking.paymentUnavailable', 'Online booking for this trip is not available right now. Please try again in a few minutes.'),
+            );
+            return;
+          }
+          onFreeRequestSent();
+          return;
+        case 'PAYMENT_COMPLETED':
+        case 'ALLOCATION_PENDING':
+        case 'CONFIRMED':
+          // Already paid for (e.g. booked on another device): show it.
+          openPass();
+          return;
+        default:
+          setBookError(t('booking.bookingFailed', 'We could not start your booking. Please check your connection and try again.'));
       }
     } finally {
       setSubmitting(false);
@@ -163,7 +193,7 @@ export default function TripBookingActions({
           style={styles.primaryBtn}
           onPress={() => {
             onClose();
-            router.push({ pathname: '/trip-payment', params: { joinRequestId: myRequest.id } });
+            router.push({ pathname: '/trip-payment', params: { joinRequestId: myRequest.id, autostart: '1' } });
           }}
           accessibilityRole="button"
         >
@@ -297,8 +327,25 @@ export default function TripBookingActions({
         accessibilityLabel={ctaLabel}
         accessibilityState={{ disabled }}
       >
-        {submitting ? <ActivityIndicator size="small" color="#FFF" /> : <Text style={styles.primaryBtnText}>{ctaLabel}</Text>}
+        {submitting ? (
+          <>
+            <ActivityIndicator size="small" color="#FFF" />
+            <Text style={styles.primaryBtnText}>
+              {isPaid ? t('booking.startingPayment', 'Starting payment…') : t('booking.sending', 'Sending…')}
+            </Text>
+          </>
+        ) : (
+          <Text style={styles.primaryBtnText} numberOfLines={2}>
+            {ctaLabel}
+          </Text>
+        )}
       </TouchableOpacity>
+      {bookError ? (
+        <View style={styles.noticeRow} accessibilityLiveRegion="polite">
+          <X size={14} color={C.redText} />
+          <Text style={styles.noticeText}>{bookError}</Text>
+        </View>
+      ) : null}
       {isPaid && isLoggedIn ? (
         <Text style={styles.footnote}>
           {t('booking.payFootnote', 'Your seat is reserved the moment payment succeeds. You’ll get a booking token, and the organizer then assigns your seat and rooms.')}
@@ -381,7 +428,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   ctaBtn: { marginTop: 6 },
-  primaryBtnText: { color: '#FFF', fontSize: 15, fontWeight: '800' },
+  primaryBtnText: { color: '#FFF', fontSize: 15, fontWeight: '800', textAlign: 'center', flexShrink: 1 },
   btnDisabled: { opacity: 0.45 },
   secondaryBtn: {
     flexDirection: 'row',
