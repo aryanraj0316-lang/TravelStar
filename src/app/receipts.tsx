@@ -1,4 +1,6 @@
 import { ScreenEmpty, ScreenError, ScreenLoading } from '@/components/ui';
+import { copyToClipboard } from '@/lib/clipboard';
+import { toast } from '@/lib/feedback';
 import { formatINR } from '@/lib/money';
 import { queryKeys } from '@/lib/query-keys';
 import { sectionState } from '@/lib/query-state';
@@ -11,6 +13,7 @@ import { useRouter } from 'expo-router';
 import ArrowDownLeft from 'lucide-react-native/icons/arrow-down-left';
 import ArrowLeft from 'lucide-react-native/icons/arrow-left';
 import ArrowUpRight from 'lucide-react-native/icons/arrow-up-right';
+import Copy from 'lucide-react-native/icons/copy';
 import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -39,6 +42,11 @@ function formatDate(iso: string): string {
   } catch {
     return '';
   }
+}
+
+async function copyToken(token: string, copiedMsg: string, failedMsg: string) {
+  const ok = await copyToClipboard(token);
+  toast(ok ? copiedMsg : failedMsg, ok ? 'success' : 'info');
 }
 
 export default function ReceiptsScreen() {
@@ -169,6 +177,33 @@ export default function ReceiptsScreen() {
                   </View>
                 </View>
 
+                {r.verificationToken ? (
+                  <View style={styles.tokenRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.metaLabel}>{t('receipts.bookingToken', 'Booking token')}</Text>
+                      <Text style={styles.tokenValue} selectable>
+                        {r.verificationToken}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.copyBtn}
+                      activeOpacity={0.7}
+                      onPress={() =>
+                        void copyToken(
+                          r.verificationToken as string,
+                          t('receipts.tokenCopied', 'Token copied'),
+                          t('receipts.tokenCopyFailed', 'Long-press the token to copy it'),
+                        )
+                      }
+                      accessibilityRole="button"
+                      accessibilityLabel={t('receipts.copyToken', 'Copy booking token {{token}}', { token: r.verificationToken })}
+                    >
+                      <Copy size={15} color={C.blue} strokeWidth={2.2} />
+                      <Text style={styles.copyBtnText}>{t('receipts.copy', 'Copy')}</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+
                 {r.tripCities?.length > 0 && (
                   <Text style={styles.cities} numberOfLines={1}>
                     {r.tripCities.join(' · ')}
@@ -187,6 +222,28 @@ export default function ReceiptsScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#F8FAFC' },
+  tokenRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E2E8F0',
+  },
+  tokenValue: { fontSize: 16, fontWeight: '700', color: '#0F172A', letterSpacing: 1.5, marginTop: 2 },
+  copyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: MIN_TOUCH_TARGET,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    backgroundColor: '#EFF6FF',
+  },
+  copyBtnText: { fontSize: 13, fontWeight: '600', color: C.blue },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

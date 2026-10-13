@@ -654,7 +654,12 @@
     "receivedFrom": "Received from {{name}}",
     "date": "Date",
     "seats": "Seats",
-    "reference": "Reference"
+    "reference": "Reference",
+    "bookingToken": "Booking token",
+    "copy": "Copy",
+    "copyToken": "Copy booking token {{token}}",
+    "tokenCopied": "Token copied",
+    "tokenCopyFailed": "Long-press the token to copy it"
   },
   "sos": {
     "needsHelp": "{{name}} has requested assistance",
@@ -2002,7 +2007,7 @@
     "confirmFailed": "Could not confirm this booking.",
     "tokenVerifiedTitle": "Payment token verified",
     "verifyTokenTitle": "Step 1 · Verify payment token",
-    "verifyTokenHelp": "Enter the token the traveller shows you (also in your payment notification).",
+    "verifyTokenHelp": "Enter the traveller's booking token. You can find it in Profile → Payment Receipts, where you can copy it.",
     "tokenInput": "Verification token",
     "verify": "Verify",
     "step2": "Step 2 · Assign seat & rooms for each stop",

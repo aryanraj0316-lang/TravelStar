@@ -314,7 +314,7 @@ function AllocationForm({
           ) : (
             <>
               <Text style={styles.muted}>
-                {t('allocation.verifyTokenHelp', 'Enter the token the traveller shows you (also in your payment notification).')}
+                {t('allocation.verifyTokenHelp', "Enter the traveller's booking token. You can find it in Profile → Payment Receipts, where you can copy it.")}
               </Text>
               <View style={styles.tokenInputRow}>
                 <TextInput
