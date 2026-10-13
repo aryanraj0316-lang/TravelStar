@@ -3406,10 +3406,12 @@ function ChatScreen() {
       >
         {!!selectedRoomId && (
           <SafeAreaView edges={['top', 'bottom']} style={styles.container}>
-            <KeyboardAvoidingView
-              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-              style={{ flex: 1 }}
-            >
+            {/* 'padding' on Android too: the room is a full-screen Modal, and on
+                an edge-to-edge app Android no longer resizes the window for the
+                keyboard, so with no behavior the message input stayed hidden
+                behind it. Padding lifts it by exactly the keyboard's overlap —
+                zero if the window did resize, so it never doubles up. */}
+            <KeyboardAvoidingView behavior={Platform.OS === 'web' ? undefined : 'padding'} style={{ flex: 1 }}>
               {/* ─── CLEAN ROOM HEADER BAR ───────────────────────────── */}
               <View style={styles.roomHeaderBar}>
                 <View style={styles.headerLeftMeta}>
