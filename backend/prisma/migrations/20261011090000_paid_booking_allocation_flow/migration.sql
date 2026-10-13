@@ -7,34 +7,57 @@
 --   APPROVED         -> CONFIRMED         (existing members stay members)
 -- Existing CAPTURED orders keep null platformFee/organizerAmount: the 4.5%
 -- split did not exist when they were paid and is not applied retroactively.
-ALTER TYPE "JoinRequestStatus" RENAME VALUE 'AWAITING_PAYMENT' TO 'PAYMENT_PENDING';
-ALTER TYPE "JoinRequestStatus" RENAME VALUE 'APPROVED' TO 'CONFIRMED';
+--
+-- Every statement is guarded so this migration is safe to run against a
+-- database in ANY state — untouched, partially applied by an earlier
+-- interrupted attempt, or drifted by a past `db push`. That matters because
+-- it is applied automatically when the server boots (src/lib/auto-migrate.ts)
+-- and must never wedge production by failing half-way.
+
+-- ── JoinRequestStatus ────────────────────────────────────────────────────
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
+             WHERE t.typname = 'JoinRequestStatus' AND e.enumlabel = 'AWAITING_PAYMENT')
+     AND NOT EXISTS (SELECT 1 FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
+             WHERE t.typname = 'JoinRequestStatus' AND e.enumlabel = 'PAYMENT_PENDING') THEN
+    ALTER TYPE "JoinRequestStatus" RENAME VALUE 'AWAITING_PAYMENT' TO 'PAYMENT_PENDING';
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
+             WHERE t.typname = 'JoinRequestStatus' AND e.enumlabel = 'APPROVED')
+     AND NOT EXISTS (SELECT 1 FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
+             WHERE t.typname = 'JoinRequestStatus' AND e.enumlabel = 'CONFIRMED') THEN
+    ALTER TYPE "JoinRequestStatus" RENAME VALUE 'APPROVED' TO 'CONFIRMED';
+  END IF;
+END $$;
+
+ALTER TYPE "JoinRequestStatus" ADD VALUE IF NOT EXISTS 'PAYMENT_PENDING';
+ALTER TYPE "JoinRequestStatus" ADD VALUE IF NOT EXISTS 'CONFIRMED';
 ALTER TYPE "JoinRequestStatus" ADD VALUE IF NOT EXISTS 'PAYMENT_COMPLETED';
 ALTER TYPE "JoinRequestStatus" ADD VALUE IF NOT EXISTS 'ALLOCATION_PENDING';
 ALTER TYPE "JoinRequestStatus" ADD VALUE IF NOT EXISTS 'CANCELLED';
 ALTER TYPE "JoinRequestStatus" ADD VALUE IF NOT EXISTS 'REFUNDED';
 
--- AlterEnum
+-- ── TripPaymentOrderStatus ───────────────────────────────────────────────
 ALTER TYPE "TripPaymentOrderStatus" ADD VALUE IF NOT EXISTS 'PARTIALLY_REFUNDED';
 
--- AlterTable
-ALTER TABLE "TripMember" ADD COLUMN     "bookingReferenceToken" TEXT;
+-- ── Columns ──────────────────────────────────────────────────────────────
+ALTER TABLE "TripMember" ADD COLUMN IF NOT EXISTS "bookingReferenceToken" TEXT;
 
--- AlterTable
-ALTER TABLE "JoinRequest" ADD COLUMN     "termsAcceptedAt" TIMESTAMP(3);
+ALTER TABLE "JoinRequest" ADD COLUMN IF NOT EXISTS "termsAcceptedAt" TIMESTAMP(3);
 
--- AlterTable
-ALTER TABLE "TripPaymentOrder" ADD COLUMN     "isVerifiedByOrganizer" BOOLEAN NOT NULL DEFAULT false,
-ADD COLUMN     "organizerAmount" DECIMAL(12,2),
-ADD COLUMN     "platformFee" DECIMAL(12,2),
-ADD COLUMN     "razorpayRefundId" TEXT,
-ADD COLUMN     "refundedAmount" DECIMAL(12,2),
-ADD COLUMN     "refundedAt" TIMESTAMP(3),
-ADD COLUMN     "verificationToken" TEXT,
-ADD COLUMN     "verifiedAt" TIMESTAMP(3);
+ALTER TABLE "TripPaymentOrder" ADD COLUMN IF NOT EXISTS "isVerifiedByOrganizer" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "TripPaymentOrder" ADD COLUMN IF NOT EXISTS "organizerAmount" DECIMAL(12,2);
+ALTER TABLE "TripPaymentOrder" ADD COLUMN IF NOT EXISTS "platformFee" DECIMAL(12,2);
+ALTER TABLE "TripPaymentOrder" ADD COLUMN IF NOT EXISTS "razorpayRefundId" TEXT;
+ALTER TABLE "TripPaymentOrder" ADD COLUMN IF NOT EXISTS "refundedAmount" DECIMAL(12,2);
+ALTER TABLE "TripPaymentOrder" ADD COLUMN IF NOT EXISTS "refundedAt" TIMESTAMP(3);
+ALTER TABLE "TripPaymentOrder" ADD COLUMN IF NOT EXISTS "verificationToken" TEXT;
+ALTER TABLE "TripPaymentOrder" ADD COLUMN IF NOT EXISTS "verifiedAt" TIMESTAMP(3);
 
--- CreateTable
-CREATE TABLE "TripMemberAllocation" (
+-- ── TripMemberAllocation ─────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS "TripMemberAllocation" (
     "id" TEXT NOT NULL,
     "tripMemberId" TEXT NOT NULL,
     "tripTimelineStopId" TEXT,
@@ -53,21 +76,21 @@ CREATE TABLE "TripMemberAllocation" (
     CONSTRAINT "TripMemberAllocation_pkey" PRIMARY KEY ("id")
 );
 
--- CreateIndex
-CREATE INDEX "TripMemberAllocation_tripMemberId_idx" ON "TripMemberAllocation"("tripMemberId");
+-- ── Indexes ──────────────────────────────────────────────────────────────
+CREATE INDEX IF NOT EXISTS "TripMemberAllocation_tripMemberId_idx" ON "TripMemberAllocation"("tripMemberId");
+CREATE INDEX IF NOT EXISTS "TripMemberAllocation_tripTimelineStopId_idx" ON "TripMemberAllocation"("tripTimelineStopId");
+CREATE UNIQUE INDEX IF NOT EXISTS "TripMember_bookingReferenceToken_key" ON "TripMember"("bookingReferenceToken");
+CREATE UNIQUE INDEX IF NOT EXISTS "TripPaymentOrder_verificationToken_key" ON "TripPaymentOrder"("verificationToken");
 
--- CreateIndex
-CREATE INDEX "TripMemberAllocation_tripTimelineStopId_idx" ON "TripMemberAllocation"("tripTimelineStopId");
-
--- CreateIndex
-CREATE UNIQUE INDEX "TripMember_bookingReferenceToken_key" ON "TripMember"("bookingReferenceToken");
-
--- CreateIndex
-CREATE UNIQUE INDEX "TripPaymentOrder_verificationToken_key" ON "TripPaymentOrder"("verificationToken");
-
--- AddForeignKey
-ALTER TABLE "TripMemberAllocation" ADD CONSTRAINT "TripMemberAllocation_tripMemberId_fkey" FOREIGN KEY ("tripMemberId") REFERENCES "TripMember"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "TripMemberAllocation" ADD CONSTRAINT "TripMemberAllocation_tripTimelineStopId_fkey" FOREIGN KEY ("tripTimelineStopId") REFERENCES "TripTimelineStop"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
+-- ── Foreign keys ─────────────────────────────────────────────────────────
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'TripMemberAllocation_tripMemberId_fkey') THEN
+    ALTER TABLE "TripMemberAllocation" ADD CONSTRAINT "TripMemberAllocation_tripMemberId_fkey"
+      FOREIGN KEY ("tripMemberId") REFERENCES "TripMember"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'TripMemberAllocation_tripTimelineStopId_fkey') THEN
+    ALTER TABLE "TripMemberAllocation" ADD CONSTRAINT "TripMemberAllocation_tripTimelineStopId_fkey"
+      FOREIGN KEY ("tripTimelineStopId") REFERENCES "TripTimelineStop"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+  END IF;
+END $$;

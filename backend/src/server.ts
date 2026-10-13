@@ -11,6 +11,7 @@ import { startRetentionScheduler, stopRetentionScheduler } from './lib/data-rete
 import { startHazardFeedScheduler, stopHazardFeedScheduler } from './lib/hazard-feed';
 import { startDestinationTrendsScheduler, stopDestinationTrendsScheduler } from './lib/destination-trends';
 import { seedReferenceDataIfEmpty } from './lib/seed-reference-data';
+import { applyPendingMigrations } from './lib/auto-migrate';
 
 initObservability();
 
@@ -19,8 +20,13 @@ const io = createSocketServer(server);
 
 app.set('socketio', io);
 
-server.listen(env.PORT, () => {
-  logger.info(`Yatrenzo server is running on port ${env.PORT}`);
+// The database schema must match this build before any request is served
+// (src/lib/auto-migrate.ts) — listening only after pending migrations are
+// applied. A migration failure is logged and the server still starts.
+void applyPendingMigrations().finally(() => {
+  server.listen(env.PORT, () => {
+    logger.info(`Yatrenzo server is running on port ${env.PORT}`);
+  });
 });
 
 startRetentionScheduler();
