@@ -336,6 +336,11 @@ const GUEST_PROFILE: UserProfile = {
   rewardPoints: 0,
 };
 
+// What the organizer still has to act on: a free-trip request to accept or
+// decline, or a paid booking to verify and allocate.
+const needsOrganizerAction = (status: string) =>
+  status === 'PENDING' || status === 'PAYMENT_COMPLETED' || status === 'ALLOCATION_PENDING';
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentRole, setCurrentRole] = useState<UserRole>('TOURIST');
   const [requestedTrips, setRequestedTrips] = useState<Set<string>>(new Set());
@@ -652,11 +657,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const seenSet = new Set(savedApprovals ? JSON.parse(savedApprovals) : []);
             const pending = reqs.filter(
               (r: IncomingJoinRequest) =>
-                r.status === 'PENDING' && !seenSet.has(String(r.id || (r as any)._id || '').trim()),
+                needsOrganizerAction(r.status) && !seenSet.has(String(r.id || (r as any)._id || '').trim()),
             ).length;
             setPendingRequestsCount(pending);
           } catch {
-            const pending = reqs.filter((r: IncomingJoinRequest) => r.status === 'PENDING').length;
+            const pending = reqs.filter((r: IncomingJoinRequest) => needsOrganizerAction(r.status)).length;
             setPendingRequestsCount(pending);
           }
         } else {
@@ -1023,7 +1028,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       // An organizer's "New join request" — refresh the pending-approvals
       // count behind the red badge on the home screen's Organizer card.
-      if (data.category === 'JOIN_REQUEST') {
+      if (data.category === 'JOIN_REQUEST' || data.category === 'PAYMENT_SUCCESS') {
         reloadIncomingRequestsCount();
       }
       // Keep an already-open Notifications & Alerts list live.

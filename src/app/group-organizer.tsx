@@ -1394,9 +1394,21 @@ export default function GroupOrganizerScreen() {
     }
   }, [trips, profile?.id, profile?.name]);
 
+  // Everything waiting on the organizer: free-trip requests to accept or
+  // decline, and paid bookings to verify and allocate. This used to keep
+  // PENDING only, so a paid booking — the one the "Payment received"
+  // notification opens this tab for — never appeared here at all.
   const pendingRequests = useMemo(() => {
-    return rawJoinRequests.filter((r) => r.status === 'PENDING');
+    return rawJoinRequests.filter((r) => r.status === 'PENDING' || TO_ALLOCATE.includes(r.status));
   }, [rawJoinRequests]);
+
+  // A new request or payment while this screen is open: refetch, so it shows
+  // up without leaving and coming back.
+  useEffect(() => {
+    return eventBus.on('inAppNotification', (n) => {
+      if (n?.category === 'JOIN_REQUEST' || n?.category === 'PAYMENT_SUCCESS') fetchIncoming();
+    });
+  }, [fetchIncoming]);
 
   const [deletingChatId, setDeletingChatId] = useState<string | null>(null);
 
@@ -4392,9 +4404,9 @@ export default function GroupOrganizerScreen() {
                     <View style={styles.cleanEmptyIconBox}>
                       <Users size={24} color={C.blue} />
                     </View>
-                    <Text style={styles.cleanEmptyTitle}>No Pending Requests</Text>
+                    <Text style={styles.cleanEmptyTitle}>Nothing Waiting</Text>
                     <Text style={styles.cleanEmptyDesc}>
-                      There are no pending join requests waiting for your approval.
+                      No join requests or paid bookings are waiting for you.
                     </Text>
                   </View>
                 ) : (
@@ -4407,6 +4419,7 @@ export default function GroupOrganizerScreen() {
                       const applicantMsg = (req as any).message;
                       const unseen = isApprovalUnseen(req);
                       const isExpanded = expandedApprovalIds.has(reqId);
+                      const toAllocate = TO_ALLOCATE.includes(req.status);
 
                       return (
                         <TouchableOpacity
@@ -4415,7 +4428,11 @@ export default function GroupOrganizerScreen() {
                           activeOpacity={0.88}
                           onPress={() => toggleApprovalDetails(reqId)}
                           accessibilityRole="button"
-                          accessibilityLabel={`Pending request from ${applicantName}, tap for details`}
+                          accessibilityLabel={
+                            toAllocate
+                              ? `Paid booking from ${applicantName}, waiting for allocation, tap for details`
+                              : `Pending request from ${applicantName}, tap for details`
+                          }
                         >
                           <View style={styles.cleanCardHeader}>
                             <Avatar uri={applicantAvatar} name={applicantName} size={42} />
@@ -4427,6 +4444,11 @@ export default function GroupOrganizerScreen() {
                                 {unseen && (
                                   <View style={styles.cleanCardNewPill}>
                                     <Text style={styles.cleanCardNewPillText}>NEW</Text>
+                                  </View>
+                                )}
+                                {toAllocate && (
+                                  <View style={styles.cleanCardPaidPill}>
+                                    <Text style={styles.cleanCardPaidPillText}>{REQUEST_STATUS_LABEL[req.status]}</Text>
                                   </View>
                                 )}
                               </View>
@@ -4481,6 +4503,23 @@ export default function GroupOrganizerScreen() {
                             </View>
                           )}
 
+                          {toAllocate ? (
+                          <View style={styles.cleanCardActionRow}>
+                            <TouchableOpacity
+                              style={styles.cleanAcceptBtn}
+                              onPress={() => {
+                                markRequestAsSeen(reqId);
+                                setAllocationTarget({ tripId: req.tripId, joinRequestId: reqId });
+                              }}
+                              activeOpacity={0.8}
+                              accessibilityRole="button"
+                              accessibilityLabel={`Verify token and allocate seat for ${applicantName}`}
+                            >
+                              <Check size={14} color={C.white} />
+                              <Text style={styles.cleanAcceptBtnText}>{'Verify & Allocate'}</Text>
+                            </TouchableOpacity>
+                          </View>
+                          ) : (
                           <View style={styles.cleanCardActionRow}>
                             <TouchableOpacity
                               style={styles.cleanDeclineBtn}
@@ -4510,6 +4549,7 @@ export default function GroupOrganizerScreen() {
                               <Text style={styles.cleanAcceptBtnText}>Accept</Text>
                             </TouchableOpacity>
                           </View>
+                          )}
                         </TouchableOpacity>
                       );
                     })}
@@ -4982,6 +5022,20 @@ const styles = StyleSheet.create({
   },
   cleanCardNewPillText: {
     color: C.blue,
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  cleanCardPaidPill: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  cleanCardPaidPillText: {
+    color: '#047857',
     fontSize: 9.5,
     fontWeight: '800',
     letterSpacing: 0.5,
