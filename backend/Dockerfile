@@ -1,8 +1,7 @@
 # TravelStar backend — multi-stage build (docs/REMEDIATION.md Phase 11).
 # Final image runs as a non-root user, contains only production deps + the
-# compiled dist/ + the Prisma schema/engine, and starts with migrations
-# already expected to have been applied by the deploy step (prisma migrate
-# deploy), not at container start.
+# compiled dist/ + the Prisma schema/engines. Pending migrations are applied
+# by the server itself at start-up (src/lib/auto-migrate.ts).
 
 # ---------- deps ----------
 FROM node:20-bookworm-slim AS deps
@@ -12,7 +11,13 @@ COPY prisma ./prisma
 # argon2 compiles a native addon via node-gyp, which needs python3/make/g++ —
 # none of which node:20-bookworm-slim ships. Build-stage only: the runtime
 # stage below never installs these, so the final image stays slim.
-RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ && rm -rf /var/lib/apt/lists/*
+# openssl here too, not only at runtime: Prisma downloads its engines during
+# `npm ci` for the OpenSSL it detects. Without openssl it falls back to the
+# 1.1 engines, the runtime (OpenSSL 3) then tries to download the 3.0 schema
+# engine at container start, and `prisma migrate deploy` fails with "Can't
+# write to /app/node_modules/@prisma/engines" — migrations silently never
+# applied in production.
+RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ openssl && rm -rf /var/lib/apt/lists/*
 # Full install (incl. dev) so the build stage can run tsc; prisma generate
 # runs via the postinstall hook.
 RUN npm ci
@@ -36,9 +41,11 @@ WORKDIR /app
 # engine target.
 RUN apt-get update && apt-get install -y --no-install-recommends dumb-init openssl && rm -rf /var/lib/apt/lists/*
 
-COPY --from=build /app/node_modules ./node_modules
+# Owned by the runtime user so the Prisma CLI can still fetch a missing
+# engine at start-up instead of failing the migration outright.
+COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
-COPY --from=build /app/prisma ./prisma
+COPY --from=build --chown=node:node /app/prisma ./prisma
 COPY --from=build /app/package.json ./package.json
 
 USER node
