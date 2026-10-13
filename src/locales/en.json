@@ -1928,7 +1928,7 @@
     "policyTitle": "Cancellation Policy",
     "consentLabel": "I have read and agree to the Trip Rules, Guidelines, and Cancellation Policy.",
     "payFootnote": "Your seat is reserved the moment payment succeeds. You’ll get a booking token, and the organizer then assigns your seat and rooms.",
-    "proceedToPayment": "Proceed to Payment • {{amount}}",
+    "proceedToPayment": "Continue Booking • {{amount}}",
     "conductSubstances": "Strictly no smoking, alcohol or substance abuse during the trip.",
     "conductHarassment": "Zero tolerance for harassment of any kind — offenders are removed without refund.",
     "conductHeritage": "Respect local communities, heritage sites and your guide’s instructions.",

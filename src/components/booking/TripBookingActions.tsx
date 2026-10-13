@@ -258,7 +258,7 @@ export default function TripBookingActions({
     : soldOut
       ? t('booking.soldOut', 'No seats left')
       : isPaid
-        ? t('booking.proceedToPayment', { amount: formatINR(total), defaultValue: 'Proceed to Payment • {{amount}}' })
+        ? t('booking.proceedToPayment', { amount: formatINR(total), defaultValue: 'Continue Booking • {{amount}}' })
         : t('booking.requestFreeJoin', 'Request to Join');
   const disabled = isLoggedIn && (!agreed || soldOut || submitting);
 
