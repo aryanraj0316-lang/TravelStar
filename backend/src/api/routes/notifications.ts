@@ -11,6 +11,28 @@ const router = Router();
 
 const idParamSchema = z.object({ id: z.string().uuid() });
 
+// An organizer's "Payment received" alert carries the traveller's booking
+// token, which the organizer checks while allocating that booking. Reading
+// or tapping it used to delete it, so the token was gone exactly when the
+// allocation sheet asked for it. While the booking still awaits allocation
+// it is kept (marked read) and stays in the list; allocating it clears it
+// (routes/trip-bookings.ts).
+const AWAITING_ALLOCATION = ['PAYMENT_COMPLETED', 'ALLOCATION_PENDING'] as const;
+
+async function joinRequestsAwaitingAllocation(ids: string[]): Promise<Set<string>> {
+  if (ids.length === 0) return new Set();
+  const rows = await prisma.joinRequest.findMany({
+    where: { id: { in: ids }, status: { in: [...AWAITING_ALLOCATION] } },
+    select: { id: true },
+  });
+  return new Set(rows.map((r) => r.id));
+}
+
+async function isKeptTokenAlert(n: { category: string | null; joinRequestId: string | null }): Promise<boolean> {
+  if (n.category !== 'PAYMENT_SUCCESS' || !n.joinRequestId) return false;
+  return (await joinRequestsAwaitingAllocation([n.joinRequestId])).has(n.joinRequestId);
+}
+
 // Retries only make sense for a transient connection failure (e.g. a Neon
 // cold start) — a bad query fails the same way every time, so retrying it
 // just makes the caller wait ~10s longer for the same error. Prisma tags
@@ -100,7 +122,7 @@ router.get('/', async (req, res) => {
     // and it is why the previous unbounded `findMany` could not simply have
     // a `take` bolted on — the two streams advance independently
     // (docs/REMEDIATION.md §5.9).
-    const [personal, broadcasts, reads] = await queryWithRetry(() =>
+    const [personal, broadcasts, reads, readTokenAlerts] = await queryWithRetry(() =>
       Promise.all([
         prisma.notification.findMany({
           where: {
@@ -121,15 +143,31 @@ router.get('/', async (req, res) => {
           take: takeWithLookahead(limit),
         }),
         prisma.notificationRead.findMany({ where: { userId: tokenUserId }, select: { notificationId: true } }),
+        prisma.notification.findMany({
+          where: {
+            userId: tokenUserId,
+            unread: false,
+            category: 'PAYMENT_SUCCESS',
+            joinRequestId: { not: null },
+            ...pageFilter,
+          },
+          orderBy: { createdAt: 'desc' },
+          take: takeWithLookahead(limit),
+        }),
       ])
     );
+
+    const stillAwaiting = await joinRequestsAwaitingAllocation(
+      readTokenAlerts.map((n) => n.joinRequestId as string),
+    );
+    const keptTokenAlerts = readTokenAlerts.filter((n) => stillAwaiting.has(n.joinRequestId as string));
 
     const readIds = new Set(reads.map((r) => r.notificationId));
     const mappedBroadcasts = broadcasts
       .filter((n) => !readIds.has(n.id))
       .map((n) => ({ ...n, unread: true }));
 
-    const merged = [...personal, ...mappedBroadcasts].sort(
+    const merged = [...personal, ...keptTokenAlerts, ...mappedBroadcasts].sort(
       (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
     );
     const hasMore = merged.length > limit;
@@ -374,6 +412,11 @@ router.post('/:id/read', async (req, res) => {
       return res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'Not your notification.' } });
     }
 
+    if (await isKeptTokenAlert(notification)) {
+      await prisma.notification.update({ where: { id }, data: { unread: false } });
+      return res.status(200).json({ ok: true, data: { message: 'Notification marked as read' } });
+    }
+
     await prisma.notification.delete({ where: { id } }).catch(async () => {
       await prisma.notification.update({ where: { id }, data: { unread: false } });
     });
@@ -421,6 +464,11 @@ router.delete('/:id', async (req, res) => {
 
     if (notification.userId !== userId) {
       return res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'Not your notification.' } });
+    }
+
+    if (await isKeptTokenAlert(notification)) {
+      await prisma.notification.update({ where: { id }, data: { unread: false } });
+      return res.status(200).json({ ok: true, data: { message: 'Kept until the booking is allocated' } });
     }
 
     await prisma.notification.delete({ where: { id } });

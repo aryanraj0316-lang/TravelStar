@@ -4446,17 +4446,17 @@ export default function GroupOrganizerScreen() {
                                     <Text style={styles.cleanCardNewPillText}>NEW</Text>
                                   </View>
                                 )}
-                                {toAllocate && (
-                                  <View style={styles.cleanCardPaidPill}>
-                                    <Text style={styles.cleanCardPaidPillText}>{REQUEST_STATUS_LABEL[req.status]}</Text>
-                                  </View>
-                                )}
                               </View>
                               <Text style={styles.cleanCardTripName} numberOfLines={1}>
                                 Trip: {tripName}
                               </Text>
+                              {toAllocate && (
+                                <Text style={styles.cleanCardPaidNote} numberOfLines={1}>
+                                  {req.status === 'ALLOCATION_PENDING' ? 'Verified' : 'Paid'} · assign seat and rooms
+                                </Text>
+                              )}
                             </View>
-                            <View style={{ alignItems: 'flex-end', gap: 2 }}>
+                            <View style={{ alignItems: 'flex-end', gap: 2, marginLeft: 10, flexShrink: 0 }}>
                               <Text style={styles.cleanCardTime}>
                                 {formatRelative(req.createdAt)}
                               </Text>
@@ -5026,19 +5026,10 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.5,
   },
-  cleanCardPaidPill: {
-    backgroundColor: '#ECFDF5',
-    paddingHorizontal: 6,
-    paddingVertical: 1.5,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
-  },
-  cleanCardPaidPillText: {
-    color: '#047857',
-    fontSize: 9.5,
-    fontWeight: '800',
-    letterSpacing: 0.5,
+  cleanCardPaidNote: {
+    fontSize: 12,
+    color: C.greenText,
+    marginTop: 2,
   },
   chatBoxCard: {
     flexDirection: 'row',
@@ -5176,6 +5167,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cleanCardName: {
+    flexShrink: 1,
     fontSize: 15,
     fontWeight: '700',
     color: C.text,
@@ -5189,7 +5181,7 @@ const styles = StyleSheet.create({
   cleanCardTime: {
     fontSize: 11,
     color: C.textMuted,
-    alignSelf: 'flex-start',
+    alignSelf: 'flex-end',
     marginTop: 2,
   },
   cleanCardMessageBox: {

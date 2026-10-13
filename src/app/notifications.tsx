@@ -263,7 +263,12 @@ export default function NotificationsScreen() {
     // 1. First pass: Deduplicate by exact ID and only retain active unread alerts
     const uniqueById = new Map<string, AppNotification>();
     for (const n of notifications) {
-      if (!n || !n.id || n.unread === false) continue;
+      if (!n || !n.id) continue;
+      // Read notifications are hidden, except an organizer's "Payment
+      // received" alert, which the server keeps (read) until that booking is
+      // allocated: it holds the booking token the allocation sheet asks for.
+      const isKeptTokenAlert = n.category === 'PAYMENT_SUCCESS' && !!n.joinRequestId;
+      if (n.unread === false && !isKeptTokenAlert) continue;
       // Personal SOS alerts belong on the home and chat tickers, not this list.
       const isSosNotification =
         (n.category as string) === 'SOS' ||
