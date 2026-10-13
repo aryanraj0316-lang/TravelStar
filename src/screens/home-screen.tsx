@@ -557,7 +557,7 @@ function FeaturedTripsCarouselBase({
   onRequestAuth: (reason: AuthReason) => void;
 }) {
   const { t } = useTranslation();
-  const { trips, dataStatus, refreshTrips, isLoggedIn, requestedTrips, profile } = useApp();
+  const { trips, dataStatus, refreshTrips, isLoggedIn, requestedTrips, joinRequestStatuses, profile } = useApp();
   const router = useRouter();
   const carouselRef = useRef<ScrollView>(null);
   const isInteracting = useRef(false);
@@ -681,6 +681,8 @@ function FeaturedTripsCarouselBase({
           const durationText = formatTripDuration(trip);
           const transportText = tripTransportLabel(trip);
           const alreadyRequested = requestedTrips.has(trip.id);
+          // A confirmed seat is not a request any more.
+          const isConfirmed = joinRequestStatuses.get(trip.id)?.status === 'CONFIRMED';
 
           return (
             <TouchableOpacity
@@ -781,10 +783,10 @@ function FeaturedTripsCarouselBase({
                     onPress={() => handleJoin(trip)}
                     accessibilityRole="button"
                     accessibilityState={{ disabled: alreadyRequested }}
-                    accessibilityLabel={alreadyRequested ? t('home.joinRequested') : t('home.joinNow')}
+                    accessibilityLabel={alreadyRequested ? t(isConfirmed ? 'home.joinConfirmed' : 'home.joinRequested') : t('home.joinNow')}
                   >
                     <Text style={[styles.joinBtnText, alreadyRequested && styles.joinBtnRequestedText]} numberOfLines={2}>
-                      {alreadyRequested ? t('home.joinRequested') : t('home.joinNow')}
+                      {alreadyRequested ? t(isConfirmed ? 'home.joinConfirmed' : 'home.joinRequested') : t('home.joinNow')}
                     </Text>
                   </TouchableOpacity>
                 </View>

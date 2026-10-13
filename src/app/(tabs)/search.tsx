@@ -202,6 +202,7 @@ function TripResultCard({
   isLiked,
   isMyTrip,
   isRequested,
+  isConfirmed = false,
   onToggleLike,
   onOpenTrip,
 }: {
@@ -209,6 +210,8 @@ function TripResultCard({
   isLiked: boolean;
   isMyTrip: boolean;
   isRequested: boolean;
+  /** The booking is confirmed (seat allocated), not just requested. */
+  isConfirmed?: boolean;
   onToggleLike: (id: string) => void;
   onOpenTrip: (trip: Trip) => void;
 }) {
@@ -336,7 +339,7 @@ function TripResultCard({
             ) : isRequested ? (
               <View style={[styles.joinBtn, styles.joinBtnRequested]}>
                 <Check size={11} color="#2ECC71" style={{ marginRight: 4 }} />
-                <Text style={[styles.joinBtnText, styles.joinBtnRequestedText]} numberOfLines={1}>{t('search.requested')}</Text>
+                <Text style={[styles.joinBtnText, styles.joinBtnRequestedText]} numberOfLines={1}>{isConfirmed ? t('search.confirmed') : t('search.requested')}</Text>
               </View>
             ) : (
               <TouchableOpacity
@@ -369,7 +372,7 @@ function SearchScreen() {
   const navigation = useNavigation();
   const lastScrollYRef = useRef(0);
   const navbarHiddenRef = useRef(false);
-  const { profile, isLoggedIn, requestedTrips, reloadJoinRequests } = useApp();
+  const { profile, isLoggedIn, requestedTrips, joinRequestStatuses, reloadJoinRequests } = useApp();
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [likedTrips, setLikedTrips] = useState<Set<string>>(new Set());
@@ -794,6 +797,7 @@ function SearchScreen() {
                 (item.isMyTrip === true || !!(profile && profile.id && item.creatorId && item.creatorId === profile.id))
               }
               isRequested={requestedTrips.has(item.id)}
+              isConfirmed={joinRequestStatuses.get(item.id)?.status === 'CONFIRMED'}
               onToggleLike={toggleLike}
               onOpenTrip={openTrip}
             />
