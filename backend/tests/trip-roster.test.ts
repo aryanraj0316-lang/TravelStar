@@ -3,6 +3,7 @@ import app from '../src/app';
 import { bookAsMember } from './book-member';
 import prisma from '../src/services/db';
 import { uniqueTestPhone } from './test-phone';
+import { TEST_ORGANIZER_AGREEMENT } from './organizer-agreement-fixture';
 
 /**
  * Integration tests for PATCH /api/v1/trips/:id/members/:userId and
@@ -37,7 +38,7 @@ async function createTrip(token: string): Promise<string> {
   const res = await request(app)
     .post('/api/v1/trips')
     .set('Authorization', `Bearer ${token}`)
-    .send({
+    .send({ organizerAgreement: TEST_ORGANIZER_AGREEMENT,
       name: `Roster Trip ${runId}`,
       cities: ['Jaipur'],
       startDate,

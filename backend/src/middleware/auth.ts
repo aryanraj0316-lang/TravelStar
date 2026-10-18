@@ -87,6 +87,11 @@ const PUBLIC_GET_PATTERNS = [
   // behind a token while the identical data is public through the detail
   // route was an inconsistency, not a protection.
   /^\/map\/trips\/[^/]+\/route$/,
+  // /trips/:id/organizer-agreement — the organizer's signed code of conduct
+  // and public profile, which travellers read before deciding to book. The
+  // route itself withholds the organizer's phone and the unmasked licence
+  // from anyone who isn't a confirmed member or the organizer.
+  /^\/trips\/[^/]+\/organizer-agreement$/,
 ];
 
 function isPublicRoute(req: Request): boolean {

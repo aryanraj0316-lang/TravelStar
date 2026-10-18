@@ -3,6 +3,7 @@ import app from '../src/app';
 import { bookAsMember } from './book-member';
 import prisma from '../src/services/db';
 import { uniqueTestPhone } from './test-phone';
+import { TEST_ORGANIZER_AGREEMENT } from './organizer-agreement-fixture';
 
 /**
  * Integration tests for GET /api/v1/trips/mine (docs/REMEDIATION.md §8.11).
@@ -59,7 +60,7 @@ describe('GET /api/v1/trips/mine', () => {
     const organizedTripRes = await request(app)
       .post('/api/v1/trips')
       .set('Authorization', `Bearer ${organizer.token}`)
-      .send({
+      .send({ organizerAgreement: TEST_ORGANIZER_AGREEMENT,
         name: `Mine-Test Organized Trip ${runId}`,
         cities: ['Ranchi', 'Delhi'],
         startDate,
@@ -76,7 +77,7 @@ describe('GET /api/v1/trips/mine', () => {
     const strangerTripRes = await request(app)
       .post('/api/v1/trips')
       .set('Authorization', `Bearer ${stranger.token}`)
-      .send({
+      .send({ organizerAgreement: TEST_ORGANIZER_AGREEMENT,
         name: `Mine-Test Unrelated Trip ${runId}`,
         cities: ['Mumbai', 'Pune'],
         startDate,
@@ -128,7 +129,7 @@ describe('GET /api/v1/trips/mine', () => {
     const tripRes = await request(app)
       .post('/api/v1/trips')
       .set('Authorization', `Bearer ${organizer.token}`)
-      .send({
+      .send({ organizerAgreement: TEST_ORGANIZER_AGREEMENT,
         name: `Mine-Test Cancelled Trip ${runId}`,
         cities: ['Jaipur', 'Udaipur'],
         startDate,

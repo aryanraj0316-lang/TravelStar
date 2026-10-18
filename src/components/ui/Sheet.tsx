@@ -2,7 +2,7 @@
 // hand-rolling with a bare <Modal> plus its own backdrop and panel styles.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import X from 'lucide-react-native/icons/x';
 import { C, MIN_TOUCH_TARGET, fontSize, fontWeight, radii, space } from '@/theme/tokens';
 
@@ -24,7 +24,10 @@ export function Sheet({ visible, onClose, title, children, scrollable = true, sc
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
+      {/* Lifts the panel above the keyboard so a field near the bottom of a
+          sheet stays visible while typing (a Modal on an edge-to-edge
+          Android app is not resized for the keyboard). */}
+      <KeyboardAvoidingView behavior={Platform.OS === 'web' ? undefined : 'padding'} style={styles.backdrop}>
         <Pressable
           style={styles.backdropTouch}
           onPress={onClose}
@@ -49,9 +52,9 @@ export function Sheet({ visible, onClose, title, children, scrollable = true, sc
               </Pressable>
             </View>
           ) : null}
-          <Body style={styles.body} {...bodyProps}>{children}</Body>
+          <Body style={styles.body} keyboardShouldPersistTaps="handled" {...bodyProps}>{children}</Body>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

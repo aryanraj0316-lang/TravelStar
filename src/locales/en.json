@@ -2029,5 +2029,115 @@
     "paid": "Paid {{amount}}",
     "confirmed": "{{name}} is confirmed and has been added to the group chat.",
     "stopTitle": "Stop {{n}}: {{city}} · Day {{day}}"
+  },
+  "organizerTerms": {
+    "acceptTitle": "Organizer code of conduct",
+    "acceptIntro": "Before this trip goes live, read and accept these terms. Every traveller on the trip can read the agreement you sign here.",
+    "drivesQuestion": "I will drive the group between destinations",
+    "licenceLabel": "Driving licence number",
+    "vehicleLabel": "Vehicle registration number (optional)",
+    "licencePrivacy": "Travellers see only a masked number (e.g. MH12 •••• 2345). No photo of your licence is stored.",
+    "licenceInvalid": "Enter a valid driving licence number, e.g. MH12 20110012345.",
+    "vehicleInvalid": "Enter a valid vehicle number, e.g. MH12 AB 1234.",
+    "consent": "I have read these terms and agree to follow them on this trip.",
+    "mustAccept": "Tick the box to accept the terms.",
+    "acceptButton": "Accept and continue",
+    "viewTitle": "Organizer & agreement",
+    "loadFailed": "Could not load the agreement.",
+    "age_one": "{{count}} yr",
+    "age_other": "{{count}} yrs",
+    "tripsHosted_one": "{{count}} trip hosted",
+    "tripsHosted_other": "{{count}} trips hosted",
+    "speaks": "Speaks {{languages}}",
+    "callOrganizer": "Call {{phone}}",
+    "phoneHidden": "The organizer’s phone number is shared with confirmed travellers.",
+    "signedOn": "Accepted by the organizer {{when}}",
+    "drivesYes": "The organizer drives the group between destinations.",
+    "drivesNo": "The organizer does not drive the group.",
+    "licenceShown": "Driving licence: {{number}}",
+    "vehicleShown": "Vehicle: {{number}}",
+    "noAgreement": "No agreement on file. This trip was published before organizers were asked to accept the code of conduct.",
+    "documents": "Documents",
+    "documentTitle": "Organizer agreement",
+    "documentSub": "Code of conduct the organizer accepted, and their details",
+    "readAgreement": "Read the organizer's agreement",
+    "clauses": {
+      "sober": {
+        "title": "No alcohol, smoking or drugs",
+        "body": "I will not consume alcohol, tobacco, or any drug or intoxicating substance at any point during the trip, and will never drive or lead the group under their influence. I will not offer or supply them to travellers."
+      },
+      "driving": {
+        "title": "Safe and licensed driving",
+        "body": "If I drive between destinations, I hold a valid driving licence for that vehicle class and carry it with me. I will obey traffic laws and speed limits, ensure everyone wears a seat belt, take a rest break at least every 3 hours, never use a phone while driving, and not drive more than 10 hours in a day."
+      },
+      "vehicle": {
+        "title": "Roadworthy, legal vehicles",
+        "body": "Every vehicle used on the trip is registered, insured, carries a valid PUC certificate and any commercial or tourist permit the route requires, has working seat belts, and is never loaded beyond its seating capacity. Hired drivers must meet the same rules."
+      },
+      "safety": {
+        "title": "Traveller safety comes first",
+        "body": "I will carry a stocked first-aid kit, know the nearest hospital and police station at each stop, keep the emergency number 112 and every traveller’s emergency contact at hand, respond immediately to any SOS alert in the app, and call off or change any activity that becomes unsafe."
+      },
+      "respect": {
+        "title": "Zero tolerance for harassment",
+        "body": "I will treat every traveller with respect. I will not harass, intimidate, discriminate against, or touch anyone without consent, and will act at once on any complaint. I will respect privacy, including in rooming and changing arrangements, and will not photograph or record travellers without their permission."
+      },
+      "honest": {
+        "title": "Honest listing and pricing",
+        "body": "The price, itinerary, dates, inclusions and exclusions in this listing are accurate. I will not add hidden charges or ask for more money once a booking is made, and will announce any change in the group chat as soon as I know of it."
+      },
+      "stays": {
+        "title": "Stays and transport as promised",
+        "body": "I will book the accommodation and transport described in the listing. If something becomes unavailable, I will arrange an equal or better alternative at no extra cost and tell travellers before they arrive."
+      },
+      "legal": {
+        "title": "Permits and local laws",
+        "body": "I will obtain every permit the route needs (such as inner line, forest or protected-area permits), follow all local laws and regulations, and will not take the group into any area or activity that is illegal or officially closed."
+      },
+      "payments": {
+        "title": "Payments and refunds through the app",
+        "body": "I will collect trip payments only through this app and will never ask travellers to pay me outside it. Cancellations and refunds follow the app’s cancellation policy; if I cancel the trip, every traveller gets a full refund."
+      },
+      "noone_left": {
+        "title": "No traveller left behind",
+        "body": "I will take a headcount before every departure and will never leave a traveller stranded. If a traveller has to leave the trip early for a medical or safety reason, I will help them get safely to the nearest town or transport."
+      },
+      "weather": {
+        "title": "Weather and hazard alerts",
+        "body": "I will check weather and hazard alerts before each leg, follow official advisories, and postpone or reroute any part of the trip that is unsafe, telling the group in the chat."
+      },
+      "privacy": {
+        "title": "Travellers’ personal information",
+        "body": "I will use travellers’ personal details, including phone numbers and emergency contacts, only to run this trip. I will not share, sell or publish them, and will not contact travellers for unrelated purposes."
+      },
+      "environment": {
+        "title": "Respect for places and people",
+        "body": "I will respect local customs, communities and places of worship, leave no litter behind, and not disturb wildlife or protected sites."
+      },
+      "truthful": {
+        "title": "True and accurate declarations",
+        "body": "Everything I have declared, including my identity, driving licence and vehicle details, is true. I understand I am personally responsible for any false declaration."
+      },
+      "enforcement": {
+        "title": "Enforcement",
+        "body": "I understand that breaking any of these terms can lead to the trip being removed, refunds being issued to travellers, and my account being suspended, and that the platform may cooperate with the authorities when required."
+      }
+    }
+  },
+  "applicant": {
+    "heading": "About the traveller",
+    "verified": "Verified profile",
+    "ageGender": "Age / gender",
+    "from": "From",
+    "languages": "Languages",
+    "travelStyle": "Travel style",
+    "interests": "Interests",
+    "memberSince": "On the app since",
+    "contactHeading": "Contact",
+    "call": "Call {{phone}}",
+    "noPhone": "No phone number on the profile.",
+    "emergencyContact": "Emergency contact: {{name}} ({{relation}})",
+    "noEmergency": "No emergency contact added.",
+    "contactAfterPayment": "Phone and emergency contact are shared once the traveller pays or is confirmed."
   }
 }

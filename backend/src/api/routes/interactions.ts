@@ -368,6 +368,10 @@ router.get('/unread-count', async (req, res) => {
 });
 
 // Get all incoming join requests for trips created by the logged-in user
+// Once a traveller has paid (or been confirmed) the organizer is responsible
+// for them on the road, so their contact details are shared from then on.
+const CONTACT_SHARED_STATUSES = new Set(['PAYMENT_COMPLETED', 'ALLOCATION_PENDING', 'CONFIRMED']);
+
 router.get('/incoming-requests', async (req, res) => {
   const parsedQuery = cursorPageQuerySchema.safeParse(req.query);
   if (!parsedQuery.success) {
@@ -400,6 +404,7 @@ router.get('/incoming-requests', async (req, res) => {
         user: {
           include: {
             profile: true,
+            emergencyContacts: { select: { name: true, relation: true, phoneNumber: true } },
           },
         },
       },
@@ -407,6 +412,12 @@ router.get('/incoming-requests', async (req, res) => {
     });
 
     const mapped = requests.map((r) => {
+      // The traveller's profile travels with every request so the organizer
+      // knows who is asking. Their phone and emergency contacts are shared
+      // only once they have paid or been confirmed — a stranger tapping
+      // "request" should not hand their phone number to anyone.
+      const shareContact = CONTACT_SHARED_STATUSES.has(r.status);
+      const p = r.user.profile;
       const applicantName = r.user.profile
         ? `${r.user.profile.firstName} ${r.user.profile.lastName}`.trim()
         : (r.user.email ? r.user.email.split('@')[0] : 'Traveler');
@@ -429,6 +440,21 @@ router.get('/incoming-requests', async (req, res) => {
         joiningDate: r.joiningDate,
         fromStopId: r.fromStopId,
         toStopId: r.toStopId,
+        applicant: {
+          age: p?.age ?? null,
+          gender: p?.gender ?? null,
+          city: p?.city ?? null,
+          state: p?.state ?? null,
+          languages: p?.languages ?? [],
+          bio: p?.bio ?? null,
+          interests: p?.interests ?? [],
+          travelStyle: p?.travelStyle ?? [],
+          verifiedBadge: p?.verifiedBadge ?? false,
+          memberSince: r.user.createdAt,
+        },
+        contact: shareContact
+          ? { phoneNumber: r.user.phoneNumber ?? null, emergencyContacts: r.user.emergencyContacts }
+          : null,
       };
     });
 

@@ -2,6 +2,7 @@ import request from 'supertest';
 import app from '../src/app';
 import prisma from '../src/services/db';
 import { uniqueTestPhone } from './test-phone';
+import { TEST_ORGANIZER_AGREEMENT } from './organizer-agreement-fixture';
 
 /**
  * Radius search runs against each trip's own stored coordinates.
@@ -48,7 +49,7 @@ describe('GET /api/v1/trips/nearby — stored trip coordinates', () => {
     const created = await request(app)
       .post('/api/v1/trips')
       .set('Authorization', `Bearer ${organizer.token}`)
-      .send({
+      .send({ organizerAgreement: TEST_ORGANIZER_AGREEMENT,
         name: `Unlisted Town Trip ${runId}`,
         cities: [UNLISTED_TOWN.city],
         startDate,
@@ -104,7 +105,7 @@ describe('GET /api/v1/trips/nearby — stored trip coordinates', () => {
     const created = await request(app)
       .post('/api/v1/trips')
       .set('Authorization', `Bearer ${organizer.token}`)
-      .send({
+      .send({ organizerAgreement: TEST_ORGANIZER_AGREEMENT,
         name: `City Table Trip ${runId}`,
         cities: ['Jaipur'],
         startDate,

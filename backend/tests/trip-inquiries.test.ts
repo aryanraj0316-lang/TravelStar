@@ -3,6 +3,7 @@ import app from '../src/app';
 import prisma from '../src/services/db';
 import { notifyTripEnquiry } from '../src/services/trip-enquiry-notifications';
 import { uniqueTestPhone } from './test-phone';
+import { TEST_ORGANIZER_AGREEMENT } from './organizer-agreement-fixture';
 
 /**
  * Pre-join enquiry threads.
@@ -34,7 +35,7 @@ async function createTrip(token: string, name: string): Promise<string> {
   const res = await request(app)
     .post('/api/v1/trips')
     .set('Authorization', `Bearer ${token}`)
-    .send({
+    .send({ organizerAgreement: TEST_ORGANIZER_AGREEMENT,
       name,
       cities: ['Jaipur'],
       startDate: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString(),

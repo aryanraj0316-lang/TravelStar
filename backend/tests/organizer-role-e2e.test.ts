@@ -2,6 +2,7 @@ import request from 'supertest';
 import app from '../src/app';
 import prisma from '../src/services/db';
 import { uniqueTestPhone } from './test-phone';
+import { TEST_ORGANIZER_AGREEMENT } from './organizer-agreement-fixture';
 
 /**
  * End-to-end walk of the Group Organizer role view
@@ -40,7 +41,7 @@ beforeAll(async () => {
   const res = await request(app)
     .post('/api/v1/trips')
     .set(auth(organizer.token))
-    .send({
+    .send({ organizerAgreement: TEST_ORGANIZER_AGREEMENT,
       name: `Organizer E2E ${runId}`,
       cities: ['Manali', 'Kaza'],
       startDate: new Date(Date.now() + 30 * 864e5).toISOString(),

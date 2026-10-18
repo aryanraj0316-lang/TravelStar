@@ -2,6 +2,7 @@ import request from 'supertest';
 import app from '../src/app';
 import prisma from '../src/services/db';
 import { uniqueTestPhone } from './test-phone';
+import { TEST_ORGANIZER_AGREEMENT } from './organizer-agreement-fixture';
 
 /**
  * Hiring a guide for a trip: date ranges, checkpoint scope, accept/reject,
@@ -52,7 +53,7 @@ async function createTrip(token: string, name: string, totalSeats = 4) {
   const res = await request(app)
     .post('/api/v1/trips')
     .set('Authorization', `Bearer ${token}`)
-    .send({
+    .send({ organizerAgreement: TEST_ORGANIZER_AGREEMENT,
       name,
       cities: ['Jaipur', 'Udaipur'],
       startDate,

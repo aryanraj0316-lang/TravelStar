@@ -2,6 +2,7 @@ import request from 'supertest';
 import app from '../src/app';
 import prisma from '../src/services/db';
 import { uniqueTestPhone } from './test-phone';
+import { TEST_ORGANIZER_AGREEMENT } from './organizer-agreement-fixture';
 
 /**
  * Integration tests for DELETE /api/v1/chats/:id/members/me
@@ -90,7 +91,7 @@ describe('DELETE /api/v1/chats/:id/members/me', () => {
     const tripRes = await request(app)
       .post('/api/v1/trips')
       .set('Authorization', `Bearer ${organizer.token}`)
-      .send({
+      .send({ organizerAgreement: TEST_ORGANIZER_AGREEMENT,
         name: `LeaveRoom Trip ${runId}`,
         cities: ['Jaipur'],
         startDate,

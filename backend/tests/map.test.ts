@@ -2,6 +2,7 @@ import request from 'supertest';
 import app from '../src/app';
 import prisma from '../src/services/db';
 import { uniqueTestPhone } from './test-phone';
+import { TEST_ORGANIZER_AGREEMENT } from './organizer-agreement-fixture';
 
 /**
  * Integration tests for the map data routes (docs/REMEDIATION.md §8.8).
@@ -37,7 +38,7 @@ async function createTrip(token: string, cities: string[], meetingPoint: string)
   const res = await request(app)
     .post('/api/v1/trips')
     .set('Authorization', `Bearer ${token}`)
-    .send({
+    .send({ organizerAgreement: TEST_ORGANIZER_AGREEMENT,
       name: `Map Trip ${runId}`,
       cities,
       startDate,

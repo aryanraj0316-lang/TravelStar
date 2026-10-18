@@ -74,6 +74,8 @@ import { WebView } from 'react-native-webview';
 import { eventBus } from '@/services/event-bus';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { CoverImage, Input, ScreenEmpty } from '@/components/ui';
+import { OrganizerAgreementAcceptSheet } from '@/components/OrganizerAgreement';
+import type { OrganizerAgreementInput } from '@/lib/organizer-terms';
 
 // Coordinates registry for Indian cities
 const CITY_COORDS: Record<string, { latitude: number; longitude: number }> = {
@@ -332,6 +334,10 @@ function CreateTripScreen() {
   const { trips, addTrip, profile } = useApp();
   const scrollRef = useRef<ScrollView>(null);
 
+  // The trip waiting on the organizer code of conduct: built when Create or
+  // Save Draft is tapped, sent only once the terms are accepted.
+  const [pendingTrip, setPendingTrip] = useState<{ kind: 'publish' | 'draft'; input: Omit<CreateTripInput, 'organizerAgreement'> } | null>(null);
+  const [publishing, setPublishing] = useState(false);
   const [tripName, setTripName] = useState('');
   const [citiesInput, setCitiesInput] = useState('');
   const [startDate, setStartDate] = useState(defaultTripStartDate);
@@ -630,7 +636,7 @@ function CreateTripScreen() {
    * fields were sent — the Timeline and Checklist tabs were pure local state
    * that was thrown away the moment the trip was published.
    */
-  const buildTripInput = (): CreateTripInput => ({
+  const buildTripInput = (): Omit<CreateTripInput, 'organizerAgreement'> => ({
     name: tripName,
     // The organizer's own words, rather than the fixed sentence the server
     // used to stamp on every trip.
@@ -698,11 +704,23 @@ function CreateTripScreen() {
     // The Timeline and Checklist tabs are part of the payload now. Both
     // were previously collected into local state and discarded on submit,
     // so no traveller ever saw a single stop or packing item.
-    const newTrip = buildTripInput();
+    setPendingTrip({ kind: 'publish', input: buildTripInput() });
+  };
 
+  // The organizer accepted the code of conduct: now the trip is created.
+  const handleAgreementAccepted = (organizerAgreement: OrganizerAgreementInput) => {
+    if (!pendingTrip || publishing) return;
+    const { kind, input } = pendingTrip;
     void (async () => {
-      const created = await addTrip(newTrip);
+      setPublishing(true);
+      const created = await addTrip({ ...input, organizerAgreement });
+      setPublishing(false);
       if (!created) return; // addTrip already surfaced the error
+      setPendingTrip(null);
+      if (kind === 'draft') {
+        showToast(t('createTrip.draftSaved'));
+        return;
+      }
 
       setTripName('');
       setCitiesInput('');
@@ -735,15 +753,14 @@ function CreateTripScreen() {
       return;
     }
 
-    const draft: CreateTripInput = {
-      ...buildTripInput(),
-      name: t('createTrip.draftPrefix', { name: tripName }),
-      privacy: 'PRIVATE',
-    };
-    void (async () => {
-      const created = await addTrip(draft);
-      if (created) showToast(t('createTrip.draftSaved'));
-    })();
+    setPendingTrip({
+      kind: 'draft',
+      input: {
+        ...buildTripInput(),
+        name: t('createTrip.draftPrefix', { name: tripName }),
+        privacy: 'PRIVATE',
+      },
+    });
   };
 
   const showToast = (msg: string) => {
@@ -2062,6 +2079,15 @@ function CreateTripScreen() {
           </View>
         </Modal>
       </KeyboardAvoidingView>
+
+      <OrganizerAgreementAcceptSheet
+        visible={!!pendingTrip}
+        onClose={() => {
+          if (!publishing) setPendingTrip(null);
+        }}
+        onAccept={handleAgreementAccepted}
+        submitting={publishing}
+      />
     </SafeAreaView>
   );
 }

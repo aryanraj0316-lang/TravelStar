@@ -3,6 +3,7 @@ import app from '../src/app';
 import { bookAsMember } from './book-member';
 import prisma from '../src/services/db';
 import { uniqueTestPhone } from './test-phone';
+import { TEST_ORGANIZER_AGREEMENT } from './organizer-agreement-fixture';
 
 /**
  * Integration tests for the shared trip-expense / budget-tracker routes
@@ -35,7 +36,7 @@ async function createTrip(token: string, name: string): Promise<string> {
   const res = await request(app)
     .post('/api/v1/trips')
     .set('Authorization', `Bearer ${token}`)
-    .send({ name, cities: ['Delhi', 'Agra'], startDate, endDate, budget: 5000, totalSeats: 4, meetingPoint: 'Delhi', privacy: 'PUBLIC' });
+    .send({ organizerAgreement: TEST_ORGANIZER_AGREEMENT, name, cities: ['Delhi', 'Agra'], startDate, endDate, budget: 5000, totalSeats: 4, meetingPoint: 'Delhi', privacy: 'PUBLIC' });
   const id = res.body.data.id;
   if (id) createdTripIds.push(id);
   return id;

@@ -9,6 +9,7 @@ export const queryKeys = {
   trips: () => ['trips'] as const,
   trip: (tripId: string) => ['trips', tripId] as const,
   tripMembers: (tripId: string) => ['trips', tripId, 'members'] as const,
+  organizerAgreement: (tripId: string) => ['trips', tripId, 'organizer-agreement'] as const,
   nearbyPlaces: () => ['trips', 'nearby'] as const,
   tripsSearch: (filters: {
     search?: string;

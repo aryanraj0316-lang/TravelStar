@@ -2,6 +2,7 @@ import request from 'supertest';
 import app from '../src/app';
 import prisma from '../src/services/db';
 import { uniqueTestPhone } from './test-phone';
+import { TEST_ORGANIZER_AGREEMENT } from './organizer-agreement-fixture';
 
 /**
  * Every URL field that other people will load must reject device-local and
@@ -78,7 +79,7 @@ describe('avatar URL validation', () => {
     const res = await request(app)
       .post('/api/v1/trips')
       .set('Authorization', `Bearer ${token}`)
-      .send({
+      .send({ organizerAgreement: TEST_ORGANIZER_AGREEMENT,
         name: `Cover URL Test ${runId}`,
         cities: ['Delhi', 'Agra'],
         startDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),

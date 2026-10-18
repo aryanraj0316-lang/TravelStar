@@ -2,6 +2,7 @@ import request from 'supertest';
 import app from '../src/app';
 import prisma from '../src/services/db';
 import { uniqueTestPhone } from './test-phone';
+import { TEST_ORGANIZER_AGREEMENT } from './organizer-agreement-fixture';
 
 /**
  * Integration tests for the trip route timeline and packing checklist —
@@ -73,7 +74,7 @@ async function createTripWithTimeline(token: string, overrides: Record<string, u
   const res = await request(app)
     .post('/api/v1/trips')
     .set('Authorization', `Bearer ${token}`)
-    .send({
+    .send({ organizerAgreement: TEST_ORGANIZER_AGREEMENT,
       name: `Timeline Trip ${runId}`,
       description: 'Nine days across the high passes.',
       cities: ['Leh', 'Nubra', 'Pangong'],
@@ -107,7 +108,7 @@ describe('trip timeline and checklist', () => {
     const res = await request(app)
       .post('/api/v1/trips')
       .set('Authorization', `Bearer ${token}`)
-      .send({
+      .send({ organizerAgreement: TEST_ORGANIZER_AGREEMENT,
         id: 'trip-1757312345678',
         name: `Ignores Client Id ${runId}`,
         cities: ['Delhi', 'Agra'],

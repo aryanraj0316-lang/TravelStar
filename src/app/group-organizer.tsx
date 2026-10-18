@@ -1,4 +1,7 @@
 import { Avatar, Button, CoverImage, Input, ScreenEmpty, Sheet } from '@/components/ui';
+import { OrganizerAgreementAcceptSheet } from '@/components/OrganizerAgreement';
+import { ApplicantDetails } from '@/components/ApplicantDetails';
+import type { OrganizerAgreementInput } from '@/lib/organizer-terms';
 import { formatDateShort, formatRelative } from '@/lib/datetime';
 import OrganizerAllocationModal from '@/components/OrganizerAllocationModal';
 import { formatINR, parseMoney, type Money } from '@/lib/money';
@@ -1951,12 +1954,19 @@ export default function GroupOrganizerScreen() {
   const [newDuration, setNewDuration] = useState('');
   const [newMaxSize, setNewMaxSize] = useState('');
   const [newPrice, setNewPrice] = useState('');
+  // Quick-create also goes through the organizer code of conduct.
+  const [quickCreateAgreementOpen, setQuickCreateAgreementOpen] = useState(false);
+  const [quickCreating, setQuickCreating] = useState(false);
 
   const handleCreateTour = () => {
     if (!newGroupName.trim() || !newDest.trim() || !newDuration.trim() || !newMaxSize.trim() || !newPrice.trim()) {
       toast(t('groupOrganizer.fillAllTripDetails'), 'error');
       return;
     }
+    setQuickCreateAgreementOpen(true);
+  };
+
+  const createTourWithAgreement = (organizerAgreement: OrganizerAgreementInput) => {
 
     // The trip is created on the server first and its real, database-issued
     // id is what the local tour row carries. This used to mint
@@ -1970,6 +1980,7 @@ export default function GroupOrganizerScreen() {
       const durationDays = Math.max(1, parseInt(newDuration, 10) || 1);
       const startDate = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
       const endDate = new Date(startDate.getTime() + durationDays * 24 * 60 * 60 * 1000);
+      setQuickCreating(true);
       const created = await addTrip({
         name: newGroupName.trim(),
         cities: [newDest.trim()],
@@ -1983,8 +1994,11 @@ export default function GroupOrganizerScreen() {
         hotelIncluded: false,
         cabIncluded: false,
         privacy: 'PUBLIC',
+        organizerAgreement,
       });
+      setQuickCreating(false);
       if (!created) return; // addTrip already surfaced the error
+      setQuickCreateAgreementOpen(false);
 
       const newTour: ActiveTour = {
         id: created.id,
@@ -4500,6 +4514,7 @@ export default function GroupOrganizerScreen() {
                                   </Text>
                                 </View>
                               ) : null}
+                              <ApplicantDetails request={req} />
                             </View>
                           )}
 
@@ -4565,6 +4580,15 @@ export default function GroupOrganizerScreen() {
       )}
 
       {/* CREATE NEW TOUR SHEET */}
+      <OrganizerAgreementAcceptSheet
+        visible={quickCreateAgreementOpen}
+        onClose={() => {
+          if (!quickCreating) setQuickCreateAgreementOpen(false);
+        }}
+        onAccept={createTourWithAgreement}
+        submitting={quickCreating}
+      />
+
       <OrganizerAllocationModal
         visible={!!allocationTarget}
         tripId={allocationTarget?.tripId ?? null}

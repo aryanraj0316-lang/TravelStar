@@ -1,5 +1,8 @@
 import { RouteErrorFallback } from '@/components/route-error-fallback';
 import { Avatar, Button, Input, ScreenEmpty } from '@/components/ui';
+import { OrganizerAgreementAcceptSheet, OrganizerAgreementViewerSheet } from '@/components/OrganizerAgreement';
+import type { OrganizerAgreementInput } from '@/lib/organizer-terms';
+import FileText from 'lucide-react-native/icons/file-text';
 import { recordConsent } from '@/lib/consent';
 import { formatDateRange, formatMessageTimestamp, formatTime } from '@/lib/datetime';
 import { getCurrentDeviceLocation, getEmergencyDeviceLocation } from '@/lib/device-location';
@@ -1066,6 +1069,9 @@ function ChatScreen() {
   const [isEditTripModalOpen, setIsEditTripModalOpen] = useState(false);
   const [tripEditForm, setTripEditForm] = useState({ name: '', meetingPoint: '', budget: '' });
   const [isSavingTrip, setIsSavingTrip] = useState(false);
+  // Saving an edit re-accepts the organizer code of conduct first.
+  const [editAgreementOpen, setEditAgreementOpen] = useState(false);
+  const [agreementViewerOpen, setAgreementViewerOpen] = useState(false);
 
   // Itinerary Day Editing State
   const [itineraryModalMode, setItineraryModalMode] = useState<'NONE' | 'ADD' | 'EDIT'>('NONE');
@@ -2054,6 +2060,12 @@ function ChatScreen() {
       toast('Please enter a trip name', 'error');
       return;
     }
+    // The edit is sent once the organizer re-accepts the code of conduct.
+    setEditAgreementOpen(true);
+  };
+
+  const saveTripWithAgreement = async (organizerAgreement: OrganizerAgreementInput) => {
+    if (!activeTrip) return;
     setIsSavingTrip(true);
     try {
       const budgetNum = parseFloat(tripEditForm.budget);
@@ -2061,10 +2073,12 @@ function ChatScreen() {
         name: tripEditForm.name.trim(),
         meetingPoint: tripEditForm.meetingPoint.trim() || undefined,
         budget: isNaN(budgetNum) ? undefined : budgetNum,
+        organizerAgreement,
       });
       if (res) {
         toast('Trip details updated successfully!', 'success');
         refreshTrips();
+        setEditAgreementOpen(false);
         setIsEditTripModalOpen(false);
       }
     } catch (e) {
@@ -4048,6 +4062,29 @@ function ChatScreen() {
                 ) : null}
               </View>
 
+              {/* DOCUMENTS: the organizer's signed code of conduct and their
+                  details, readable by every member of the trip. */}
+              {activeRoom?.type === 'GROUP' && activeTrip ? (
+                <View style={styles.documentsSection}>
+                  <Text style={styles.documentsHeading}>{t('organizerTerms.documents', 'Documents')}</Text>
+                  <TouchableOpacity
+                    style={styles.documentRow}
+                    onPress={() => setAgreementViewerOpen(true)}
+                    activeOpacity={0.8}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('organizerTerms.documentTitle', 'Organizer agreement')}
+                  >
+                    <FileText size={18} color={C.blueText} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.documentTitle}>{t('organizerTerms.documentTitle', 'Organizer agreement')}</Text>
+                      <Text style={styles.documentSub}>
+                        {t('organizerTerms.documentSub', 'Code of conduct the organizer accepted, and their details')}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+
               {/* HORIZONTAL EXPANDED TABS (OPTIONS SECTION) */}
               {activeRoom?.type === 'GROUP' && (
                 <View style={styles.tabBarWrapper}>
@@ -4516,6 +4553,21 @@ function ChatScreen() {
       )}
 
       {/* Edit Trip Modal */}
+      <OrganizerAgreementAcceptSheet
+        visible={editAgreementOpen}
+        onClose={() => {
+          if (!isSavingTrip) setEditAgreementOpen(false);
+        }}
+        onAccept={(agreement) => void saveTripWithAgreement(agreement)}
+        submitting={isSavingTrip}
+        tripId={activeTrip?.id}
+      />
+      <OrganizerAgreementViewerSheet
+        visible={agreementViewerOpen}
+        onClose={() => setAgreementViewerOpen(false)}
+        tripId={activeTrip?.id ?? null}
+      />
+
       {isEditTripModalOpen && (
         <View style={styles.modalOverlay}>
           <View style={styles.modalContentCard}>
@@ -6694,6 +6746,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 4,
   },
+  documentsSection: { marginHorizontal: 16, marginBottom: 16, gap: 8 },
+  documentsHeading: { fontSize: 12, fontWeight: '700', color: C.textSec, letterSpacing: 0.4, textTransform: 'uppercase' },
+  documentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+    minHeight: MIN_TOUCH_TARGET,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.card,
+  },
+  documentTitle: { fontSize: 14, fontWeight: '700', color: C.text },
+  documentSub: { fontSize: 12.5, color: C.textSec, marginTop: 2 },
 
   // Custom Form Overlays
   modalOverlay: {

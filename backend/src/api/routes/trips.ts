@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { remoteMediaUrl } from '../../lib/validators';
 import { RecommendationService } from '../../services/recommendation';
 import prisma from '../../services/db';
+import { getOrganizerAgreementView, organizerAgreementInputSchema, saveOrganizerAgreement } from '../../services/organizer-agreement';
 import { logger } from '../../lib/logger';
 import { requireUserId } from '../../lib/auth-context';
 import { calculateMidwayPrice } from '../../services/midway-pricing';
@@ -863,6 +864,9 @@ const createTripSchema = z
     // away on submit — no traveller ever saw either.
     timeline: z.array(timelineStopSchema).max(20).optional(),
     checklist: z.array(z.string().trim().min(1).max(200)).max(50).optional(),
+    // The organizer's code of conduct, accepted in the create screen. No
+    // trip — draft or published — exists without one.
+    organizerAgreement: organizerAgreementInputSchema,
   })
   .refine((data) => data.endDate.getTime() > data.startDate.getTime(), {
     message: 'endDate must be after startDate',
@@ -940,6 +944,8 @@ router.post('/', async (req, res) => {
           longitude: tripCoords?.lng ?? null,
         },
       });
+
+      await saveOrganizerAgreement(tx, trip.id, user.id, data.organizerAgreement);
 
       // The route timeline and packing checklist are written inside the
       // same transaction as the trip: a trip that exists with half its
@@ -1072,6 +1078,24 @@ const updateTripSchema = z.object({
   description: z.string().trim().max(2000).optional(),
   meetingPoint: z.string().trim().min(1).max(300).optional(),
   budget: z.coerce.number().positive().optional(),
+  // Every edit is re-accepted against the code of conduct: what the
+  // organizer agreed to must match the trip as it now stands.
+  organizerAgreement: organizerAgreementInputSchema,
+});
+
+// The organizer's signed agreement and profile, as this viewer may see them
+// (public — see middleware/auth.ts and services/organizer-agreement.ts).
+router.get('/:id/organizer-agreement', async (req, res) => {
+  try {
+    const view = await getOrganizerAgreementView(req.params.id, req.user?.id ?? null);
+    if (!view) {
+      return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found' } });
+    }
+    return res.status(200).json({ ok: true, data: view });
+  } catch (err) {
+    logger.error('[Trips] Get organizer agreement error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not load the organizer agreement.' } });
+  }
 });
 
 // Update Trip (organizer only)
@@ -1082,7 +1106,11 @@ router.patch('/:id', async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({
       ok: false,
-      error: { code: 'VALIDATION_FAILED', message: 'Invalid trip update parameters.' },
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'Invalid trip update parameters.',
+        details: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+      },
     });
   }
 
@@ -1097,6 +1125,8 @@ router.patch('/:id', async (req, res) => {
     if (trip.creatorId !== userId) {
       return res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'Only the organizer can edit this trip.' } });
     }
+
+    await saveOrganizerAgreement(prisma, tripId, userId, parsed.data.organizerAgreement);
 
     const updated = await prisma.trip.update({
       where: { id: tripId },

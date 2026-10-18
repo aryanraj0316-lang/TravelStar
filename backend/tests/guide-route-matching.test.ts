@@ -2,6 +2,7 @@ import request from 'supertest';
 import app from '../src/app';
 import prisma from '../src/services/db';
 import { uniqueTestPhone } from './test-phone';
+import { TEST_ORGANIZER_AGREEMENT } from './organizer-agreement-fixture';
 
 /**
  * Route-based guide matching: which guides actually work this trip's route.
@@ -97,7 +98,7 @@ describe('GET /api/v1/trips/:id/matching-guides', () => {
     const created = await request(app)
       .post('/api/v1/trips')
       .set('Authorization', `Bearer ${organizer.token}`)
-      .send({
+      .send({ organizerAgreement: TEST_ORGANIZER_AGREEMENT,
         name: `Rajasthan Route ${runId}`,
         cities: ['Jaipur', 'Udaipur'],
         startDate,

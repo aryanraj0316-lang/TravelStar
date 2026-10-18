@@ -375,6 +375,57 @@ export interface IncomingJoinRequest {
   joiningDate: IsoDateTime | null;
   fromStopId: string | null;
   toStopId: string | null;
+  /** The traveller's profile, sent with every request. */
+  applicant?: {
+    age: number | null;
+    gender: string | null;
+    city: string | null;
+    state: string | null;
+    languages: string[];
+    bio: string | null;
+    interests: string[];
+    travelStyle: string[];
+    verifiedBadge: boolean;
+    memberSince: IsoDateTime;
+  };
+  /** Phone and emergency contacts — only once the traveller has paid or been confirmed. */
+  contact?: {
+    phoneNumber: string | null;
+    emergencyContacts: { name: string; relation: string; phoneNumber: string }[];
+  } | null;
+}
+
+/** GET /trips/:id/organizer-agreement. */
+export interface OrganizerAgreementView {
+  tripId: string;
+  viewerRole: 'ORGANIZER' | 'MEMBER' | 'VISITOR';
+  organizer: {
+    id: string;
+    name: string;
+    avatarUrl: string | null;
+    bio: string | null;
+    age: number | null;
+    gender: string | null;
+    city: string | null;
+    state: string | null;
+    languages: string[];
+    verifiedBadge: boolean;
+    rating: number | null;
+    memberSince: IsoDateTime;
+    tripsHosted: number;
+    /** Confirmed members and the organizer only. */
+    phoneNumber: string | null;
+  };
+  /** Null for trips published before the code of conduct existed. */
+  agreement: {
+    termsVersion: string;
+    clauses: { id: string; title: string; body: string }[];
+    acceptedAt: IsoDateTime;
+    organizerDrives: boolean;
+    /** Masked (e.g. "MH12 •••• 2345") for everyone but the organizer. */
+    drivingLicenceNumber: string | null;
+    vehicleRegistrationNumber: string | null;
+  } | null;
 }
 
 export interface TripItineraryDay {

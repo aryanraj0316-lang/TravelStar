@@ -1,3 +1,4 @@
+import type { OrganizerAgreementInput } from '@/lib/organizer-terms';
 import { secureStorage } from './secureStorage';
 import { eventBus } from './event-bus';
 import { logger } from '@/lib/logger';
@@ -45,6 +46,7 @@ import type {
   TripInquiryThread,
   ReviewableEngagement,
   IncomingJoinRequest,
+  OrganizerAgreementView,
   JoinRequestSummary,
   StoryPayload,
   StoryInteractionsResponse,
@@ -344,6 +346,8 @@ export interface CreateTripInput {
     longitude?: number | null;
   }[];
   checklist?: string[];
+  /** The organizer's accepted code of conduct — required by the server. */
+  organizerAgreement: OrganizerAgreementInput;
 }
 
 export interface TripRoute {
@@ -825,7 +829,14 @@ export const apiService = {
 
   async updateTrip(
     tripId: string,
-    updates: { name?: string; description?: string; meetingPoint?: string; budget?: number }
+    updates: {
+      name?: string;
+      description?: string;
+      meetingPoint?: string;
+      budget?: number;
+      /** Every edit re-accepts the organizer code of conduct. */
+      organizerAgreement: OrganizerAgreementInput;
+    }
   ): Promise<Trip | null> {
     return request<Trip>(`/trips/${tripId}`, {
       method: 'PATCH',
@@ -837,6 +848,11 @@ export const apiService = {
     return request<Trip>(`/trips/${tripId}/join`, {
       method: 'POST',
     });
+  },
+
+  /** The organizer's signed agreement and profile, as this viewer may see them. */
+  async getOrganizerAgreement(tripId: string): Promise<OrganizerAgreementView | null> {
+    return request<OrganizerAgreementView>(`/trips/${tripId}/organizer-agreement`);
   },
 
   async getTripMembers(tripId: string): Promise<TripMemberRow[] | null> {

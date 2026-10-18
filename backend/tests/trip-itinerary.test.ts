@@ -3,6 +3,7 @@ import app from '../src/app';
 import { bookAsMember } from './book-member';
 import prisma from '../src/services/db';
 import { uniqueTestPhone } from './test-phone';
+import { TEST_ORGANIZER_AGREEMENT } from './organizer-agreement-fixture';
 
 /**
  * Integration tests for the trip itinerary / day-schedule routes
@@ -36,7 +37,7 @@ async function createTrip(token: string): Promise<string> {
   const res = await request(app)
     .post('/api/v1/trips')
     .set('Authorization', `Bearer ${token}`)
-    .send({
+    .send({ organizerAgreement: TEST_ORGANIZER_AGREEMENT,
       name: `Itinerary Trip ${runId}`,
       cities: ['Munnar'],
       startDate,

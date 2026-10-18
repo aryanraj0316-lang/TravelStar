@@ -2,6 +2,7 @@ import request from 'supertest';
 import app from '../src/app';
 import prisma from '../src/services/db';
 import { uniqueTestPhone } from './test-phone';
+import { TEST_ORGANIZER_AGREEMENT } from './organizer-agreement-fixture';
 
 /**
  * Data export (right to access) and account deletion (right to erasure) —
@@ -49,7 +50,7 @@ describe('Account lifecycle (§12.4)', () => {
     const tripRes = await request(app)
       .post('/api/v1/trips')
       .set('Authorization', `Bearer ${user.token}`)
-      .send({ name: `Lifecycle Trip ${runId}`, cities: ['Delhi'], startDate, endDate, budget: 5000, totalSeats: 4, meetingPoint: 'Delhi', privacy: 'PUBLIC' });
+      .send({ organizerAgreement: TEST_ORGANIZER_AGREEMENT, name: `Lifecycle Trip ${runId}`, cities: ['Delhi'], startDate, endDate, budget: 5000, totalSeats: 4, meetingPoint: 'Delhi', privacy: 'PUBLIC' });
     const tripId = tripRes.body.data.id;
     createdTripIds.push(tripId);
 

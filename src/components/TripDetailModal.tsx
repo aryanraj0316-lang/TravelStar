@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { OrganizerAgreementViewerSheet } from '@/components/OrganizerAgreement';
+import FileText from 'lucide-react-native/icons/file-text';
 import { useTranslation } from 'react-i18next';
 import { Image } from 'expo-image';
 import {
@@ -58,6 +60,7 @@ export default function TripDetailModal({
   onClose,
 }: TripDetailModalProps) {
   const { t } = useTranslation();
+  const [agreementOpen, setAgreementOpen] = useState(false);
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { profile, isLoggedIn, setActiveRoomId } = useApp();
@@ -309,6 +312,18 @@ export default function TripDetailModal({
                     <Text style={styles.modalOrganizerRole}>{t('tripDetailModal.organizerRole')}</Text>
                   </View>
                 </View>
+                {/* The organizer's signed code of conduct and profile — readable
+                    before booking, not only once inside the group chat. */}
+                <TouchableOpacity
+                  style={agreementLinkStyles.row}
+                  onPress={() => setAgreementOpen(true)}
+                  activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('organizerTerms.readAgreement', "Read the organizer's agreement")}
+                >
+                  <FileText size={16} color={C.blueText} />
+                  <Text style={agreementLinkStyles.text}>{t('organizerTerms.readAgreement', "Read the organizer's agreement")}</Text>
+                </TouchableOpacity>
 
                 {/* Schedule / Dates Details */}
                 <Text style={[styles.formSectionTitle, { marginTop: 14 }]}>{t('tripDetailModal.scheduleDuration')}</Text>
@@ -803,6 +818,7 @@ export default function TripDetailModal({
           )}
         </View>
       </View>
+      <OrganizerAgreementViewerSheet visible={agreementOpen} onClose={() => setAgreementOpen(false)} tripId={trip.id} />
     </Modal>
   );
 }
@@ -1348,4 +1364,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
+});
+
+const agreementLinkStyles = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: MIN_TOUCH_TARGET, marginTop: 4 },
+  text: { fontSize: 13.5, fontWeight: '600', color: C.blueText },
 });

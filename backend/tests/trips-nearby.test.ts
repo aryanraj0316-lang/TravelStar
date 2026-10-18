@@ -2,6 +2,7 @@ import request from 'supertest';
 import app from '../src/app';
 import prisma from '../src/services/db';
 import { uniqueTestPhone } from './test-phone';
+import { TEST_ORGANIZER_AGREEMENT } from './organizer-agreement-fixture';
 
 /**
  * Integration tests for GET /api/v1/trips/nearby (docs/REMEDIATION.md §8.13).
@@ -45,11 +46,11 @@ describe('GET /api/v1/trips/nearby', () => {
     const near = await request(app)
       .post('/api/v1/trips')
       .set('Authorization', `Bearer ${organizer.token}`)
-      .send({ name: `Nearby Jaipur ${runId}`, cities: ['Jaipur', 'Agra'], startDate, endDate, budget: 5000, totalSeats: 4, meetingPoint: 'Jaipur Jn', privacy: 'PUBLIC' });
+      .send({ organizerAgreement: TEST_ORGANIZER_AGREEMENT, name: `Nearby Jaipur ${runId}`, cities: ['Jaipur', 'Agra'], startDate, endDate, budget: 5000, totalSeats: 4, meetingPoint: 'Jaipur Jn', privacy: 'PUBLIC' });
     const far = await request(app)
       .post('/api/v1/trips')
       .set('Authorization', `Bearer ${organizer.token}`)
-      .send({ name: `Nearby Chennai ${runId}`, cities: ['Chennai', 'Madurai'], startDate, endDate, budget: 5000, totalSeats: 4, meetingPoint: 'Chennai Central', privacy: 'PUBLIC' });
+      .send({ organizerAgreement: TEST_ORGANIZER_AGREEMENT, name: `Nearby Chennai ${runId}`, cities: ['Chennai', 'Madurai'], startDate, endDate, budget: 5000, totalSeats: 4, meetingPoint: 'Chennai Central', privacy: 'PUBLIC' });
     expect(near.status).toBe(201);
     expect(far.status).toBe(201);
     createdTripIds.push(near.body.data.id, far.body.data.id);

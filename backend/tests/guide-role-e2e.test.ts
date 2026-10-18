@@ -2,6 +2,7 @@ import request from 'supertest';
 import app from '../src/app';
 import prisma from '../src/services/db';
 import { uniqueTestPhone } from './test-phone';
+import { TEST_ORGANIZER_AGREEMENT } from './organizer-agreement-fixture';
 
 /**
  * End-to-end walk of the Travel Guide role view (src/app/travel-guide.tsx),
@@ -269,7 +270,7 @@ describe('leads are demand signals, not dossiers on travellers', () => {
     const trip = await request(app)
       .post('/api/v1/trips')
       .set(auth(organizer.token))
-      .send({
+      .send({ organizerAgreement: TEST_ORGANIZER_AGREEMENT,
         name: 'Leads Trip ' + runId,
         cities: ['Leh'],
         startDate: new Date(Date.now() + 30 * 864e5).toISOString(),

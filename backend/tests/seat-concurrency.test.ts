@@ -2,6 +2,7 @@ import request from 'supertest';
 import app from '../src/app';
 import prisma from '../src/services/db';
 import { uniqueTestPhone } from './test-phone';
+import { TEST_ORGANIZER_AGREEMENT } from './organizer-agreement-fixture';
 
 /**
  * The seat-booking concurrency test docs/REMEDIATION.md §5.4 asks for by
@@ -64,7 +65,7 @@ describe('Seat booking under concurrency (docs/REMEDIATION.md §5.4)', () => {
     const tripRes = await request(app)
       .post('/api/v1/trips')
       .set('Authorization', `Bearer ${organizer.token}`)
-      .send({
+      .send({ organizerAgreement: TEST_ORGANIZER_AGREEMENT,
         name: `Seat Race Trip ${runId}`,
         cities: ['Jaipur', 'Udaipur'],
         startDate: start.toISOString(),
@@ -142,7 +143,7 @@ describe('Seat booking under concurrency (docs/REMEDIATION.md §5.4)', () => {
     const tripRes = await request(app)
       .post('/api/v1/trips')
       .set('Authorization', `Bearer ${organizer.token}`)
-      .send({
+      .send({ organizerAgreement: TEST_ORGANIZER_AGREEMENT,
         name: `Seat Idempotency Trip ${runId}`,
         cities: ['Goa'],
         startDate: start.toISOString(),

@@ -279,6 +279,8 @@ model User {
   // Auth sessions
   sessions            Session[]
   passwordResetTokens PasswordResetToken[]
+
+  organizerAgreements TripOrganizerAgreement[]
 }
 
 model Session {
@@ -522,6 +524,7 @@ model Trip {
   quotes    GuideQuote[]
   reviews   Review[]
   inquiryRooms ChatRoom[] @relation("TripInquiries")
+  organizerAgreement TripOrganizerAgreement?
 
   @@index([creatorId])
   @@index([createdAt])
@@ -1612,4 +1615,30 @@ model StoryLike {
   @@unique([storyId, userId])
   @@index([storyId])
   @@index([userId])
+}
+
+/// The organizer's signed code of conduct for one trip, accepted before the
+/// trip is published (and again whenever it is edited). Shown to travellers
+/// on the trip and in its group chat. termsSnapshot is the English text
+/// exactly as accepted, so the record never changes if the terms are later
+/// revised — termsVersion says which revision it was.
+model TripOrganizerAgreement {
+  id                        String   @id @default(uuid())
+  tripId                    String   @unique
+  trip                      Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  organizerId               String
+  organizer                 User     @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  termsVersion              String
+  termsSnapshot             Json
+  /// UI language the organizer read the terms in.
+  acceptedLanguage          String?
+  /// The organizer will personally drive between destinations.
+  organizerDrives           Boolean  @default(false)
+  /// Required when organizerDrives. Number only — no document image is stored.
+  drivingLicenceNumber      String?
+  vehicleRegistrationNumber String?
+  acceptedAt                DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  @@index([organizerId])
 }
