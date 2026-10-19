@@ -434,6 +434,7 @@
     "goBack": "मागे जा",
     "unreadCount": "{{count}} नवीन",
     "markAllRead": "सर्व वाचले म्हणून चिन्हांकित करा",
+    "markAllReadFailed": "वाचले म्हणून चिन्हांकित करता आले नाही. कृपया पुन्हा प्रयत्न करा.",
     "tabAllFeed": "सर्व फीड",
     "tabTripsPasses": "ट्रिप्स आणि पास",
     "tabDisasterAlerts": "आपत्ती इशारे",

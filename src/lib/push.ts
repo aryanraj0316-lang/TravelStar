@@ -180,13 +180,26 @@ export function routeForNotificationData(data: Record<string, unknown> | undefin
   }
 }
 
-/** Sync the app-icon badge to the server's unread count. */
+/**
+ * Sync the app-icon badge to the server's unread count.
+ *
+ * Once nothing is unread, the app's notifications are also cleared from the
+ * phone's notification tray. On Android the red dot on the app icon is not
+ * the badge number at all: it shows for as long as the app has anything in
+ * the tray, and setting the count to 0 does not remove it (most launchers
+ * ignore the count). Pushes read inside the app — or SOS pushes, which have
+ * no row on the Notifications page — used to sit in the tray indefinitely,
+ * keeping the dot on with nothing left to see in the app.
+ */
 export async function syncBadgeCount(): Promise<void> {
   if (!Notifications) return;
   try {
     const { count } = await apiService.getUnreadNotificationCount();
     if (typeof Notifications.setBadgeCountAsync === 'function') {
       await Notifications.setBadgeCountAsync(count);
+    }
+    if (count === 0 && typeof Notifications.dismissAllNotificationsAsync === 'function') {
+      await Notifications.dismissAllNotificationsAsync();
     }
   } catch (error) {
     logger.warn('[Push] Badge sync failed:', error);

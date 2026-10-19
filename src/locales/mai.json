@@ -434,6 +434,7 @@
     "goBack": "पाछाँ जाउ",
     "unreadCount": "{{count}} नव",
     "markAllRead": "सभकेँ पढ़ल चिह्नित करू",
+    "markAllReadFailed": "पढ़ल चिह्नित नहि भ' सकल। कृपया फेर प्रयास करू।",
     "tabAllFeed": "पूरा फीड",
     "tabTripsPasses": "ट्रिप आ पास",
     "tabDisasterAlerts": "आपदा अलर्ट",

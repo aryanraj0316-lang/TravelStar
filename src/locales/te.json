@@ -434,6 +434,7 @@
     "goBack": "వెనక్కి వెళ్ళు",
     "unreadCount": "{{count}} కొత్తవి",
     "markAllRead": "అన్నీ చదివినట్టు గుర్తించు",
+    "markAllReadFailed": "చదివినట్టు గుర్తించలేకపోయాం. దయచేసి మళ్లీ ప్రయత్నించండి.",
     "tabAllFeed": "మొత్తం ఫీడ్",
     "tabTripsPasses": "ట్రిప్‌లు & పాస్‌లు",
     "tabDisasterAlerts": "విపత్తు హెచ్చరికలు",

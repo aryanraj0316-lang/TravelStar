@@ -434,6 +434,7 @@
     "goBack": "ಹಿಂದೆ ಹೋಗಿ",
     "unreadCount": "{{count}} ಹೊಸವು",
     "markAllRead": "ಎಲ್ಲವನ್ನೂ ಓದಿದೆ ಎಂದು ಗುರುತಿಸಿ",
+    "markAllReadFailed": "ಓದಿದೆ ಎಂದು ಗುರುತಿಸಲು ಆಗಲಿಲ್ಲ. ದಯವಿಟ್ಟು ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.",
     "tabAllFeed": "ಸಂಪೂರ್ಣ ಫೀಡ್",
     "tabTripsPasses": "ಪ್ರವಾಸಗಳು ಮತ್ತು ಪಾಸ್‌ಗಳು",
     "tabDisasterAlerts": "ವಿಪತ್ತು ಎಚ್ಚರಿಕೆಗಳು",

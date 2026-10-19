@@ -407,6 +407,7 @@
     "goBack": "वापस जाएं",
     "unreadCount": "{{count}} नई",
     "markAllRead": "सभी को पढ़ा हुआ चिह्नित करें",
+    "markAllReadFailed": "उन्हें पढ़ा हुआ चिह्नित नहीं किया जा सका। कृपया फिर से कोशिश करें।",
     "tabAllFeed": "सभी फीड",
     "tabTripsPasses": "ट्रिप्स और पास",
     "tabDisasterAlerts": "आपदा अलर्ट",

@@ -434,6 +434,7 @@
     "goBack": "பின் செல்",
     "unreadCount": "{{count}} புதியவை",
     "markAllRead": "அனைத்தையும் படித்ததாகக் குறி",
+    "markAllReadFailed": "படித்ததாகக் குறிக்க முடியவில்லை. மீண்டும் முயலவும்.",
     "tabAllFeed": "முழு ஊட்டம்",
     "tabTripsPasses": "பயணங்கள் & பாஸ்கள்",
     "tabDisasterAlerts": "பேரிடர் எச்சரிக்கைகள்",

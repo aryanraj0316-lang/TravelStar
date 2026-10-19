@@ -2,6 +2,7 @@ import prisma from '../services/db';
 import { env } from '../config/env';
 import { logger } from './logger';
 import { pruneReadEnquiryNotifications } from '../services/enquiry-notification-hygiene';
+import { HIDDEN_FROM_LIST } from './notification-visibility';
 
 /**
  * Real push delivery through the Expo push service
@@ -176,10 +177,11 @@ export async function sendPushToUsers(
 }
 
 /**
- * The recipient's current unread count, for the app-icon badge. Mirrors
- * what GET /notifications reports as unread: personal rows with
- * `unread`, plus every broadcast with no NotificationRead row for them
- * (§5.8).
+ * The recipient's current unread count, for the app-icon badge and the bell
+ * dot. Mirrors exactly what GET /notifications reports as unread: personal
+ * rows with `unread`, plus broadcasts sent since they signed up with no
+ * NotificationRead row for them (§5.8), leaving out the same rows the list
+ * leaves out (lib/notification-visibility.ts).
  */
 export async function unreadCountFor(userId: string): Promise<number> {
   // Same rule the notifications list applies, so the header dot and the
@@ -187,19 +189,19 @@ export async function unreadCountFor(userId: string): Promise<number> {
   // thread this user has already read does not count.
   await pruneReadEnquiryNotifications(userId);
 
+  const me = await prisma.user.findUnique({ where: { id: userId }, select: { createdAt: true } });
+  const sinceJoined = { userId: null, createdAt: { gte: me?.createdAt ?? new Date(0) }, NOT: HIDDEN_FROM_LIST };
+
   const [personal, broadcastTotal, broadcastRead] = await Promise.all([
     prisma.notification.count({
       where: {
         userId,
         unread: true,
-        NOT: [
-          { title: { contains: 'Emergency alert' } },
-          { title: { contains: 'SOS' } },
-        ],
+        NOT: HIDDEN_FROM_LIST,
       },
     }),
-    prisma.notification.count({ where: { userId: null } }),
-    prisma.notificationRead.count({ where: { userId, notification: { userId: null } } }),
+    prisma.notification.count({ where: sinceJoined }),
+    prisma.notificationRead.count({ where: { userId, notification: sinceJoined } }),
   ]);
   return personal + Math.max(0, broadcastTotal - broadcastRead);
 }

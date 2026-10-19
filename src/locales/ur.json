@@ -434,6 +434,7 @@
     "goBack": "واپس جائیں",
     "unreadCount": "{{count}} نئی",
     "markAllRead": "سب کو پڑھا ہوا نشان زد کریں",
+    "markAllReadFailed": "پڑھا ہوا نشان زد نہیں ہو سکا۔ براہ کرم دوبارہ کوشش کریں۔",
     "tabAllFeed": "پوری فیڈ",
     "tabTripsPasses": "ٹرپس اور پاسز",
     "tabDisasterAlerts": "آفات کے الرٹس",

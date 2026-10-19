@@ -421,6 +421,7 @@
     "goBack": "Go back",
     "unreadCount": "{{count}} NEW",
     "markAllRead": "Mark all as read",
+    "markAllReadFailed": "Could not mark them as read. Please try again.",
     "tabAllFeed": "All Feed",
     "tabTripsPasses": "Trips & Passes",
     "tabDisasterAlerts": "Disaster Alerts",

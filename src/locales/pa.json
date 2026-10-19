@@ -434,6 +434,7 @@
     "goBack": "ਵਾਪਸ ਜਾਓ",
     "unreadCount": "{{count}} ਨਵੀਆਂ",
     "markAllRead": "ਸਭ ਨੂੰ ਪੜ੍ਹਿਆ ਮਾਰਕ ਕਰੋ",
+    "markAllReadFailed": "ਪੜ੍ਹਿਆ ਮਾਰਕ ਨਹੀਂ ਕੀਤਾ ਜਾ ਸਕਿਆ। ਕਿਰਪਾ ਕਰਕੇ ਮੁੜ ਕੋਸ਼ਿਸ਼ ਕਰੋ।",
     "tabAllFeed": "ਸਾਰੀ ਫੀਡ",
     "tabTripsPasses": "ਟ੍ਰਿਪਾਂ ਅਤੇ ਪਾਸ",
     "tabDisasterAlerts": "ਆਫ਼ਤ ਚੇਤਾਵਨੀਆਂ",

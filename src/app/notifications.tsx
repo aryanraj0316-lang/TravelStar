@@ -1,6 +1,7 @@
 import { ScreenEmpty, ScreenError, ScreenLoading } from '@/components/ui';
 import { errorToastMessage, toast } from '@/lib/feedback';
 import { logger } from '@/lib/logger';
+import { isHiddenFromNotificationList } from '@/lib/notification-visibility';
 import { syncBadgeCount } from '@/lib/push';
 import { queryKeys } from '@/lib/query-keys';
 import { sectionState } from '@/lib/query-state';
@@ -265,13 +266,8 @@ export default function NotificationsScreen() {
     const uniqueById = new Map<string, AppNotification>();
     for (const n of notifications) {
       if (!n || !n.id) continue;
-      // Personal SOS alerts belong on the home and chat tickers, not this list.
-      const isSosNotification =
-        (n.category as string) === 'SOS' ||
-        n.type === 'SOS' ||
-        (n.title && /emergency|sos|आपातकालीन/i.test(n.title)) ||
-        (n.content && /emergency|sos|आपातकालीन/i.test(n.content));
-      if (isSosNotification) {
+      // SOS alerts belong on the Home and Chat banner, not this list.
+      if (isHiddenFromNotificationList(n)) {
         continue;
       }
       if (!uniqueById.has(n.id)) {
@@ -433,6 +429,27 @@ export default function NotificationsScreen() {
     }
   }, [sortedNotifications, setHasUnreadNotification]);
 
+  // Clears every blue dot at once, including any too old to be on this page
+  // (it shows the latest 50), which nothing else could reach.
+  const [markingAll, setMarkingAll] = React.useState(false);
+  const handleMarkAllRead = async () => {
+    if (markingAll) return;
+    setMarkingAll(true);
+    try {
+      await apiService.markNotificationsRead();
+      queryClient.setQueryData(queryKeys.notifications(), (prev: AppNotification[] = []) =>
+        prev.map((item) => (item.unread === false ? item : { ...item, unread: false })),
+      );
+      setHasUnreadNotification(false);
+      void syncBadgeCount();
+    } catch (e) {
+      logger.warn('[Notifications] Mark all read failed:', e);
+      toast(errorToastMessage(e, t('notifications.markAllReadFailed', 'Could not mark them as read. Please try again.')), 'error');
+    } finally {
+      setMarkingAll(false);
+    }
+  };
+
   const handlePressNotification = async (n: MergedNotificationItem) => {
     // 1. Clear the blue dot straight away. The notification itself stays in
     // the list as history.
@@ -556,6 +573,21 @@ export default function NotificationsScreen() {
             </View>
           )}
         </View>
+
+        {unread > 0 && (
+          <TouchableOpacity
+            style={st.markAllBtn}
+            onPress={() => void handleMarkAllRead()}
+            disabled={markingAll}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={t('notifications.markAllRead', 'Mark all as read')}
+          >
+            <Text style={[st.markAllText, markingAll && { opacity: 0.5 }]}>
+              {t('notifications.markAllRead', 'Mark all as read')}
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* ── CONTENT ── */}
@@ -676,6 +708,16 @@ const st = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     color: '#FFFFFF',
+  },
+  markAllBtn: {
+    minHeight: 38,
+    paddingHorizontal: 6,
+    justifyContent: 'center',
+  },
+  markAllText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#2563EB',
   },
 
   // Scroll

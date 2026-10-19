@@ -5,6 +5,7 @@ import { logger } from '../../lib/logger';
 import { cursorFilter, cursorPageQuerySchema, takeWithLookahead } from '../../lib/pagination';
 import { requireUserId } from '../../lib/auth-context';
 import { unreadCountFor } from '../../lib/push';
+import { HIDDEN_FROM_LIST, broadcastIsUnread } from '../../lib/notification-visibility';
 import { pruneReadEnquiryNotifications } from '../../services/enquiry-notification-hygiene';
 
 const router = Router();
@@ -106,33 +107,33 @@ router.get('/', async (req, res) => {
     // and it is why the previous unbounded `findMany` could not simply have
     // a `take` bolted on — the two streams advance independently
     // (docs/REMEDIATION.md §5.9).
-    const [personal, broadcasts, reads] = await queryWithRetry(() =>
+    const [personal, broadcasts, reads, me] = await queryWithRetry(() =>
       Promise.all([
         prisma.notification.findMany({
           where: {
             userId: tokenUserId,
-            NOT: [
-              { title: { contains: 'Emergency alert' } },
-              { title: { contains: 'SOS' } },
-            ],
+            NOT: HIDDEN_FROM_LIST,
             ...pageFilter,
           },
           orderBy: { createdAt: 'desc' },
           take: takeWithLookahead(limit),
         }),
         prisma.notification.findMany({
-          where: { userId: null, ...pageFilter },
+          where: { userId: null, NOT: HIDDEN_FROM_LIST, ...pageFilter },
           orderBy: { createdAt: 'desc' },
           take: takeWithLookahead(limit),
         }),
         prisma.notificationRead.findMany({ where: { userId: tokenUserId }, select: { notificationId: true } }),
+        prisma.user.findUnique({ where: { id: tokenUserId }, select: { createdAt: true } }),
       ])
     );
 
     // A broadcast's unread flag is per caller: read once this user has a
-    // NotificationRead for it. Read ones stay listed, like personal ones.
+    // NotificationRead for it, or if it was sent before they signed up —
+    // the same rule the unread count uses. Read ones stay listed.
     const readIds = new Set(reads.map((r) => r.notificationId));
-    const mappedBroadcasts = broadcasts.map((n) => ({ ...n, unread: !readIds.has(n.id) }));
+    const joinedAt = me?.createdAt ?? new Date(0);
+    const mappedBroadcasts = broadcasts.map((n) => ({ ...n, unread: broadcastIsUnread(n, readIds, joinedAt) }));
 
     const merged = [...personal, ...mappedBroadcasts].sort(
       (a, b) => b.createdAt.getTime() - a.createdAt.getTime()

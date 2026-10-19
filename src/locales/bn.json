@@ -434,6 +434,7 @@
     "goBack": "ফিরে যান",
     "unreadCount": "{{count}}টি নতুন",
     "markAllRead": "সব পঠিত হিসেবে চিহ্নিত করুন",
+    "markAllReadFailed": "পঠিত হিসেবে চিহ্নিত করা গেল না। আবার চেষ্টা করুন।",
     "tabAllFeed": "সব ফিড",
     "tabTripsPasses": "ট্রিপ ও পাস",
     "tabDisasterAlerts": "দুর্যোগ সতর্কতা",

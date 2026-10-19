@@ -209,6 +209,63 @@ describe('GET /api/v1/notifications/unread-count', () => {
   });
 });
 
+describe('the badge counts exactly what the Notifications page shows', () => {
+  it('shows and counts a notification that merely mentions an emergency', async () => {
+    const user = await registerAndLogin('badge-mention');
+    const before = await unreadCountFor(user.userId);
+    // Not an SOS — the app used to hide this while the server counted it,
+    // so the icon badge stayed lit for something nobody could open.
+    const mention = await prisma.notification.create({
+      data: { userId: user.userId, type: 'TRIP', title: 'Packing list', content: 'Carry a small emergency kit.', time: 'Just now' },
+    });
+    createdNotificationIds.push(mention.id);
+    expect(await unreadCountFor(user.userId)).toBe(before + 1);
+
+    const list = await request(app).get('/api/v1/notifications').set('Authorization', `Bearer ${user.token}`);
+    expect((list.body.data as { id: string }[]).some((n) => n.id === mention.id)).toBe(true);
+  });
+
+  it('does not count a leftover SOS row it does not show', async () => {
+    const user = await registerAndLogin('badge-sos');
+    const before = await unreadCountFor(user.userId);
+    const sos = await prisma.notification.create({
+      data: { userId: user.userId, type: 'HAZARD', title: 'Emergency alert — A traveller', content: 'x', time: 'Just now' },
+    });
+    createdNotificationIds.push(sos.id);
+    expect(await unreadCountFor(user.userId)).toBe(before);
+
+    const list = await request(app).get('/api/v1/notifications').set('Authorization', `Bearer ${user.token}`);
+    expect((list.body.data as { id: string }[]).some((n) => n.id === sos.id)).toBe(false);
+  });
+
+  it('does not count a broadcast sent before the user signed up', async () => {
+    const user = await registerAndLogin('badge-joined');
+    const baseline = await unreadCountFor(user.userId);
+
+    // Dated a day before this account existed: it shows as already read
+    // and never lights their badge.
+    const old = await prisma.notification.create({
+      data: {
+        userId: null,
+        type: 'HAZARD',
+        title: 'Old broadcast',
+        content: 'x',
+        time: 'Yesterday',
+        createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      },
+    });
+    createdNotificationIds.push(old.id);
+    expect(await unreadCountFor(user.userId)).toBe(baseline);
+
+    // One sent after they joined still counts.
+    const fresh = await prisma.notification.create({
+      data: { userId: null, type: 'HAZARD', title: 'New broadcast', content: 'x', time: 'Just now' },
+    });
+    createdNotificationIds.push(fresh.id);
+    expect(await unreadCountFor(user.userId)).toBe(baseline + 1);
+  });
+});
+
 describe('reading a notification keeps it in the list', () => {
   it('clears the blue dot but does not delete it', async () => {
     const user = await registerAndLogin('keep-read');

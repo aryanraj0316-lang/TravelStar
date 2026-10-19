@@ -4,6 +4,7 @@ import { queryClient } from '@/lib/query-client';
 import { safeStorage } from '@/services/storage';
 import type { Money } from '@/lib/money';
 import { logger } from '@/lib/logger';
+import { isHiddenFromNotificationList } from '@/lib/notification-visibility';
 import { registerForPushNotifications, unregisterPushNotifications } from '@/lib/push';
 import { toast, errorToastMessage } from '@/lib/feedback';
 import { enqueueMutation, registerMutationHandler } from '@/lib/offline-mutation-queue';
@@ -693,11 +694,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .getNotifications()
       .then((notifs) => {
         if (notifs && notifs.length > 0) {
+          // Same rule as the Notifications page and the server's count.
           const hasAnyUnread = notifs.some(
-            (n: AppNotification) =>
-              n.unread === true &&
-              !/emergency|sos|आपातकालीन/i.test(n.title || '') &&
-              !/emergency|sos|आपातकालीन/i.test(n.content || ''),
+            (n: AppNotification) => n.unread === true && !isHiddenFromNotificationList(n),
           );
           setHasUnreadNotification(hasAnyUnread);
         } else {
