@@ -159,7 +159,10 @@ export async function rejectBooking(joinRequestId: string): Promise<{ ok: true; 
 
 async function clearOrganizerJoinAlert(joinRequestId: string) {
   try {
-    await prisma.notification.deleteMany({ where: { joinRequestId, category: 'JOIN_REQUEST' } });
+    await prisma.notification.updateMany({
+      where: { joinRequestId, category: 'JOIN_REQUEST', unread: true },
+      data: { unread: false },
+    });
   } catch (err) {
     logger.warn('[TripCancellation] Could not clear organizer alert:', err);
   }

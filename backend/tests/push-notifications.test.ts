@@ -208,3 +208,28 @@ describe('GET /api/v1/notifications/unread-count', () => {
     expect(await unreadCountFor(user.userId)).toBe(baseline + 1);
   });
 });
+
+describe('reading a notification keeps it in the list', () => {
+  it('clears the blue dot but does not delete it', async () => {
+    const user = await registerAndLogin('keep-read');
+    const personal = await prisma.notification.create({
+      data: { userId: user.userId, type: 'TRIP', title: 'Kept after reading', content: 'x', time: 'Just now' },
+    });
+    createdNotificationIds.push(personal.id);
+
+    const read = await request(app)
+      .post(`/api/v1/notifications/${personal.id}/read`)
+      .set('Authorization', `Bearer ${user.token}`);
+    expect(read.status).toBe(200);
+
+    const row = await prisma.notification.findUnique({ where: { id: personal.id } });
+    expect(row?.unread).toBe(false);
+
+    const list = await request(app)
+      .get('/api/v1/notifications')
+      .set('Authorization', `Bearer ${user.token}`);
+    const listed = (list.body.data as { id: string; unread: boolean }[]).find((n) => n.id === personal.id);
+    expect(listed).toBeDefined();
+    expect(listed?.unread).toBe(false);
+  });
+});

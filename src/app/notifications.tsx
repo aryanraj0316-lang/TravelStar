@@ -260,15 +260,11 @@ export default function NotificationsScreen() {
 
   // Unified chronological sort (newest first) with smart merge and comprehensive deduplication
   const sortedNotifications = useMemo(() => {
-    // 1. First pass: Deduplicate by exact ID and only retain active unread alerts
+    // 1. First pass: Deduplicate by exact ID. Read notifications stay in the
+    // list — reading one only clears its blue dot.
     const uniqueById = new Map<string, AppNotification>();
     for (const n of notifications) {
       if (!n || !n.id) continue;
-      // Read notifications are hidden, except an organizer's "Payment
-      // received" alert, which the server keeps (read) until that booking is
-      // allocated: it holds the booking token the allocation sheet asks for.
-      const isKeptTokenAlert = n.category === 'PAYMENT_SUCCESS' && !!n.joinRequestId;
-      if (n.unread === false && !isKeptTokenAlert) continue;
       // Personal SOS alerts belong on the home and chat tickers, not this list.
       const isSosNotification =
         (n.category as string) === 'SOS' ||
@@ -438,29 +434,33 @@ export default function NotificationsScreen() {
   }, [sortedNotifications, setHasUnreadNotification]);
 
   const handlePressNotification = async (n: MergedNotificationItem) => {
-    // 1. Immediately remove this notification from state so it vanishes instantly
+    // 1. Clear the blue dot straight away. The notification itself stays in
+    // the list as history.
+    const isTapped = (item: AppNotification) => item.id === n.id || item.id === n.secondaryNotificationId;
     queryClient.setQueryData(queryKeys.notifications(), (prev: AppNotification[] = []) =>
-      prev.filter((item) => item.id !== n.id && item.id !== n.secondaryNotificationId),
+      prev.map((item) => (isTapped(item) ? { ...item, unread: false } : item)),
     );
 
-    // If no notifications remain, extinguish the notification dot immediately
-    const remaining = (queryClient.getQueryData<AppNotification[]>(queryKeys.notifications()) || []).filter(
-      (item) => item.id !== n.id && item.id !== n.secondaryNotificationId && item.unread !== false,
+    // If nothing unread remains, put out the header dot immediately
+    const stillUnread = (queryClient.getQueryData<AppNotification[]>(queryKeys.notifications()) || []).some(
+      (item) => !isTapped(item) && item.unread !== false,
     );
-    if (remaining.length === 0) {
+    if (!stillUnread) {
       setHasUnreadNotification(false);
     }
 
-    // 2. Dismiss from backend so it never reappears on refetch
-    try {
-      await apiService.deleteNotification(n.id);
-      if (n.secondaryNotificationId) {
-        void apiService.deleteNotification(n.secondaryNotificationId);
+    // 2. Mark it read on the server so the dot stays off after a refetch
+    if (n.unread !== false) {
+      try {
+        await apiService.markNotificationRead(n.id);
+        if (n.secondaryNotificationId) {
+          void apiService.markNotificationRead(n.secondaryNotificationId);
+        }
+        checkUnreadNotifications();
+        void syncBadgeCount();
+      } catch (e) {
+        logger.warn('[Notifications] Mark read failed:', e);
       }
-      checkUnreadNotifications();
-      void syncBadgeCount();
-    } catch (e) {
-      logger.warn('[Notifications] Dismiss failed:', e);
     }
 
     // joinRequestId is stored on the notification itself now, so this works

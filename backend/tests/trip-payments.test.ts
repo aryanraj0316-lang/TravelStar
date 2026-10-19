@@ -442,5 +442,65 @@ describe('Trip Payments & pay-first booking flow (CONVENTIONS.md §3, REMEDIATIO
     // TripPaymentOrder should be REFUNDED
     const order = await prisma.tripPaymentOrder.findUnique({ where: { joinRequestId: jr.id } });
     expect(order?.status).toBe('REFUNDED');
+
+    // The traveller is told it was declined and where their money went.
+    const declined = await prisma.notification.findFirst({
+      where: { userId: applicant.userId, joinRequestId: jr.id, title: { startsWith: 'Booking declined' } },
+    });
+    expect(declined?.content).toContain('₹1500.00');
+    expect(declined?.content).toContain('wallet');
+    expect(declined?.unread).toBe(true);
+
+    // Declining again is refused — no second refund, no second notice.
+    const again = await request(app)
+      .post(`/api/v1/interactions/join-request/${jr.id}/status`)
+      .set(auth(organizer.token))
+      .send({ status: 'REJECTED' });
+    expect(again.status).toBe(400);
+    wallet = await prisma.wallet.findUnique({ where: { userId: applicant.userId } });
+    expect(Number(wallet?.balance)).toBe(2000);
+  });
+
+  it('7. Paying sends the traveller\'s contact details to the organizer', async () => {
+    const payer = await registerUser('Contact Traveler');
+    createdUserIds.push(payer.userId);
+    const email = (await prisma.user.findUnique({ where: { id: payer.userId } }))?.email;
+
+    const jr = await prisma.joinRequest.create({
+      data: { tripId: paidTripId, userId: payer.userId, status: 'PAYMENT_PENDING' },
+    });
+    await prisma.emergencyContact.create({
+      data: { userId: payer.userId, name: 'Asha', relation: 'Mother', phoneNumber: '+919800000001' },
+    });
+
+    // Before paying: profile only, no contact details.
+    const before = await request(app).get('/api/v1/interactions/incoming-requests').set(auth(organizer.token));
+    expect(before.body.data.find((r: { id: string }) => r.id === jr.id)?.contact).toBeNull();
+
+    await prisma.wallet.upsert({
+      where: { userId: payer.userId },
+      create: { userId: payer.userId, balance: 2000 },
+      update: { balance: 2000 },
+    });
+    const payRes = await request(app)
+      .post('/api/v1/trip-payments/wallet-pay')
+      .set(auth(payer.token))
+      .send({ joinRequestId: jr.id });
+    expect(payRes.status).toBe(200);
+
+    // After paying: phone, email and emergency contacts, automatically.
+    const after = await request(app).get('/api/v1/interactions/incoming-requests').set(auth(organizer.token));
+    const contact = after.body.data.find((r: { id: string }) => r.id === jr.id)?.contact;
+    expect(contact).not.toBeNull();
+    expect(contact.email).toBe(email);
+    expect(contact.emergencyContacts).toEqual([{ name: 'Asha', relation: 'Mother', phoneNumber: '+919800000001' }]);
+
+    // ...and the organizer's "Payment received" alert carries them too.
+    const alert = await prisma.notification.findFirst({
+      where: { userId: organizer.userId, joinRequestId: jr.id, category: 'PAYMENT_SUCCESS' },
+    });
+    const phone = (await prisma.user.findUnique({ where: { id: payer.userId } }))?.phoneNumber;
+    expect(alert?.content).toContain(`Contact: ${phone} · ${email}`);
+    expect(contact.phoneNumber).toBe(phone);
   });
 });

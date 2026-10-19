@@ -381,6 +381,7 @@ export interface IncomingJoinRequest {
     gender: string | null;
     city: string | null;
     state: string | null;
+    country?: string | null;
     languages: string[];
     bio: string | null;
     interests: string[];
@@ -388,9 +389,10 @@ export interface IncomingJoinRequest {
     verifiedBadge: boolean;
     memberSince: IsoDateTime;
   };
-  /** Phone and emergency contacts — only once the traveller has paid or been confirmed. */
+  /** Phone, email and emergency contacts — sent the moment the traveller pays. */
   contact?: {
     phoneNumber: string | null;
+    email?: string | null;
     emergencyContacts: { name: string; relation: string; phoneNumber: string }[];
   } | null;
 }

@@ -1185,6 +1185,12 @@
     "guideUnassignFailed": "તે ગાઇડ દૂર થઈ શક્યો નથી. કૃપા કરીને ફરી પ્રયાસ કરો.",
     "approveFailed": "{{name}} ની વિનંતી મંજૂર થઈ શકી નથી. કૃપા કરીને ફરી પ્રયાસ કરો.",
     "rejectFailed": "{{name}} ની વિનંતી નકારી શકાઈ નથી. કૃપા કરીને ફરી પ્રયાસ કરો.",
+    "declineBooking": "નકારો",
+    "declineBookingTitle": "આ બુકિંગ નકારવું છે?",
+    "declineBookingMessage": "{{name}}ને પૂરું રિફંડ મળશે અને બુકિંગ નકારાયાની સૂચના મળશે. તેમની બેઠકો ફરી ઉપલબ્ધ થશે. આ પાછું ફેરવી શકાશે નહીં.",
+    "declineBookingConfirm": "નકારો અને રિફંડ કરો",
+    "bookingDeclined": "નકારાયું. {{name}}ને પૂરું રિફંડ આપવામાં આવી રહ્યું છે.",
+    "declineBookingA11y": "{{name}}નું બુકિંગ નકારો અને પૂરું રિફંડ કરો",
     "announcementPublished": "પ્રકાશિત — {{count}} ટ્રિપ સભ્યોને મોકલાઈ.",
     "guideRating": "{{rating}} ({{count}} સમીક્ષાઓ)"
   },
@@ -2026,11 +2032,12 @@
     "travelStyle": "પ્રવાસ શૈલી",
     "interests": "રુચિઓ",
     "memberSince": "એપ પર ક્યારથી",
+    "email": "ઈમેલ",
     "contactHeading": "સંપર્ક",
     "call": "{{phone}} પર કૉલ કરો",
     "noPhone": "પ્રોફાઇલ પર કોઈ ફોન નંબર નથી.",
     "emergencyContact": "ઇમરજન્સી સંપર્ક: {{name}} ({{relation}})",
     "noEmergency": "કોઈ ઇમરજન્સી સંપર્ક ઉમેરાયો નથી.",
-    "contactAfterPayment": "પ્રવાસી ચુકવણી કરે કે પુષ્ટિ થાય ત્યારે ફોન અને ઇમરજન્સી સંપર્ક શેર કરવામાં આવે છે."
+    "contactAfterPayment": "પ્રવાસી ચુકવણી કરે કે તરત જ ફોન, ઈમેલ અને ઇમરજન્સી સંપર્ક શેર કરવામાં આવે છે."
   }
 }

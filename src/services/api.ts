@@ -1064,7 +1064,9 @@ export const apiService = {
   },
 
   async getNotifications(): Promise<AppNotification[] | null> {
-    return request<AppNotification[]>('/notifications');
+    // The list keeps read notifications as history, so ask for more than
+    // the default page of 20.
+    return request<AppNotification[]>('/notifications?limit=50');
   },
 
   async markNotificationsRead(): Promise<MessageResponse | null> {

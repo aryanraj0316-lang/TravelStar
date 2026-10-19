@@ -1,7 +1,8 @@
 // The traveller's details as the organizer sees them on a join request or
-// booking (Chats & Approvals → Approvals → View info). Profile details come
-// with every request; phone and emergency contacts only once the traveller
-// has paid or been confirmed (the server sends `contact: null` before that).
+// booking (Chats & Approvals → Approvals → View info). Paying for the trip is
+// the request to join it: from that moment their phone, email and emergency
+// contacts come with it (the server sends `contact: null` before payment).
+import Mail from 'lucide-react-native/icons/mail';
 import Phone from 'lucide-react-native/icons/phone';
 import ShieldCheck from 'lucide-react-native/icons/shield-check';
 import React from 'react';
@@ -33,13 +34,27 @@ function CallLink({ phone, label }: { phone: string; label: string }) {
   );
 }
 
+function EmailLink({ email }: { email: string }) {
+  return (
+    <TouchableOpacity
+      style={styles.call}
+      onPress={() => void Linking.openURL(`mailto:${email}`)}
+      accessibilityRole="link"
+      accessibilityLabel={email}
+    >
+      <Mail size={14} color={C.blueText} />
+      <Text style={styles.callText}>{email}</Text>
+    </TouchableOpacity>
+  );
+}
+
 export function ApplicantDetails({ request }: { request: IncomingJoinRequest }) {
   const { t } = useTranslation();
   const a = request.applicant;
   const contact = request.contact;
   if (!a) return null;
 
-  const place = [a.city, a.state].filter(Boolean).join(', ');
+  const place = [a.city, a.state, a.country && a.country !== 'India' ? a.country : null].filter(Boolean).join(', ');
   const ageGender = [
     a.age ? t('organizerTerms.age', { count: a.age, defaultValue: '{{count}} yrs' }) : null,
     a.gender,
@@ -76,6 +91,7 @@ export function ApplicantDetails({ request }: { request: IncomingJoinRequest }) 
           ) : (
             <Text style={styles.muted}>{t('applicant.noPhone', 'No phone number on the profile.')}</Text>
           )}
+          {contact.email ? <EmailLink email={contact.email} /> : null}
           {contact.emergencyContacts.length > 0 ? (
             contact.emergencyContacts.map((ec) => (
               <View key={`${ec.name}-${ec.phoneNumber}`} style={{ gap: 2 }}>
@@ -98,7 +114,7 @@ export function ApplicantDetails({ request }: { request: IncomingJoinRequest }) 
         </>
       ) : (
         <Text style={styles.muted}>
-          {t('applicant.contactAfterPayment', 'Phone and emergency contact are shared once the traveller pays or is confirmed.')}
+          {t('applicant.contactAfterPayment', 'Phone, email and emergency contact are shared the moment the traveller pays.')}
         </Text>
       )}
     </View>

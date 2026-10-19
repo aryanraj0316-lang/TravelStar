@@ -11,27 +11,10 @@ const router = Router();
 
 const idParamSchema = z.object({ id: z.string().uuid() });
 
-// An organizer's "Payment received" alert carries the traveller's booking
-// token, which the organizer checks while allocating that booking. Reading
-// or tapping it used to delete it, so the token was gone exactly when the
-// allocation sheet asked for it. While the booking still awaits allocation
-// it is kept (marked read) and stays in the list; allocating it clears it
-// (routes/trip-bookings.ts).
-const AWAITING_ALLOCATION = ['PAYMENT_COMPLETED', 'ALLOCATION_PENDING'] as const;
-
-async function joinRequestsAwaitingAllocation(ids: string[]): Promise<Set<string>> {
-  if (ids.length === 0) return new Set();
-  const rows = await prisma.joinRequest.findMany({
-    where: { id: { in: ids }, status: { in: [...AWAITING_ALLOCATION] } },
-    select: { id: true },
-  });
-  return new Set(rows.map((r) => r.id));
-}
-
-async function isKeptTokenAlert(n: { category: string | null; joinRequestId: string | null }): Promise<boolean> {
-  if (n.category !== 'PAYMENT_SUCCESS' || !n.joinRequestId) return false;
-  return (await joinRequestsAwaitingAllocation([n.joinRequestId])).has(n.joinRequestId);
-}
+// Notifications are history, not a to-do list: opening or reading one only
+// clears its unread flag (the blue dot); it stays on the Notifications &
+// Alerts page. They used to be deleted the moment they were tapped or read,
+// so the page emptied itself as the user went through it.
 
 // Retries only make sense for a transient connection failure (e.g. a Neon
 // cold start) — a bad query fails the same way every time, so retrying it
@@ -105,8 +88,9 @@ router.get('/', async (req, res) => {
           .map((n) => n.id);
 
         if (staleNotifIds.length > 0) {
-          await prisma.notification.deleteMany({
+          await prisma.notification.updateMany({
             where: { id: { in: staleNotifIds } },
+            data: { unread: false },
           });
         }
       }
@@ -122,12 +106,11 @@ router.get('/', async (req, res) => {
     // and it is why the previous unbounded `findMany` could not simply have
     // a `take` bolted on — the two streams advance independently
     // (docs/REMEDIATION.md §5.9).
-    const [personal, broadcasts, reads, readTokenAlerts] = await queryWithRetry(() =>
+    const [personal, broadcasts, reads] = await queryWithRetry(() =>
       Promise.all([
         prisma.notification.findMany({
           where: {
             userId: tokenUserId,
-            unread: true,
             NOT: [
               { title: { contains: 'Emergency alert' } },
               { title: { contains: 'SOS' } },
@@ -143,31 +126,15 @@ router.get('/', async (req, res) => {
           take: takeWithLookahead(limit),
         }),
         prisma.notificationRead.findMany({ where: { userId: tokenUserId }, select: { notificationId: true } }),
-        prisma.notification.findMany({
-          where: {
-            userId: tokenUserId,
-            unread: false,
-            category: 'PAYMENT_SUCCESS',
-            joinRequestId: { not: null },
-            ...pageFilter,
-          },
-          orderBy: { createdAt: 'desc' },
-          take: takeWithLookahead(limit),
-        }),
       ])
     );
 
-    const stillAwaiting = await joinRequestsAwaitingAllocation(
-      readTokenAlerts.map((n) => n.joinRequestId as string),
-    );
-    const keptTokenAlerts = readTokenAlerts.filter((n) => stillAwaiting.has(n.joinRequestId as string));
-
+    // A broadcast's unread flag is per caller: read once this user has a
+    // NotificationRead for it. Read ones stay listed, like personal ones.
     const readIds = new Set(reads.map((r) => r.notificationId));
-    const mappedBroadcasts = broadcasts
-      .filter((n) => !readIds.has(n.id))
-      .map((n) => ({ ...n, unread: true }));
+    const mappedBroadcasts = broadcasts.map((n) => ({ ...n, unread: !readIds.has(n.id) }));
 
-    const merged = [...personal, ...keptTokenAlerts, ...mappedBroadcasts].sort(
+    const merged = [...personal, ...mappedBroadcasts].sort(
       (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
     );
     const hasMore = merged.length > limit;
@@ -412,25 +379,25 @@ router.post('/:id/read', async (req, res) => {
       return res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'Not your notification.' } });
     }
 
-    if (await isKeptTokenAlert(notification)) {
-      await prisma.notification.update({ where: { id }, data: { unread: false } });
-      return res.status(200).json({ ok: true, data: { message: 'Notification marked as read' } });
-    }
-
-    await prisma.notification.delete({ where: { id } }).catch(async () => {
-      await prisma.notification.update({ where: { id }, data: { unread: false } });
+    // Clears the blue dot only — the notification stays in the list. Its
+    // companions (the same event announced twice, e.g. "accepted" + "added
+    // to the group chat") are marked read with it. An alert about one
+    // traveller's booking (it carries a joinRequestId) only takes that
+    // booking's alerts with it — not every other traveller's on the trip.
+    await prisma.notification.updateMany({
+      where: {
+        userId,
+        OR: [
+          { id },
+          ...(notification.chatRoomId ? [{ chatRoomId: notification.chatRoomId }] : []),
+          ...(notification.joinRequestId ? [{ joinRequestId: notification.joinRequestId }] : []),
+          ...(notification.tripId && notification.category && !notification.joinRequestId
+            ? [{ tripId: notification.tripId, category: notification.category }]
+            : []),
+        ],
+      },
+      data: { unread: false },
     });
-
-    // Also delete any companion / duplicate notifications for the same event
-    if (notification.chatRoomId) {
-      await prisma.notification.deleteMany({ where: { userId, chatRoomId: notification.chatRoomId } }).catch(() => {});
-    }
-    if (notification.joinRequestId) {
-      await prisma.notification.deleteMany({ where: { userId, joinRequestId: notification.joinRequestId } }).catch(() => {});
-    }
-    if (notification.tripId && notification.category) {
-      await prisma.notification.deleteMany({ where: { userId, tripId: notification.tripId, category: notification.category } }).catch(() => {});
-    }
 
     res.status(200).json({ ok: true, data: { message: 'Notification marked as read' } });
   } catch (err) {
@@ -464,11 +431,6 @@ router.delete('/:id', async (req, res) => {
 
     if (notification.userId !== userId) {
       return res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'Not your notification.' } });
-    }
-
-    if (await isKeptTokenAlert(notification)) {
-      await prisma.notification.update({ where: { id }, data: { unread: false } });
-      return res.status(200).json({ ok: true, data: { message: 'Kept until the booking is allocated' } });
     }
 
     await prisma.notification.delete({ where: { id } });

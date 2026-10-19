@@ -47,10 +47,11 @@ export async function notifyTripEnquiry(opts: {
     // the room read — which is precisely what left them staring at an
     // alert for a message that was open on their screen, with nothing left
     // that would ever clear it. If they are already caught up, there is
-    // nothing to nudge them about: drop any row for this thread instead.
+    // nothing to nudge them about: mark any row for this thread read instead.
     if (trigger === 'MESSAGE' && !(await organizerHasUnreadInEnquiry(organizerId, chatRoomId))) {
-      await prisma.notification.deleteMany({
-        where: { userId: organizerId, category: 'TRIP_ENQUIRY', chatRoomId },
+      await prisma.notification.updateMany({
+        where: { userId: organizerId, category: 'TRIP_ENQUIRY', chatRoomId, unread: true },
+        data: { unread: false },
       });
       return;
     }
@@ -91,8 +92,9 @@ export async function notifyTripEnquiry(opts: {
     // row cannot outlive their having read the thread in either ordering,
     // and they get no push or banner for something already read.
     if (trigger === 'MESSAGE' && !(await organizerHasUnreadInEnquiry(organizerId, chatRoomId))) {
-      await prisma.notification.deleteMany({
-        where: { userId: organizerId, category: 'TRIP_ENQUIRY', chatRoomId },
+      await prisma.notification.updateMany({
+        where: { userId: organizerId, category: 'TRIP_ENQUIRY', chatRoomId, unread: true },
+        data: { unread: false },
       });
       return;
     }

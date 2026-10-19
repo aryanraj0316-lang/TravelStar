@@ -584,9 +584,13 @@ router.post('/:id/read', async (req, res) => {
     if (room?.tripId) tripIdsToClear.push(room.tripId);
     if (room?.inquiryTripId) tripIdsToClear.push(room.inquiryTripId);
 
-    await prisma.notification.deleteMany({
+    // Reading the chat clears these notifications' blue dot; they stay in
+    // the user's notification history.
+    await prisma.notification.updateMany({
+      data: { unread: false },
       where: {
         userId: tokenUserId,
+        unread: true,
         OR: [
           { chatRoomId: { in: roomIdsToClear } },
           ...(tripIdsToClear.length > 0

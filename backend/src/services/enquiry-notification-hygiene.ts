@@ -18,7 +18,7 @@ import { logger } from '../lib/logger';
  * time I refresh, and the dot never goes out" behaviour.
  *
  * Pruning here instead makes the list and the badge self-healing: a row
- * that loses the race is deleted the next time either is computed.
+ * that loses the race is marked read the next time either is computed.
  */
 export async function pruneReadEnquiryNotifications(userId: string): Promise<void> {
   try {
@@ -66,7 +66,7 @@ export async function pruneReadEnquiryNotifications(userId: string): Promise<voi
       .map((r) => r.id);
     if (staleIds.length === 0) return;
 
-    await prisma.notification.deleteMany({ where: { id: { in: staleIds } } });
+    await prisma.notification.updateMany({ where: { id: { in: staleIds } }, data: { unread: false } });
   } catch (err) {
     // Hygiene must never fail the request it is piggybacking on — a stale
     // row shown once is better than a notifications page that 500s.

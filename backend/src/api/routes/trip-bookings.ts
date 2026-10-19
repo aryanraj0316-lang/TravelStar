@@ -289,11 +289,14 @@ router.post('/:tripId/approve-and-allocate', async (req, res) => {
       logger.warn('[TripBookings] Confirmation notification failed (non-fatal):', err);
     }
 
-    // The organizer's "Payment received" alert (with the booking token) is
-    // kept until now so they can check the token while allocating; once the
-    // booking is confirmed it has done its job.
+    // The organizer's "Payment received" alert (with the booking token) has
+    // done its job once the booking is confirmed: it is marked read, and
+    // stays in their notification history.
     await prisma.notification
-      .deleteMany({ where: { userId: trip.creatorId, joinRequestId: jr.id, category: 'PAYMENT_SUCCESS' } })
+      .updateMany({
+        where: { userId: trip.creatorId, joinRequestId: jr.id, category: 'PAYMENT_SUCCESS', unread: true },
+        data: { unread: false },
+      })
       .catch((err) => logger.warn('[TripBookings] Failed to clear payment alert:', err));
 
     return res.status(200).json({

@@ -368,8 +368,9 @@ router.get('/unread-count', async (req, res) => {
 });
 
 // Get all incoming join requests for trips created by the logged-in user
-// Once a traveller has paid (or been confirmed) the organizer is responsible
-// for them on the road, so their contact details are shared from then on.
+// Paying for a trip is the request to join it. From that moment the
+// organizer is responsible for the traveller, so all their details —
+// phone, email and emergency contacts — are shared automatically.
 const CONTACT_SHARED_STATUSES = new Set(['PAYMENT_COMPLETED', 'ALLOCATION_PENDING', 'CONFIRMED']);
 
 router.get('/incoming-requests', async (req, res) => {
@@ -412,10 +413,8 @@ router.get('/incoming-requests', async (req, res) => {
     });
 
     const mapped = requests.map((r) => {
-      // The traveller's profile travels with every request so the organizer
-      // knows who is asking. Their phone and emergency contacts are shared
-      // only once they have paid or been confirmed — a stranger tapping
-      // "request" should not hand their phone number to anyone.
+      // Profile details travel with every request; phone, email and
+      // emergency contacts are added the moment the traveller pays.
       const shareContact = CONTACT_SHARED_STATUSES.has(r.status);
       const p = r.user.profile;
       const applicantName = r.user.profile
@@ -445,6 +444,7 @@ router.get('/incoming-requests', async (req, res) => {
           gender: p?.gender ?? null,
           city: p?.city ?? null,
           state: p?.state ?? null,
+          country: p?.country ?? null,
           languages: p?.languages ?? [],
           bio: p?.bio ?? null,
           interests: p?.interests ?? [],
@@ -453,7 +453,11 @@ router.get('/incoming-requests', async (req, res) => {
           memberSince: r.user.createdAt,
         },
         contact: shareContact
-          ? { phoneNumber: r.user.phoneNumber ?? null, emergencyContacts: r.user.emergencyContacts }
+          ? {
+              phoneNumber: r.user.phoneNumber ?? null,
+              email: r.user.email ?? null,
+              emergencyContacts: r.user.emergencyContacts,
+            }
           : null,
       };
     });
@@ -467,16 +471,18 @@ router.get('/incoming-requests', async (req, res) => {
 
 // A "New join request" alert is resolved once the organizer approves or
 // declines that request, or the traveller withdraws it — not before. Only
-// the organizer's JOIN_REQUEST row is removed; the traveller's own
-// PAYMENT_REQUIRED row shares the joinRequestId and must survive.
+// the organizer's JOIN_REQUEST row is marked read (it stays in their
+// history); the traveller's own PAYMENT_REQUIRED row shares the
+// joinRequestId and is left alone.
 async function clearJoinRequestAlert(
   organizerId: string,
   joinRequestId: string,
   io?: { to: (room: string) => { emit: (event: string, payload: unknown) => void } },
 ) {
   try {
-    const { count } = await prisma.notification.deleteMany({
-      where: { userId: organizerId, joinRequestId, category: 'JOIN_REQUEST' },
+    const { count } = await prisma.notification.updateMany({
+      where: { userId: organizerId, joinRequestId, category: 'JOIN_REQUEST', unread: true },
+      data: { unread: false },
     });
     if (count > 0) io?.to(organizerId).emit('notificationRead', { joinRequestId });
   } catch (err) {
@@ -520,6 +526,12 @@ const handleStatusChange = async (req: Request, res: Response) => {
     }
 
     if (status === 'REJECTED') {
+      // Declining twice would notify the traveller twice; a booking that is
+      // already closed has nothing left to decline or refund.
+      if (['REJECTED', 'CANCELLED', 'REFUNDED'].includes(request.status)) {
+        return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'This booking is already closed.' } });
+      }
+
       // A paid booking is refunded in full to the original payment method
       // before its seats are released.
       const rejected = await rejectBooking(request.id);
@@ -534,31 +546,49 @@ const handleStatusChange = async (req: Request, res: Response) => {
       }
       await clearJoinRequestAlert(tokenUserId, request.id, req.app.get('socketio'));
 
-      // Unlike APPROVED and AWAITING_PAYMENT below, this branch previously
-      // returned with no Notification row, no socket emit, and no push —
-      // the requester was never told. The client can't fill that gap on its
-      // own: TripDetailModal's REJECTED branch reads real status, but
-      // nothing ever tells it a status changed to go look.
-      const title = 'Request declined — ' + request.trip.name;
-      const content = `The organizer declined your request to join ${request.trip.name}.`;
+      // The traveller is told it was declined and, if they had paid, how
+      // much is coming back and where — a decline with silence about their
+      // money reads as the money being kept.
+      const refunded = Number(rejected.refundAmount);
+      const order = refunded > 0
+        ? await prisma.tripPaymentOrder.findUnique({ where: { joinRequestId: request.id }, select: { gateway: true } })
+        : null;
+      const amountLabel = `₹${refunded.toFixed(2)}`;
+      const refundLine = refunded <= 0
+        ? ''
+        : order?.gateway === 'WALLET'
+          ? ` Your full payment of ${amountLabel} has been returned to your TravelStar wallet.`
+          : ` Your full payment of ${amountLabel} is being refunded to your original payment method — it usually reaches you within 5–7 working days.`;
+      const title = (refunded > 0 ? 'Booking declined — ' : 'Request declined — ') + request.trip.name;
+      const content = `The organizer declined your ${refunded > 0 ? 'booking for' : 'request to join'} ${request.trip.name}.${refundLine}`;
       const io = req.app.get('socketio');
+      const saved = await prisma.notification.create({
+        data: {
+          userId: request.userId,
+          type: 'TRIP',
+          title,
+          content,
+          time: 'Just now',
+          unread: true,
+          tripId: request.tripId,
+          joinRequestId: request.id,
+        },
+      });
       io?.to(request.userId).emit('notificationReceived', {
-        id: `notif-${Date.now()}`,
+        id: saved.id,
         userId: request.userId,
         type: 'TRIP',
-        category: 'JOIN_ACCEPTED',
         title,
         content,
         unread: true,
         tripId: request.tripId,
-      });
-      await prisma.notification.create({
-        data: { userId: request.userId, type: 'TRIP', title, content, time: 'Just now' },
+        joinRequestId: request.id,
       });
       await sendPushToUsers([request.userId], 'TRIP', {
         title,
         body: content,
-        data: { screen: 'trip', tripId: request.tripId },
+        data: refunded > 0 ? { screen: 'bookings' } : { screen: 'trip', tripId: request.tripId },
+        badge: await unreadCountFor(request.userId),
       });
 
       const updated = await prisma.joinRequest.findUnique({ where: { id } });

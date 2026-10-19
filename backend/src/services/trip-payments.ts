@@ -697,10 +697,15 @@ async function dispatchPaymentCompletedNotifications(orderId: string, io?: Socke
     if (trip.creatorId === order.userId) return;
     const title = `Payment received — ${trip.name}`;
     const organizerShare = order.organizerAmount ? `₹${Number(order.organizerAmount).toFixed(2)}` : amountLabel;
+    // Paying is the traveller's request to join, so their contact details
+    // reach the organizer with it. The full profile (with emergency
+    // contacts) is under Chats & Approvals → Approvals → View info.
+    const contactLine = [order.user.phoneNumber, order.user.email].filter(Boolean).join(' · ');
     const content =
       `${displayName(order.user)} paid ${amountLabel} (${seatLabel}). Token: ${order.verificationToken}\n` +
+      (contactLine ? `Contact: ${contactLine}\n` : '') +
       `Your share after the 4.5% platform fee: ${organizerShare}.\n` +
-      'Verify the token and assign their seat and rooms to confirm the booking.';
+      'Verify the token and assign their seat and rooms to confirm the booking, or decline it for a full refund.';
     const created = await prisma.notification.create({
       data: {
         userId: trip.creatorId,

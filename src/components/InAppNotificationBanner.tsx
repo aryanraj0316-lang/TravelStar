@@ -223,11 +223,12 @@ export const InAppNotificationBanner: React.FC = () => {
     // told the server it had been seen.
     if (notif.category && notif.category !== 'CHAT_MESSAGE') {
       const notifId = notif.id;
+      // Marked read, not deleted: it stays on the Notifications page.
       queryClient.setQueryData<AppNotification[]>(queryKeys.notifications(), (prev = []) =>
-        prev.filter((n) => n.id !== notifId),
+        prev.map((n) => (n.id === notifId ? { ...n, unread: false } : n)),
       );
       apiService
-        .deleteNotification(notifId)
+        .markNotificationRead(notifId)
         .then(() => {
           checkUnreadNotifications();
           void syncBadgeCount();

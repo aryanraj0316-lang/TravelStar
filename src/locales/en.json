@@ -1188,6 +1188,12 @@
     "guideUnassignFailed": "Could not remove that guide. Please try again.",
     "approveFailed": "Could not approve {{name}}'s request. Please try again.",
     "rejectFailed": "Could not decline {{name}}'s request. Please try again.",
+    "declineBooking": "Decline",
+    "declineBookingTitle": "Decline this booking?",
+    "declineBookingMessage": "{{name}} gets a full refund and a notification that the booking was declined. Their seats open up again. This can't be undone.",
+    "declineBookingConfirm": "Decline & refund",
+    "bookingDeclined": "Declined. {{name}} is being refunded in full.",
+    "declineBookingA11y": "Decline {{name}}'s booking and refund them in full",
     "inquiryStatusPaid": "Paid · to allocate",
     "inquiryStatusVerified": "Verified · to allocate",
     "inquiryStatusCancelled": "Cancelled"
@@ -2133,11 +2139,12 @@
     "travelStyle": "Travel style",
     "interests": "Interests",
     "memberSince": "On the app since",
+    "email": "Email",
     "contactHeading": "Contact",
     "call": "Call {{phone}}",
     "noPhone": "No phone number on the profile.",
     "emergencyContact": "Emergency contact: {{name}} ({{relation}})",
     "noEmergency": "No emergency contact added.",
-    "contactAfterPayment": "Phone and emergency contact are shared once the traveller pays or is confirmed."
+    "contactAfterPayment": "Phone, email and emergency contact are shared the moment the traveller pays."
   }
 }

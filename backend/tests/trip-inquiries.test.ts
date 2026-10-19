@@ -198,11 +198,14 @@ describe('Trip enquiries', () => {
       .set('Authorization', `Bearer ${organizer.token}`);
     expect(read.status).toBe(200);
 
+    // The alert stays in the list as history, with its blue dot cleared.
     const list = await request(app)
       .get('/api/v1/notifications')
       .set('Authorization', `Bearer ${organizer.token}`);
     expect(list.status).toBe(200);
-    expect(list.body.data.filter((n: { chatRoomId: string | null }) => n.chatRoomId === chatRoomId)).toHaveLength(0);
+    const forRoom = list.body.data.filter((n: { chatRoomId: string | null }) => n.chatRoomId === chatRoomId);
+    expect(forRoom).toHaveLength(1);
+    expect(forRoom[0].unread).toBe(false);
 
     // ...and the header dot / app badge agree with the list, rather than
     // staying lit over a row the page no longer shows.

@@ -1466,11 +1466,12 @@ export default function GroupOrganizerScreen() {
           );
           if (matches.length === 0) return;
 
+          // Marked read, not deleted: they stay on the Notifications page.
           queryClient.setQueryData<AppNotification[]>(queryKeys.notifications(), (prev = []) =>
-            prev.filter((n) => !matches.some((m) => m.id === n.id)),
+            prev.map((n) => (matches.some((m) => m.id === n.id) ? { ...n, unread: false } : n)),
           );
 
-          await Promise.all(matches.map((n) => apiService.deleteNotification(n.id)));
+          await Promise.all(matches.map((n) => apiService.markNotificationRead(n.id)));
           checkUnreadNotifications();
           void syncBadgeCount();
         } catch (e) {
@@ -2055,8 +2056,24 @@ export default function GroupOrganizerScreen() {
     }
   };
 
-  const handleRejectRequest = async (reqId: string, userName: string) => {
+  // A paid booking can be declined too: the server refunds the traveller in
+  // full and tells them. That moves money and can't be undone, so it asks
+  // first.
+  const handleRejectRequest = async (reqId: string, userName: string, opts?: { paid?: boolean }) => {
     markRequestAsSeen(reqId);
+    if (opts?.paid) {
+      const ok = await confirm({
+        title: t('groupOrganizer.declineBookingTitle', 'Decline this booking?'),
+        message: t('groupOrganizer.declineBookingMessage', {
+          name: userName,
+          defaultValue:
+            "{{name}} gets a full refund and a notification that the booking was declined. Their seats open up again. This can't be undone.",
+        }),
+        confirmLabel: t('groupOrganizer.declineBookingConfirm', 'Decline & refund'),
+        destructive: true,
+      });
+      if (!ok) return;
+    }
     try {
       await apiService.updateJoinRequestStatus(reqId, 'REJECTED');
     } catch (e) {
@@ -2072,7 +2089,12 @@ export default function GroupOrganizerScreen() {
       }
       return updated;
     });
-    toast(t('groupOrganizer.requestRejected', { name: userName }), 'info');
+    toast(
+      opts?.paid
+        ? t('groupOrganizer.bookingDeclined', { name: userName, defaultValue: 'Declined. {{name}} is being refunded in full.' })
+        : t('groupOrganizer.requestRejected', { name: userName }),
+      'info',
+    );
   };
 
   // docs/REMEDIATION.md §8.6 — "Edit Group Name" and the "Official Chat
@@ -3251,7 +3273,7 @@ export default function GroupOrganizerScreen() {
                                 </TouchableOpacity>
                                 <TouchableOpacity
                                   style={styles.requestRejectBtn}
-                                  onPress={() => handleRejectRequest(req.id, req.applicantName || 'Traveler')}
+                                  onPress={() => void handleRejectRequest(req.id, req.applicantName || 'Traveler', { paid: true })}
                                   activeOpacity={0.8}
                                   accessibilityRole="button"
                                   accessibilityLabel="Decline and refund in full"
@@ -4520,6 +4542,20 @@ export default function GroupOrganizerScreen() {
 
                           {toAllocate ? (
                           <View style={styles.cleanCardActionRow}>
+                            <TouchableOpacity
+                              style={styles.cleanDeclineBtn}
+                              onPress={() => void handleRejectRequest(reqId, applicantName, { paid: true })}
+                              activeOpacity={0.8}
+                              accessibilityRole="button"
+                              accessibilityLabel={t('groupOrganizer.declineBookingA11y', {
+                                name: applicantName,
+                                defaultValue: "Decline {{name}}'s booking and refund them in full",
+                              })}
+                            >
+                              <X size={14} color={C.red} />
+                              <Text style={styles.cleanDeclineBtnText}>{t('groupOrganizer.declineBooking', 'Decline')}</Text>
+                            </TouchableOpacity>
+
                             <TouchableOpacity
                               style={styles.cleanAcceptBtn}
                               onPress={() => {
