@@ -243,6 +243,8 @@ function NotificationRow({
 
 interface MergedNotificationItem extends AppNotification {
   secondaryNotificationId?: string;
+  /** Older copies of the same event folded into this row; read with it. */
+  duplicateIds?: string[];
 }
 
 export default function NotificationsScreen() {
@@ -257,6 +259,15 @@ export default function NotificationsScreen() {
     enabled: isLoggedIn,
   });
   const { data: notifications = [], refetch: refetchNotifs, isRefetching } = notifQ;
+  // What the server counts — the number behind the bell dot and the app-icon
+  // badge. It can include rows this page does not reach (older than the
+  // latest 50), so "Mark all as read" is offered whenever it is above 0.
+  const unreadCountQ = useQuery({
+    queryKey: queryKeys.unreadNotificationCount(),
+    queryFn: async () => (await apiService.getUnreadNotificationCount())?.count ?? 0,
+    enabled: isLoggedIn,
+  });
+  const serverUnread = unreadCountQ.data ?? 0;
   const notifState = sectionState(notifQ, notifQ.data != null);
 
   // Unified chronological sort (newest first) with smart merge and comprehensive deduplication
@@ -350,9 +361,12 @@ export default function NotificationsScreen() {
     // Sort newest first
     rawMergedList.sort((a, b) => getTimestampMs(b) - getTimestampMs(a));
 
-    // 4. Semantic Deduplication: eliminate duplicate notifications for the same event
+    // 4. Semantic Deduplication: one row per event. An older copy that is
+    // folded away still counts toward the server's unread total (and so the
+    // app-icon dot), so its unread state and id carry over to the row that
+    // is kept — otherwise it was hidden, unread, with nothing to tap.
     const finalMergedList: MergedNotificationItem[] = [];
-    const seenEventKeys = new Set<string>();
+    const keptByKey = new Map<string, MergedNotificationItem>();
 
     for (const item of rawMergedList) {
       const cleanTitle = (item.title || '').trim().toLowerCase();
@@ -374,17 +388,17 @@ export default function NotificationsScreen() {
         ? `tripCat:${item.tripId}|${item.category}|${cleanTitle}`
         : null;
 
-      if (seenEventKeys.has(contentKey)) continue;
-      if (joinReqKey && seenEventKeys.has(joinReqKey)) continue;
-      if (inquiryKey && seenEventKeys.has(inquiryKey)) continue;
-      if (tripCategoryKey && seenEventKeys.has(tripCategoryKey)) continue;
+      const keys = [contentKey, joinReqKey, inquiryKey, tripCategoryKey].filter((k): k is string => !!k);
+      const kept = keys.map((k) => keptByKey.get(k)).find(Boolean);
+      if (kept) {
+        if (item.unread) kept.unread = true;
+        kept.duplicateIds = [...(kept.duplicateIds ?? []), item.id, ...(item.secondaryNotificationId ? [item.secondaryNotificationId] : [])];
+        continue;
+      }
 
-      seenEventKeys.add(contentKey);
-      if (joinReqKey) seenEventKeys.add(joinReqKey);
-      if (inquiryKey) seenEventKeys.add(inquiryKey);
-      if (tripCategoryKey) seenEventKeys.add(tripCategoryKey);
-
-      finalMergedList.push(item);
+      const row: MergedNotificationItem = { ...item };
+      keys.forEach((k) => keptByKey.set(k, row));
+      finalMergedList.push(row);
     }
 
     return finalMergedList;
@@ -440,6 +454,7 @@ export default function NotificationsScreen() {
       queryClient.setQueryData(queryKeys.notifications(), (prev: AppNotification[] = []) =>
         prev.map((item) => (item.unread === false ? item : { ...item, unread: false })),
       );
+      queryClient.setQueryData(queryKeys.unreadNotificationCount(), 0);
       setHasUnreadNotification(false);
       void syncBadgeCount();
     } catch (e) {
@@ -453,7 +468,8 @@ export default function NotificationsScreen() {
   const handlePressNotification = async (n: MergedNotificationItem) => {
     // 1. Clear the blue dot straight away. The notification itself stays in
     // the list as history.
-    const isTapped = (item: AppNotification) => item.id === n.id || item.id === n.secondaryNotificationId;
+    const tappedIds = new Set([n.id, ...(n.secondaryNotificationId ? [n.secondaryNotificationId] : []), ...(n.duplicateIds ?? [])]);
+    const isTapped = (item: AppNotification) => tappedIds.has(item.id);
     queryClient.setQueryData(queryKeys.notifications(), (prev: AppNotification[] = []) =>
       prev.map((item) => (isTapped(item) ? { ...item, unread: false } : item)),
     );
@@ -470,9 +486,8 @@ export default function NotificationsScreen() {
     if (n.unread !== false) {
       try {
         await apiService.markNotificationRead(n.id);
-        if (n.secondaryNotificationId) {
-          void apiService.markNotificationRead(n.secondaryNotificationId);
-        }
+        await Promise.all([...tappedIds].filter((id) => id !== n.id).map((id) => apiService.markNotificationRead(id)));
+        void queryClient.invalidateQueries({ queryKey: queryKeys.unreadNotificationCount() });
         checkUnreadNotifications();
         void syncBadgeCount();
       } catch (e) {
@@ -574,7 +589,7 @@ export default function NotificationsScreen() {
           )}
         </View>
 
-        {unread > 0 && (
+        {(unread > 0 || serverUnread > 0) && (
           <TouchableOpacity
             style={st.markAllBtn}
             onPress={() => void handleMarkAllRead()}
@@ -618,7 +633,10 @@ export default function NotificationsScreen() {
           refreshControl={
             <RefreshControl
               refreshing={isRefetching}
-              onRefresh={() => void refetchNotifs()}
+              onRefresh={() => {
+                void refetchNotifs();
+                void unreadCountQ.refetch();
+              }}
               tintColor="#2563EB"
             />
           }

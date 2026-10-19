@@ -193,15 +193,25 @@ export function routeForNotificationData(data: Record<string, unknown> | undefin
  */
 export async function syncBadgeCount(): Promise<void> {
   if (!Notifications) return;
+  let count: number;
   try {
-    const { count } = await apiService.getUnreadNotificationCount();
-    if (typeof Notifications.setBadgeCountAsync === 'function') {
-      await Notifications.setBadgeCountAsync(count);
-    }
-    if (count === 0 && typeof Notifications.dismissAllNotificationsAsync === 'function') {
-      await Notifications.dismissAllNotificationsAsync();
-    }
+    count = (await apiService.getUnreadNotificationCount()).count;
   } catch (error) {
     logger.warn('[Push] Badge sync failed:', error);
+    return;
+  }
+  // Separate steps: a launcher that rejects badge numbers must not stop the
+  // tray from being cleared, which is what removes the dot on Android.
+  try {
+    await Notifications.setBadgeCountAsync(count);
+  } catch (error) {
+    logger.warn('[Push] Setting the badge failed:', error);
+  }
+  if (count === 0) {
+    try {
+      await Notifications.dismissAllNotificationsAsync();
+    } catch (error) {
+      logger.warn('[Push] Clearing the notification tray failed:', error);
+    }
   }
 }
