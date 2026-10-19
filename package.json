@@ -77,5 +77,14 @@
     "test:ui": "node e2e/ui-audit.js",
     "postinstall": "patch-package"
   },
-  "private": true
+  "private": true,
+  "expo": {
+    "autolinking": {
+      "android": {
+        "buildFromSource": [
+          "expo-notifications"
+        ]
+      }
+    }
+  }
 }
