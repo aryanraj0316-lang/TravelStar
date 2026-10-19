@@ -48,7 +48,9 @@ const PUBLIC_GET_EXACT = new Set([
   '/feed',
   '/stories',
   '/safety/monsoon-advisory',
-  '/safety/sos',
+  // '/safety/sos' is deliberately not here: it lists active SOS alerts with
+  // the person's name and exact location, and each caller may only see the
+  // ones they were sent (routes/safety.ts).
   // Reads no user at all (map.ts's handler takes `_req`) and returns the
   // same active Alert rows /alerts already serves publicly, just geocoded —
   // gating it behind a token had no security purpose and broke the map tab

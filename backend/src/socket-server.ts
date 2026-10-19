@@ -8,7 +8,7 @@ import prisma from './services/db';
 import { logger } from './lib/logger';
 import { env } from './config/env';
 import { socketAuthMiddleware, getSocketUserId } from './lib/socket-auth';
-import { getSosAudienceUserIds, resolveSosAudience } from './services/sos-audience';
+import { resolveSosAudience, sosAllClearAudience } from './services/sos-audience';
 import { notifyTripEnquiry } from './services/trip-enquiry-notifications';
 
 /**
@@ -422,11 +422,13 @@ export function createSocketServer(httpServer: HttpServer): Server {
       const { userName, latitude, longitude, message } = parsed.data;
 
       try {
+        const audience = await resolveSosAudience(userId, { lat: latitude, lng: longitude });
+        // Saved with the alert: it decides who sees it in the Home/Chat
+        // banner later and who gets its all-clear.
         const dbAlert = await prisma.sOSAlert.create({
-          data: { userId, latitude, longitude, message: message ?? null },
+          data: { userId, latitude, longitude, message: message ?? null, audienceUserIds: audience.userIds },
         });
 
-        const audience = await resolveSosAudience(userId, { lat: latitude, lng: longitude });
         const alert = {
           id: dbAlert.id,
           userId,
@@ -440,16 +442,16 @@ export function createSocketServer(httpServer: HttpServer): Server {
           tripId: audience.tripIds[0] ?? null,
         };
 
+        // The audience only — this used to be broadcast to every device too.
         await emitToUsers(audience.userIds, 'sosReceived', alert);
-        io.emit('sosReceived', alert);
       } catch (e) {
         logger.error('[Socket] triggerSOS failed:', e);
       }
     });
 
     // Resolve SOS — only the alert owner or an admin, mirroring
-    // POST /safety/sos/:id/resolve. Notified to the scoped audience and broadcast
-    // globally so no device is left with a stale emergency banner.
+    // POST /safety/sos/:id/resolve. The all-clear goes to everyone who was
+    // sent the alert, and nobody else.
     socket.on('resolveSOS', async (raw: unknown) => {
       const parsed = z.object({ id: z.string().min(1) }).safeParse(raw);
       if (!parsed.success) return;
@@ -462,6 +464,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
             userId: true,
             latitude: true,
             longitude: true,
+            audienceUserIds: true,
             user: {
               include: { profile: true },
             },
@@ -476,6 +479,9 @@ export function createSocketServer(httpServer: HttpServer): Server {
           return;
         }
 
+        // Read before resolving: it is worked out from the alerts still active.
+        const allClearTo = await sosAllClearAudience(alert);
+
         await prisma.sOSAlert.updateMany({
           where: { userId: alert.userId, status: 'ACTIVE' },
           data: { status: 'RESOLVED', resolvedAt: new Date() },
@@ -485,8 +491,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
           ? `${alert.user.profile.firstName} ${alert.user.profile.lastName || ''}`.trim()
           : (alert.user?.email?.split('@')[0] ?? 'User');
 
-        // Broadcast once globally to dismiss the emergency alert on all devices without duplicates
-        io.emit('sosResolved', {
+        await emitToUsers([...new Set([...allClearTo, userId])], 'sosResolved', {
           id,
           userId: alert.userId,
           userName: victimName,

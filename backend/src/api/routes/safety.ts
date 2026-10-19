@@ -4,7 +4,7 @@ import { z } from 'zod';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 import { requireUserId, isAdmin } from '../../lib/auth-context';
-import { getSosAudienceUserIds, resolveSosAudience } from '../../services/sos-audience';
+import { resolveSosAudience, sosAlertAudience, sosAllClearAudience } from '../../services/sos-audience';
 import { sendPushToUsers } from '../../lib/push';
 
 const router = Router();
@@ -27,8 +27,13 @@ function validationError(res: Response, issues: z.ZodIssue[]) {
   return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Please check the submitted data.', details: issues.map((i) => ({ path: i.path.join('.'), message: i.message })) } });
 }
 
-// GET /safety/sos — List all active SOS alerts (Prisma-backed, persists across restarts)
+// GET /safety/sos — The active SOS alerts the caller is meant to see: their
+// own, and ones they were sent (admins see all). This used to hand every
+// active alert — the person's name and exact location — to anyone who asked,
+// signed in or not, regardless of who that person chose to alert.
 router.get('/sos', async (req, res) => {
+  const callerId = requireUserId(req);
+  const admin = isAdmin(req);
   // Bounded like every other list (docs/REMEDIATION.md §5.9). Keyed on
   // alertTime rather than createdAt because that is this model's ordering
   // column; active alerts are few by nature, but "few by nature" is not a
@@ -42,7 +47,14 @@ router.get('/sos', async (req, res) => {
 
   try {
     const alerts = await prisma.sOSAlert.findMany({
-      where: { status: 'ACTIVE' },
+      where: {
+        status: 'ACTIVE',
+        // Alerts with no saved audience predate it being recorded; they are
+        // checked one by one below.
+        ...(admin
+          ? {}
+          : { OR: [{ userId: callerId }, { audienceUserIds: { has: callerId } }, { audienceUserIds: { isEmpty: true } }] }),
+      },
       orderBy: { alertTime: 'desc' },
       take: parsedQuery.data.limit,
       include: {
@@ -52,7 +64,16 @@ router.get('/sos', async (req, res) => {
       },
     });
 
-    const mapped = alerts.map((a) => ({
+    const visible: typeof alerts = [];
+    for (const a of alerts) {
+      if (admin || a.userId === callerId || a.audienceUserIds.includes(callerId)) {
+        visible.push(a);
+      } else if (a.audienceUserIds.length === 0 && (await sosAlertAudience(a)).includes(callerId)) {
+        visible.push(a);
+      }
+    }
+
+    const mapped = visible.map((a) => ({
       id: a.id,
       // Needed so a client can tell whether this is its own alert — only
       // the person who raised it gets the stand-down control.
@@ -98,6 +119,9 @@ router.post('/sos', sosLimiter, async (req, res) => {
   const { userName, latitude, longitude, message, accuracyMeters, capturedAt, isStale } = parsed.data;
 
   try {
+    const audience = await resolveSosAudience(userId, { lat: latitude, lng: longitude });
+    const recipients = audience.userIds.filter((uid) => uid !== userId);
+
     const existingAlert = await prisma.sOSAlert.findFirst({
       where: {
         userId,
@@ -106,13 +130,18 @@ router.post('/sos', sosLimiter, async (req, res) => {
       },
     });
 
-    const newAlert =
-      existingAlert ??
-      (await prisma.sOSAlert.create({
-        // The reason is stored, not just broadcast, so it is still there for
-        // anyone who opens the app after the alert fired.
-        data: { userId, latitude, longitude, message: message ?? null },
-      }));
+    // The audience is saved with the alert: it decides who sees it in the
+    // Home/Chat banner later and who gets its all-clear.
+    const newAlert = existingAlert
+      ? await prisma.sOSAlert.update({
+          where: { id: existingAlert.id },
+          data: { audienceUserIds: [...new Set([...existingAlert.audienceUserIds, ...audience.userIds])] },
+        })
+      : await prisma.sOSAlert.create({
+          // The reason is stored, not just broadcast, so it is still there for
+          // anyone who opens the app after the alert fired.
+          data: { userId, latitude, longitude, message: message ?? null, audienceUserIds: audience.userIds },
+        });
 
     const alerting = await prisma.user.findUnique({ where: { id: userId }, include: { profile: true } });
     const displayName =
@@ -120,9 +149,6 @@ router.post('/sos', sosLimiter, async (req, res) => {
       (alerting?.profile
         ? `${alerting.profile.firstName} ${alerting.profile.lastName || ''}`.trim()
         : (alerting?.email?.split('@')[0] ?? 'A traveller'));
-
-    const audience = await resolveSosAudience(userId, { lat: latitude, lng: longitude });
-    const recipients = audience.userIds.filter((uid) => uid !== userId);
 
     const alertPayload = {
       id: newAlert.id,
@@ -185,11 +211,11 @@ router.post('/sos', sosLimiter, async (req, res) => {
       io?.to(room.chatRoomId).emit('sosReceived', { ...alertPayload, tripId: room.tripId });
     }
 
+    // The Home/Chat banner appears live for the audience only. This used to
+    // be broadcast to every connected device as well.
     const io = req.app.get('socketio');
     if (io) {
       audience.userIds.forEach((uid: string) => io.to(uid).emit('sosReceived', alertPayload));
-      // Broadcast to all connected clients so the alert ticker appears on Home and Chat tabs on all devices immediately
-      io.emit('sosReceived', alertPayload);
     }
 
     if (recipients.length > 0) {
@@ -250,6 +276,7 @@ router.post('/sos/:id/resolve', async (req, res) => {
         userId: true,
         latitude: true,
         longitude: true,
+        audienceUserIds: true,
         user: {
           include: { profile: true },
         },
@@ -292,6 +319,9 @@ router.post('/sos/:id/resolve', async (req, res) => {
         ? req.body.resolutionNote.trim().slice(0, 300)
         : null;
 
+    // Read before resolving: it is worked out from the alerts still active.
+    const allClearTo = await sosAllClearAudience(alert);
+
     // Resolve all active alerts for this user to ensure no orphaned active records remain
     await prisma.sOSAlert.updateMany({
       where: { userId: alert.userId, status: 'ACTIVE' },
@@ -307,15 +337,11 @@ router.post('/sos/:id/resolve', async (req, res) => {
       ? `${alert.user.profile.firstName} ${alert.user.profile.lastName || ''}`.trim()
       : (alert.user?.email?.split('@')[0] ?? 'User');
 
-    // Broadcast once globally to all connected clients so every device dismisses the alert without duplicate messages
+    // The all-clear goes to everyone who was sent the alert, so their banner
+    // clears — and to nobody else, who never saw it.
     const io = req.app.get('socketio');
-    io?.emit('sosResolved', {
-      id,
-      userId: alert.userId,
-      userName: victimName,
-      resolverName,
-      resolutionNote,
-    });
+    const allClear = { id, userId: alert.userId, userName: victimName, resolverName, resolutionNote };
+    new Set([...allClearTo, userId]).forEach((uid) => io?.to(uid).emit('sosResolved', allClear));
 
     const audience = await resolveSosAudience(alert.userId, {
       lat: alert.latitude,

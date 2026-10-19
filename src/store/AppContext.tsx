@@ -635,7 +635,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
   }, []);
 
+  // The server lists only the alerts this user was sent, and only when
+  // signed in, so a signed-out device has nothing to fetch.
   const refreshSosAlerts = useCallback(() => {
+    if (!isLoggedIn) return;
     apiService
       .getSOSAlerts()
       .then((alerts) => {
@@ -644,7 +647,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       })
       .catch((e) => logger.warn('[Safety] Refresh SOS alerts failed:', e));
-  }, []);
+  }, [isLoggedIn]);
 
   const reloadIncomingRequestsCount = useCallback(() => {
     if (!isLoggedIn) return;

@@ -1140,6 +1140,12 @@ model SOSAlert {
   /// What they said when standing it down ("found my group", "all fine").
   resolutionNote String?
   resolvedAt     DateTime?
+  /// Everyone this SOS was sent to, saved when it was raised (see
+  /// services/sos-audience.ts). Only these people see it in the Home/Chat
+  /// banner and get its all-clear — the person's name and exact location
+  /// must not reach anyone outside the audience their own setting chose.
+  /// Empty only on alerts raised before this was recorded.
+  audienceUserIds String[] @default([])
 
   @@index([userId])
   @@index([status])

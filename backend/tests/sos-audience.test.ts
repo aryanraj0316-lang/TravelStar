@@ -99,12 +99,40 @@ describe('SOS', () => {
     expect(messages[0]!.longitude).toBeCloseTo(75.7873, 3);
     expect(messages[0]!.content).toContain('Lost near the fort');
 
-    // And the organizer has a notification row, not just a socket emit they
-    // may have been offline for.
+    // The organizer still finds it in the Home/Chat banner after opening
+    // the app late: the banner lists the alerts they were sent.
+    const alertId = sos.body.data.id as string;
+    const seenBy = async (token?: string) => {
+      const res = token
+        ? await request(app).get('/api/v1/safety/sos').set('Authorization', `Bearer ${token}`)
+        : await request(app).get('/api/v1/safety/sos');
+      return { status: res.status, ids: res.status === 200 ? (res.body.data as { id: string }[]).map((a) => a.id) : [] };
+    };
+    expect((await seenBy(organizer.token)).ids).toContain(alertId);
+    expect((await seenBy(traveller.token)).ids).toContain(alertId);
+
+    // Nobody outside the audience sees their name and exact location —
+    // not another app user, and not someone who is signed out.
+    const stranger = await registerAndLogin('stranger');
+    const forStranger = await seenBy(stranger.token);
+    expect(forStranger.status).toBe(200);
+    expect(forStranger.ids).not.toContain(alertId);
+    expect((await seenBy()).status).toBe(401);
+
+    // An alert saved before audiences were recorded is worked out from
+    // where it was raised, with the same result.
+    const legacy = await prisma.sOSAlert.create({
+      data: { userId: traveller.userId, latitude: 26.9124, longitude: 75.7873 },
+    });
+    expect(legacy.audienceUserIds).toEqual([]);
+    expect((await seenBy(organizer.token)).ids).toContain(legacy.id);
+    expect((await seenBy(stranger.token)).ids).not.toContain(legacy.id);
+
+    // SOS lives in the banner, not on the Notifications page.
     const notes = await prisma.notification.count({
       where: { userId: organizer.userId, type: 'HAZARD' },
     });
-    expect(notes).toBeGreaterThan(0);
+    expect(notes).toBe(0);
   }, 120_000);
 
   it('labels a stale position instead of presenting it as a live fix', async () => {
@@ -347,11 +375,11 @@ describe('SOS', () => {
     expect(sos.body.data.message).toContain('within 5 km');
     expect(sos.body.data.message).toContain('your trip group');
 
-    // The stranger really is notified, and it survives them being offline.
-    const notified = await prisma.notification.findFirst({
-      where: { userId: near.userId, type: 'HAZARD' },
-    });
-    expect(notified).toBeTruthy();
+    // The nearby traveller was really reached, and still sees it in the
+    // Home/Chat banner if they open the app later.
+    const forNear = await request(app).get('/api/v1/safety/sos').set('Authorization', `Bearer ${near.token}`);
+    expect(forNear.status).toBe(200);
+    expect((forNear.body.data as { id: string }[]).map((a) => a.id)).toContain(sos.body.data.id);
   }, 120_000);
 
   it('refuses a radius beyond the cap rather than silently widening it', async () => {

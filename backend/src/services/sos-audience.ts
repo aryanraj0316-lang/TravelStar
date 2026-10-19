@@ -202,3 +202,50 @@ export async function getSosAudienceUserIds(
   const { userIds } = await resolveSosAudience(alertingUserId, origin);
   return userIds;
 }
+
+/**
+ * Who a raised SOS was sent to: the audience saved on the alert when it was
+ * raised. Everyone else must not see it — not in the Home/Chat banner, not
+ * in its all-clear. Alerts raised before the audience was saved have an
+ * empty list; for those it is resolved from where the alert was raised (the
+ * closest answer still available) and saved, so it is only worked out once
+ * rather than on every banner refresh.
+ */
+export async function sosAlertAudience(alert: {
+  id?: string;
+  userId: string;
+  latitude: number;
+  longitude: number;
+  audienceUserIds: string[];
+}): Promise<string[]> {
+  if (alert.audienceUserIds.length > 0) return alert.audienceUserIds;
+  const userIds = await getSosAudienceUserIds(alert.userId, { lat: alert.latitude, lng: alert.longitude });
+  if (alert.id) {
+    await prisma.sOSAlert
+      .update({ where: { id: alert.id }, data: { audienceUserIds: userIds } })
+      .catch((err) => logger.warn('[SOS] Could not save the audience of an older alert:', err));
+  }
+  return userIds;
+}
+
+/**
+ * Who hears an all-clear: everyone who was sent the alert being resolved or
+ * any other active alert of the same person (resolving one resolves them
+ * all). Call it before marking them resolved — it reads the active ones.
+ */
+export async function sosAllClearAudience(alert: {
+  userId: string;
+  latitude: number;
+  longitude: number;
+  audienceUserIds: string[];
+}): Promise<string[]> {
+  const active = await prisma.sOSAlert.findMany({
+    where: { userId: alert.userId, status: 'ACTIVE' },
+    select: { id: true, userId: true, latitude: true, longitude: true, audienceUserIds: true },
+  });
+  const ids = new Set<string>([alert.userId]);
+  for (const a of [alert, ...active]) {
+    (await sosAlertAudience(a)).forEach((id) => ids.add(id));
+  }
+  return [...ids];
+}
