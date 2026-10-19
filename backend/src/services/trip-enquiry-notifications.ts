@@ -1,7 +1,7 @@
 import type { Server as SocketIOServer } from 'socket.io';
 import prisma from './db';
 import { logger } from '../lib/logger';
-import { sendPushToUsers, unreadCountFor } from '../lib/push';
+import { sendPushToUsers } from '../lib/push';
 import { organizerHasUnreadInEnquiry } from './enquiry-notification-hygiene';
 
 /**
@@ -119,7 +119,6 @@ export async function notifyTripEnquiry(opts: {
       // and answering it usually means approving or declining a join
       // request in the same place.
       data: { screen: 'group-organizer', tripId, chatRoomId },
-      badge: await unreadCountFor(organizerId),
     });
   } catch (err) {
     // Never fail the enquiry itself over its notification — the thread and

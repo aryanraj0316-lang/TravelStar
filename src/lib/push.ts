@@ -181,37 +181,64 @@ export function routeForNotificationData(data: Record<string, unknown> | undefin
 }
 
 /**
- * Sync the app-icon badge to the server's unread count.
+ * Make the app-icon badge match what is unread, on every kind of phone.
  *
- * Once nothing is unread, the app's notifications are also cleared from the
- * phone's notification tray. On Android the red dot on the app icon is not
- * the badge number at all: it shows for as long as the app has anything in
- * the tray, and setting the count to 0 does not remove it (most launchers
- * ignore the count). Pushes read inside the app — or SOS pushes, which have
- * no row on the Notifications page — used to sit in the tray indefinitely,
- * keeping the dot on with nothing left to see in the app.
+ *  - iPhone: the badge is the number set here (and the `badge` each push
+ *    carries while the app is closed).
+ *  - Android launchers that take an explicit number (vivo, OPPO, Huawei,
+ *    Sony, HTC, ZTE...): the number set here, and the `unreadCount` each push
+ *    carries while the app is closed (patches/expo-notifications+*.patch).
+ *    Upstream never sent those launchers a 0, so a badge set once stayed
+ *    forever; the patch fixes that.
+ *  - Android launchers that badge from the notification tray (Pixel,
+ *    Samsung One UI, OnePlus, Motorola, MIUI...): the tray. So the tray is
+ *    kept to what is still unread — emptied once nothing is, and otherwise
+ *    cleared of notifications already read in the app.
+ *
+ * Runs when the app opens or comes back to the foreground, and after
+ * anything is read.
  */
 export async function syncBadgeCount(): Promise<void> {
   if (!Notifications) return;
-  let count: number;
+  let unread: { count: number; ids?: string[]; titles?: string[] };
   try {
-    count = (await apiService.getUnreadNotificationCount()).count;
+    unread = await apiService.getUnreadNotificationCount();
   } catch (error) {
     logger.warn('[Push] Badge sync failed:', error);
     return;
   }
-  // Separate steps: a launcher that rejects badge numbers must not stop the
-  // tray from being cleared, which is what removes the dot on Android.
+  // Each step on its own: one failing must not stop the others.
   try {
-    await Notifications.setBadgeCountAsync(count);
+    await Notifications.setBadgeCountAsync(unread.count);
   } catch (error) {
     logger.warn('[Push] Setting the badge failed:', error);
   }
-  if (count === 0) {
-    try {
+  try {
+    if (unread.count === 0) {
       await Notifications.dismissAllNotificationsAsync();
-    } catch (error) {
-      logger.warn('[Push] Clearing the notification tray failed:', error);
+    } else if (unread.ids && unread.titles) {
+      await removeReadFromTray(new Set(unread.ids), new Set(unread.titles));
     }
+  } catch (error) {
+    logger.warn('[Push] Tidying the notification tray failed:', error);
   }
+}
+
+/**
+ * Take notifications the user has already read out of the phone's tray. Each
+ * push carries the id of its notification row (backend/src/lib/push.ts); a
+ * push from before that is matched by title, which it shares with its row.
+ * A tray entry with neither is left alone rather than guessed at.
+ */
+async function removeReadFromTray(unreadIds: Set<string>, unreadTitles: Set<string>): Promise<void> {
+  if (!Notifications) return;
+  const presented = await Notifications.getPresentedNotificationsAsync();
+  const read = presented.filter((p) => {
+    const data = p.request.content.data as Record<string, unknown> | null | undefined;
+    const id = typeof data?.notificationId === 'string' ? data.notificationId : null;
+    if (id) return !unreadIds.has(id);
+    const title = p.request.content.title;
+    return !!title && !unreadTitles.has(title);
+  });
+  await Promise.all(read.map((p) => Notifications.dismissNotificationAsync(p.request.identifier)));
 }

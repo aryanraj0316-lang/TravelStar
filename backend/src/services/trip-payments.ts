@@ -5,7 +5,7 @@ import prisma from './db';
 import { env } from '../config/env';
 import { logger } from '../lib/logger';
 import { holdSeatsForRequest } from './trip-membership';
-import { sendPushToUsers, unreadCountFor } from '../lib/push';
+import { sendPushToUsers } from '../lib/push';
 import { Decimal } from '@prisma/client/runtime/library';
 import type { Server as SocketIOServer } from 'socket.io';
 
@@ -658,7 +658,6 @@ async function notifyTraveller(
       title: opts.title,
       body: opts.content.split('\n')[0] ?? opts.content,
       data: opts.data ?? (opts.tripId ? { screen: 'trip-pass', tripId: opts.tripId } : {}),
-      badge: await unreadCountFor(userId),
     });
   } catch (err) {
     logger.warn('[TripPayments] Notification failed (non-fatal):', err);
@@ -734,7 +733,6 @@ async function dispatchPaymentCompletedNotifications(orderId: string, io?: Socke
       title,
       body: `${displayName(order.user)} paid — token ${order.verificationToken}. Allocate their seat & rooms.`,
       data: { screen: 'group-organizer', tripId: trip.id, tab: 'chat', subTab: 'approvals' },
-      badge: await unreadCountFor(trip.creatorId),
     });
   } catch (err) {
     logger.warn('[TripPayments] Payment notifications failed (non-fatal):', err);

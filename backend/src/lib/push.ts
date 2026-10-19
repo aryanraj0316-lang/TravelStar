@@ -1,7 +1,7 @@
 import prisma from '../services/db';
 import { env } from '../config/env';
 import { logger } from './logger';
-import { pruneReadEnquiryNotifications } from '../services/enquiry-notification-hygiene';
+import { pruneReadChatNotifications, pruneReadEnquiryNotifications } from '../services/enquiry-notification-hygiene';
 import { HIDDEN_FROM_LIST } from './notification-visibility';
 
 /**
@@ -37,8 +37,6 @@ export interface PushMessage {
   body: string;
   /** Delivered to the app on tap — drives the deep link (§8.18). */
   data?: Record<string, string>;
-  /** iOS app-icon badge. Pass the recipient's real unread count. */
-  badge?: number;
 }
 
 interface ExpoTicket {
@@ -107,9 +105,37 @@ export async function sendPushToUsers(
 
     const devices = await prisma.deviceToken.findMany({
       where: { userId: { in: optedIn } },
-      select: { token: true, platform: true },
+      select: { token: true, platform: true, userId: true },
     });
     if (devices.length === 0) return { sent: 0, skipped };
+
+    // Every push carries its recipient's own unread count — the app-icon
+    // badge. It used to be one number per call, passed by only some callers,
+    // so a push to several people (an announcement, a hazard alert) left
+    // everyone's badge stale. Callers create the notification row first, so
+    // the count already includes it. iOS reads `badge`; Android has no badge
+    // field, so the app's push handler reads `unreadCount` from the data
+    // (patches/expo-notifications+*.patch).
+    const recipients = [...new Set(devices.map((d) => d.userId))];
+    const unread = new Map(
+      await Promise.all(recipients.map(async (uid) => [uid, await unreadCountFor(uid)] as const)),
+    );
+    // The notification row each recipient got for this push (callers create
+    // it just before, with the same title), so tapping the push marks exactly
+    // that notification read in the app. A push with no row (an SOS) has none.
+    const since = new Date(Date.now() - 5 * 60 * 1000);
+    const rowIds = new Map(
+      await Promise.all(
+        recipients.map(async (uid) => {
+          const row = await prisma.notification.findFirst({
+            where: { title: message.title, createdAt: { gte: since }, OR: [{ userId: uid }, { userId: null }] },
+            orderBy: { createdAt: 'desc' },
+            select: { id: true },
+          });
+          return [uid, row?.id] as const;
+        }),
+      ),
+    );
 
     let sent = 0;
     for (const batch of chunk(devices, MAX_MESSAGES_PER_REQUEST)) {
@@ -117,9 +143,13 @@ export async function sendPushToUsers(
         to: d.token,
         title: message.title,
         body: message.body,
-        data: message.data ?? {},
+        data: {
+          ...(message.data ?? {}),
+          unreadCount: String(unread.get(d.userId) ?? 0),
+          ...(rowIds.get(d.userId) ? { notificationId: rowIds.get(d.userId) as string } : {}),
+        },
         sound: 'default' as const,
-        badge: message.badge,
+        badge: unread.get(d.userId) ?? 0,
         // Matches the channel the client creates in src/lib/push.ts.
         // Android 8+ drops a notification with an unknown channel.
         channelId: 'default',
@@ -188,9 +218,9 @@ export async function unreadCountFor(userId: string): Promise<number> {
   // app-icon badge can never disagree with it: an enquiry alert for a
   // thread this user has already read does not count.
   await pruneReadEnquiryNotifications(userId);
+  await pruneReadChatNotifications(userId);
 
-  const me = await prisma.user.findUnique({ where: { id: userId }, select: { createdAt: true } });
-  const sinceJoined = { userId: null, createdAt: { gte: me?.createdAt ?? new Date(0) }, NOT: HIDDEN_FROM_LIST };
+  const sinceJoined = await broadcastsSinceJoined(userId);
 
   const [personal, broadcastTotal, broadcastRead] = await Promise.all([
     prisma.notification.count({
@@ -204,4 +234,37 @@ export async function unreadCountFor(userId: string): Promise<number> {
     prisma.notificationRead.count({ where: { userId, notification: sinceJoined } }),
   ]);
   return personal + Math.max(0, broadcastTotal - broadcastRead);
+}
+
+/** Broadcasts that can count as unread for this user: sent since they joined, and shown in the list. */
+async function broadcastsSinceJoined(userId: string) {
+  const me = await prisma.user.findUnique({ where: { id: userId }, select: { createdAt: true } });
+  return { userId: null, createdAt: { gte: me?.createdAt ?? new Date(0) }, NOT: HIDDEN_FROM_LIST };
+}
+
+/**
+ * What is unread for this user, by id and by title, for the app to take
+ * already-read notifications out of the phone's tray — which is what
+ * launchers that badge from the tray count. A tray entry carries its row's
+ * id (sendPushToUsers); title is the fallback, since a push and its row
+ * share one. Call after unreadCountFor, which settles stale rows first.
+ */
+export async function unreadSummaryFor(userId: string): Promise<{ ids: string[]; titles: string[] }> {
+  const sinceJoined = await broadcastsSinceJoined(userId);
+  const [personal, broadcasts] = await Promise.all([
+    prisma.notification.findMany({
+      where: { userId, unread: true, NOT: HIDDEN_FROM_LIST },
+      select: { id: true, title: true },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    }),
+    prisma.notification.findMany({
+      where: { ...sinceJoined, reads: { none: { userId } } },
+      select: { id: true, title: true },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    }),
+  ]);
+  const rows = [...personal, ...broadcasts];
+  return { ids: rows.map((n) => n.id), titles: [...new Set(rows.map((n) => n.title))] };
 }

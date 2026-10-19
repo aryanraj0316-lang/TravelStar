@@ -1,0 +1,2 @@
+# patch-package patches must keep LF endings, or they stop applying on Windows checkouts.
+patches/*.patch text eol=lf

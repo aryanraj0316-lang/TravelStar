@@ -93,3 +93,37 @@ export async function organizerHasUnreadInEnquiry(
   });
   return waiting > 0;
 }
+
+/**
+ * A notification tied to a chat room (in practice an enquiry alert) is done
+ * with once nothing in that room is unread for this user: it is marked read.
+ * Run by both the Notifications list and the unread count, so the badge can
+ * never count a row the list has already settled.
+ */
+export async function pruneReadChatNotifications(userId: string): Promise<void> {
+  try {
+    const chatNotifs = await prisma.notification.findMany({
+      where: { userId, unread: true, chatRoomId: { not: null } },
+      select: { id: true, chatRoomId: true },
+    });
+    if (chatNotifs.length === 0) return;
+    const roomIds = [...new Set(chatNotifs.map((n) => n.chatRoomId as string))];
+    const unreadMsgs = await prisma.message.findMany({
+      where: {
+        chatRoomId: { in: roomIds },
+        senderId: { not: userId },
+        isSystem: false,
+        readBy: { none: { userId } },
+      },
+      select: { chatRoomId: true },
+      distinct: ['chatRoomId'],
+    });
+    const roomsWithUnread = new Set(unreadMsgs.map((m) => m.chatRoomId));
+    const staleIds = chatNotifs.filter((n) => !roomsWithUnread.has(n.chatRoomId as string)).map((n) => n.id);
+    if (staleIds.length > 0) {
+      await prisma.notification.updateMany({ where: { id: { in: staleIds } }, data: { unread: false } });
+    }
+  } catch (err) {
+    logger.warn('[Notifications] Failed auto-pruning chat notifications:', err);
+  }
+}

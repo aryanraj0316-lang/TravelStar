@@ -249,7 +249,6 @@ router.post('/join-request', async (req, res) => {
         title: notifTitle,
         body: notifContent,
         data: { screen: 'group-organizer', tripId: trip.id, tab: 'chat', subTab: 'approvals' },
-        badge: await unreadCountFor(trip.creatorId),
       });
     } catch (notifErr) {
       logger.warn('[Interactions] Failed to send join request notification to organizer:', notifErr);
@@ -588,7 +587,6 @@ const handleStatusChange = async (req: Request, res: Response) => {
         title,
         body: content,
         data: refunded > 0 ? { screen: 'bookings' } : { screen: 'trip', tripId: request.tripId },
-        badge: await unreadCountFor(request.userId),
       });
 
       const updated = await prisma.joinRequest.findUnique({ where: { id } });
@@ -653,7 +651,6 @@ const handleStatusChange = async (req: Request, res: Response) => {
         title: 'Payment Required — ' + request.trip.name,
         body: `Please complete payment of ₹${fee} to join ${request.trip.name}`,
         data: { screen: 'trip-payment', joinRequestId: request.id, tripId: request.tripId },
-        badge: await unreadCountFor(request.userId),
       });
 
       const updated = await prisma.joinRequest.findUnique({ where: { id: request.id } });
@@ -700,7 +697,6 @@ const handleStatusChange = async (req: Request, res: Response) => {
         title,
         body: content,
         data: { screen: 'trip-pass', tripId: request.tripId },
-        badge: await unreadCountFor(request.userId),
       });
     }
 

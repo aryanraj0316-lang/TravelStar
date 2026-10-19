@@ -1,0 +1,94 @@
+diff --git a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/badge/BadgeHelper.kt b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/badge/BadgeHelper.kt
+index 22322f3..56af9b9 100644
+--- a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/badge/BadgeHelper.kt
++++ b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/badge/BadgeHelper.kt
+@@ -10,20 +10,47 @@ object BadgeHelper {
+     get() = synchronized(this) { field }
+     private set(value) = synchronized(this) { field = value }
+ 
+-  fun setBadgeCount(context: Context, badgeCount: Int): Boolean {
++  /**
++   * Launchers that show an explicit number (vivo, OPPO, Huawei, Sony, HTC,
++   * ZTE and others) only learn it from the app, through ShortcutBadger, and
++   * keep whatever they were last sent. Upstream never sent them 0 — a count
++   * of 0 only cleared the notification tray — so once a badge was set on
++   * those phones it could never be cleared. Every count, 0 included, now
++   * reaches the launcher.
++   *
++   * Returns false where the launcher has no such badge; those (Pixel,
++   * Samsung One UI, OnePlus, MIUI...) badge from the notification tray.
++   */
++  fun applyLauncherCount(context: Context, count: Int): Boolean {
++    val safeCount = maxOf(count, 0)
++    BadgeHelper.badgeCount = safeCount
+     return try {
+-      if (badgeCount == 0) {
+-        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+-        notificationManager.cancelAll()
++      if (safeCount == 0) {
++        ShortcutBadger.removeCountOrThrow(context.applicationContext)
+       } else {
+-        ShortcutBadger.applyCountOrThrow(context.applicationContext, badgeCount)
++        ShortcutBadger.applyCountOrThrow(context.applicationContext, safeCount)
+       }
+-      BadgeHelper.badgeCount = badgeCount
+       true
+     } catch (e: ShortcutBadgeException) {
+       Log.d("expo-notifications", "Could not have set badge count: ${e.message}", e)
+-      e.printStackTrace()
+       false
++    } catch (e: Exception) {
++      // Runs inside push handling too: a misbehaving launcher must never
++      // stop a notification from being delivered.
++      Log.w("expo-notifications", "Launcher badge update failed: ${e.message}", e)
++      false
++    }
++  }
++
++  fun setBadgeCount(context: Context, badgeCount: Int): Boolean {
++    val count = maxOf(badgeCount, 0)
++    if (count == 0) {
++      // Nothing left unread: clear the tray as well, which is what removes
++      // the badge on launchers that badge from the tray.
++      val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
++      notificationManager.cancelAll()
+     }
++    val applied = applyLauncherCount(context, count)
++    return count == 0 || applied
+   }
+ }
+diff --git a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/service/delegates/FirebaseMessagingDelegate.kt b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/service/delegates/FirebaseMessagingDelegate.kt
+index eecdae8..4ec9227 100644
+--- a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/service/delegates/FirebaseMessagingDelegate.kt
++++ b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/service/delegates/FirebaseMessagingDelegate.kt
+@@ -4,6 +4,7 @@ import android.content.Context
+ import android.os.Bundle
+ import com.google.firebase.messaging.RemoteMessage
+ import expo.modules.interfaces.taskManager.TaskServiceProviderHelper
++import expo.modules.notifications.badge.BadgeHelper
+ import expo.modules.notifications.notifications.RemoteMessageSerializer
+ import expo.modules.notifications.notifications.background.BackgroundRemoteNotificationTaskConsumer
+ import expo.modules.notifications.notifications.debug.DebugLogging
+@@ -110,9 +111,22 @@ open class FirebaseMessagingDelegate(protected val context: Context) : FirebaseM
+     val notification = createNotification(remoteMessage)
+     DebugLogging.logNotification("FirebaseMessagingDelegate.onMessageReceived: notification", notification)
+     NotificationsService.receive(context, notification)
++    // The server sends the recipient's unread count with every push. Launchers
++    // that only show a number the app gives them (vivo, OPPO, Huawei...) get
++    // it here, so their badge is right even while the app is closed.
++    unreadCountFrom(remoteMessage)?.let { BadgeHelper.applyLauncherCount(context, it) }
+     runTaskManagerTasks(context.applicationContext, RemoteMessageSerializer.toBundle(remoteMessage))
+   }
+ 
++  /** `unreadCount` from the push's data, which Expo delivers as the JSON `body`. */
++  private fun unreadCountFrom(remoteMessage: RemoteMessage): Int? {
++    return try {
++      remoteMessage.data["body"]?.let { org.json.JSONObject(it).optString("unreadCount", "").toIntOrNull() }
++    } catch (e: Exception) {
++      null
++    }
++  }
++
+   protected fun createNotification(remoteMessage: RemoteMessage): Notification {
+     val identifier = getNotificationIdentifier(remoteMessage)
+ 

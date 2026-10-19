@@ -3,7 +3,7 @@ import { z } from 'zod';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 import { requireUserId } from '../../lib/auth-context';
-import { sendPushToUsers, unreadCountFor } from '../../lib/push';
+import { sendPushToUsers } from '../../lib/push';
 import { admitAllocatedMember, holdSeatsForRequest } from '../../services/trip-membership';
 import { amountForRequest, announceMemberJoined, displayName } from '../../services/trip-payments';
 import { cancelBooking, computeRefundQuote } from '../../services/trip-cancellation';
@@ -283,7 +283,6 @@ router.post('/:tripId/approve-and-allocate', async (req, res) => {
         title,
         body: content,
         data: { screen: 'trip-pass', tripId: trip.id, chatRoomId: chatRoomId ?? '' },
-        badge: await unreadCountFor(jr.userId),
       });
     } catch (err) {
       logger.warn('[TripBookings] Confirmation notification failed (non-fatal):', err);

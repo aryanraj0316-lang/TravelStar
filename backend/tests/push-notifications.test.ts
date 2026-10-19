@@ -1,7 +1,7 @@
 import request from 'supertest';
 import app from '../src/app';
 import prisma from '../src/services/db';
-import { unreadCountFor } from '../src/lib/push';
+import { sendPushToUsers, unreadCountFor } from '../src/lib/push';
 import { uniqueTestPhone } from './test-phone';
 
 /**
@@ -263,6 +263,74 @@ describe('the badge counts exactly what the Notifications page shows', () => {
     });
     createdNotificationIds.push(fresh.id);
     expect(await unreadCountFor(user.userId)).toBe(baseline + 1);
+  });
+});
+
+describe('every push carries its own recipient badge', () => {
+  it('sends each recipient their own unread count and notification id', async () => {
+    const busy = await registerAndLogin('push-busy');
+    const quiet = await registerAndLogin('push-quiet');
+    for (const [u, suffix] of [[busy, 'busy'], [quiet, 'quiet']] as const) {
+      const reg = await request(app)
+        .post('/api/v1/notifications/device-token')
+        .set('Authorization', `Bearer ${u.token}`)
+        .send({ token: expoToken(suffix), platform: 'android' });
+      expect(reg.status).toBeLessThan(300);
+    }
+
+    // `busy` already has two unread; both get the new announcement.
+    const earlier = await prisma.notification.createManyAndReturn({
+      data: [1, 2].map((i) => ({ userId: busy.userId, type: 'TRIP' as const, title: `Earlier ${i}`, content: 'x', time: 'Just now' })),
+    });
+    const title = `Departure moved ${runId}`;
+    const rows = await prisma.notification.createManyAndReturn({
+      data: [busy, quiet].map((u) => ({ userId: u.userId, type: 'TRIP' as const, title, content: 'x', time: 'Just now' })),
+    });
+    createdNotificationIds.push(...earlier.map((r) => r.id), ...rows.map((r) => r.id));
+
+    // Capture what goes to the Expo push service instead of sending it.
+    const sentBodies: Array<Array<{ to: string; badge: number; data: Record<string, string> }>> = [];
+    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(async (_url, init) => {
+      const batch = JSON.parse(String(init?.body));
+      sentBodies.push(batch);
+      return new Response(JSON.stringify({ data: batch.map(() => ({ status: 'ok' })) }), { status: 200 });
+    });
+    try {
+      await sendPushToUsers([busy.userId, quiet.userId], 'TRIP', { title, body: 'x', data: { screen: 'trip' } });
+    } finally {
+      fetchSpy.mockRestore();
+    }
+
+    const sent = sentBodies.flat();
+    const toBusy = sent.find((m) => m.to === expoToken('busy'));
+    const toQuiet = sent.find((m) => m.to === expoToken('quiet'));
+    // iOS reads `badge`; the Android patch reads `unreadCount`.
+    expect(toBusy?.badge).toBe(3);
+    expect(toBusy?.data.unreadCount).toBe('3');
+    expect(toQuiet?.badge).toBe(1);
+    expect(toQuiet?.data.unreadCount).toBe('1');
+    // Each carries the id of that recipient's own row, so tapping it marks
+    // exactly that notification read; the caller's own data is kept.
+    expect(toBusy?.data.notificationId).toBe(rows.find((r) => r.userId === busy.userId)?.id);
+    expect(toQuiet?.data.notificationId).toBe(rows.find((r) => r.userId === quiet.userId)?.id);
+    expect(toBusy?.data.screen).toBe('trip');
+  });
+
+  it('reports what is unread by id and title for tidying the phone tray', async () => {
+    const user = await registerAndLogin('push-summary');
+    const row = await prisma.notification.create({
+      data: { userId: user.userId, type: 'TRIP', title: `Summary ${runId}`, content: 'x', time: 'Just now' },
+    });
+    createdNotificationIds.push(row.id);
+
+    const res = await request(app).get('/api/v1/notifications/unread-count').set('Authorization', `Bearer ${user.token}`);
+    expect(res.body.data.count).toBeGreaterThanOrEqual(1);
+    expect(res.body.data.ids).toContain(row.id);
+    expect(res.body.data.titles).toContain(`Summary ${runId}`);
+
+    await request(app).post(`/api/v1/notifications/${row.id}/read`).set('Authorization', `Bearer ${user.token}`);
+    const after = await request(app).get('/api/v1/notifications/unread-count').set('Authorization', `Bearer ${user.token}`);
+    expect(after.body.data.ids ?? []).not.toContain(row.id);
   });
 });
 

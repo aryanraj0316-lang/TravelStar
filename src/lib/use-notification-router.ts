@@ -5,6 +5,7 @@ import type * as NotificationsType from 'expo-notifications';
 import { useRouter } from 'expo-router';
 import { routeForNotificationData, syncBadgeCount } from '@/lib/push';
 import { logger } from '@/lib/logger';
+import { apiService } from '@/services/api';
 
 // See src/lib/push.ts for why this can't be a static import: it throws at
 // import time for remote push on Android inside Expo Go.
@@ -30,6 +31,14 @@ export function useNotificationRouter(): void {
     const go = (response: NotificationsType.NotificationResponse | null) => {
       if (!response || cancelled) return;
       const data = response.notification.request.content.data as Record<string, unknown> | undefined;
+      // Opening a push is reading it: mark its notification read so the
+      // badge and the Notifications page stop counting it.
+      if (typeof data?.notificationId === 'string') {
+        apiService
+          .markNotificationRead(data.notificationId)
+          .then(() => syncBadgeCount())
+          .catch((error: unknown) => logger.warn('[Push] Could not mark the opened notification read:', error));
+      }
       const path = routeForNotificationData(data);
       try {
         router.push(path as never);

@@ -4,9 +4,9 @@ import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 import { cursorFilter, cursorPageQuerySchema, takeWithLookahead } from '../../lib/pagination';
 import { requireUserId } from '../../lib/auth-context';
-import { unreadCountFor } from '../../lib/push';
+import { unreadCountFor, unreadSummaryFor } from '../../lib/push';
 import { HIDDEN_FROM_LIST, broadcastIsUnread } from '../../lib/notification-visibility';
-import { pruneReadEnquiryNotifications } from '../../services/enquiry-notification-hygiene';
+import { pruneReadChatNotifications, pruneReadEnquiryNotifications } from '../../services/enquiry-notification-hygiene';
 
 const router = Router();
 
@@ -61,43 +61,9 @@ router.get('/', async (req, res) => {
     // never resurrect one the organizer has already dealt with.
     await pruneReadEnquiryNotifications(tokenUserId);
 
-    // Any notification whose chat room messages have all been read by this user is stale
-    try {
-      const chatNotifs = await prisma.notification.findMany({
-        where: {
-          userId: tokenUserId,
-          unread: true,
-          chatRoomId: { not: null },
-        },
-        select: { id: true, chatRoomId: true },
-      });
-      if (chatNotifs.length > 0) {
-        const roomIds = [...new Set(chatNotifs.map((n) => n.chatRoomId as string))];
-        const unreadMsgs = await prisma.message.findMany({
-          where: {
-            chatRoomId: { in: roomIds },
-            senderId: { not: tokenUserId },
-            isSystem: false,
-            readBy: { none: { userId: tokenUserId } },
-          },
-          select: { chatRoomId: true },
-          distinct: ['chatRoomId'],
-        });
-        const roomsWithUnread = new Set(unreadMsgs.map((m) => m.chatRoomId));
-        const staleNotifIds = chatNotifs
-          .filter((n) => !roomsWithUnread.has(n.chatRoomId as string))
-          .map((n) => n.id);
-
-        if (staleNotifIds.length > 0) {
-          await prisma.notification.updateMany({
-            where: { id: { in: staleNotifIds } },
-            data: { unread: false },
-          });
-        }
-      }
-    } catch (e) {
-      logger.warn('[Notifications] Failed auto-pruning chat notifications:', e);
-    }
+    // A chat-linked alert whose room has nothing unread left is done with;
+    // the unread count applies the same rule (lib/push.ts).
+    await pruneReadChatNotifications(tokenUserId);
 
     // Both streams are filtered by the same `createdAt < cursor` and each
     // over-fetches limit+1, so the newest `limit` of the union is correct:
@@ -313,7 +279,11 @@ router.put('/preferences', async (req, res) => {
 router.get('/unread-count', async (req, res) => {
   const userId = requireUserId(req);
   try {
-    return res.status(200).json({ ok: true, data: { count: await unreadCountFor(userId) } });
+    // `ids` and `titles` let the app take already-read notifications out of
+    // the phone's tray without loading the whole list.
+    const count = await unreadCountFor(userId);
+    const unread = count > 0 ? await unreadSummaryFor(userId) : { ids: [], titles: [] };
+    return res.status(200).json({ ok: true, data: { count, ...unread } });
   } catch (err) {
     logger.warn('[Notifications] Unread count failed:', err);
     return res

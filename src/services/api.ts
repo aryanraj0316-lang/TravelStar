@@ -1143,7 +1143,8 @@ export const apiService = {
     return request('/consent');
   },
 
-  async getUnreadNotificationCount(): Promise<{ count: number }> {
+  /** The unread count behind the bell dot and app-icon badge, with what is unread. */
+  async getUnreadNotificationCount(): Promise<{ count: number; ids?: string[]; titles?: string[] }> {
     return request('/notifications/unread-count');
   },
 

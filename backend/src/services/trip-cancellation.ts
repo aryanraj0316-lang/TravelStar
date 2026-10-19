@@ -4,7 +4,7 @@ import prisma from './db';
 import { logger } from '../lib/logger';
 import { releaseSeatAndLeave, SEAT_HOLDING_STATUSES } from './trip-membership';
 import { computeFeeSplit, displayName, notifyTraveller, refundOrder } from './trip-payments';
-import { sendPushToUsers, unreadCountFor } from '../lib/push';
+import { sendPushToUsers } from '../lib/push';
 
 // Tiered cancellation policy, by time left before the trip starts:
 //
@@ -211,7 +211,6 @@ async function notifyCancellation(opts: {
         title,
         body: content,
         data: { screen: 'group-organizer', tripId: opts.tripId },
-        badge: await unreadCountFor(trip.creatorId),
       });
     }
   } catch (err) {
