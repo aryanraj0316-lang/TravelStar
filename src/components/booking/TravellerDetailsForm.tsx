@@ -4,13 +4,11 @@
 // booker's saved profile. The server checks the same rules
 // (backend/src/lib/traveller-details.ts).
 import X from 'lucide-react-native/icons/x';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
-  Keyboard,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -22,6 +20,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { TravellerDetails, TravellerGender, TravellerIdType } from '@/types/api';
+import { useKeyboardLift, useScrollToFocused } from '@/lib/useKeyboardAwareSheet';
 import { useApp } from '@/store/AppContext';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 
@@ -135,66 +134,11 @@ function FormSheet({ partySize, submitLabel, onClose, onSubmit }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // ── Keyboard ──────────────────────────────────────────────────────────
-  // A pop-up sheet is not pushed up by the keyboard on Android, so the
-  // sheet is lifted by the keyboard's height itself, and the box being
-  // typed in is scrolled into view above it.
+  // ── Keyboard: lift the sheet above it, scroll the focused box into view.
   const { height: windowHeight } = useWindowDimensions();
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-  // The backdrop's height with no keyboard open (the tallest seen). If the system already
-  // shrank the window for the keyboard, only the rest is made up here, so
-  // the sheet is never lifted twice.
-  const [fullHeight, setFullHeight] = useState(0);
-  const [backdropHeight, setBackdropHeight] = useState(0);
-  const scrollRef = useRef<ScrollView>(null);
-  const contentRef = useRef<View>(null);
-  const inputs = useRef(new Map<string, TextInput | null>());
-  const focusedKey = useRef<string | null>(null);
-
-  const scrollToFocused = () => {
-    const input = focusedKey.current ? inputs.current.get(focusedKey.current) : null;
-    const content = contentRef.current;
-    if (!input || !content) return;
-    input.measureLayout(
-      content,
-      (_x, y) => {
-        // Leave room above the box for its label.
-        scrollRef.current?.scrollTo({ y: Math.max(0, y - 90), animated: true });
-      },
-      () => {},
-    );
-  };
-
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvent, (e) => {
-      setKeyboardHeight(e.endCoordinates.height);
-      // After the sheet has moved up.
-      setTimeout(scrollToFocused, 120);
-    });
-    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
-
-  const alreadyShrunk = keyboardHeight > 0 && fullHeight > 0 ? Math.max(0, fullHeight - backdropHeight) : 0;
-  const lift = Math.max(0, keyboardHeight - alreadyShrunk);
-  const sheetMaxHeight = Math.max(240, (backdropHeight || windowHeight) - lift - insets.top - 8);
-
-  /** Ref and focus handling for one text box. */
-  const field = (key: string) => ({
-    ref: (r: TextInput | null) => {
-      inputs.current.set(key, r);
-    },
-    onFocus: () => {
-      focusedKey.current = key;
-      // When the keyboard is already open, the show event will not fire again.
-      if (keyboardHeight > 0) setTimeout(scrollToFocused, 60);
-    },
-  });
+  const { keyboardHeight, lift, availableHeight, onBackdropLayout } = useKeyboardLift();
+  const { scrollRef, contentRef, field } = useScrollToFocused(keyboardHeight);
+  const sheetMaxHeight = Math.max(240, (availableHeight || windowHeight) - insets.top - 8);
 
   const update = (i: number, patch: Partial<Draft>) => {
     setDrafts((prev) => prev.map((d, j) => (j === i ? { ...d, ...patch } : d)));
@@ -232,14 +176,7 @@ function FormSheet({ partySize, submitLabel, onClose, onSubmit }: Props) {
   };
 
   return (
-    <View
-      style={styles.backdrop}
-      onLayout={(ev) => {
-        const h = ev.nativeEvent.layout.height;
-        setBackdropHeight(h);
-        setFullHeight((prev) => Math.max(prev, h));
-      }}
-    >
+    <View style={styles.backdrop} onLayout={onBackdropLayout}>
       <View style={{ maxHeight: sheetMaxHeight, marginBottom: lift }}>
         <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 12) }]}>
           <View style={styles.header}>

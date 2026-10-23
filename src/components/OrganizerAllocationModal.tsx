@@ -10,6 +10,7 @@
 import TravellerDetailsCard from '@/components/booking/TravellerDetailsCard';
 import { errorToastMessage, toast } from '@/lib/feedback';
 import { formatINR } from '@/lib/money';
+import { useKeyboardLift, useScrollToFocused } from '@/lib/useKeyboardAwareSheet';
 import { apiService } from '@/services/api';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import type { AllocationSubmission, PendingAllocationTraveller, PendingAllocations } from '@/types/api';
@@ -26,15 +27,15 @@ import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
   Modal,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
+  type TextInputProps,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -104,6 +105,10 @@ const emptyValues = (transit: string): SectionValues => ({
 export default function OrganizerAllocationModal({ visible, tripId, initialJoinRequestId, onClose, onConfirmed }: Props) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+  // The sheet rises above the keyboard (Android does not move pop-ups).
+  const { height: windowHeight } = useWindowDimensions();
+  const { keyboardHeight, lift, availableHeight, onBackdropLayout } = useKeyboardLift();
+  const sheetHeight = lift > 0 && availableHeight > 0 ? Math.min(windowHeight * 0.92, availableHeight - insets.top - 8) : undefined;
   const [selectedId, setSelectedId] = useState<string | null>(initialJoinRequestId ?? null);
   const [lastInitial, setLastInitial] = useState(initialJoinRequestId);
   // Re-target when opened for a different traveller.
@@ -127,8 +132,14 @@ export default function OrganizerAllocationModal({ visible, tripId, initialJoinR
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={close}>
-      <View style={styles.overlay}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[styles.sheet, { paddingBottom: insets.bottom }]}>
+      <View style={styles.overlay} onLayout={onBackdropLayout}>
+        <View
+          style={[
+            styles.sheet,
+            { paddingBottom: lift > 0 ? 0 : insets.bottom, marginBottom: lift },
+            sheetHeight ? { height: sheetHeight } : null,
+          ]}
+        >
           <View style={styles.header}>
             {selected ? (
               <TouchableOpacity onPress={() => setSelectedId(null)} style={styles.iconBtn} accessibilityRole="button" accessibilityLabel={t('common.back', 'Back')}>
@@ -162,6 +173,7 @@ export default function OrganizerAllocationModal({ visible, tripId, initialJoinR
               tripId={data.trip.id}
               traveller={selected}
               sections={buildSections(data)}
+              keyboardHeight={keyboardHeight}
               onDone={() => {
                 onConfirmed(selected.joinRequestId);
                 setSelectedId(null);
@@ -211,7 +223,7 @@ export default function OrganizerAllocationModal({ visible, tripId, initialJoinR
               )}
             </ScrollView>
           )}
-        </KeyboardAvoidingView>
+        </View>
       </View>
     </Modal>
   );
@@ -221,14 +233,17 @@ function AllocationForm({
   tripId,
   traveller,
   sections,
+  keyboardHeight,
   onDone,
 }: {
   tripId: string;
   traveller: PendingAllocationTraveller;
   sections: Section[];
+  keyboardHeight: number;
   onDone: () => void;
 }) {
   const { t } = useTranslation();
+  const { scrollRef, contentRef, field } = useScrollToFocused(keyboardHeight);
   const [tokenInput, setTokenInput] = useState('');
   const [verified, setVerified] = useState(!traveller.requiresToken || traveller.tokenVerified);
   const [verifying, setVerifying] = useState(false);
@@ -308,7 +323,8 @@ function AllocationForm({
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
+    <ScrollView ref={scrollRef} contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
+      <View ref={contentRef} style={styles.formInner}>
       {traveller.travellerDetails && traveller.travellerDetails.length > 0 ? (
         <TravellerDetailsCard
           travellers={traveller.travellerDetails}
@@ -335,6 +351,7 @@ function AllocationForm({
               </Text>
               <View style={styles.tokenInputRow}>
                 <TextInput
+                  {...field('token')}
                   style={styles.tokenInput}
                   value={tokenInput}
                   onChangeText={setTokenInput}
@@ -378,8 +395,8 @@ function AllocationForm({
 
               <View style={styles.fieldRow}>
                 <BedDouble size={14} color={C.textSecondary} />
-                <Field style={{ flex: 2 }} value={v.hotelName} onChange={(x) => setField(s.key, 'hotelName', x)} placeholder={t('allocation.hotel', 'Hotel / camp name')} />
-                <Field style={{ flex: 1 }} value={v.roomNumber} onChange={(x) => setField(s.key, 'roomNumber', x)} placeholder={t('allocation.room', 'Room #')} />
+                <Field inputProps={field(`${s.key}.hotelName`)} style={{ flex: 2 }} value={v.hotelName} onChange={(x) => setField(s.key, 'hotelName', x)} placeholder={t('allocation.hotel', 'Hotel / camp name')} />
+                <Field inputProps={field(`${s.key}.roomNumber`)} style={{ flex: 1 }} value={v.roomNumber} onChange={(x) => setField(s.key, 'roomNumber', x)} placeholder={t('allocation.room', 'Room #')} />
               </View>
 
               <View style={styles.transitRow}>
@@ -397,11 +414,11 @@ function AllocationForm({
               </View>
               <View style={styles.fieldRow}>
                 <Bus size={14} color={C.textSecondary} />
-                <Field style={{ flex: 2 }} value={v.vehicleNumber} onChange={(x) => setField(s.key, 'vehicleNumber', x)} placeholder={t('allocation.vehicle', 'Vehicle / plate / train #')} />
-                <Field style={{ flex: 1 }} value={v.seatNumber} onChange={(x) => setField(s.key, 'seatNumber', x)} placeholder={t('allocation.seat', 'Seat #')} />
+                <Field inputProps={field(`${s.key}.vehicleNumber`)} style={{ flex: 2 }} value={v.vehicleNumber} onChange={(x) => setField(s.key, 'vehicleNumber', x)} placeholder={t('allocation.vehicle', 'Vehicle / plate / train #')} />
+                <Field inputProps={field(`${s.key}.seatNumber`)} style={{ flex: 1 }} value={v.seatNumber} onChange={(x) => setField(s.key, 'seatNumber', x)} placeholder={t('allocation.seat', 'Seat #')} />
               </View>
-              <Field value={v.assemblyTime} onChange={(x) => setField(s.key, 'assemblyTime', x)} placeholder={t('allocation.assembly', 'Assembly time & place (optional), e.g. 06:30 AM at lobby')} />
-              <Field value={v.notes} onChange={(x) => setField(s.key, 'notes', x)} placeholder={t('allocation.notes', 'Notes for the traveller (optional)')} multiline />
+              <Field inputProps={field(`${s.key}.assemblyTime`)} value={v.assemblyTime} onChange={(x) => setField(s.key, 'assemblyTime', x)} placeholder={t('allocation.assembly', 'Assembly time & place (optional), e.g. 06:30 AM at lobby')} />
+              <Field inputProps={field(`${s.key}.notes`)} value={v.notes} onChange={(x) => setField(s.key, 'notes', x)} placeholder={t('allocation.notes', 'Notes for the traveller (optional)')} multiline />
               {err ? <Text style={styles.errText}>{t('allocation.sectionMissing', 'Hotel, room, vehicle and seat are required.')}</Text> : null}
             </View>
           );
@@ -422,6 +439,7 @@ function AllocationForm({
           </Text>
         )}
       </TouchableOpacity>
+      </View>
     </ScrollView>
   );
 }
@@ -432,7 +450,10 @@ function Field({
   placeholder,
   style,
   multiline,
+  inputProps,
 }: {
+  /** Ref and focus handler from useScrollToFocused. */
+  inputProps?: Pick<TextInputProps, 'onFocus'> & { ref?: (r: TextInput | null) => void };
   value: string;
   onChange: (v: string) => void;
   placeholder: string;
@@ -441,6 +462,7 @@ function Field({
 }) {
   return (
     <TextInput
+      {...inputProps}
       style={[styles.input, multiline && { minHeight: 60, textAlignVertical: 'top' }, style]}
       value={value}
       onChangeText={onChange}
@@ -497,7 +519,8 @@ const styles = StyleSheet.create({
   },
   tokenChipText: { fontSize: 12.5, fontWeight: '800', color: C.blueText, letterSpacing: 1 },
   allocateLink: { fontSize: 13, fontWeight: '800', color: C.accent },
-  form: { padding: 16, gap: 14, paddingBottom: 48 },
+  form: { padding: 16, paddingBottom: 48 },
+  formInner: { gap: 14 },
   tokenCard: { backgroundColor: C.card, borderRadius: 14, borderWidth: 1, borderColor: '#BFDBFE', padding: 14, gap: 8 },
   tokenCardOk: { borderColor: '#A7F3D0', backgroundColor: C.greenGlow },
   tokenHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
