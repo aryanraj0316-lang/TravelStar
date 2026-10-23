@@ -16,6 +16,7 @@ import {
   computeFeeSplit,
   type PaymentOutcome,
 } from '../../services/trip-payments';
+import { parseStoredTravellerDetails } from '../../lib/traveller-details';
 
 const router = Router();
 
@@ -75,6 +76,21 @@ function sendPaymentOutcome(res: Response, result: PaymentOutcome) {
   }
 }
 
+const DETAILS_REQUIRED = {
+  ok: false,
+  error: {
+    code: 'TRAVELLER_DETAILS_REQUIRED',
+    message: 'Please fill in the traveller details before paying.',
+  },
+} as const;
+
+/** No booking is paid for until its traveller details form is filled in. */
+async function hasTravellerDetails(joinRequestId: string): Promise<boolean> {
+  const row = await prisma.joinRequest.findUnique({ where: { id: joinRequestId }, select: { travellerDetails: true } });
+  // A missing booking is left to the payment code's own "not found".
+  return !row || parseStoredTravellerDetails(row.travellerDetails) !== null;
+}
+
 function validationError(res: Response, issues: z.ZodIssue[]) {
   return res.status(400).json({
     ok: false,
@@ -117,6 +133,10 @@ router.post('/initiate', async (req: Request, res: Response) => {
       ok: false,
       error: { code: 'INVALID_STATUS', message: `Booking is in status '${joinRequest.status}', expected 'PAYMENT_PENDING'` },
     });
+  }
+
+  if (!parseStoredTravellerDetails(joinRequest.travellerDetails)) {
+    return res.status(409).json(DETAILS_REQUIRED);
   }
 
   // Refuse before any money moves when the party can no longer fit. The
@@ -217,6 +237,7 @@ router.post('/wallet-pay', async (req: Request, res: Response) => {
   const { joinRequestId } = parsed.data;
   const userId = requireUserId(req);
 
+  if (!(await hasTravellerDetails(joinRequestId))) return res.status(409).json(DETAILS_REQUIRED);
   const result = await payFromWallet(joinRequestId, userId, req.app.get('socketio'));
   return sendPaymentOutcome(res, result);
 });
@@ -237,6 +258,7 @@ router.post('/pay', async (req: Request, res: Response) => {
   const { joinRequestId } = parsed.data;
   const userId = requireUserId(req);
 
+  if (!(await hasTravellerDetails(joinRequestId))) return res.status(409).json(DETAILS_REQUIRED);
   const result = await payDirect(joinRequestId, userId, req.app.get('socketio'));
   return sendPaymentOutcome(res, result);
 });
@@ -368,6 +390,8 @@ router.get('/order/:joinRequestId', async (req: Request, res: Response) => {
       gatewayDebit: order?.gatewayDebit ? order.gatewayDebit.toString() : null,
       tripName: joinRequest.trip.name,
       joinRequestStatus: joinRequest.status,
+      // False sends the traveller to the details form before paying.
+      travellerDetailsSubmitted: parseStoredTravellerDetails(joinRequest.travellerDetails) !== null,
     },
   });
 });

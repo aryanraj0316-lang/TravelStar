@@ -1,21 +1,29 @@
-// The traveller's details as the organizer sees them on a join request or
-// booking (Chats & Approvals → Approvals → View info). Paying for the trip is
-// the request to join it: from that moment their phone, email and emergency
-// contacts come with it (the server sends `contact: null` before payment).
-import Mail from 'lucide-react-native/icons/mail';
+// The traveller details as the organizer sees them on a booking (Chats &
+// Approvals → Approvals → View info): the form the traveller filled in
+// before paying, one card per seat. The server only sends it once the
+// booking is paid (or a free trip's request is sent).
 import Phone from 'lucide-react-native/icons/phone';
-import ShieldCheck from 'lucide-react-native/icons/shield-check';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import type { IncomingJoinRequest } from '@/types/api';
+import type { IncomingJoinRequest, TravellerIdType } from '@/types/api';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
+
+const ID_LABELS: Record<TravellerIdType, string> = {
+  AADHAAR: 'Aadhaar',
+  PASSPORT: 'Passport',
+  DRIVING_LICENCE: 'Driving licence',
+  VOTER_ID: 'Voter ID',
+  PAN: 'PAN card',
+};
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.row}>
       <Text style={styles.label}>{label}</Text>
-      <Text style={styles.value}>{value}</Text>
+      <Text style={styles.value} selectable>
+        {value}
+      </Text>
     </View>
   );
 }
@@ -24,7 +32,7 @@ function CallLink({ phone, label }: { phone: string; label: string }) {
   return (
     <TouchableOpacity
       style={styles.call}
-      onPress={() => void Linking.openURL(`tel:${phone}`)}
+      onPress={() => void Linking.openURL(`tel:${phone.replace(/[ -]/g, '')}`)}
       accessibilityRole="button"
       accessibilityLabel={label}
     >
@@ -34,103 +42,71 @@ function CallLink({ phone, label }: { phone: string; label: string }) {
   );
 }
 
-function EmailLink({ email }: { email: string }) {
-  return (
-    <TouchableOpacity
-      style={styles.call}
-      onPress={() => void Linking.openURL(`mailto:${email}`)}
-      accessibilityRole="link"
-      accessibilityLabel={email}
-    >
-      <Mail size={14} color={C.blueText} />
-      <Text style={styles.callText}>{email}</Text>
-    </TouchableOpacity>
-  );
-}
-
 export function ApplicantDetails({ request }: { request: IncomingJoinRequest }) {
   const { t } = useTranslation();
-  const a = request.applicant;
-  const contact = request.contact;
-  if (!a) return null;
+  const list = request.travellerDetails ?? null;
 
-  const place = [a.city, a.state, a.country && a.country !== 'India' ? a.country : null].filter(Boolean).join(', ');
-  const ageGender = [
-    a.age ? t('organizerTerms.age', { count: a.age, defaultValue: '{{count}} yrs' }) : null,
-    a.gender,
-  ]
-    .filter(Boolean)
-    .join(' · ');
-  const since = new Date(a.memberSince).toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+  if (!list || list.length === 0) {
+    return (
+      <View style={styles.wrap}>
+        <Text style={styles.heading}>{t('applicant.heading', 'Traveller details')}</Text>
+        <Text style={styles.muted}>
+          {request.detailsShared === false
+            ? t('applicant.detailsAfterPayment', 'The traveller’s details are shared the moment they pay.')
+            : t('applicant.noDetails', 'No traveller details were submitted with this booking.')}
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.wrap}>
-      <Text style={styles.heading}>{t('applicant.heading', 'About the traveller')}</Text>
-      {a.verifiedBadge ? (
-        <View style={styles.verified}>
-          <ShieldCheck size={13} color={C.greenText} />
-          <Text style={styles.verifiedText}>{t('applicant.verified', 'Verified profile')}</Text>
-        </View>
-      ) : null}
-      {ageGender ? <Row label={t('applicant.ageGender', 'Age / gender')} value={ageGender} /> : null}
-      {place ? <Row label={t('applicant.from', 'From')} value={place} /> : null}
-      {a.languages.length > 0 ? <Row label={t('applicant.languages', 'Languages')} value={a.languages.join(', ')} /> : null}
-      {a.travelStyle.length > 0 ? <Row label={t('applicant.travelStyle', 'Travel style')} value={a.travelStyle.join(', ')} /> : null}
-      {a.interests.length > 0 ? <Row label={t('applicant.interests', 'Interests')} value={a.interests.join(', ')} /> : null}
-      <Row label={t('applicant.memberSince', 'On the app since')} value={since} />
-      {a.bio ? <Text style={styles.bio}>{a.bio}</Text> : null}
-
-      <Text style={[styles.heading, { marginTop: 6 }]}>{t('applicant.contactHeading', 'Contact')}</Text>
-      {contact ? (
-        <>
-          {contact.phoneNumber ? (
-            <CallLink
-              phone={contact.phoneNumber}
-              label={t('applicant.call', { phone: contact.phoneNumber, defaultValue: 'Call {{phone}}' })}
-            />
-          ) : (
-            <Text style={styles.muted}>{t('applicant.noPhone', 'No phone number on the profile.')}</Text>
-          )}
-          {contact.email ? <EmailLink email={contact.email} /> : null}
-          {contact.emergencyContacts.length > 0 ? (
-            contact.emergencyContacts.map((ec) => (
-              <View key={`${ec.name}-${ec.phoneNumber}`} style={{ gap: 2 }}>
-                <Text style={styles.muted}>
-                  {t('applicant.emergencyContact', {
-                    name: ec.name,
-                    relation: ec.relation,
-                    defaultValue: 'Emergency contact: {{name}} ({{relation}})',
-                  })}
-                </Text>
+      <Text style={styles.heading}>{t('applicant.heading', 'Traveller details')}</Text>
+      {list.map((tr, i) => (
+        <View key={i} style={styles.card}>
+          <Text style={styles.cardTitle} selectable>
+            {list.length > 1 ? `${i + 1}. ` : ''}
+            {tr.fullName}
+          </Text>
+          <Row
+            label={t('applicant.ageGender', 'Age / gender')}
+            value={`${t('organizerTerms.age', { count: tr.age, defaultValue: '{{count}} yrs' })} · ${tr.gender}`}
+          />
+          <Row label={t('applicant.idProof', 'ID proof')} value={`${ID_LABELS[tr.idType] ?? tr.idType} · ${tr.idNumber}`} />
+          {tr.phone ? (
+            <CallLink phone={tr.phone} label={t('applicant.call', { phone: tr.phone, defaultValue: 'Call {{phone}}' })} />
+          ) : null}
+          {tr.emergencyContactName || tr.emergencyContactPhone ? (
+            <View style={{ gap: 2 }}>
+              <Text style={styles.muted}>
+                {t('applicant.emergencyContactShort', {
+                  name: tr.emergencyContactName ?? '',
+                  defaultValue: 'Emergency contact: {{name}}',
+                })}
+              </Text>
+              {tr.emergencyContactPhone ? (
                 <CallLink
-                  phone={ec.phoneNumber}
-                  label={t('applicant.call', { phone: ec.phoneNumber, defaultValue: 'Call {{phone}}' })}
+                  phone={tr.emergencyContactPhone}
+                  label={t('applicant.call', { phone: tr.emergencyContactPhone, defaultValue: 'Call {{phone}}' })}
                 />
-              </View>
-            ))
-          ) : (
-            <Text style={styles.muted}>{t('applicant.noEmergency', 'No emergency contact added.')}</Text>
-          )}
-        </>
-      ) : (
-        <Text style={styles.muted}>
-          {t('applicant.contactAfterPayment', 'Phone, email and emergency contact are shared the moment the traveller pays.')}
-        </Text>
-      )}
+              ) : null}
+            </View>
+          ) : null}
+        </View>
+      ))}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { gap: 6, marginTop: 6, paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.border },
+  wrap: { gap: 8, marginTop: 6, paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.border },
   heading: { fontSize: 12, fontWeight: '700', color: C.text },
+  card: { gap: 5, padding: 10, borderRadius: 10, backgroundColor: C.cardAlt, borderWidth: 1, borderColor: C.border },
+  cardTitle: { fontSize: 13, fontWeight: '800', color: C.text },
   row: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
   label: { fontSize: 12, color: C.textSec, fontWeight: '600' },
   value: { fontSize: 12, color: C.text, fontWeight: '700', flexShrink: 1, textAlign: 'right' },
-  bio: { fontSize: 12.5, color: C.text, lineHeight: 18 },
   muted: { fontSize: 12, color: C.textSec, lineHeight: 17 },
-  verified: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  verifiedText: { fontSize: 12, color: C.greenText, fontWeight: '600' },
   call: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: MIN_TOUCH_TARGET - 8 },
   callText: { fontSize: 13, fontWeight: '600', color: C.blueText },
 });

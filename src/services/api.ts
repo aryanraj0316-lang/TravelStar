@@ -65,6 +65,7 @@ import type {
   PendingAllocations,
   AllocationSubmission,
   CancelBookingResult,
+  TravellerDetails,
 } from '@/types/api';
 import { normalizeJoinRequestStatus } from '@/types/api';
 
@@ -1231,6 +1232,8 @@ export const apiService = {
       joiningDate?: string;
       /** The traveller ticked the rules / cancellation-policy consent box. */
       acceptedTerms?: boolean;
+      /** The details form, one entry per seat. */
+      travellerDetails?: TravellerDetails[];
     },
   ): Promise<JoinRequestSummary> {
     const created = await request<JoinRequestSummary>('/interactions/join-request', {
@@ -1238,6 +1241,14 @@ export const apiService = {
       body: JSON.stringify({ tripId, ...opts }),
     });
     return created ? { ...created, status: normalizeJoinRequestStatus(created.status) } : created;
+  },
+
+  /** Fills in the details form for a booking already waiting for payment. */
+  async saveTravellerDetails(joinRequestId: string, travellerDetails: TravellerDetails[]): Promise<unknown> {
+    return request(`/interactions/join-request/${joinRequestId}/traveller-details`, {
+      method: 'PUT',
+      body: JSON.stringify({ travellerDetails }),
+    });
   },
 
   async getJoinRequests(): Promise<JoinRequestSummary[] | null> {

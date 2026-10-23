@@ -3,6 +3,7 @@ import app from '../src/app';
 import prisma from '../src/services/db';
 import { uniqueTestPhone } from './test-phone';
 import { TEST_ORGANIZER_AGREEMENT } from './organizer-agreement-fixture';
+import { travellers } from './traveller-details-fixture';
 
 /**
  * The seat-booking concurrency test docs/REMEDIATION.md §5.4 asks for by
@@ -90,7 +91,7 @@ describe('Seat booking under concurrency (docs/REMEDIATION.md §5.4)', () => {
         request(app)
           .post('/api/v1/interactions/join-request')
           .set('Authorization', `Bearer ${c.token}`)
-          .send({ tripId, acceptedTerms: true }),
+          .send({ tripId, acceptedTerms: true, travellerDetails: travellers(1) }),
       ),
     );
     expect(bookings.every((b) => b.status === 201 && b.body.data.status === 'PAYMENT_PENDING')).toBe(true);
@@ -159,7 +160,7 @@ describe('Seat booking under concurrency (docs/REMEDIATION.md §5.4)', () => {
     const booked = await request(app)
       .post('/api/v1/interactions/join-request')
       .set('Authorization', `Bearer ${joiner.token}`)
-      .send({ tripId, acceptedTerms: true });
+      .send({ tripId, acceptedTerms: true, travellerDetails: travellers(1) });
     const joinRequestId = booked.body.data.id;
 
     // Two payment calls at once (a double-tapped Pay button).

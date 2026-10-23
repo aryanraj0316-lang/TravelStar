@@ -16,7 +16,7 @@ import { prefetchLaunchData } from '@/lib/prefetch-launch';
 import { apiService, clearTokens, ApiError, type CreateTripInput, type SosTriggerResult } from '../services/api';
 import { socketService } from '../services/socket';
 import { eventBus } from '../services/event-bus';
-import type { JoinRequestSummary, JoinRequestStatus, IncomingJoinRequest, AppNotification, ChatRoomSummary, StoryPayload } from '@/types/api';
+import type { JoinRequestSummary, JoinRequestStatus, IncomingJoinRequest, AppNotification, ChatRoomSummary, StoryPayload, TravellerDetails } from '@/types/api';
 import { ACTIVE_BOOKING_STATUSES } from '@/types/api';
 
 export interface JoinTripOpts {
@@ -30,6 +30,8 @@ export interface JoinTripOpts {
   joiningDate?: string;
   /** Ticked "I agree to the Trip Rules, Guidelines and Cancellation Policy". */
   acceptedTerms?: boolean;
+  /** The traveller details form, one entry per seat. */
+  travellerDetails?: TravellerDetails[];
 }
 
 // Registered once at module scope — apiService is a stable singleton, and

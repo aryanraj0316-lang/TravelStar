@@ -16,6 +16,7 @@ import app from '../src/app';
 import prisma from '../src/services/db';
 import { env } from '../src/config/env';
 import { uniqueTestPhone } from './test-phone';
+import { travellers } from './traveller-details-fixture';
 
 const runId = Date.now();
 let seq = 0;
@@ -63,7 +64,7 @@ async function walletBalance(userId: string) {
 async function confirmedWalletBooking(tripId: string, label: string) {
   const traveller = await registerUser(label);
   await prisma.wallet.upsert({ where: { userId: traveller.userId }, create: { userId: traveller.userId, balance: 5000 }, update: { balance: 5000 } });
-  const booked = await request(app).post('/api/v1/interactions/join-request').set(auth(traveller.token)).send({ tripId, acceptedTerms: true });
+  const booked = await request(app).post('/api/v1/interactions/join-request').set(auth(traveller.token)).send({ tripId, acceptedTerms: true, travellerDetails: travellers(1) });
   const joinRequestId = booked.body.data.id as string;
   const paid = await request(app).post('/api/v1/trip-payments/wallet-pay').set(auth(traveller.token)).send({ joinRequestId });
   expect(paid.status).toBe(200);
@@ -159,7 +160,7 @@ describe('tiered cancellation', () => {
     const tripId = await makeTrip({ daysAway: 20 });
     const { traveller } = await confirmedWalletBooking(tripId, 'Rebooker');
     await request(app).post(`/api/v1/trips/${tripId}/cancel-booking`).set(auth(traveller.token));
-    const again = await request(app).post('/api/v1/interactions/join-request').set(auth(traveller.token)).send({ tripId, acceptedTerms: true });
+    const again = await request(app).post('/api/v1/interactions/join-request').set(auth(traveller.token)).send({ tripId, acceptedTerms: true, travellerDetails: travellers(1) });
     expect(again.status).toBe(201);
     expect(again.body.data.status).toBe('PAYMENT_PENDING');
   }, 120_000);
@@ -186,8 +187,8 @@ describe('trip fills during checkout', () => {
     const a = await registerUser('Seat Winner');
     const b = await registerUser('Seat Loser');
     for (const u of [a, b]) await prisma.wallet.upsert({ where: { userId: u.userId }, create: { userId: u.userId, balance: 5000 }, update: { balance: 5000 } });
-    const ja = await request(app).post('/api/v1/interactions/join-request').set(auth(a.token)).send({ tripId, acceptedTerms: true });
-    const jb = await request(app).post('/api/v1/interactions/join-request').set(auth(b.token)).send({ tripId, acceptedTerms: true });
+    const ja = await request(app).post('/api/v1/interactions/join-request').set(auth(a.token)).send({ tripId, acceptedTerms: true, travellerDetails: travellers(1) });
+    const jb = await request(app).post('/api/v1/interactions/join-request').set(auth(b.token)).send({ tripId, acceptedTerms: true, travellerDetails: travellers(1) });
 
     expect((await request(app).post('/api/v1/trip-payments/wallet-pay').set(auth(a.token)).send({ joinRequestId: ja.body.data.id })).status).toBe(200);
     // B is now refused before money moves (the gateway path refuses at /initiate)...
@@ -205,7 +206,7 @@ describe('integrity', () => {
   it('a paid booking cannot be allocated before it is paid', async () => {
     const tripId = await makeTrip({ daysAway: 15 });
     const t = await registerUser('Unpaid');
-    const booked = await request(app).post('/api/v1/interactions/join-request').set(auth(t.token)).send({ tripId, acceptedTerms: true });
+    const booked = await request(app).post('/api/v1/interactions/join-request').set(auth(t.token)).send({ tripId, acceptedTerms: true, travellerDetails: travellers(1) });
     const res = await request(app)
       .post(`/api/v1/trips/${tripId}/approve-and-allocate`)
       .set(auth(organizer.token))
@@ -242,7 +243,7 @@ describe('Razorpay path (gateway mocked)', () => {
   it('verifies a signed payment, then refunds a cancellation to the original payment via Razorpay', async () => {
     const tripId = await makeTrip({ daysAway: 30 });
     const t = await registerUser('Card Payer');
-    const booked = await request(app).post('/api/v1/interactions/join-request').set(auth(t.token)).send({ tripId, acceptedTerms: true });
+    const booked = await request(app).post('/api/v1/interactions/join-request').set(auth(t.token)).send({ tripId, acceptedTerms: true, travellerDetails: travellers(1) });
     const joinRequestId = booked.body.data.id;
 
     mockOrderCreate.mockResolvedValueOnce({ id: `order_${runId}` });

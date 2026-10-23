@@ -4,7 +4,8 @@
 // traveller's booking currently stands —
 //
 //   none / rejected / cancelled → consent + "Proceed to Payment • ₹X"
-//                                 (or "Request to Join" on a free trip)
+//                                 (or "Request to Join" on a free trip),
+//                                 then the traveller details form, then payment
 //   PENDING                     → waiting for the organizer (withdraw)
 //   PAYMENT_PENDING             → complete payment
 //   PAYMENT_COMPLETED /
@@ -28,6 +29,8 @@ import { formatINR } from '@/lib/money';
 import { apiService } from '@/services/api';
 import { useApp } from '@/store/AppContext';
 import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
+import type { TravellerDetails } from '@/types/api';
+import TravellerDetailsForm from './TravellerDetailsForm';
 
 export type BookingRequestOpts = {
   midway?: boolean;
@@ -84,6 +87,9 @@ export default function TripBookingActions({
   // Why the last attempt did not go through, shown under the button so a
   // failure never looks like the screen simply reset itself.
   const [bookError, setBookError] = useState<string | null>(null);
+  // The traveller details form, opened by the booking button. Payment only
+  // starts once it is filled in.
+  const [formOpen, setFormOpen] = useState(false);
 
   if (isMyTrip) return null;
 
@@ -116,7 +122,7 @@ export default function TripBookingActions({
     }
   };
 
-  const book = async () => {
+  const book = () => {
     if (!isLoggedIn) {
       onClose();
       router.push('/auth');
@@ -124,14 +130,19 @@ export default function TripBookingActions({
     }
     if (!agreed || submitting) return;
     setBookError(null);
+    setFormOpen(true);
+  };
+
+  // Called by the details form. Throwing keeps the form open with the reason.
+  const submitDetails = async (travellerDetails: TravellerDetails[]) => {
     setSubmitting(true);
     try {
-      const created = await joinTrip(trip.id, { ...(requestOpts ?? {}), acceptedTerms: true });
+      const created = await joinTrip(trip.id, { ...(requestOpts ?? {}), acceptedTerms: true, travellerDetails });
       if (!created) {
         // joinTrip already toasted the reason; keep it on screen too.
-        setBookError(t('booking.bookingFailed', 'We could not start your booking. Please check your connection and try again.'));
-        return;
+        throw new Error(t('booking.bookingFailed', 'We could not start your booking. Please check your connection and try again.'));
       }
+      setFormOpen(false);
       switch (created.status) {
         case 'PAYMENT_PENDING':
           // Straight into the payment gateway: the payment screen opens the
@@ -320,7 +331,7 @@ export default function TripBookingActions({
 
       <TouchableOpacity
         style={[styles.primaryBtn, styles.ctaBtn, disabled && styles.btnDisabled]}
-        onPress={() => void book()}
+        onPress={book}
         disabled={disabled}
         activeOpacity={0.88}
         accessibilityRole="button"
@@ -351,6 +362,17 @@ export default function TripBookingActions({
           {t('booking.payFootnote', 'Your seat is reserved the moment payment succeeds. You’ll get a booking token, and the organizer then assigns your seat and rooms.')}
         </Text>
       ) : null}
+      <TravellerDetailsForm
+        visible={formOpen}
+        partySize={Math.max(1, partySize)}
+        submitLabel={
+          isPaid
+            ? t('travellerForm.continueToPayment', { amount: formatINR(total), defaultValue: 'Continue to payment • {{amount}}' })
+            : t('travellerForm.sendRequest', 'Send request')
+        }
+        onClose={() => setFormOpen(false)}
+        onSubmit={submitDetails}
+      />
     </View>
   );
 }

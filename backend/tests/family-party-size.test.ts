@@ -3,6 +3,7 @@ import app from '../src/app';
 import prisma from '../src/services/db';
 import { uniqueTestPhone } from './test-phone';
 import { TEST_ORGANIZER_AGREEMENT } from './organizer-agreement-fixture';
+import { travellers } from './traveller-details-fixture';
 
 /**
  * Family Connect Midway / day-range join: a JoinRequest can carry
@@ -63,7 +64,7 @@ describe('Family Connect Midway party-size seat claiming', () => {
     const joinRes = await request(app)
       .post('/api/v1/interactions/join-request')
       .set('Authorization', `Bearer ${requester.token}`)
-      .send({ tripId, familyMemberCount: 3, acceptedTerms: true });
+      .send({ tripId, familyMemberCount: 3, acceptedTerms: true, travellerDetails: travellers(4) });
     expect(joinRes.status).toBe(201);
     expect(joinRes.body.data.partySize).toBe(4);
     // A paid trip is booked pay-first: no organizer approval before payment.
@@ -145,7 +146,7 @@ describe('Family Connect Midway party-size seat claiming', () => {
     const joinRes = await request(app)
       .post('/api/v1/interactions/join-request')
       .set('Authorization', `Bearer ${requester.token}`)
-      .send({ tripId, familyMemberCount: 2 });
+      .send({ tripId, familyMemberCount: 2, travellerDetails: travellers(3) });
     const joinRequestId = joinRes.body.data.id;
 
     const approved = await request(app)
@@ -225,7 +226,7 @@ describe('Family Connect Midway party-size seat claiming', () => {
     const joinRes = await request(app)
       .post('/api/v1/interactions/join-request')
       .set('Authorization', `Bearer ${requester.token}`)
-      .send({ tripId, familyMemberCount: 5 }); // party of 6 against 2 seats
+      .send({ tripId, familyMemberCount: 5, travellerDetails: travellers(6) }); // party of 6 against 2 seats
     expect(joinRes.status).toBe(409);
     expect(joinRes.body.error.code).toBe('TRIP_FULL');
   }, 30_000);

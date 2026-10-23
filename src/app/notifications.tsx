@@ -219,7 +219,12 @@ function NotificationRow({
         </Text>
 
         {notification.content ? (
-          <Text style={st.rowContent} numberOfLines={3}>
+          // A paid booking (or free-trip request) carries the traveller
+          // details for the organizer, so it is shown in full.
+          <Text
+            style={st.rowContent}
+            numberOfLines={notification.joinRequestId && (notification.category === 'PAYMENT_SUCCESS' || notification.category === 'JOIN_REQUEST') ? undefined : 3}
+          >
             {notification.content}
           </Text>
         ) : null}

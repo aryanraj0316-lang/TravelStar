@@ -621,6 +621,10 @@ model JoinRequest {
   // Guidelines, and Cancellation Policy" before booking. Null for requests
   // made before the consent step existed.
   termsAcceptedAt   DateTime?
+  // The traveller details form filled in before payment: one entry per seat
+  // (see src/lib/traveller-details.ts). Sent to the organizer with the
+  // payment. Null on bookings made before the form existed.
+  travellerDetails  Json?
 
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt

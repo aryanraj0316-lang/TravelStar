@@ -17,6 +17,7 @@ import CheckCircle2 from 'lucide-react-native/icons/circle-check';
 import CreditCard from 'lucide-react-native/icons/credit-card';
 import Info from 'lucide-react-native/icons/info';
 import Ticket from 'lucide-react-native/icons/ticket';
+import TravellerDetailsForm from '@/components/booking/TravellerDetailsForm';
 import { ScreenError, ScreenLoading } from '@/components/ui/ScreenState';
 import { toast, useConfirm } from '@/lib/feedback';
 import { formatINR } from '@/lib/money';
@@ -24,7 +25,7 @@ import { ApiError, apiService } from '@/services/api';
 import { openRazorpayCheckout } from '@/services/razorpay';
 import { useApp } from '@/store/AppContext';
 import { C, fontSize, fontWeight, radii, space } from '@/theme/tokens';
-import type { TripPaymentOrder, VerifyPaymentResult } from '@/types/api';
+import type { TravellerDetails, TripPaymentOrder, VerifyPaymentResult } from '@/types/api';
 import { SEAT_HOLDING_STATUSES } from '@/types/api';
 
 export default function TripPaymentScreen() {
@@ -49,6 +50,11 @@ export default function TripPaymentScreen() {
   const [paymentNotice, setPaymentNotice] = useState<{ tone: 'info' | 'error'; text: string } | null>(null);
   // The automatic checkout opens once per visit, never again on re-render.
   const autostartedRef = useRef(false);
+  // A booking without the traveller details form (made before it existed)
+  // gets the form here first; the payment the traveller chose follows.
+  const [detailsFormOpen, setDetailsFormOpen] = useState(false);
+  const detailsSavedRef = useRef(false);
+  const afterDetailsRef = useRef<'gateway' | 'skip'>('gateway');
 
   const insets = useSafeAreaInsets();
   const topInset = Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 0);
@@ -91,16 +97,30 @@ export default function TripPaymentScreen() {
     reloadJoinRequests();
   };
 
-  const handleSkipPayment = async () => {
+  const needsDetails = () => !detailsSavedRef.current && order?.travellerDetailsSubmitted === false;
+  const askForDetails = (next: 'gateway' | 'skip') => {
+    afterDetailsRef.current = next;
+    setDetailsFormOpen(true);
+  };
+  const isDetailsRequired = (err: unknown) => err instanceof ApiError && (err.code as string) === 'TRAVELLER_DETAILS_REQUIRED';
+
+  const handleSkipPayment = async (afterDetails = false) => {
     if (!order || payingWallet) return;
-    const confirmed = await confirm({
-      title: 'Skip payment (testing)',
-      message:
-        'Continue without paying? Your booking goes through the real flow (seat held, token issued, organizer asked to allocate) with no money taken. Intended for testing only.',
-      confirmLabel: 'Skip & continue',
-      cancelLabel: 'Cancel',
-    });
-    if (!confirmed) return;
+    if (needsDetails()) {
+      askForDetails('skip');
+      return;
+    }
+    // Already confirmed before the details form opened.
+    if (!afterDetails) {
+      const confirmed = await confirm({
+        title: 'Skip payment (testing)',
+        message:
+          'Continue without paying? Your booking goes through the real flow (seat held, token issued, organizer asked to allocate) with no money taken. Intended for testing only.',
+        confirmLabel: 'Skip & continue',
+        cancelLabel: 'Cancel',
+      });
+      if (!confirmed) return;
+    }
 
     setPayingWallet(true);
     try {
@@ -112,6 +132,10 @@ export default function TripPaymentScreen() {
         toast('Could not complete the booking. Please try again.', 'error');
       }
     } catch (err: any) {
+      if (isDetailsRequired(err)) {
+        askForDetails('skip');
+        return;
+      }
       toast(err?.message || 'Could not skip payment', 'error');
     } finally {
       setPayingWallet(false);
@@ -120,6 +144,10 @@ export default function TripPaymentScreen() {
 
   const handlePayRazorpay = async () => {
     if (!order || payingGateway) return;
+    if (needsDetails()) {
+      askForDetails('gateway');
+      return;
+    }
     setPayingGateway(true);
     setPaymentNotice(null);
 
@@ -134,6 +162,10 @@ export default function TripPaymentScreen() {
       });
     } catch (err) {
       setPayingGateway(false);
+      if (isDetailsRequired(err)) {
+        askForDetails('gateway');
+        return;
+      }
       if (err instanceof ApiError && err.statusCode === 503) {
         setPaymentNotice({ tone: 'error', text: 'Online payment is not available right now. Please try again shortly.' });
       } else if (err instanceof ApiError && err.code === 'TRIP_FULL') {
@@ -215,6 +247,17 @@ export default function TripPaymentScreen() {
     // handlePayRazorpay is recreated every render; the ref makes this run once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [order, params.autostart, receipt]);
+
+  const saveDetails = async (travellerDetails: TravellerDetails[]) => {
+    if (!order) return;
+    await apiService.saveTravellerDetails(order.joinRequestId, travellerDetails);
+    detailsSavedRef.current = true;
+    setOrder((o) => (o ? { ...o, travellerDetailsSubmitted: true } : o));
+    setDetailsFormOpen(false);
+    // Carry on with the payment the traveller had started.
+    if (afterDetailsRef.current === 'skip') void handleSkipPayment(true);
+    else void handlePayRazorpay();
+  };
 
   if (loading) {
     return (
@@ -395,7 +438,7 @@ export default function TripPaymentScreen() {
 
             <TouchableOpacity
               style={styles.skipPaymentBtn}
-              onPress={handleSkipPayment}
+              onPress={() => void handleSkipPayment()}
               disabled={payingWallet}
               activeOpacity={0.8}
               accessibilityRole="button"
@@ -417,6 +460,13 @@ export default function TripPaymentScreen() {
           </View>
         )}
       </ScrollView>
+      <TravellerDetailsForm
+        visible={detailsFormOpen}
+        partySize={order.partySize ?? 1}
+        submitLabel={`Continue to payment • ${formatINR(order.amount)}`}
+        onClose={() => setDetailsFormOpen(false)}
+        onSubmit={saveDetails}
+      />
     </View>
   );
 }

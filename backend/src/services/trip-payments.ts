@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import Razorpay from 'razorpay';
 import type { Prisma } from '@prisma/client';
 import prisma from './db';
+import { formatTravellerDetails, parseStoredTravellerDetails } from '../lib/traveller-details';
 import { env } from '../config/env';
 import { logger } from '../lib/logger';
 import { holdSeatsForRequest } from './trip-membership';
@@ -696,15 +697,15 @@ async function dispatchPaymentCompletedNotifications(orderId: string, io?: Socke
     if (trip.creatorId === order.userId) return;
     const title = `Payment received — ${trip.name}`;
     const organizerShare = order.organizerAmount ? `₹${Number(order.organizerAmount).toFixed(2)}` : amountLabel;
-    // Paying is the traveller's request to join, so their contact details
-    // reach the organizer with it. The full profile (with emergency
-    // contacts) is under Chats & Approvals → Approvals → View info.
-    const contactLine = [order.user.phoneNumber, order.user.email].filter(Boolean).join(' · ');
+    // Paying is the traveller's request to join, so the details they filled
+    // in before paying reach the organizer with it (also under Chats &
+    // Approvals → Approvals → View info).
+    const details = parseStoredTravellerDetails(order.joinRequest.travellerDetails);
     const content =
       `${displayName(order.user)} paid ${amountLabel} (${seatLabel}). Token: ${order.verificationToken}\n` +
-      (contactLine ? `Contact: ${contactLine}\n` : '') +
       `Your share after the 4.5% platform fee: ${organizerShare}.\n` +
-      'Verify the token and assign their seat and rooms to confirm the booking, or decline it for a full refund.';
+      'Verify the token and assign their seat and rooms to confirm the booking, or decline it for a full refund.' +
+      (details ? `\n\n${formatTravellerDetails(details)}` : '');
     const created = await prisma.notification.create({
       data: {
         userId: trip.creatorId,

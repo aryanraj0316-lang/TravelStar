@@ -4,12 +4,12 @@ import prisma from '../src/services/db';
 import { uniqueTestPhone } from './test-phone';
 import { TEST_ORGANIZER_AGREEMENT } from './organizer-agreement-fixture';
 import { isValidDrivingLicence, isValidVehicleRegistration, maskIdNumber } from '../src/lib/organizer-terms';
+import { travellers } from './traveller-details-fixture';
 
 /**
  * The organizer code of conduct: no trip is created or edited without it,
- * travellers can read it (licence masked, no phone), and a join request
- * carries the traveller's profile to the organizer — with their phone only
- * once they have paid.
+ * travellers can read it (licence masked, no phone), and the traveller
+ * details form reaches the organizer only once the traveller has paid.
  */
 
 const runId = Date.now();
@@ -144,16 +144,19 @@ describe('editing a trip', () => {
 });
 
 describe('traveller details on a request', () => {
-  it('sends the profile but not the phone before payment', async () => {
+  it('keeps the traveller details form from the organizer until payment', async () => {
     const join = await request(app)
       .post('/api/v1/interactions/join-request')
       .set(auth(traveller.token))
-      .send({ tripId, acceptedTerms: true });
+      .send({ tripId, acceptedTerms: true, travellerDetails: travellers(1) });
     expect(join.status).toBe(201);
 
     const res = await request(app).get('/api/v1/interactions/incoming-requests').set(auth(organizer.token));
     const row = res.body.data.find((r: { userId: string }) => r.userId === traveller.userId);
-    expect(row.applicant).toBeDefined();
-    expect(row.contact).toBeNull();
+    expect(row.detailsShared).toBe(false);
+    expect(row.travellerDetails).toBeNull();
+    // The saved profile is no longer sent in place of the form.
+    expect(row.applicant).toBeUndefined();
+    expect(row.contact).toBeUndefined();
   });
 });

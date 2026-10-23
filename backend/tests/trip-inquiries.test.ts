@@ -4,6 +4,7 @@ import prisma from '../src/services/db';
 import { notifyTripEnquiry } from '../src/services/trip-enquiry-notifications';
 import { uniqueTestPhone } from './test-phone';
 import { TEST_ORGANIZER_AGREEMENT } from './organizer-agreement-fixture';
+import { travellers } from './traveller-details-fixture';
 
 /**
  * Pre-join enquiry threads.
@@ -380,7 +381,7 @@ describe('Trip enquiries', () => {
     const booked = await request(app)
       .post('/api/v1/interactions/join-request')
       .set('Authorization', `Bearer ${asker.token}`)
-      .send({ tripId, acceptedTerms: true });
+      .send({ tripId, acceptedTerms: true, travellerDetails: travellers(1) });
 
     const list = await request(app)
       .get(`/api/v1/trips/${tripId}/inquiries`)

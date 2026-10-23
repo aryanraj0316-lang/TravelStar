@@ -3,6 +3,7 @@ import app from '../src/app';
 import prisma from '../src/services/db';
 import { uniqueTestPhone } from './test-phone';
 import { TEST_ORGANIZER_AGREEMENT } from './organizer-agreement-fixture';
+import { travellers } from './traveller-details-fixture';
 
 /**
  * End-to-end walk of the Travel Guide role view (src/app/travel-guide.tsx),
@@ -286,7 +287,7 @@ describe('leads are demand signals, not dossiers on travellers', () => {
     await request(app)
       .post('/api/v1/interactions/join-request')
       .set(auth(applicant.token))
-      .send({ tripId: leadTripId, message: 'Keen to join' });
+      .send({ tripId: leadTripId, message: 'Keen to join', travellerDetails: travellers(1) });
   });
 
   const myLead = async () => {

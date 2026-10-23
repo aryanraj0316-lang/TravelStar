@@ -3,6 +3,7 @@ import app from '../src/app';
 import prisma from '../src/services/db';
 import { uniqueTestPhone } from './test-phone';
 import { TEST_ORGANIZER_AGREEMENT } from './organizer-agreement-fixture';
+import { travellers } from './traveller-details-fixture';
 
 /**
  * End-to-end walk of the Group Organizer role view
@@ -88,7 +89,7 @@ describe('booking → payment → organizer allocation chain', () => {
     const res = await request(app)
       .post('/api/v1/interactions/join-request')
       .set(auth(joiner.token))
-      .send({ tripId, acceptedTerms: true });
+      .send({ tripId, acceptedTerms: true, travellerDetails: travellers(1) });
     expect(res.status).toBe(201);
     expect(res.body.data.status).toBe('PAYMENT_PENDING');
     requestId = res.body.data.id;
@@ -341,7 +342,7 @@ describe('rejection releases the seat', () => {
     const jr = await request(app)
       .post('/api/v1/interactions/join-request')
       .set(auth(second.token))
-      .send({ tripId, message: 'Room for one more?' });
+      .send({ tripId, message: 'Room for one more?', travellerDetails: travellers(1) });
     expect(jr.status).toBe(201);
 
     const inbox = await request(app).get('/api/v1/interactions/incoming-requests').set(auth(organizer.token));

@@ -358,6 +358,22 @@ export interface JoinRequestSummary {
 }
 
 /** Flattened by GET /interactions/incoming-requests — not the raw row. */
+export type TravellerGender = 'Male' | 'Female' | 'Other';
+export type TravellerIdType = 'AADHAAR' | 'PASSPORT' | 'DRIVING_LICENCE' | 'VOTER_ID' | 'PAN';
+
+/** One traveller on the details form filled in before payment. */
+export interface TravellerDetails {
+  fullName: string;
+  age: number;
+  gender: TravellerGender;
+  /** Required for the person booking (the first entry), optional for others. */
+  phone?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  idType: TravellerIdType;
+  idNumber: string;
+}
+
 export interface IncomingJoinRequest {
   id: string;
   tripId: string;
@@ -375,7 +391,11 @@ export interface IncomingJoinRequest {
   joiningDate: IsoDateTime | null;
   fromStopId: string | null;
   toStopId: string | null;
-  /** The traveller's profile, sent with every request. */
+  /** True once the organizer may see the details form (after payment). */
+  detailsShared?: boolean;
+  /** The details form, one entry per seat; null before payment or on older bookings. */
+  travellerDetails?: TravellerDetails[] | null;
+  /** Older servers only: the traveller's saved profile. */
   applicant?: {
     age: number | null;
     gender: string | null;
@@ -866,6 +886,8 @@ export interface TripPaymentOrder {
   tripName?: string;
   joinRequestStatus?: JoinRequestStatus;
   walletBalance?: Money;
+  /** False until the traveller details form is filled in; payment needs it. */
+  travellerDetailsSubmitted?: boolean;
 }
 
 export interface InitiatePaymentResult {

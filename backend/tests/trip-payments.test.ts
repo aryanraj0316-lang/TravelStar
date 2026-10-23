@@ -2,6 +2,7 @@ import request from 'supertest';
 import app from '../src/app';
 import prisma from '../src/services/db';
 import { uniqueTestPhone } from './test-phone';
+import { travellers } from './traveller-details-fixture';
 
 const runId = Date.now();
 let seq = 0;
@@ -101,7 +102,7 @@ describe('Trip Payments & pay-first booking flow (CONVENTIONS.md §3, REMEDIATIO
     const reqRes = await request(app)
       .post('/api/v1/interactions/join-request')
       .set(auth(traveler.token))
-      .send({ tripId: freeTripId, acceptedTerms: true });
+      .send({ tripId: freeTripId, acceptedTerms: true, travellerDetails: travellers(1) });
     expect(reqRes.status).toBe(201);
     expect(reqRes.body.data.status).toBe('PENDING');
     expect(reqRes.body.data.termsAcceptedAt).toBeTruthy();
@@ -150,7 +151,7 @@ describe('Trip Payments & pay-first booking flow (CONVENTIONS.md §3, REMEDIATIO
     const reqRes = await request(app)
       .post('/api/v1/interactions/join-request')
       .set(auth(traveler.token))
-      .send({ tripId: paidTripId, acceptedTerms: true });
+      .send({ tripId: paidTripId, acceptedTerms: true, travellerDetails: travellers(1) });
     expect(reqRes.status).toBe(201);
     expect(reqRes.body.data.status).toBe('PAYMENT_PENDING');
 
@@ -176,6 +177,7 @@ describe('Trip Payments & pay-first booking flow (CONVENTIONS.md §3, REMEDIATIO
 
     const jr = await prisma.joinRequest.create({
       data: {
+        travellerDetails: travellers(1),
         tripId: paidTripId,
         userId: traveler.userId,
         status: 'PAYMENT_PENDING',
@@ -204,6 +206,7 @@ describe('Trip Payments & pay-first booking flow (CONVENTIONS.md §3, REMEDIATIO
 
     const jr = await prisma.joinRequest.create({
       data: {
+        travellerDetails: travellers(1),
         tripId: paidTripId,
         userId: traveler.userId,
         status: 'PAYMENT_PENDING',
@@ -250,7 +253,7 @@ describe('Trip Payments & pay-first booking flow (CONVENTIONS.md §3, REMEDIATIO
     const asked = await request(app)
       .post('/api/v1/interactions/join-request')
       .set(auth(traveler.token))
-      .send({ tripId: paidTripId, acceptedTerms: true });
+      .send({ tripId: paidTripId, acceptedTerms: true, travellerDetails: travellers(1) });
     expect(asked.status).toBe(201);
     const joinRequestId = asked.body.data.id;
 
@@ -355,7 +358,7 @@ describe('Trip Payments & pay-first booking flow (CONVENTIONS.md §3, REMEDIATIO
     const asked = await request(app)
       .post('/api/v1/interactions/join-request')
       .set(auth(traveler.token))
-      .send({ tripId: paidTripId, acceptedTerms: true });
+      .send({ tripId: paidTripId, acceptedTerms: true, travellerDetails: travellers(1) });
     const joinRequestId = asked.body.data.id;
     const paid = await request(app).post('/api/v1/trip-payments/pay').set(auth(traveler.token)).send({ joinRequestId });
     expect(paid.status).toBe(200);
@@ -405,6 +408,7 @@ describe('Trip Payments & pay-first booking flow (CONVENTIONS.md §3, REMEDIATIO
 
     const jr = await prisma.joinRequest.create({
       data: {
+        travellerDetails: travellers(1),
         tripId: paidTripId,
         userId: applicant.userId,
         status: 'PAYMENT_PENDING',
@@ -461,21 +465,17 @@ describe('Trip Payments & pay-first booking flow (CONVENTIONS.md §3, REMEDIATIO
     expect(Number(wallet?.balance)).toBe(2000);
   });
 
-  it('7. Paying sends the traveller\'s contact details to the organizer', async () => {
+  it('7. Paying sends the traveller details form to the organizer', async () => {
     const payer = await registerUser('Contact Traveler');
     createdUserIds.push(payer.userId);
-    const email = (await prisma.user.findUnique({ where: { id: payer.userId } }))?.email;
 
     const jr = await prisma.joinRequest.create({
-      data: { tripId: paidTripId, userId: payer.userId, status: 'PAYMENT_PENDING' },
-    });
-    await prisma.emergencyContact.create({
-      data: { userId: payer.userId, name: 'Asha', relation: 'Mother', phoneNumber: '+919800000001' },
+      data: { tripId: paidTripId, userId: payer.userId, status: 'PAYMENT_PENDING', travellerDetails: travellers(1) },
     });
 
-    // Before paying: profile only, no contact details.
+    // Before paying: nothing is shared.
     const before = await request(app).get('/api/v1/interactions/incoming-requests').set(auth(organizer.token));
-    expect(before.body.data.find((r: { id: string }) => r.id === jr.id)?.contact).toBeNull();
+    expect(before.body.data.find((r: { id: string }) => r.id === jr.id)?.travellerDetails).toBeNull();
 
     await prisma.wallet.upsert({
       where: { userId: payer.userId },
@@ -488,19 +488,18 @@ describe('Trip Payments & pay-first booking flow (CONVENTIONS.md §3, REMEDIATIO
       .send({ joinRequestId: jr.id });
     expect(payRes.status).toBe(200);
 
-    // After paying: phone, email and emergency contacts, automatically.
+    // After paying: the form the traveller filled in (not their profile).
     const after = await request(app).get('/api/v1/interactions/incoming-requests').set(auth(organizer.token));
-    const contact = after.body.data.find((r: { id: string }) => r.id === jr.id)?.contact;
-    expect(contact).not.toBeNull();
-    expect(contact.email).toBe(email);
-    expect(contact.emergencyContacts).toEqual([{ name: 'Asha', relation: 'Mother', phoneNumber: '+919800000001' }]);
+    const row = after.body.data.find((r: { id: string }) => r.id === jr.id);
+    expect(row.travellerDetails[0].fullName).toBe('Test Traveller');
+    expect(row.contact).toBeUndefined();
 
-    // ...and the organizer's "Payment received" alert carries them too.
+    // ...and the organizer's "Payment received" alert carries it too, with the token.
     const alert = await prisma.notification.findFirst({
       where: { userId: organizer.userId, joinRequestId: jr.id, category: 'PAYMENT_SUCCESS' },
     });
-    const phone = (await prisma.user.findUnique({ where: { id: payer.userId } }))?.phoneNumber;
-    expect(alert?.content).toContain(`Contact: ${phone} · ${email}`);
-    expect(contact.phoneNumber).toBe(phone);
+    expect(alert?.content).toContain(payRes.body.data.verificationToken);
+    expect(alert?.content).toContain('Phone: 9876543210');
+    expect(alert?.content).toContain('ID: Passport P1234567');
   });
 });

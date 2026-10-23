@@ -1,6 +1,7 @@
 import request from 'supertest';
 import app from '../src/app';
 import { admitAllocatedMember, holdSeatsForRequest } from '../src/services/trip-membership';
+import { travellers } from './traveller-details-fixture';
 
 /**
  * Makes `travellerToken`'s user a confirmed member of `tripId` through the
@@ -25,7 +26,7 @@ export async function bookAsMember(
   const booked = await request(app)
     .post('/api/v1/interactions/join-request')
     .set(auth)
-    .send({ tripId, acceptedTerms: true });
+    .send({ tripId, acceptedTerms: true, travellerDetails: travellers(1) });
   if (booked.status !== 200 && booked.status !== 201) return { status: booked.status, body: booked.body };
   const joinRequest = booked.body.data as { id: string; status: string };
 

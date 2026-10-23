@@ -24,7 +24,10 @@ import { logger } from './logger';
 //   RERUNNABLE_MIGRATIONS — every statement guarded), it is marked rolled
 //   back and applied again; anything else is left for a human.
 
-const RERUNNABLE_MIGRATIONS = new Set(['20261011090000_paid_booking_allocation_flow']);
+const RERUNNABLE_MIGRATIONS = new Set([
+  '20261011090000_paid_booking_allocation_flow',
+  '20261023090000_join_request_traveller_details',
+]);
 const TIMEOUT_MS = 120_000;
 
 function prismaCli(): string {

@@ -10,6 +10,7 @@ import { holdSeatsForRequest } from '../../services/trip-membership';
 import { amountForRequest } from '../../services/trip-payments';
 import { cancelBooking, rejectBooking } from '../../services/trip-cancellation';
 import { calculateMidwayPrice } from '../../services/midway-pricing';
+import { formatTravellerDetails, parseStoredTravellerDetails, travellerDetailsSchema } from '../../lib/traveller-details';
 
 const router = Router();
 
@@ -98,6 +99,9 @@ const joinRequestSchema = z.object({
   // Policy." Recorded when given. Optional only so app builds from before
   // the consent step keep working; current clients always send true.
   acceptedTerms: z.boolean().optional(),
+  // The traveller details form, one entry per seat (the booker first).
+  // Required: it is what the organizer receives with the payment.
+  travellerDetails: travellerDetailsSchema,
 });
 
 // Statuses after which the same traveller may book the trip again.
@@ -110,11 +114,18 @@ const REBOOKABLE_STATUSES = new Set(['REJECTED', 'CANCELLED', 'REFUNDED']);
 router.post('/join-request', async (req, res) => {
   const parsed = joinRequestSchema.safeParse(req.body);
   if (!parsed.success) return validationError(res, parsed.error.issues);
-  const { tripId, midway, fromCity, toCity, familyMemberCount, fromStopId, toStopId, joiningDate, acceptedTerms } = parsed.data;
+  const { tripId, midway, fromCity, toCity, familyMemberCount, fromStopId, toStopId, joiningDate, acceptedTerms, travellerDetails } =
+    parsed.data;
   // Identity always comes from the token — a caller cannot file a request as
   // someone else by putting a userId in the body.
   const userId = requireUserId(req);
   const partySize = 1 + familyMemberCount;
+  if (travellerDetails.length !== partySize) {
+    return res.status(400).json({
+      ok: false,
+      error: { code: 'VALIDATION_FAILED', message: `Please fill in the details of all ${partySize} travellers.` },
+    });
+  }
 
   try {
     const trip = await prisma.trip.findUnique({ where: { id: tripId } });
@@ -135,6 +146,16 @@ router.post('/join-request', async (req, res) => {
     // book again. Any other existing status is a real in-flight or settled
     // booking, so it is returned unchanged.
     if (existing && !REBOOKABLE_STATUSES.has(existing.status)) {
+      // A booking still waiting for payment takes the freshly filled form
+      // (same party), so the details the traveller just typed are the ones
+      // the organizer receives.
+      if (existing.status === 'PAYMENT_PENDING' && existing.partySize === partySize) {
+        const updated = await prisma.joinRequest.update({
+          where: { id: existing.id },
+          data: { travellerDetails, ...(acceptedTerms ? { termsAcceptedAt: new Date() } : {}) },
+        });
+        return res.status(200).json({ ok: true, data: updated });
+      }
       return res.status(200).json({ ok: true, data: { ...existing, message: 'Join request already exists' } });
     }
 
@@ -191,6 +212,7 @@ router.post('/join-request', async (req, res) => {
       fromStopId: fromStopId ?? null,
       toStopId: toStopId ?? null,
       joiningDate: joiningDate ?? null,
+      travellerDetails,
     };
     const joinReq = await prisma.joinRequest.upsert({
       where: { tripId_userId: { tripId, userId } },
@@ -217,7 +239,7 @@ router.post('/join-request', async (req, res) => {
         : (traveller?.email?.split('@')[0] ?? 'A traveler');
 
       const notifTitle = `New join request — ${trip.name}`;
-      const notifContent = `${travellerName} requested to join ${trip.name}.`;
+      const notifContent = `${travellerName} requested to join ${trip.name}.\n\n${formatTravellerDetails(travellerDetails)}`;
       const io = req.app.get('socketio');
 
       const createdNotif = await prisma.notification.create({
@@ -258,6 +280,43 @@ router.post('/join-request', async (req, res) => {
   } catch (err) {
     logger.warn('[Interactions] Join request error:', err);
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to create join request' } });
+  }
+});
+
+// The traveller details form for a booking that is already waiting for
+// payment (made before the form existed, or reopened from "Complete
+// payment"). Payment is refused until it is filled in.
+router.put('/join-request/:id/traveller-details', async (req, res) => {
+  const parsed = z.object({ travellerDetails: travellerDetailsSchema }).safeParse(req.body);
+  if (!parsed.success) return validationError(res, parsed.error.issues);
+  const userId = requireUserId(req);
+
+  try {
+    const existing = await prisma.joinRequest.findUnique({ where: { id: String(req.params.id) } });
+    if (!existing || existing.userId !== userId) {
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Booking not found.' } });
+    }
+    if (existing.status !== 'PAYMENT_PENDING') {
+      return res.status(409).json({
+        ok: false,
+        error: { code: 'INVALID_STATUS', message: 'Traveller details can only be changed before payment.' },
+      });
+    }
+    if (parsed.data.travellerDetails.length !== existing.partySize) {
+      return res.status(400).json({
+        ok: false,
+        error: { code: 'VALIDATION_FAILED', message: `Please fill in the details of all ${existing.partySize} travellers.` },
+      });
+    }
+    const updated = await prisma.joinRequest.update({
+      where: { id: existing.id },
+      data: { travellerDetails: parsed.data.travellerDetails },
+      select: { id: true, status: true, partySize: true },
+    });
+    return res.status(200).json({ ok: true, data: updated });
+  } catch (err) {
+    logger.warn('[Interactions] Save traveller details error:', err);
+    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not save the traveller details.' } });
   }
 });
 
@@ -367,10 +426,12 @@ router.get('/unread-count', async (req, res) => {
 });
 
 // Get all incoming join requests for trips created by the logged-in user
-// Paying for a trip is the request to join it. From that moment the
-// organizer is responsible for the traveller, so all their details —
-// phone, email and emergency contacts — are shared automatically.
-const CONTACT_SHARED_STATUSES = new Set(['PAYMENT_COMPLETED', 'ALLOCATION_PENDING', 'CONFIRMED']);
+// Paying for a trip is the request to join it. The traveller details form
+// (filled in before paying) is what the organizer then receives.
+// When the organizer may see the traveller details form: once paid, or as
+// soon as a free trip's request is sent. Never while a paid booking is still
+// at checkout.
+const DETAILS_SHARED_STATUSES = new Set(['PENDING', 'PAYMENT_COMPLETED', 'ALLOCATION_PENDING', 'CONFIRMED']);
 
 router.get('/incoming-requests', async (req, res) => {
   const parsedQuery = cursorPageQuerySchema.safeParse(req.query);
@@ -401,21 +462,15 @@ router.get('/incoming-requests', async (req, res) => {
       },
       include: {
         trip: true,
-        user: {
-          include: {
-            profile: true,
-            emergencyContacts: { select: { name: true, relation: true, phoneNumber: true } },
-          },
-        },
+        user: { include: { profile: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
 
     const mapped = requests.map((r) => {
-      // Profile details travel with every request; phone, email and
-      // emergency contacts are added the moment the traveller pays.
-      const shareContact = CONTACT_SHARED_STATUSES.has(r.status);
-      const p = r.user.profile;
+      // The organizer gets the details the traveller filled in for this
+      // trip, not their saved profile.
+      const shareDetails = DETAILS_SHARED_STATUSES.has(r.status);
       const applicantName = r.user.profile
         ? `${r.user.profile.firstName} ${r.user.profile.lastName}`.trim()
         : (r.user.email ? r.user.email.split('@')[0] : 'Traveler');
@@ -438,26 +493,8 @@ router.get('/incoming-requests', async (req, res) => {
         joiningDate: r.joiningDate,
         fromStopId: r.fromStopId,
         toStopId: r.toStopId,
-        applicant: {
-          age: p?.age ?? null,
-          gender: p?.gender ?? null,
-          city: p?.city ?? null,
-          state: p?.state ?? null,
-          country: p?.country ?? null,
-          languages: p?.languages ?? [],
-          bio: p?.bio ?? null,
-          interests: p?.interests ?? [],
-          travelStyle: p?.travelStyle ?? [],
-          verifiedBadge: p?.verifiedBadge ?? false,
-          memberSince: r.user.createdAt,
-        },
-        contact: shareContact
-          ? {
-              phoneNumber: r.user.phoneNumber ?? null,
-              email: r.user.email ?? null,
-              emergencyContacts: r.user.emergencyContacts,
-            }
-          : null,
+        detailsShared: shareDetails,
+        travellerDetails: shareDetails ? parseStoredTravellerDetails(r.travellerDetails) : null,
       };
     });
 

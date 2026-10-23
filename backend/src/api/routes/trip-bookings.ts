@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { parseStoredTravellerDetails } from '../../lib/traveller-details';
 import { z } from 'zod';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
@@ -96,6 +97,8 @@ router.get('/:tripId/pending-allocations', async (req, res) => {
         partySize: r.partySize,
         fromCity: r.fromCity,
         toCity: r.toCity,
+        // The traveller details form filled in before payment.
+        travellerDetails: parseStoredTravellerDetails(r.travellerDetails),
         // The payment token the organizer checks the traveller against
         // (also in the organizer's payment notification). Null for free trips.
         verificationToken: r.paymentOrder?.verificationToken ?? null,
