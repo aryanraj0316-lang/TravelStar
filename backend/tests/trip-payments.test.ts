@@ -279,6 +279,8 @@ describe('Trip Payments & pay-first booking flow (CONVENTIONS.md §3, REMEDIATIO
     const row = pending.body.data.travellers.find((t: { joinRequestId: string }) => t.joinRequestId === joinRequestId);
     expect(row.status).toBe('PAYMENT_COMPLETED');
     expect(row.verificationToken).toBe(token);
+    // ...with the traveller details shown on Verify & Allocate.
+    expect(row.travellerDetails[0].fullName).toBe('Test Traveller');
     // Not visible to anyone but the organizer.
     expect(
       (await request(app).get(`/api/v1/trips/${paidTripId}/pending-allocations`).set(auth(traveler.token))).status,

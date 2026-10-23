@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { parseStoredTravellerDetails } from '../../lib/traveller-details';
+import { formatTravellerDetails, parseStoredTravellerDetails } from '../../lib/traveller-details';
 import { z } from 'zod';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
@@ -262,7 +262,14 @@ router.post('/:tripId/approve-and-allocate', async (req, res) => {
     }
 
     const title = `Booking confirmed — ${trip.name}`;
-    const content = `Your booking for ${trip.name} is confirmed! Check your seat/room passes and join the group chat.`;
+    // The confirmation carries the booking token and the traveller details
+    // the organizer verified, so the traveller can check them.
+    const confirmedToken = order?.verificationToken ?? null;
+    const confirmedDetails = parseStoredTravellerDetails(jr.travellerDetails);
+    const content =
+      `Your booking for ${trip.name} is confirmed! Check your seat/room passes and join the group chat.` +
+      (confirmedToken ? `\nBooking token: ${confirmedToken}` : '') +
+      (confirmedDetails ? `\n\n${formatTravellerDetails(confirmedDetails)}` : '');
     try {
       // No chatRoomId on the stored row: GET /notifications prunes any
       // chat-linked alert whose room has no unread messages, which would
@@ -284,7 +291,7 @@ router.post('/:tripId/approve-and-allocate', async (req, res) => {
       });
       await sendPushToUsers([jr.userId], 'TRIP', {
         title,
-        body: content,
+        body: content.split('\n')[0] ?? content,
         data: { screen: 'trip-pass', tripId: trip.id, chatRoomId: chatRoomId ?? '' },
       });
     } catch (err) {
@@ -373,6 +380,8 @@ router.get('/:tripId/my-booking', async (req, res) => {
           : null,
         amountDue: jr.status === 'PAYMENT_PENDING' ? amountForRequest(jr, jr.trip.budget).toString() : null,
         bookingReferenceToken: member?.bookingReferenceToken ?? order?.verificationToken ?? null,
+        // The traveller details form filled in before payment.
+        travellerDetails: parseStoredTravellerDetails(jr.travellerDetails),
         allocations: (member?.allocations ?? []).map((a) => ({
           id: a.id,
           dayNumber: a.dayNumber,

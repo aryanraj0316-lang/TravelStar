@@ -964,6 +964,8 @@ export type RefundTier = 'FULL_LESS_FEE' | 'HALF' | 'NONE';
 
 /** GET /trips/:tripId/my-booking — the traveller's own booking / Trip Pass. */
 export interface MyBooking {
+  /** The traveller details form filled in before payment (null on older bookings). */
+  travellerDetails?: TravellerDetails[] | null;
   joinRequestId: string;
   status: JoinRequestStatus;
   partySize: number;
@@ -987,6 +989,8 @@ export interface MyBooking {
 
 /** One traveller awaiting the organizer's allocation. */
 export interface PendingAllocationTraveller {
+  /** The traveller details form filled in before payment (null on older bookings). */
+  travellerDetails?: TravellerDetails[] | null;
   joinRequestId: string;
   userId: string;
   name: string;

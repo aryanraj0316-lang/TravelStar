@@ -219,11 +219,11 @@ function NotificationRow({
         </Text>
 
         {notification.content ? (
-          // A paid booking (or free-trip request) carries the traveller
-          // details for the organizer, so it is shown in full.
+          // Payment, request and confirmation alerts carry the booking token
+          // and traveller details, so they are shown in full.
           <Text
             style={st.rowContent}
-            numberOfLines={notification.joinRequestId && (notification.category === 'PAYMENT_SUCCESS' || notification.category === 'JOIN_REQUEST') ? undefined : 3}
+            numberOfLines={(notification.joinRequestId || notification.category === 'JOIN_ACCEPTED') && (notification.category === 'PAYMENT_SUCCESS' || notification.category === 'JOIN_REQUEST' || notification.category === 'JOIN_ACCEPTED') ? undefined : 3}
           >
             {notification.content}
           </Text>

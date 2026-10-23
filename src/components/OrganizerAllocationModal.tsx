@@ -7,6 +7,7 @@
 // bookings show their token; free-trip approvals have none), and the
 // per-traveller form, with one section per checkpoint built from the trip's
 // own timeline (falling back to its itinerary days, then to a single stop).
+import TravellerDetailsCard from '@/components/booking/TravellerDetailsCard';
 import { errorToastMessage, toast } from '@/lib/feedback';
 import { formatINR } from '@/lib/money';
 import { apiService } from '@/services/api';
@@ -182,6 +183,13 @@ export default function OrganizerAllocationModal({ visible, tripId, initialJoinR
                   <TouchableOpacity key={tr.joinRequestId} style={styles.travellerRow} onPress={() => setSelectedId(tr.joinRequestId)} accessibilityRole="button" accessibilityLabel={tr.name}>
                     <View style={{ flex: 1, gap: 3 }}>
                       <Text style={styles.travellerName}>{tr.name}</Text>
+                      {tr.travellerDetails?.[0] ? (
+                        <Text style={styles.travellerMeta} numberOfLines={1}>
+                          {tr.travellerDetails
+                            .map((d) => `${d.fullName} (${d.age}, ${d.gender.charAt(0)})`)
+                            .join(', ')}
+                        </Text>
+                      ) : null}
                       <Text style={styles.travellerMeta}>
                         {tr.partySize > 1 ? t('allocation.party', { count: tr.partySize, defaultValue: 'Party of {{count}}' }) : t('allocation.solo', '1 seat')}
                         {tr.fromCity && tr.toCity ? ` · ${tr.fromCity} ➔ ${tr.toCity}` : ''}
@@ -301,6 +309,15 @@ function AllocationForm({
 
   return (
     <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
+      {traveller.travellerDetails && traveller.travellerDetails.length > 0 ? (
+        <TravellerDetailsCard
+          travellers={traveller.travellerDetails}
+          title={t('allocation.travellerDetails', 'Traveller details')}
+          subtitle={t('allocation.travellerDetailsSub', 'Submitted by the traveller before payment. Check them against their ID at boarding.')}
+        />
+      ) : (
+        <Text style={styles.muted}>{t('allocation.noTravellerDetails', 'No traveller details were submitted with this booking.')}</Text>
+      )}
       {traveller.requiresToken ? (
         <View style={[styles.tokenCard, verified && styles.tokenCardOk]}>
           <View style={styles.tokenHeader}>

@@ -4,6 +4,7 @@
 // trip's group chat. Before allocation it shows where the booking stands;
 // it is also where a booking is cancelled, with the refund the policy
 // gives right now shown before the traveller commits.
+import TravellerDetailsCard from '@/components/booking/TravellerDetailsCard';
 import { ScreenError, ScreenLoading } from '@/components/ui/ScreenState';
 import { formatDate } from '@/lib/datetime';
 import { errorToastMessage, toast, useConfirm } from '@/lib/feedback';
@@ -214,6 +215,15 @@ export default function TripPassScreen() {
               booking.allocations.map((a) => <AllocationCard key={a.id ?? `${a.dayNumber}-${a.checkpointName}`} a={a} />)
             )}
           </>
+        ) : null}
+
+        {/* What the traveller submitted before paying */}
+        {booking.travellerDetails && booking.travellerDetails.length > 0 ? (
+          <TravellerDetailsCard
+            travellers={booking.travellerDetails}
+            title={t('tripPass.travellerDetails', 'Traveller details')}
+            subtitle={t('tripPass.travellerDetailsSub', 'Shared with your organizer. Carry the same ID on the trip.')}
+          />
         ) : null}
 
         {/* Receipt */}

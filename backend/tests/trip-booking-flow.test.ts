@@ -77,6 +77,19 @@ async function confirmedWalletBooking(tripId: string, label: string) {
       allocations: [{ dayNumber: 1, checkpointName: 'Rishikesh', hotelName: 'Ganga View', roomNumber: '12', vehicleNumber: 'UK-07-TA-1234', seatNumber: '5' }],
     });
   expect(allocated.status).toBe(200);
+
+  // The traveller's confirmation carries the token and the details they filled in.
+  const confirmation = await prisma.notification.findFirst({
+    where: { userId: traveller.userId, tripId, category: 'JOIN_ACCEPTED' },
+    orderBy: { createdAt: 'desc' },
+  });
+  expect(confirmation?.content).toContain(`Booking token: ${paid.body.data.verificationToken}`);
+  expect(confirmation?.content).toContain('Test Traveller, 30 yrs, Male');
+  expect(confirmation?.content).toContain('ID: Passport P1234567');
+
+  // ...and so do their booking (Trip Pass) and the organizer's allocation list.
+  const mine = await request(app).get(`/api/v1/trips/${tripId}/my-booking`).set(auth(traveller.token));
+  expect(mine.body.data.travellerDetails[0].fullName).toBe('Test Traveller');
   return { traveller, joinRequestId, chatRoomId: allocated.body.data.chatRoomId as string };
 }
 
