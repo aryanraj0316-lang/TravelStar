@@ -66,6 +66,10 @@ export function createSocketServer(httpServer: HttpServer): Server {
     pubClient.on('error', (err) => logger.error('[socket-adapter] Redis pub error:', err));
     subClient.on('error', (err) => logger.error('[socket-adapter] Redis sub error:', err));
     io.adapter(createAdapter(pubClient, subClient));
+    httpServer.once('close', () => {
+      pubClient.disconnect();
+      subClient.disconnect();
+    });
   } else {
     logger.warn('[socket-server] REDIS_URL not set — running single-instance (no cross-instance room fan-out).');
   }
