@@ -58,7 +58,7 @@ app.use(
     referrerPolicy: { policy: 'no-referrer' },
     noSniff: true,
     frameguard: { action: 'deny' },
-  })
+  }),
 );
 
 app.use(
@@ -78,7 +78,7 @@ app.use(
       return callback(corsError);
     },
     credentials: true,
-  })
+  }),
 );
 
 // JSON endpoints do not need 10mb. Media uploads get their own limit when
@@ -119,9 +119,14 @@ app.use(express.urlencoded({ extended: true, limit: '256kb' }));
 // not just uploads.
 const uploadDir = path.join(process.cwd(), 'uploads');
 try {
-  if (!fs.existsSync(uploadDir)) { fs.mkdirSync(uploadDir, { recursive: true }); }
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  }
 } catch (err) {
-  logger.warn('[App] Could not create local uploads/ directory — the object-storage-unconfigured upload fallback will be unavailable:', err);
+  logger.warn(
+    '[App] Could not create local uploads/ directory — the object-storage-unconfigured upload fallback will be unavailable:',
+    err,
+  );
 }
 app.use('/uploads', express.static(uploadDir));
 
@@ -227,7 +232,19 @@ app.get('/ready', async (req, res) => {
     checks.database = 'fail';
   }
   const ready = Object.values(checks).every((c) => c === 'ok');
-  res.status(ready ? 200 : 503).json({ ok: ready, data: { ready, checks } });
+  const privacy = await prisma.privacyMaintenanceState
+    .findUnique({ where: { id: 'private-chat-v1' }, select: { completedAt: true, phase: true } })
+    .catch(() => null);
+  res
+    .status(ready ? 200 : 503)
+    .json({
+      ok: ready,
+      data: {
+        ready,
+        checks,
+        privacy: { legacyChatMediaRevoked: !!privacy?.completedAt, phase: privacy?.phase ?? 'PENDING' },
+      },
+    });
 });
 
 app.use('/api/v1', (req, res) => {

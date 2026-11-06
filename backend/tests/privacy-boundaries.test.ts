@@ -6,7 +6,11 @@ import app from '../src/app';
 import prisma from '../src/services/db';
 import { createSocketServer } from '../src/socket-server';
 import { canSendAttachment, decodeChatImage, visibleChatMedia } from '../src/services/chat-attachments';
-import { runMediaErasureJobs, migrateLegacyChatMedia } from '../src/services/privacy-maintenance';
+import {
+  runMediaErasureJobs,
+  migrateLegacyChatMedia,
+  advancePrivateChatMigration,
+} from '../src/services/privacy-maintenance';
 import { eraseUserObjects, eraseLegacyChatObject } from '../src/lib/object-storage';
 import { uniqueTestPhone } from './test-phone';
 
@@ -18,15 +22,22 @@ jest.mock('../src/lib/object-storage', () => ({
   legacyChatPublicUrl: (key: string) => `https://media.fixture/${key}`,
   readLegacyChatObject: jest.fn(async () => ({ contentType: 'image/png', bytes: Buffer.from(png, 'base64') })),
   eraseLegacyChatObject: jest.fn().mockResolvedValue(undefined),
+  isObjectStorageConfigured: jest.fn().mockReturnValue(true),
+  listLegacyChatObjects: async function* () {
+    yield [];
+  },
 }));
 
 // Deliberately refuse to exercise destructive cases on the configured live DB.
 beforeAll(() => {
   const url = new URL(process.env.DATABASE_URL!);
   const local = url.hostname === '127.0.0.1' && url.port === '55439';
-  const ci = process.env.CI === 'true' && url.hostname === 'localhost' && url.port === '5432' && url.pathname === '/travelstar_test';
-  if (!local && !ci)
-    throw new Error('Use the isolated privacy test database on 127.0.0.1:55439.');
+  const ci =
+    process.env.CI === 'true' &&
+    url.hostname === 'localhost' &&
+    url.port === '5432' &&
+    url.pathname === '/travelstar_test';
+  if (!local && !ci) throw new Error('Use the isolated privacy test database on 127.0.0.1:55439.');
 });
 const password = 'Privacy-Test-Password-123!';
 const userIds: string[] = [];
@@ -76,6 +87,9 @@ afterAll(async () => {
   await prisma.trip.deleteMany({ where: { id: { in: tripIds } } });
   await prisma.user.deleteMany({ where: { id: { in: userIds } } });
   await prisma.mediaErasureJob.deleteMany({ where: { ownerId: { in: userIds } } });
+  await prisma.legacyChatMediaErasure.deleteMany({
+    where: { OR: userIds.map((id) => ({ key: { startsWith: `chat-media/${id}/` } })) },
+  });
   await prisma.$disconnect();
 });
 
@@ -220,12 +234,21 @@ test('private photos require current room membership; public uploads and cross-u
     });
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('Socket connection timed out')), 8000);
-      socket!.once('connect', () => { clearTimeout(timer); resolve(); });
-      socket!.once('connect_error', err => { clearTimeout(timer); reject(err); });
+      socket!.once('connect', () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      socket!.once('connect_error', (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
     });
     const rejected = new Promise<{ message: string }>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('Missing private-media rejection')), 8000);
-      socket!.once('sendMessageError', data => { clearTimeout(timer); resolve(data); });
+      socket!.once('sendMessageError', (data) => {
+        clearTimeout(timer);
+        resolve(data);
+      });
     });
     socket.emit('sendMessage', {
       chatRoomId: room.id,
@@ -338,4 +361,40 @@ test('legacy photos migrate to private bytes and source deletion survives provid
   expect((await prisma.chatAttachment.findUniqueOrThrow({ where: { id: asset.id } })).legacyKey).not.toBeNull();
   await migrateLegacyChatMedia();
   expect((await prisma.chatAttachment.findUniqueOrThrow({ where: { id: asset.id } })).legacyKey).toBeNull();
+});
+
+test('a shared legacy file survives conversion across batch boundaries and is deleted only after every reference moves', async () => {
+  const user = await account('shared legacy');
+  const room = await prisma.chatRoom.create({ data: { members: { create: { userId: user.id } } } });
+  roomIds.push(room.id);
+  const mediaUrl = `https://media.fixture/chat-media/${user.id}/shared.jpg`;
+  await prisma.message.createMany({
+    data: Array.from({ length: 21 }, () => ({
+      chatRoomId: room.id,
+      senderId: user.id,
+      mediaType: 'IMAGE' as const,
+      mediaUrl,
+    })),
+  });
+  const erase = jest.mocked(eraseLegacyChatObject);
+  erase.mockClear();
+  await migrateLegacyChatMedia();
+  expect(await prisma.message.count({ where: { chatRoomId: room.id, mediaUrl } })).toBe(1);
+  await migrateLegacyChatMedia();
+  expect(erase).not.toHaveBeenCalled();
+  expect(await prisma.message.count({ where: { chatRoomId: room.id, mediaUrl } })).toBe(0);
+  await migrateLegacyChatMedia();
+  expect(erase).toHaveBeenCalledWith(`chat-media/${user.id}/shared.jpg`);
+});
+
+test('server-managed maintenance completes only after legacy copies and revocations finish', async () => {
+  await prisma.privacyMaintenanceState.upsert({
+    where: { id: 'private-chat-v1' },
+    create: { id: 'private-chat-v1', readyAfter: new Date(0) },
+    update: { readyAfter: new Date(0), inventoriedAt: null, completedAt: null, phase: 'COPYING' },
+  });
+  await advancePrivateChatMigration();
+  const state = await prisma.privacyMaintenanceState.findUniqueOrThrow({ where: { id: 'private-chat-v1' } });
+  expect(state.phase).toBe('COMPLETE');
+  expect(state.completedAt).not.toBeNull();
 });
