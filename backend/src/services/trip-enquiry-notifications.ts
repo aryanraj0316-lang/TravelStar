@@ -35,13 +35,15 @@ export async function notifyTripEnquiry(opts: {
   trigger?: 'MESSAGE' | 'THREAD_OPENED';
   io?: SocketIOServer | null;
 }): Promise<void> {
-  const { tripId, tripName, organizerId, chatRoomId, travellerName, preview, io } = opts;
+  const { tripId, tripName, organizerId, chatRoomId, travellerName, io } = opts;
   const trigger = opts.trigger ?? 'MESSAGE';
 
   const title = `New enquiry — ${tripName}`;
   const content = `${travellerName} has an enquiry about ${tripName}.`;
 
   try {
+    const enquiry = await prisma.chatRoom.findUnique({ where: { id: chatRoomId }, select: { inquiryUserId: true } });
+    if (!enquiry?.inquiryUserId) return;
     // This runs fire-and-forget from the socket `sendMessage` handler, so
     // it can land *after* the organizer's own client has already marked
     // the room read — which is precisely what left them staring at an
@@ -70,7 +72,7 @@ export async function notifyTripEnquiry(opts: {
     if (recentNotification) {
       notification = await prisma.notification.update({
         where: { id: recentNotification.id },
-        data: { title, content, unread: true },
+        data: { title, content, unread: true, subjectUserId: enquiry.inquiryUserId },
       });
     } else {
       notification = await prisma.notification.create({
@@ -83,6 +85,7 @@ export async function notifyTripEnquiry(opts: {
           time: 'Just now',
           tripId,
           chatRoomId,
+          subjectUserId: enquiry.inquiryUserId,
         },
       });
     }

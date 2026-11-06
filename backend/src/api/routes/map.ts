@@ -94,7 +94,8 @@ router.get('/pins', async (req, res) => {
     for (const loc of liveLocations) {
       if (seenUsers.has(loc.userId)) continue;
       seenUsers.add(loc.userId);
-      if (loc.user.profile?.locationSharing === false) continue;
+      if (!loc.user.profile?.locationSharing) continue;
+      if (loc.user.guideProfile && (!loc.user.profile.guideLocationActive || loc.updatedAt.getTime() < Date.now() - 60_000)) continue;
 
       const isGuide = loc.user.role === 'GUIDE' && loc.user.guideProfile !== null;
       pins.push({

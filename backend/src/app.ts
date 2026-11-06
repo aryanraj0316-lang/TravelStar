@@ -90,7 +90,7 @@ app.use(
 // the original.
 app.use(compression({ threshold: 1024 }));
 
-const captureRawBody = (req: any, _res: any, buf: Buffer) => {
+const captureRawBody = (req: import('express').Request, _res: import('express').Response, buf: Buffer) => {
   req.rawBody = buf.toString();
 };
 
@@ -100,7 +100,7 @@ const captureRawBody = (req: any, _res: any, buf: Buffer) => {
 // parser these requests died with a 413 before reaching their route, which
 // is why story uploads failed even on the fallback path. The large limit is
 // scoped to those paths only; everything else keeps the tight one.
-const LARGE_UPLOAD_PATHS = ['/api/v1/stories/upload-direct'];
+const LARGE_UPLOAD_PATHS = ['/api/v1/stories/upload-direct', '/api/v1/chats/attachments'];
 const isLargeUploadPath = (req: { path: string }) => LARGE_UPLOAD_PATHS.some((p) => req.path.startsWith(p));
 
 const standardJson = express.json({ limit: '256kb', verify: captureRawBody });

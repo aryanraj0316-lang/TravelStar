@@ -8,7 +8,7 @@ import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { Card } from '@/components/ui';
 
 
-const EFFECTIVE_DATE = 'October 4, 2026';
+const EFFECTIVE_DATE = 'November 6, 2026';
 
 const SECTIONS = [
   {
@@ -57,7 +57,7 @@ const SECTIONS = [
   },
   {
     title: '12. Account Data & Deletion',
-    body: `You may download a copy of your personal data or permanently delete your account at any time from the Account & Security section of your profile.\n\nUpon account deletion, your personal information, trip history, chat messages, and associated data will be permanently erased from our servers within 30 days, except where retention is required by applicable law.\n\nDeleted accounts cannot be recovered.`,
+    body: "You can edit supported profile fields and manage device permissions and in-app settings. Profile > Account & Security includes Download my data and Delete my account. The current export covers core profile, trip, messaging and safety records, but does not include every data category; email support for additional access requests.\n\nTo request deletion without using the app, email 1bharatgo@gmail.com with the subject Yatrenzo account deletion request. Include only your registered email address or mobile number so support can identify the account. We may need to verify ownership. Do not send passwords, OTPs, full bank/card details or copies of identity documents. This address also accepts requests to delete specific data without deleting the entire account.\n\nThe in-app deletion flow asks for your password, attempts to close bookings and refunds, revokes sessions and removes the account and associated active database records. This includes account-owned stories, story interactions, private chat attachments and identifiable system-generated booking/enquiry snapshots linked to your account. An organizer with a trip under way or unresolved refunds may need support assistance before deletion completes.\n\nUploaded public-media files are placed in a durable cleanup queue that retries removal. The in-app success message confirms account/database deletion and that file cleanup was queued; it does not confirm immediate erasure from every storage cache or backup. Contact support about historical uploads that cannot be reliably attributed to an account, recipient copies or specific retained information.\n\nSome records may need to be retained for a specific legal obligation or unresolved dispute; support will explain any applicable exception when handling your request. Payment providers, recipient copies and provider backups may require separate handling. Uninstalling the app does not delete your account.",
   },
   {
     title: '13. Prohibited Activities',

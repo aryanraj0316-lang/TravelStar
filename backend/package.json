@@ -14,7 +14,8 @@
     "seed:reference": "ts-node prisma/seed-reference-data.ts",
     "seed:featured": "ts-node prisma/seed-featured-trips.ts",
     "db:empty": "ts-node prisma/empty-db.ts",
-    "test": "jest"
+    "test": "jest",
+    "privacy:migrate-chat": "node dist/commands/migrate-private-chat.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1119.0",

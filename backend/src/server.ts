@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { startPrivacyMaintenance, stopPrivacyMaintenance } from './services/privacy-maintenance';
 import http from 'http';
 import app from './app';
 import prisma from './services/db';
@@ -22,11 +23,19 @@ app.set('socketio', io);
 
 // The database schema must match this build before any request is served
 // (src/lib/auto-migrate.ts) — listening only after pending migrations are
-// applied. A migration failure is logged and the server still starts.
-void applyPendingMigrations().finally(() => {
+// applied. A failed migration must leave the old deployment serving traffic.
+void applyPendingMigrations().then(migrated => {
+  if (!migrated) {
+    logger.error('[startup] Refusing traffic because database migrations failed');
+    process.exit(1);
+  }
+  startPrivacyMaintenance();
   server.listen(env.PORT, () => {
     logger.info(`Yatrenzo server is running on port ${env.PORT}`);
   });
+}).catch(err => {
+  logger.error('[startup] Database migration check failed', err);
+  process.exit(1);
 });
 
 startRetentionScheduler();
@@ -50,6 +59,7 @@ async function shutdown(signal: string): Promise<void> {
   shuttingDown = true;
   logger.info(`[shutdown] received ${signal}, draining…`);
   stopRetentionScheduler();
+  stopPrivacyMaintenance();
   stopHazardFeedScheduler();
   stopDestinationTrendsScheduler();
 

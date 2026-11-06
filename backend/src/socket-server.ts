@@ -1,3 +1,5 @@
+import { canSendAttachment } from './services/chat-attachments';
+import { withLocationLock } from './services/location-privacy';
 import { recordDelivery } from './services/message-status';
 import type { Server as HttpServer } from 'http';
 import { Server } from 'socket.io';
@@ -183,6 +185,10 @@ export function createSocketServer(httpServer: HttpServer): Server {
           return;
         }
         const effectiveChatRoomId = resolved.chatRoomId;
+        if ((mediaType === 'IMAGE' && !mediaUrl) || (mediaUrl && (mediaType !== 'IMAGE' || !await canSendAttachment(mediaUrl, userId, effectiveChatRoomId)))) {
+          socket.emit('sendMessageError', { message: 'Use a private photo uploaded to this room.' });
+          return;
+        }
 
         const [savedMsg, sender, chatRoom] = await Promise.all([
           prisma.message.create({
@@ -379,8 +385,8 @@ export function createSocketServer(httpServer: HttpServer): Server {
 
     const updateLocationSchema = z.object({
       tripId: z.string().min(1),
-      latitude: z.number(),
-      longitude: z.number(),
+      latitude: z.number().min(-90).max(90),
+      longitude: z.number().min(-180).max(180),
     });
 
     socket.on('updateLocation', async (raw: unknown) => {
@@ -389,19 +395,15 @@ export function createSocketServer(httpServer: HttpServer): Server {
       const { tripId, latitude, longitude } = parsed.data;
 
       try {
-        const [profile, membership] = await Promise.all([
-          prisma.profile.findUnique({ where: { userId }, select: { locationSharing: true } }),
-          prisma.tripMember.findUnique({ where: { tripId_userId: { tripId, userId } } }),
-        ]);
-
-        if (!profile?.locationSharing) return; // Consent toggle off — emit nothing.
-        if (!membership) return; // Not a member of this trip — nothing to broadcast to.
-
-        await setUserLocation(userId, { latitude, longitude });
-
-        const members = await prisma.tripMember.findMany({ where: { tripId }, select: { userId: true } });
-        const recipientIds = members.map((m) => m.userId).filter((id) => id !== userId);
-        await emitToUsers(recipientIds, 'locationUpdated', { userId, tripId, latitude, longitude });
+        await withLocationLock(userId, async tx => {
+          const profile = await tx.profile.findUnique({ where: { userId } });
+          const membership = await tx.tripMember.findUnique({ where: { tripId_userId: { tripId, userId } } });
+          if (!profile?.locationSharing || !membership) return;
+          await setUserLocation(userId, { latitude, longitude });
+          const members = await tx.tripMember.findMany({ where: { tripId }, select: { userId: true } });
+          const recipientIds = members.map(m => m.userId).filter(id => id !== userId);
+          await emitToUsers(recipientIds, 'locationUpdated', { userId, tripId, latitude, longitude });
+        });
       } catch (e) {
         logger.error('[Socket] updateLocation failed:', e);
       }

@@ -1,3 +1,7 @@
+import { eraseAccount } from '../../services/account-erasure';
+import { runMediaErasureJobs } from '../../services/privacy-maintenance';
+import { updatePrivateProfile } from '../../services/location-privacy';
+import { removeUserLocation } from '../../lib/presence-store';
 import { Router, type Request } from 'express';
 import { z } from 'zod';
 import { remoteMediaUrl } from '../../lib/validators';
@@ -11,13 +15,13 @@ import {
   rotateRefreshToken,
   revokeRefreshToken,
   revokeAllUserSessions,
-  generateResetToken,
   hashResetToken,
   type SessionMeta,
 } from '../../services/session';
 import { isLockedOut, recordFailure, recordSuccess } from '../../services/login-attempts';
 import { normalizeIndianMobile, INDIAN_MOBILE_ERROR } from '../../lib/indian-phone';
 import { sendEmail } from '../../services/email';
+import { closeBookingsBeforeAccountDeletion } from '../../services/trip-cancellation';
 import crypto from 'node:crypto';
 import { createAvatarUploadUrl, getMissingObjectStorageVars, ObjectStorageNotConfiguredError } from '../../lib/object-storage';
 
@@ -652,7 +656,7 @@ router.put('/profile', async (req, res) => {
     if (travelStyles) profileData.travelStyle = travelStyles;
 
     if (Object.keys(profileData).length > 0) {
-      await prisma.profile.update({ where: { userId }, data: profileData });
+      await updatePrivateProfile(userId, profileData);
     }
 
     if (updates.emergencyContact !== undefined) {
@@ -807,8 +811,8 @@ router.get('/export', async (req, res) => {
 // deliberate, authenticated action), revokes every session, and hard-
 // deletes the user. Trips they organise are deleted too (Trip.creatorId
 // is RESTRICT, and cascading TripMember/ChatRoom/JoinRequest/... off the
-// trip is the correct erasure behaviour). Everything else cascades off
-// User via onDelete: Cascade.
+// trip is the correct erasure behaviour). Explicit cleanup covers legacy
+// snapshots and restrictive relations; uploaded files use a durable outbox.
 const deleteAccountSchema = z.object({
   password: z.string().min(1).max(200),
 });
@@ -833,11 +837,21 @@ router.post('/delete-account', async (req, res) => {
         .json({ ok: false, error: { code: 'INVALID_CREDENTIALS', message: 'Incorrect password.' } });
     }
 
+    // Bookings first: travellers on this user's trips are refunded, and
+    // this user's own seats go back to their trips. Nothing is deleted if
+    // that cannot be done.
+    const closed = await closeBookingsBeforeAccountDeletion(userId, req.app.get('socketio'));
+    if (!closed.ok) {
+      return res
+        .status(closed.code === 'REFUND_FAILED' ? 502 : 409)
+        .json({ ok: false, error: { code: closed.code, message: closed.message } });
+    }
+
     await revokeAllUserSessions(userId);
-    await prisma.$transaction([
-      prisma.trip.deleteMany({ where: { creatorId: userId } }),
-      prisma.user.delete({ where: { id: userId } }),
-    ]);
+    await eraseAccount(userId);
+    req.app.get('socketio')?.in(userId).disconnectSockets(true);
+    void removeUserLocation(userId).catch(() => undefined);
+    void runMediaErasureJobs().catch(err => logger.error('[Auth] Media cleanup queued', err));
 
     logger.info('[Auth] Account deleted', { userId });
     return res.status(200).json({ ok: true, data: { deleted: true } });

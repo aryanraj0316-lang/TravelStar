@@ -252,6 +252,7 @@ router.post('/join-request', async (req, res) => {
           time: 'Just now',
           tripId: trip.id,
           joinRequestId: joinReq.id,
+          subjectUserId: userId,
         },
       });
 

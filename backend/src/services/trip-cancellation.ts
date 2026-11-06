@@ -196,7 +196,7 @@ async function notifyCancellation(opts: {
       const title = `Booking cancelled — ${trip.name}`;
       const content = `${displayName(traveller)} cancelled their booking. Their seats are available again.`;
       await prisma.notification.create({
-        data: { userId: trip.creatorId, type: 'TRIP', title, content, time: 'Just now', unread: true, tripId: opts.tripId },
+        data: { userId: trip.creatorId, subjectUserId: opts.userId, type: 'TRIP', title, content, time: 'Just now', unread: true, tripId: opts.tripId },
       });
       opts.io?.to(trip.creatorId).emit('notificationReceived', {
         id: `notif-${Date.now()}`,
@@ -216,4 +216,72 @@ async function notifyCancellation(opts: {
   } catch (err) {
     logger.warn('[TripCancellation] Notifications failed (non-fatal):', err);
   }
+}
+
+export type AccountClosureResult =
+  | { ok: true }
+  | { ok: false; code: 'TRIP_UNDER_WAY' | 'REFUND_FAILED'; message: string };
+
+/**
+ * Settles everything a user's bookings hold before their account is deleted
+ * (deleting the account deletes their trips and bookings with it):
+ *   - as an organizer: travellers holding seats on trips that have not ended
+ *     are refunded in full and told the trip is cancelled. A trip already
+ *     under way cannot be cancelled this way, so deletion waits for it to end;
+ *   - as a traveller: their own bookings are cancelled under the normal
+ *     policy, which returns their seats to the trip.
+ * Every step is safe to repeat, so a failed attempt can simply be retried.
+ */
+export async function closeBookingsBeforeAccountDeletion(
+  userId: string,
+  io?: SocketIOServer | null,
+): Promise<AccountClosureResult> {
+  const now = new Date();
+
+  const travellersOnMyTrips = await prisma.joinRequest.findMany({
+    where: { status: { in: SEAT_HOLDING_STATUSES }, trip: { creatorId: userId, endDate: { gt: now } } },
+    include: { trip: { select: { name: true, startDate: true } } },
+  });
+  if (travellersOnMyTrips.some((jr) => jr.trip.startDate.getTime() <= now.getTime())) {
+    return {
+      ok: false,
+      code: 'TRIP_UNDER_WAY',
+      message: 'One of your trips is under way with travellers on it. You can delete your account once it has ended.',
+    };
+  }
+  for (const jr of travellersOnMyTrips) {
+    const rejected = await rejectBooking(jr.id);
+    if (!rejected.ok) {
+      return {
+        ok: false,
+        code: 'REFUND_FAILED',
+        message: 'We could not refund one of your travellers, so your account was not deleted. Please try again.',
+      };
+    }
+    // No trip link: the trip is deleted with the account.
+    await notifyTraveller(jr.userId, {
+      title: `Trip cancelled — ${jr.trip.name}`,
+      content:
+        'The organizer has closed their account, so this trip is cancelled.' +
+        (Number(rejected.refundAmount) > 0 ? ` ₹${rejected.refundAmount} is being refunded in full to your original payment method.` : ''),
+      io,
+      data: { screen: 'bookings' },
+    });
+  }
+
+  const myBookings = await prisma.joinRequest.findMany({
+    where: { userId, status: { in: [...SEAT_HOLDING_STATUSES, 'PENDING', 'PAYMENT_PENDING'] } },
+    select: { tripId: true },
+  });
+  for (const booking of myBookings) {
+    const cancelled = await cancelBooking({ tripId: booking.tripId, userId, io });
+    if (!cancelled.ok && cancelled.reason === 'REFUND_FAILED') {
+      return {
+        ok: false,
+        code: 'REFUND_FAILED',
+        message: 'We could not refund one of your bookings, so your account was not deleted. Please try again.',
+      };
+    }
+  }
+  return { ok: true };
 }

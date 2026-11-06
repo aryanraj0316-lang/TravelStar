@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { PutObjectCommand, S3Client, ListObjectsV2Command, DeleteObjectsCommand, GetObjectCommand, DeleteObjectCommand, ListObjectVersionsCommand, GetBucketVersioningCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { env } from '../config/env';
 
@@ -160,10 +160,94 @@ export function createGuideMediaUploadUrl(uploaderId: string, contentType: strin
 // that does not exist for them. Same class of bug as §8.2/§8.4/§8.17, and
 // the last remaining instance of it. Keyed by the uploading user rather than
 // the room, so leaving a room cannot orphan the key's ownership.
-export function createChatMediaUploadUrl(uploaderId: string, contentType: string) {
-  return createUploadUrl('chat-media', uploaderId, contentType);
-}
+// Chat attachments must never use the public-media bucket for new uploads.
 
 export function createStoryMediaUploadUrl(uploaderId: string, contentType: string) {
   return createUploadUrl('stories', uploaderId, contentType);
+}
+
+const USER_MEDIA_PREFIXES = ['avatars', 'trip-covers', 'guide-media', 'chat-media', 'stories'];
+export async function eraseUserObjects(userId: string): Promise<void> {
+  if (!isObjectStorageConfigured()) throw new ObjectStorageNotConfiguredError();
+  if (!/^[a-zA-Z0-9-]+$/.test(userId)) throw new Error('Invalid media owner');
+  for (const namespace of USER_MEDIA_PREFIXES) {
+    await eraseMediaPrefix(`${namespace}/${userId}/`);
+  }
+}
+
+export async function eraseLegacyChatNamespace(): Promise<void> {
+  if (!isObjectStorageConfigured()) throw new ObjectStorageNotConfiguredError();
+  await eraseMediaPrefix('chat-media/');
+}
+
+async function eraseMediaPrefix(prefix: string) {
+    let cursor: string | undefined;
+    do {
+      const page = await getClient().send(new ListObjectsV2Command({
+        Bucket: env.OBJECT_STORAGE_BUCKET!, Prefix: prefix,
+        ...(cursor ? { ContinuationToken: cursor } : {}),
+      }));
+      const objects = (page.Contents ?? []).flatMap(o => o.Key ? [{ Key: o.Key }] : []);
+      if (objects.length) {
+        const result = await getClient().send(new DeleteObjectsCommand({ Bucket: env.OBJECT_STORAGE_BUCKET!, Delete: { Objects: objects } }));
+        if (result.Errors?.length) throw new Error('Object erasure incomplete');
+      }
+      cursor = page.IsTruncated ? page.NextContinuationToken : undefined;
+      if (page.IsTruncated && !cursor) throw new Error('Object listing incomplete');
+    } while (cursor);
+    // A delete marker alone leaves historical bytes reachable by version ID.
+    await eraseObjectVersions(prefix);
+}
+
+async function eraseObjectVersions(prefix: string, exact = false) {
+  try {
+    const versioning = await getClient().send(new GetBucketVersioningCommand({ Bucket: env.OBJECT_STORAGE_BUCKET! }));
+    if (!versioning.Status) return;
+  } catch (e) {
+    // Providers without versioning implement only current-object deletion.
+    // Permission failures must still leave the cleanup queued.
+    const name = (e as { name?: string }).name;
+    if (name === 'NotImplemented' || name === 'NotSupported') return;
+    throw e;
+  }
+  let keyMarker: string | undefined;
+  let versionMarker: string | undefined;
+  do {
+    const page = await getClient().send(new ListObjectVersionsCommand({ Bucket: env.OBJECT_STORAGE_BUCKET!, Prefix: prefix,
+      ...(keyMarker ? { KeyMarker: keyMarker } : {}), ...(versionMarker ? { VersionIdMarker: versionMarker } : {}),
+    }));
+    const objects = [...(page.Versions ?? []), ...(page.DeleteMarkers ?? [])].flatMap(v =>
+      v.Key && v.VersionId && (!exact || v.Key === prefix) ? [{ Key: v.Key, VersionId: v.VersionId }] : []);
+    for (let i = 0; i < objects.length; i += 1000) {
+      const result = await getClient().send(new DeleteObjectsCommand({ Bucket: env.OBJECT_STORAGE_BUCKET!, Delete: { Objects: objects.slice(i, i + 1000) } }));
+      if (result.Errors?.length) throw new Error('Version erasure incomplete');
+    }
+    keyMarker = page.IsTruncated ? page.NextKeyMarker : undefined;
+    versionMarker = page.IsTruncated ? page.NextVersionIdMarker : undefined;
+    if (page.IsTruncated && !keyMarker) throw new Error('Version listing incomplete');
+  } while (keyMarker);
+}
+
+// Only fetch keys from OUR configured bucket, never arbitrary message URLs.
+export function legacyChatKey(url: string): string | null {
+  const base = env.OBJECT_STORAGE_PUBLIC_URL_BASE?.replace(/\/$/, '');
+  if (!base || !url.startsWith(`${base}/chat-media/`)) return null;
+  const key = url.slice(base.length + 1);
+  return /^chat-media\/[a-zA-Z0-9-]+\/[a-zA-Z0-9.-]+$/.test(key) ? key : null;
+}
+export function legacyChatPublicUrl(key: string): string {
+  if (!env.OBJECT_STORAGE_PUBLIC_URL_BASE) throw new ObjectStorageNotConfiguredError();
+  return `${env.OBJECT_STORAGE_PUBLIC_URL_BASE.replace(/\/$/, '')}/${key}`;
+}
+export async function readLegacyChatObject(key: string) {
+  if (!isObjectStorageConfigured()) throw new ObjectStorageNotConfiguredError();
+  const obj = await getClient().send(new GetObjectCommand({ Bucket: env.OBJECT_STORAGE_BUCKET!, Key: key }));
+  if (!obj.Body || !obj.ContentLength || obj.ContentLength > 5 * 1024 * 1024) throw new Error('Invalid legacy chat image');
+  const bytes = Buffer.from(await obj.Body.transformToByteArray());
+  return { bytes, contentType: obj.ContentType ?? 'image/jpeg' };
+}
+export async function eraseLegacyChatObject(key: string) {
+  if (!isObjectStorageConfigured()) throw new ObjectStorageNotConfiguredError();
+  await getClient().send(new DeleteObjectCommand({ Bucket: env.OBJECT_STORAGE_BUCKET!, Key: key }));
+  await eraseObjectVersions(key, true);
 }

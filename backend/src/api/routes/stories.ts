@@ -351,7 +351,7 @@ router.post('/upload-direct', async (req, res) => {
         error: { code: 'UNSUPPORTED_MEDIA_TYPE', message: `Cannot store ${contentType}.` },
       });
     }
-    const filename = `story-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const filename = `story-${requireUserId(req)}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
     const uploadDir = path.join(process.cwd(), 'uploads');
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
