@@ -6,7 +6,12 @@ import {
   GetBucketVersioningCommand,
   ListObjectVersionsCommand,
 } from '@aws-sdk/client-s3';
-import { eraseUserObjects, eraseLegacyChatNamespace, legacyChatKey } from '../src/lib/object-storage';
+import {
+  eraseUserObjects,
+  eraseLegacyChatNamespace,
+  legacyChatKey,
+  eraseLegacyChatObject,
+} from '../src/lib/object-storage';
 import { eraseLocalMedia, localMediaFilename } from '../src/services/account-erasure';
 import fs from 'fs/promises';
 jest.mock('../src/config/env', () => ({
@@ -25,6 +30,20 @@ jest.mock('fs/promises', () => ({
   default: { readdir: jest.fn(), rm: jest.fn().mockResolvedValue(undefined) },
 }));
 afterEach(() => jest.restoreAllMocks());
+
+test('legacy revocation stays pending until the original public URL is actually unavailable', async () => {
+  jest.spyOn(S3Client.prototype, 'send').mockResolvedValue({} as never);
+  const fetchMock = jest
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(new Response(null, { status: 200 }))
+    .mockResolvedValueOnce(new Response(null, { status: 404 }));
+  await expect(eraseLegacyChatObject('chat-media/owner/photo.jpg')).rejects.toThrow('still reachable');
+  await expect(eraseLegacyChatObject('chat-media/owner/photo.jpg')).resolves.toBeUndefined();
+  expect(fetchMock).toHaveBeenCalledWith(
+    'https://media.fixture/chat-media/owner/photo.jpg',
+    expect.objectContaining({ redirect: 'error' }),
+  );
+});
 
 test('account erasure lists every owned namespace, paginates and deletes current and historical versions', async () => {
   const sent: any[] = [];

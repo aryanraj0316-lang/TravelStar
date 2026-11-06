@@ -32,6 +32,23 @@ Publish the revised policy only after the corresponding behavior is deployed.
   active broadcast and a position newer than one minute. Re-enabling sharing does
   not restart broadcasting. Manually sent chat/SOS coordinates are separate.
 
+## Server-managed historical media cleanup
+
+The follow-up migration adds a durable legacy-object outbox and checkpoint. The
+live backend now converts old inline/bucket chat images in bounded background
+batches using its own database and storage credentials. It retains sources until
+all message references have private replacements, inventories orphaned objects
+and historical versions after old upload links expire, then retries deletion.
+Each original public URL must return 403/404 before its revocation is acknowledged.
+Account deletion cannot remove this outbox prematurely. Unknown source references
+are preserved for operator review rather than silently discarded.
+
+GET /ready exposes only the aggregate completion flag and phase under data.privacy;
+it does not expose file URLs, account identifiers or message counts. Completion
+requires conversion and old-source revocation, not merely successful deployment.
+The manual migration command remains available for an operator investigating a
+failure; routine conversion no longer requires copying production credentials locally.
+
 ## Deployment sequence
 
 1. Apply `20261106170000_privacy_boundaries` using the normal Prisma deployment
@@ -58,7 +75,7 @@ Publish the revised policy only after the corresponding behavior is deployed.
    fetching), converts existing photos/inline images to private bytes, retries
    source deletion via persisted `legacyKey`, and removes remaining old
    `chat-media/` objects and versions, including unattached uploads. Unknown
-   external/local references are cleared, not fetched. A missing/corrupt/oversize
+   external/local references are preserved for operator review, not fetched. A missing/corrupt/oversize
    managed image or provider error stops the command with a nonzero exit; inspect
    that asset before retrying. Successful conversion is not rolled back merely
    because deleting the old source failed. Do not run concurrent migration jobs.

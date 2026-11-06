@@ -1,5 +1,14 @@
 import { randomUUID } from 'crypto';
-import { PutObjectCommand, S3Client, ListObjectsV2Command, DeleteObjectsCommand, GetObjectCommand, DeleteObjectCommand, ListObjectVersionsCommand, GetBucketVersioningCommand } from '@aws-sdk/client-s3';
+import {
+  PutObjectCommand,
+  S3Client,
+  ListObjectsV2Command,
+  DeleteObjectsCommand,
+  GetObjectCommand,
+  DeleteObjectCommand,
+  ListObjectVersionsCommand,
+  GetBucketVersioningCommand,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { env } from '../config/env';
 
@@ -181,22 +190,27 @@ export async function eraseLegacyChatNamespace(): Promise<void> {
 }
 
 async function eraseMediaPrefix(prefix: string) {
-    let cursor: string | undefined;
-    do {
-      const page = await getClient().send(new ListObjectsV2Command({
-        Bucket: env.OBJECT_STORAGE_BUCKET!, Prefix: prefix,
+  let cursor: string | undefined;
+  do {
+    const page = await getClient().send(
+      new ListObjectsV2Command({
+        Bucket: env.OBJECT_STORAGE_BUCKET!,
+        Prefix: prefix,
         ...(cursor ? { ContinuationToken: cursor } : {}),
-      }));
-      const objects = (page.Contents ?? []).flatMap(o => o.Key ? [{ Key: o.Key }] : []);
-      if (objects.length) {
-        const result = await getClient().send(new DeleteObjectsCommand({ Bucket: env.OBJECT_STORAGE_BUCKET!, Delete: { Objects: objects } }));
-        if (result.Errors?.length) throw new Error('Object erasure incomplete');
-      }
-      cursor = page.IsTruncated ? page.NextContinuationToken : undefined;
-      if (page.IsTruncated && !cursor) throw new Error('Object listing incomplete');
-    } while (cursor);
-    // A delete marker alone leaves historical bytes reachable by version ID.
-    await eraseObjectVersions(prefix);
+      }),
+    );
+    const objects = (page.Contents ?? []).flatMap((o) => (o.Key ? [{ Key: o.Key }] : []));
+    if (objects.length) {
+      const result = await getClient().send(
+        new DeleteObjectsCommand({ Bucket: env.OBJECT_STORAGE_BUCKET!, Delete: { Objects: objects } }),
+      );
+      if (result.Errors?.length) throw new Error('Object erasure incomplete');
+    }
+    cursor = page.IsTruncated ? page.NextContinuationToken : undefined;
+    if (page.IsTruncated && !cursor) throw new Error('Object listing incomplete');
+  } while (cursor);
+  // A delete marker alone leaves historical bytes reachable by version ID.
+  await eraseObjectVersions(prefix);
 }
 
 async function eraseObjectVersions(prefix: string, exact = false) {
@@ -213,13 +227,24 @@ async function eraseObjectVersions(prefix: string, exact = false) {
   let keyMarker: string | undefined;
   let versionMarker: string | undefined;
   do {
-    const page = await getClient().send(new ListObjectVersionsCommand({ Bucket: env.OBJECT_STORAGE_BUCKET!, Prefix: prefix,
-      ...(keyMarker ? { KeyMarker: keyMarker } : {}), ...(versionMarker ? { VersionIdMarker: versionMarker } : {}),
-    }));
-    const objects = [...(page.Versions ?? []), ...(page.DeleteMarkers ?? [])].flatMap(v =>
-      v.Key && v.VersionId && (!exact || v.Key === prefix) ? [{ Key: v.Key, VersionId: v.VersionId }] : []);
+    const page = await getClient().send(
+      new ListObjectVersionsCommand({
+        Bucket: env.OBJECT_STORAGE_BUCKET!,
+        Prefix: prefix,
+        ...(keyMarker ? { KeyMarker: keyMarker } : {}),
+        ...(versionMarker ? { VersionIdMarker: versionMarker } : {}),
+      }),
+    );
+    const objects = [...(page.Versions ?? []), ...(page.DeleteMarkers ?? [])].flatMap((v) =>
+      v.Key && v.VersionId && (!exact || v.Key === prefix) ? [{ Key: v.Key, VersionId: v.VersionId }] : [],
+    );
     for (let i = 0; i < objects.length; i += 1000) {
-      const result = await getClient().send(new DeleteObjectsCommand({ Bucket: env.OBJECT_STORAGE_BUCKET!, Delete: { Objects: objects.slice(i, i + 1000) } }));
+      const result = await getClient().send(
+        new DeleteObjectsCommand({
+          Bucket: env.OBJECT_STORAGE_BUCKET!,
+          Delete: { Objects: objects.slice(i, i + 1000) },
+        }),
+      );
       if (result.Errors?.length) throw new Error('Version erasure incomplete');
     }
     keyMarker = page.IsTruncated ? page.NextKeyMarker : undefined;
@@ -242,7 +267,8 @@ export function legacyChatPublicUrl(key: string): string {
 export async function readLegacyChatObject(key: string) {
   if (!isObjectStorageConfigured()) throw new ObjectStorageNotConfiguredError();
   const obj = await getClient().send(new GetObjectCommand({ Bucket: env.OBJECT_STORAGE_BUCKET!, Key: key }));
-  if (!obj.Body || !obj.ContentLength || obj.ContentLength > 5 * 1024 * 1024) throw new Error('Invalid legacy chat image');
+  if (!obj.Body || !obj.ContentLength || obj.ContentLength > 5 * 1024 * 1024)
+    throw new Error('Invalid legacy chat image');
   const bytes = Buffer.from(await obj.Body.transformToByteArray());
   return { bytes, contentType: obj.ContentType ?? 'image/jpeg' };
 }
@@ -250,4 +276,62 @@ export async function eraseLegacyChatObject(key: string) {
   if (!isObjectStorageConfigured()) throw new ObjectStorageNotConfiguredError();
   await getClient().send(new DeleteObjectCommand({ Bucket: env.OBJECT_STORAGE_BUCKET!, Key: key }));
   await eraseObjectVersions(key, true);
+  const response = await fetch(legacyChatPublicUrl(key), {
+    method: 'GET',
+    headers: { Range: 'bytes=0-0' },
+    redirect: 'error',
+    signal: AbortSignal.timeout(10_000),
+  });
+  await response.body?.cancel();
+  if (response.status !== 403 && response.status !== 404) {
+    throw new Error('Legacy chat URL is still reachable or cannot yet be verified.');
+  }
+}
+
+/** Inventory before deletion, so a restart cannot lose cached public URLs. */
+export async function* listLegacyChatObjects(): AsyncGenerator<string[]> {
+  if (!isObjectStorageConfigured()) throw new ObjectStorageNotConfiguredError();
+  const checked = (keys: (string | undefined)[]) =>
+    [...new Set(keys.filter((key): key is string => !!key))].map((key) => {
+      if (!/^chat-media\/[a-zA-Z0-9-]+\/[a-zA-Z0-9-]+\.[a-zA-Z0-9]+$/.test(key))
+        throw new Error('Unexpected legacy chat object key requires review.');
+      return key;
+    });
+  let cursor: string | undefined;
+  do {
+    const page = await getClient().send(
+      new ListObjectsV2Command({
+        Bucket: env.OBJECT_STORAGE_BUCKET!,
+        Prefix: 'chat-media/',
+        ...(cursor ? { ContinuationToken: cursor } : {}),
+      }),
+    );
+    yield checked((page.Contents ?? []).map((o) => o.Key));
+    cursor = page.IsTruncated ? page.NextContinuationToken : undefined;
+    if (page.IsTruncated && !cursor) throw new Error('Legacy chat inventory incomplete.');
+  } while (cursor);
+  let versioning;
+  try {
+    versioning = await getClient().send(new GetBucketVersioningCommand({ Bucket: env.OBJECT_STORAGE_BUCKET! }));
+  } catch (e) {
+    if (['NotImplemented', 'NotSupported'].includes((e as { name: string }).name)) return;
+    throw e;
+  }
+  if (!versioning.Status) return;
+  let keyMarker: string | undefined;
+  let versionMarker: string | undefined;
+  do {
+    const page = await getClient().send(
+      new ListObjectVersionsCommand({
+        Bucket: env.OBJECT_STORAGE_BUCKET!,
+        Prefix: 'chat-media/',
+        ...(keyMarker ? { KeyMarker: keyMarker } : {}),
+        ...(versionMarker ? { VersionIdMarker: versionMarker } : {}),
+      }),
+    );
+    yield checked([...(page.Versions ?? []), ...(page.DeleteMarkers ?? [])].map((o) => o.Key));
+    keyMarker = page.IsTruncated ? page.NextKeyMarker : undefined;
+    versionMarker = page.IsTruncated ? page.NextVersionIdMarker : undefined;
+    if (page.IsTruncated && !keyMarker) throw new Error('Legacy chat version inventory incomplete.');
+  } while (keyMarker);
 }

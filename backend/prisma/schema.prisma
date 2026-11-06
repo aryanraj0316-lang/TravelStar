@@ -1691,3 +1691,16 @@ model MediaErasureJob {
   finishAfter DateTime
   createdAt DateTime @default(now())
 }
+
+model LegacyChatMediaErasure {
+  key String @id
+  createdAt DateTime @default(now())
+}
+
+model PrivacyMaintenanceState {
+  id String @id
+  readyAfter DateTime
+  inventoriedAt DateTime?
+  completedAt DateTime?
+  phase String @default("COPYING")
+}

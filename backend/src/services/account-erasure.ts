@@ -41,7 +41,7 @@ export async function eraseAccount(userId: string) {
       const personalRoomIds = roomRows
         .filter((r) => [r.inquiryUserId, r.dmUserAId, r.dmUserBId].includes(userId))
         .map((r) => r.id);
-      const files = [
+      const candidates = [
         ...new Set(
           stories
             .flatMap((s) => [s.mediaUrl, s.coverImg])
@@ -51,6 +51,27 @@ export async function eraseAccount(userId: string) {
             }),
         ),
       ];
+      const files: string[] = [];
+      for (const filename of candidates) {
+        const owner = filename.match(/^story-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})-/i)?.[1];
+        if (owner && owner !== userId) continue;
+        // Legacy files had no owner in their names; preserve a file still
+        // referenced by somebody else's story rather than erasing their media.
+        if (
+          !owner &&
+          (await tx.travelStory.count({
+            where: {
+              userId: { not: userId },
+              OR: [
+                { mediaUrl: { endsWith: `/uploads/${filename}` } },
+                { coverImg: { endsWith: `/uploads/${filename}` } },
+              ],
+            },
+          }))
+        )
+          continue;
+        files.push(filename);
+      }
       await tx.mediaErasureJob.create({
         data: { ownerId: userId, localFiles: files, finishAfter: new Date(Date.now() + 10 * 60_000) },
       });
@@ -108,6 +129,8 @@ export async function eraseLocalMedia(userId: string, legacyFiles: string[]) {
   const targets = new Set([...legacyFiles, ...entries.filter((n) => n.startsWith(`story-${userId}-`))]);
   for (const name of targets) {
     if (!/^story-[a-zA-Z0-9.-]+$/.test(name) || path.basename(name) !== name) throw new Error('Unsafe media path');
+    const owner = name.match(/^story-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})-/i)?.[1];
+    if (owner && owner !== userId) continue;
     await fs.rm(path.join(root, name), { force: true });
   }
 }

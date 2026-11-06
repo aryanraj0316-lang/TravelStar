@@ -2,7 +2,7 @@ const tseslint = require('typescript-eslint');
 
 module.exports = tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', 'export-temp/**', 'android-privacy-export/**', 'eas-cli-cache/**', 'jest-cache/**', 'eslint.config.js', 'jest.config.js'],
+    ignores: ['release-control.cjs', 'dist/**', 'node_modules/**', 'export-temp/**', 'android-privacy-export/**', 'eas-cli-cache/**', 'jest-cache/**', 'eslint.config.js', 'jest.config.js'],
   },
   ...tseslint.configs.recommended,
   {
