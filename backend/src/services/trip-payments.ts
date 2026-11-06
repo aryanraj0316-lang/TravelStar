@@ -717,6 +717,7 @@ async function dispatchPaymentCompletedNotifications(orderId: string, io?: Socke
         unread: true,
         tripId: trip.id,
         joinRequestId: order.joinRequestId,
+        subjectUserId: order.userId,
       },
     });
     io?.to(trip.creatorId).emit('notificationReceived', {
@@ -765,6 +766,7 @@ export async function announceMemberJoined(opts: {
       // Attributed to the organizer, matching interactions.ts; isSystem is
       // what every client actually renders on.
       senderId: trip?.creatorId ?? userId,
+      subjectUserId: userId,
       content,
       mediaType: 'NONE',
       isSystem: true,

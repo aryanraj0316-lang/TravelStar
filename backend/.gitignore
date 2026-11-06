@@ -1,0 +1,8 @@
+/eas-cli-cache/
+/jest-cache/
+/backend-regression.log
+/frontend-regression.log
+/android-privacy-export/
+/export-temp/
+/release-control.cjs
+/release-result.json

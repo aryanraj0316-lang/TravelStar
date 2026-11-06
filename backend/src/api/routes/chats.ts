@@ -4,7 +4,7 @@ import { NotificationCategory } from '@prisma/client';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 import { requireUserId } from '../../lib/auth-context';
-import { ObjectStorageNotConfiguredError, createChatMediaUploadUrl } from '../../lib/object-storage';
+import { attachmentRef, decodeChatImage, readAttachment, visibleChatMedia } from '../../services/chat-attachments';
 import { audienceForMessage, recordDelivery, statusesForOwnMessages } from '../../services/message-status';
 
 const router = Router();
@@ -503,7 +503,7 @@ router.get('/:id/messages', async (req, res) => {
           timestamp: m.createdAt.toISOString(),
           createdAt: m.createdAt.toISOString(),
           mediaType: m.mediaType || 'NONE',
-          mediaUrl: m.mediaUrl || null,
+          mediaUrl: visibleChatMedia(m.mediaUrl),
           // Set only on LOCATION messages — a shared pin's coordinates.
           latitude: m.latitude,
           longitude: m.longitude,
@@ -901,39 +901,29 @@ router.delete('/:id/members/me', async (req, res) => {
   }
 });
 
-// docs/REMEDIATION.md §8.7 — hands back a presigned PUT so the client can
-// upload a chat photo straight to object storage and send the resulting
-// public URL, instead of sending its own device-local file:// URI (which
-// resolved for nobody but the sender). Same contract as the avatar, trip
-// cover and guide media endpoints: a real error when storage is not
-// configured, never a fake success.
-const chatMediaUploadUrlSchema = z.object({
-  contentType: z.enum(['image/jpeg', 'image/png', 'image/webp']),
+// Old clients must upgrade; never issue another public chat-media URL.
+router.post('/media-upload-url', (_req, res) => res.status(410).json({ ok: false, error: { code: 'UPGRADE_REQUIRED', message: 'Update the app to send private chat photos.' } }));
+
+router.post('/attachments', async (req, res) => {
+  const parsed = z.object({ chatRoomId: z.string().uuid(), contentType: z.enum(['image/jpeg','image/png','image/webp']), base64: z.string().min(1).max(6990508) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ ok: false, error: { code: 'INVALID_IMAGE', message: 'Choose an image under 5 MB.' } });
+  const userId = requireUserId(req);
+  if (!await assertChatRoomMember(res, parsed.data.chatRoomId, userId)) return;
+  let bytes: Buffer;
+  try { bytes = decodeChatImage(parsed.data.base64, parsed.data.contentType); }
+  catch { return res.status(400).json({ ok: false, error: { code: 'INVALID_IMAGE', message: 'Choose a JPEG, PNG or WebP image under 5 MB.' } }); }
+  const asset = await prisma.chatAttachment.create({ data: { ownerId: userId, chatRoomId: parsed.data.chatRoomId, contentType: parsed.data.contentType, bytes } });
+  res.set('Cache-Control', 'no-store');
+  return res.status(201).json({ ok: true, data: { mediaUrl: attachmentRef(asset.id) } });
 });
 
-router.post('/media-upload-url', async (req, res) => {
-  const parsed = chatMediaUploadUrlSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({
-      ok: false,
-      error: { code: 'VALIDATION_FAILED', message: 'contentType must be image/jpeg, image/png or image/webp.' },
-    });
-  }
-
-  try {
-    const userId = requireUserId(req);
-    const { uploadUrl, publicUrl } = await createChatMediaUploadUrl(userId, parsed.data.contentType);
-    return res.status(200).json({ ok: true, data: { uploadUrl, publicUrl } });
-  } catch (err) {
-    if (err instanceof ObjectStorageNotConfiguredError) {
-      return res.status(503).json({
-        ok: false,
-        error: { code: 'STORAGE_UNAVAILABLE', message: 'Photo sharing is not available right now.' },
-      });
-    }
-    logger.error('[Chats] Media upload URL failed:', err);
-    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not start the upload.' } });
-  }
+router.get('/attachments/:assetId', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const parsed = z.string().uuid().safeParse(req.params.assetId);
+  if (!parsed.success) return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Photo unavailable.' } });
+  const asset = await readAttachment(parsed.data, requireUserId(req));
+  if (!asset) return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Photo unavailable.' } });
+  return res.json({ ok: true, data: { uri: 'data:' + asset.contentType + ';base64,' + Buffer.from(asset.bytes).toString('base64') } });
 });
 
 export default router;

@@ -30,12 +30,11 @@ async function registerUser(label: string): Promise<{ token: string; userId: str
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 
 let guideToken: string;
-let guideUserId: string;
 let otherToken: string;
 let guideProfileId: string;
 
 beforeAll(async () => {
-  ({ token: guideToken, userId: guideUserId } = await registerUser('Guide Applicant'));
+  ({ token: guideToken } = await registerUser('Guide Applicant'));
   ({ token: otherToken } = await registerUser('Unrelated User'));
 });
 
@@ -168,6 +167,8 @@ describe('package CRUD survives a round trip', () => {
 
 describe('live location broadcast', () => {
   it('stores and reads back the guide pin', async () => {
+      const start = await request(app).post(`/api/v1/guides/${guideProfileId}/live-status/start`).set(auth(guideToken));
+      expect(start.status).toBe(200);
     const post = await request(app)
       .post(`/api/v1/guides/${guideProfileId}/live-status`)
       .set(auth(guideToken))

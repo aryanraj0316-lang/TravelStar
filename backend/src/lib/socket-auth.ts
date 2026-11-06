@@ -1,3 +1,4 @@
+import prisma from '../services/db';
 import jwt from 'jsonwebtoken';
 import type { Socket } from 'socket.io';
 import { env } from '../config/env';
@@ -36,7 +37,9 @@ export function socketAuthMiddleware(
     }
     const data: SocketAuthData = { userId, role: decoded.role };
     socket.data = data;
-    next();
+    prisma.user.findUnique({ where: { id: userId }, select: { id: true } }).then(user => {
+      next(user ? undefined : new Error('UNAUTHORIZED'));
+    }).catch(() => next(new Error('UNAUTHORIZED')));
   });
 }
 

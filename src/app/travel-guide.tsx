@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { logger } from '@/lib/logger';
 import {
@@ -188,6 +188,7 @@ export default function TravelGuideScreen() {
   const [packages, setPackages] = useState<GuidePackage[]>([]);
   const [reels, setReels] = useState<GuideReel[]>([]);
   const [liveStatus, setLiveStatus] = useState<GuideLiveStatus | null>(null);
+  const broadcastGeneration = useRef(0);
   const [isBroadcasting, setIsBroadcasting] = useState(false);
   const [selectedVideoUri, setSelectedVideoUri] = useState<string | null>(null);
 
@@ -443,9 +444,12 @@ export default function TravelGuideScreen() {
   // live with an invented position.
   const triggerLiveBroadcast = async () => {
     if (!guideProfile) return;
+    const generation = broadcastGeneration.current;
     const device = await getCurrentDeviceLocation();
+    if (generation !== broadcastGeneration.current) return;
     if (!device.ok) {
       setIsBroadcasting(false);
+      void apiService.stopGuideBroadcast(guideProfile.id).catch(() => undefined);
       toast(
         device.reason === 'PERMISSION_DENIED'
           ? t('travelGuide.locationPermissionRequiredForLive')
@@ -463,8 +467,28 @@ export default function TravelGuideScreen() {
         setLiveStatus((prev) => (prev ? { ...prev, location: res } : { location: res, activeGuiding: null }));
       }
     } catch (e) {
+      if (generation !== broadcastGeneration.current) return;
+      setIsBroadcasting(false);
+      setLiveStatus(prev => prev ? { ...prev, location: null } : prev);
       logger.warn('Failed to broadcast live location:', e);
+      toast(errorToastMessage(e, 'Location sharing stopped. Check your Privacy Settings.'), 'error');
     }
+  };
+
+  const toggleGuideBroadcast = async () => {
+    if (!guideProfile) return;
+    try {
+      if (isBroadcasting) {
+        broadcastGeneration.current += 1;
+        await apiService.stopGuideBroadcast(guideProfile.id);
+        setIsBroadcasting(false);
+        setLiveStatus(prev => prev ? { ...prev, location: null } : prev);
+      } else {
+        await apiService.startGuideBroadcast(guideProfile.id);
+        setIsBroadcasting(true);
+        await triggerLiveBroadcast();
+      }
+    } catch (e) { toast(errorToastMessage(e, 'Could not change location sharing.'), 'error'); }
   };
 
   const handleSavePackage = async () => {
@@ -2095,14 +2119,7 @@ export default function TravelGuideScreen() {
                         justifyContent: 'center',
                       },
                     ]}
-                    onPress={() => {
-                      if (isBroadcasting) {
-                        setIsBroadcasting(false);
-                      } else {
-                        setIsBroadcasting(true);
-                        void triggerLiveBroadcast();
-                      }
-                    }}
+                    onPress={() => { void toggleGuideBroadcast(); }}
                     activeOpacity={0.8}
                     accessibilityRole="button"
                     accessibilityLabel={isBroadcasting ? t('travelGuide.stopLive') : t('travelGuide.goLive')}

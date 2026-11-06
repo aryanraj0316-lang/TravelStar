@@ -1,3 +1,4 @@
+import { usePrivateChatImage } from '@/hooks/use-private-chat-image';
 import { RouteErrorFallback } from '@/components/route-error-fallback';
 import { Avatar, Button, Input, ScreenEmpty } from '@/components/ui';
 import { OrganizerAgreementAcceptSheet, OrganizerAgreementViewerSheet } from '@/components/OrganizerAgreement';
@@ -9,7 +10,6 @@ import { getCurrentDeviceLocation, getEmergencyDeviceLocation } from '@/lib/devi
 import { errorToastMessage, showAlert, showPrompt, toast, useConfirm } from '@/lib/feedback';
 import { logger } from '@/lib/logger';
 import { formatINR } from '@/lib/money';
-import { uploadFileToUrl } from '@/lib/upload';
 import { queryClient } from '@/lib/query-client';
 import { queryKeys } from '@/lib/query-keys';
 import { chatsQueryOptions } from '@/lib/prefetch-launch';
@@ -516,6 +516,7 @@ function MessageBubble({
 }) {
   const { t } = useTranslation();
   const hasTranslation = isTranslated;
+  const photoUri = usePrivateChatImage(msg.mediaUrl);
   const displayedContent = hasTranslation && msg.translations?.hindi ? msg.translations.hindi : msg.content;
   const isSOS =
     msg.type === 'sos' ||
@@ -744,14 +745,14 @@ function MessageBubble({
               <Pressable
                 style={styles.imageMediaWrapper}
                 onPress={() => {
-                  const uri = msg.mediaUrl || (msg.content && !msg.content.includes('📷') ? msg.content : undefined);
+                  const uri = photoUri;
                   if (uri) onOpenImage(uri);
                 }}
                 accessibilityRole="imagebutton"
                 accessibilityLabel={t('chat.viewImageLabel')}
               >
                 <Image
-                  source={{ uri: msg.mediaUrl || (msg.content && !msg.content.includes('📷') ? msg.content : undefined) }}
+                  source={{ uri: photoUri }}
                   style={styles.imageMedia}
                   resizeMode="cover"
                 />
@@ -1722,6 +1723,9 @@ function ChatScreen() {
   const [messageInfoError, setMessageInfoError] = useState<string | null>(null);
   const [selectedRoomForOptions, setSelectedRoomForOptions] = useState<ChatRoom | null>(null);
   const [viewerImageUri, setViewerImageUri] = useState<string | null>(null);
+  // Clear private image bytes when the session or open chat changes.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { setViewerImageUri(null); }, [isLoggedIn, profile.id, selectedRoomId]);
   const [pinnedRoomIds, setPinnedRoomIds] = useState<Set<string>>(new Set());
   const [translatedMsgs, setTranslatedMsgs] = useState<Set<string>>(new Set());
 
@@ -2629,20 +2633,14 @@ function ChatScreen() {
         asset.mimeType === 'image/png' || asset.mimeType === 'image/webp' ? asset.mimeType : 'image/jpeg';
 
       setPhotoUploading(true);
-      let mediaUrl = asset.uri;
-
-      try {
-        const { uploadUrl, publicUrl } = await apiService.getChatMediaUploadUrl(contentType);
-        await uploadFileToUrl(asset.uri, uploadUrl, contentType);
-        if (publicUrl) mediaUrl = publicUrl;
-      } catch (uploadErr) {
-        logger.warn('[Chat] Remote storage upload not available; using data/local photo:', uploadErr);
-        if (asset.base64) {
-          mediaUrl = `data:${contentType};base64,${asset.base64}`;
-        } else {
-          mediaUrl = asset.uri;
-        }
-      }
+      if (!asset.base64) throw new Error('Could not read this photo. Choose it again.');
+      const rawRoomId = selectedRoomId?.replace(/^room-/, '');
+      const room = inboxRooms.find(r => r.id === rawRoomId || (r.tripId === selectedTripId && r.type === 'GROUP'));
+      const roomId = room?.id || rawRoomId;
+      if (!roomId) throw new Error('Open a chat before sending a photo.');
+      const uploaded = await apiService.uploadPrivateChatImage(roomId, contentType, asset.base64);
+      if (!uploaded?.mediaUrl) throw new Error('Photo upload failed.');
+      const mediaUrl = uploaded.mediaUrl;
 
       sendNewMessage({
         content: '',

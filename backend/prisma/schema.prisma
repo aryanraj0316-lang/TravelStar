@@ -281,6 +281,12 @@ model User {
   passwordResetTokens PasswordResetToken[]
 
   organizerAgreements TripOrganizerAgreement[]
+  chatAttachments ChatAttachment[]
+  stories TravelStory[]
+  storyViews StoryView[]
+  storyLikes StoryLike[]
+  subjectNotifications Notification[] @relation("NotificationSubject")
+  subjectMessages Message[] @relation("MessageSubject")
 }
 
 model Session {
@@ -360,6 +366,7 @@ model Profile {
   pushHazardAlerts  Boolean  @default(true)
   pushSeasonal      Boolean  @default(true)
   locationSharing   Boolean  @default(true)
+  guideLocationActive Boolean @default(false)
   selectedLanguage  String   @default("English")
 
   /// How far an SOS this user raises should reach. TRIP_GROUP keeps it to
@@ -1018,6 +1025,7 @@ model ChatRoom {
   createdAt DateTime         @default(now())
   members   ChatRoomMember[]
   messages  Message[]
+  attachments ChatAttachment[]
   tripId    String?          @unique
   trip      Trip?            @relation(fields: [tripId], references: [id])
 
@@ -1065,6 +1073,8 @@ model ChatRoomMember {
 }
 
 model Message {
+  subjectUserId String?
+  subject User? @relation("MessageSubject", fields: [subjectUserId], references: [id], onDelete: Cascade)
   id         String               @id @default(uuid())
   chatRoomId String
   chatRoom   ChatRoom             @relation(fields: [chatRoomId], references: [id], onDelete: Cascade)
@@ -1296,6 +1306,8 @@ model MapPin {
 }
 
 model Notification {
+  subjectUserId String?
+  subject User? @relation("NotificationSubject", fields: [subjectUserId], references: [id], onDelete: Cascade)
   id         String                @id @default(uuid())
   userId     String?
   user       User?                 @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1474,6 +1486,7 @@ enum StoryMediaType {
 model TravelStory {
   id           String   @id @default(uuid())
   userId       String?
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
   authorName   String
   authorAvatar String?
   title        String
@@ -1603,6 +1616,7 @@ model StoryView {
   storyId      String
   story        TravelStory @relation(fields: [storyId], references: [id], onDelete: Cascade)
   userId       String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   userName     String?
   userAvatar   String?
   createdAt    DateTime    @default(now())
@@ -1618,6 +1632,7 @@ model StoryLike {
   storyId    String
   story      TravelStory @relation(fields: [storyId], references: [id], onDelete: Cascade)
   userId     String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   userName   String?
   userAvatar String?
   createdAt  DateTime    @default(now())
@@ -1651,4 +1666,28 @@ model TripOrganizerAgreement {
   updatedAt                 DateTime @updatedAt
 
   @@index([organizerId])
+}
+
+model ChatAttachment {
+  id String @id @default(uuid())
+  ownerId String
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  chatRoomId String
+  chatRoom ChatRoom @relation(fields: [chatRoomId], references: [id], onDelete: Cascade)
+  contentType String
+  bytes Bytes
+  legacyKey String?
+  createdAt DateTime @default(now())
+  @@index([ownerId])
+  @@index([chatRoomId])
+}
+
+model MediaErasureJob {
+  id String @id @default(uuid())
+  ownerId String @unique
+  localFiles String[]
+  nextAttemptAt DateTime @default(now())
+  // Re-sweep after every previously issued PUT URL has expired.
+  finishAfter DateTime
+  createdAt DateTime @default(now())
 }

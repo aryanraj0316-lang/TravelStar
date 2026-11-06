@@ -697,6 +697,13 @@ export const apiService = {
     });
   },
 
+  async uploadPrivateChatImage(chatRoomId: string, contentType: string, base64: string) {
+    return request<{ mediaUrl: string }>('/chats/attachments', { method: 'POST', body: JSON.stringify({ chatRoomId, contentType, base64 }) });
+  },
+  async getPrivateChatImage(id: string) {
+    return request<{ uri: string }>(`/chats/attachments/${id}`);
+  },
+
   // Trips
   // `query` is an optional pre-built query string, e.g.
   // "?maxBudget=15000&limit=50" or "?category=Nature&search=kerala".
@@ -1351,6 +1358,12 @@ export const apiService = {
     return request<GuideLiveStatus>(`/guides/${guideId}/live-status`);
   },
 
+  async startGuideBroadcast(guideId: string) {
+    return request(`/guides/${guideId}/live-status/start`, { method: 'POST' });
+  },
+  async stopGuideBroadcast(guideId: string) {
+    return request(`/guides/${guideId}/live-status`, { method: 'DELETE' });
+  },
   async updateGuideLiveStatus(guideId: string, coords: { latitude: number; longitude: number }): Promise<LiveLocation | null> {
     return request(`/guides/${guideId}/live-status`, {
       method: 'POST',
