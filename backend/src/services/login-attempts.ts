@@ -20,6 +20,9 @@ interface AttemptRecord {
 }
 
 const redis: Redis | null = env.REDIS_URL ? new Redis(env.REDIS_URL) : null;
+export function closeLoginAttemptStore(): void {
+  redis?.disconnect();
+}
 redis?.on('error', (err) => logger.error('[login-attempts] Redis connection error:', err));
 
 const memory = new Map<string, AttemptRecord>();

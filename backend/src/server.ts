@@ -9,6 +9,7 @@ import { createSocketServer } from './socket-server';
 import { initObservability, captureException, flushObservability } from './lib/observability';
 import { closeCache } from './lib/cache';
 import { closePresenceStore } from './lib/presence-store';
+import { closeLoginAttemptStore } from './services/login-attempts';
 import { startRetentionScheduler, stopRetentionScheduler } from './lib/data-retention';
 import { startHazardFeedScheduler, stopHazardFeedScheduler } from './lib/hazard-feed';
 import { startDestinationTrendsScheduler, stopDestinationTrendsScheduler } from './lib/destination-trends';
@@ -80,6 +81,7 @@ async function shutdown(signal: string): Promise<void> {
     await prisma.$disconnect();
     await closeCache();
     await closePresenceStore();
+    closeLoginAttemptStore();
     await flushObservability();
     logger.info('[shutdown] clean exit');
     clearTimeout(hardExit);
