@@ -12,6 +12,7 @@ import {
   captureAndHoldSeat,
   payFromWallet,
   payDirect,
+  testPaymentsAllowed,
   amountForRequest,
   computeFeeSplit,
   type PaymentOutcome,
@@ -41,6 +42,8 @@ function sendPaymentOutcome(res: Response, result: PaymentOutcome) {
     });
   }
   switch (result.reason) {
+    case 'TEST_PAYMENTS_DISABLED':
+      return res.status(403).json({ ok: false, error: { code: 'TEST_PAYMENTS_DISABLED', message: 'Please pay to complete your booking.' } });
     case 'ORDER_NOT_FOUND':
       return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Booking or payment order not found.' } });
     case 'INSUFFICIENT_BALANCE':
@@ -243,15 +246,13 @@ router.post('/wallet-pay', async (req: Request, res: Response) => {
 });
 
 // ── POST /trip-payments/pay ───────────────────────────────────────────────
-// ⚠️ DEVELOPMENT BYPASS — REMOVE BEFORE LAUNCH. Completes a booking with no
-// money moving (the app's "Skip payment (testing)" button), running the
-// real post-payment flow: fee split, seat hold, verification token,
-// notifications. See payDirect in services/trip-payments.ts.
+// Automated integration-test harness; never enabled on a deployed server.
 const directPaySchema = z.object({
   joinRequestId: z.string().uuid(),
 });
 
 router.post('/pay', async (req: Request, res: Response) => {
+  if (!testPaymentsAllowed()) return res.status(403).json({ ok: false, error: { code: 'TEST_PAYMENTS_DISABLED', message: 'Please pay to complete your booking.' } });
   const parsed = directPaySchema.safeParse(req.body);
   if (!parsed.success) return validationError(res, parsed.error.issues);
 
@@ -392,6 +393,7 @@ router.get('/order/:joinRequestId', async (req: Request, res: Response) => {
       joinRequestStatus: joinRequest.status,
       // False sends the traveller to the details form before paying.
       travellerDetailsSubmitted: parseStoredTravellerDetails(joinRequest.travellerDetails) !== null,
+      testPaymentsAllowed: testPaymentsAllowed(),
     },
   });
 });

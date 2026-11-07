@@ -29,20 +29,27 @@ let _rzpClient: Razorpay | null = null;
  * error rather than silently accepting a request they cannot fulfil
  * (docs/CONVENTIONS.md §10 — no silent failures).
  */
-function razorpayClient(): Razorpay {
-  if (_rzpClient) return _rzpClient;
+export function razorpayClient(): Razorpay {
   const { RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET } = env;
-  if (!RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) {
+  if (!isRazorpayConfigured()) {
     throw Object.assign(new Error('Razorpay credentials not configured'), {
       code: 'SERVICE_UNAVAILABLE',
     });
   }
-  _rzpClient = new Razorpay({ key_id: RAZORPAY_KEY_ID, key_secret: RAZORPAY_KEY_SECRET });
+  if (_rzpClient) return _rzpClient;
+  _rzpClient = new Razorpay({ key_id: RAZORPAY_KEY_ID!, key_secret: RAZORPAY_KEY_SECRET! });
   return _rzpClient;
 }
 
 export function isRazorpayConfigured(): boolean {
-  return !!(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET);
+  return !!(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET) &&
+    (env.NODE_ENV !== 'production' || env.RAZORPAY_KEY_ID!.startsWith('rzp_live_'));
+}
+
+/** Booking simulation is available only to the automated test process. */
+export function testPaymentsAllowed(): boolean {
+  return env.NODE_ENV === 'test' && env.ALLOW_TEST_PAYMENTS !== false &&
+    !(env.RAZORPAY_KEY_ID ?? '').startsWith('rzp_live_');
 }
 
 // ── Pricing, platform fee and tokens ───────────────────────────────────────
@@ -154,7 +161,7 @@ export function verifyRazorpaySignature(
   signature: string,
 ): boolean {
   const secret = env.RAZORPAY_KEY_SECRET;
-  if (!secret) return false;
+  if (!secret || (env.NODE_ENV === 'production' && !isRazorpayConfigured())) return false;
   const body = razorpayOrderId + '|' + razorpayPaymentId;
   const expected = crypto.createHmac('sha256', secret).update(body).digest('hex');
   try {
@@ -167,7 +174,7 @@ export function verifyRazorpaySignature(
 /** Verifies Razorpay webhook signature using RAZORPAY_WEBHOOK_SECRET. */
 export function verifyWebhookSignature(rawBody: string, signature: string): boolean {
   const secret = env.RAZORPAY_WEBHOOK_SECRET;
-  if (!secret) return false;
+  if (!secret || (env.NODE_ENV === 'production' && !isRazorpayConfigured())) return false;
   const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
   try {
     return crypto.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(signature, 'hex'));
@@ -183,6 +190,7 @@ export type PaymentOutcome =
   | {
       ok: false;
       reason:
+        | 'TEST_PAYMENTS_DISABLED'
         | 'ORDER_NOT_FOUND'
         | 'INSUFFICIENT_BALANCE'
         | 'TRIP_FULL'
@@ -469,23 +477,13 @@ export async function payFromWallet(
 
 // ── TEST-ONLY payment bypass ───────────────────────────────────────────────
 
-/**
- * ⚠️ DEVELOPMENT BYPASS — REMOVE BEFORE LAUNCH (with POST /trip-payments/pay
- * and the app's "Skip payment (testing)" button).
- *
- * Kept at the product owner's request so every test does not need a real
- * payment. No money moves, but everything downstream is the real flow:
- * the order is CAPTURED with its fee split, seats are held, a verification
- * token is issued and both sides are notified — so the organizer
- * allocation, Trip Pass, group chat and cancellation paths are exercised
- * exactly as after a real payment. Orders it creates carry gateway
- * 'DIRECT', and refunds on them move no money.
- */
+/** Automated test harness only; DIRECT records never represent money received. */
 export async function payDirect(
   joinRequestId: string,
   userId: string,
   io?: SocketIOServer | null | undefined,
 ): Promise<PaymentOutcome> {
+  if (!testPaymentsAllowed()) return { ok: false, reason: 'TEST_PAYMENTS_DISABLED' };
   const jr = await prisma.joinRequest.findUnique({
     where: { id: joinRequestId },
     include: { trip: true, paymentOrder: true },
