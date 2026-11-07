@@ -97,7 +97,7 @@ router.get('/', async (req, res) => {
 
   try {
     const rows = await prisma.guideProfile.findMany({
-      where: cursorFilter(cursor),
+      where: { AND: [cursorFilter(cursor), { OR: [{ reviewOnly: false }, { userId: req.user?.id ?? '' }] }] },
       // Strictly createdAt-desc: cursorFilter pages on `createdAt < cursor`,
       // so any other sort key silently skips rows across pages. Sorting
       // verified guides first would also need VerificationStatus's enum
@@ -119,6 +119,7 @@ router.get('/', async (req, res) => {
     // one screen where a traveller decides who to trust with a trip.
     const mapped = dbGuides.map((g) => ({
       id: g.id,
+      userId: g.userId,
       name: g.user?.profile?.firstName
         ? `${g.user.profile.firstName} ${g.user.profile.lastName || ''}`.trim()
         : null,

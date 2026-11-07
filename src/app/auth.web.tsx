@@ -193,6 +193,7 @@ export default function AuthScreen() {
   const [mode, setMode] = useState<'LOGIN' | 'SIGNUP'>(initialMode);
   const [selectedRole, setSelectedRole] = useState<UserRole>(currentRole || 'TOURIST');
 
+  const [rulesAccepted, setRulesAccepted] = useState(false);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -287,6 +288,7 @@ export default function AuthScreen() {
   };
 
   const handleFormSubmit = async () => {
+    if (mode === 'SIGNUP' && !rulesAccepted) { toast('Read and accept the Terms and content rules before creating an account.', 'error'); return; }
     const validationErrors = validateFields();
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
@@ -559,7 +561,7 @@ export default function AuthScreen() {
                 <Text style={styles.headerBottomLeftSubtitle}>
                   {mode === 'LOGIN'
                     ? 'Sign in to access your saved trips and bookings.'
-                    : 'Join 50,000+ travelers and guides across India.'}
+                    : 'Connect with travelers and guides across India.'}
                 </Text>
               </View>
             </View>
@@ -860,6 +862,10 @@ export default function AuthScreen() {
                 </TouchableOpacity>
               </View>
 
+              {mode === 'SIGNUP' && <View style={{ paddingHorizontal: 12, paddingVertical: 10, gap: 8 }}>
+                <Text style={{ color: '#43536c', fontSize: 12 }}>No nudity, sexual exploitation, graphic violence, hate, threats, harassment, scams, illegal activity or sharing private information. Reports are reviewed; content may be removed and accounts suspended.</Text>
+                <TouchableOpacity accessibilityRole="checkbox" accessibilityState={{ checked: rulesAccepted }} onPress={() => setRulesAccepted(v => !v)} style={{ minHeight: 44, justifyContent: 'center' }}><Text style={{ color: '#145ac4', fontWeight: '700' }}>{rulesAccepted ? '[x]' : '[ ]'} I accept the Terms and content rules</Text></TouchableOpacity>
+              </View>}
               {/* Terms & Privacy Notice */}
               <View style={styles.disclaimerWrap}>
                 <Text style={styles.disclaimerText}>

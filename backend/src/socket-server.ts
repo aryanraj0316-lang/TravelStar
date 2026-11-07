@@ -1,3 +1,4 @@
+import { assertCanPost, assertRoomContact, blockedBetween } from './services/content-safety';
 import { canSendAttachment } from './services/chat-attachments';
 import { withLocationLock } from './services/location-privacy';
 import { recordDelivery } from './services/message-status';
@@ -189,6 +190,8 @@ export function createSocketServer(httpServer: HttpServer): Server {
           return;
         }
         const effectiveChatRoomId = resolved.chatRoomId;
+        await assertCanPost(userId);
+        await assertRoomContact(effectiveChatRoomId, userId);
         if ((mediaType === 'IMAGE' && !mediaUrl) || (mediaUrl && (mediaType !== 'IMAGE' || !await canSendAttachment(mediaUrl, userId, effectiveChatRoomId)))) {
           socket.emit('sendMessageError', { message: 'Use a private photo uploaded to this room.' });
           return;
@@ -247,44 +250,10 @@ export function createSocketServer(httpServer: HttpServer): Server {
         const inquiryTripId = chatRoom?.inquiryTripId ?? null;
         const inquiryOrganizerId = chatRoom?.inquiryTrip?.creatorId ?? null;
 
-        io.to(effectiveChatRoomId).emit('messageReceived', {
-          roomId: effectiveChatRoomId,
-          message: newMsg,
-          inquiryTripId,
-          inquiryOrganizerId,
-        });
-        if (effectiveChatRoomId !== chatRoomId) {
-          io.to(chatRoomId).emit('messageReceived', {
-            roomId: effectiveChatRoomId,
-            message: newMsg,
-            inquiryTripId,
-            inquiryOrganizerId,
-          });
-        }
-
-        // Also emit directly to every room member's personal user room (`userId`),
-        // ensuring every active socket belonging to room members receives the message
-        // in real-time even if they are currently on another tab, screen, or reconnected.
-        prisma.chatRoomMember
-          .findMany({
-            where: { chatRoomId: effectiveChatRoomId },
-            select: { userId: true },
-          })
-          .then((members) => {
-            members.forEach((m) => {
-              if (m.userId !== userId) {
-                io.to(m.userId).emit('messageReceived', {
-                  roomId: effectiveChatRoomId,
-                  message: newMsg,
-                  inquiryTripId,
-                  inquiryOrganizerId,
-                });
-              }
-            });
-          })
-          .catch((err) => {
-            logger.warn('[Socket] Failed to broadcast messageReceived to members:', err);
-          });
+        const recipients = await prisma.chatRoomMember.findMany({ where: { chatRoomId: effectiveChatRoomId }, select: { userId: true } });
+        await Promise.all(recipients.map(async member => {
+          if (!await blockedBetween(userId, member.userId)) io.to(member.userId).emit('messageReceived', { roomId: effectiveChatRoomId, message: newMsg, inquiryTripId, inquiryOrganizerId });
+        }));
 
         // A pre-join enquiry needs the organizer to actually come back to
         // it, and a socket broadcast only reaches them if they happen to be
@@ -305,7 +274,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
         }
       } catch (e) {
         logger.error('[Socket] sendMessage failed:', e);
-        socket.emit('sendMessageError', { message: 'Failed to send message.' });
+        socket.emit('sendMessageError', { message: e instanceof Error ? e.message : 'Failed to send message.' });
       }
     });
 
@@ -381,7 +350,8 @@ export function createSocketServer(httpServer: HttpServer): Server {
 
         // `socket.to()`, not `io.to()` — excludes the sender's own socket,
         // so a client never has to filter out its own typing echo.
-        socket.to(chatRoomId).emit('userTyping', { roomId: chatRoomId, userId, userName: senderName, userAvatar, isTyping });
+        const peers = await prisma.chatRoomMember.findMany({ where: { chatRoomId, userId: { not: userId } }, select: { userId: true } });
+        for (const peer of peers) if (!await blockedBetween(userId, peer.userId)) socket.to(peer.userId).emit('userTyping', { roomId: chatRoomId, userId, userName: senderName, userAvatar, isTyping });
       } catch (e) {
         logger.error('[Socket] typing failed:', e);
       }

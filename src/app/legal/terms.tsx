@@ -8,7 +8,7 @@ import { C, MIN_TOUCH_TARGET } from '@/theme/tokens';
 import { Card } from '@/components/ui';
 
 
-const EFFECTIVE_DATE = 'November 6, 2026';
+const EFFECTIVE_DATE = 'November 7, 2026';
 
 const SECTIONS = [
   {
@@ -21,7 +21,7 @@ const SECTIONS = [
   },
   {
     title: '3. Account Registration & Security',
-    body: `To access core features — including trip creation, bookings, chat, and budget tracking — you must create an account using a valid email address and password.\n\nYou are solely responsible for maintaining the confidentiality of your login credentials and for all activities that occur under your account. You agree to notify us immediately at 1bharatgo@gmail.com if you suspect any unauthorized access.\n\nYatrenzo stores authentication tokens securely on your device using expo-secure-store and transmits credentials only over encrypted (HTTPS) connections.`,
+    body: `To access core features — including trip creation, bookings, chat, and budget tracking — you must create an account using a valid mobile number, email address and app password.\n\nYou are solely responsible for maintaining the confidentiality of your login credentials and for all activities that occur under your account. You agree to notify us immediately at 1bharatgo@gmail.com if you suspect any unauthorized access.\n\nYatrenzo stores authentication tokens securely on your device using expo-secure-store and transmits credentials only over encrypted (HTTPS) connections.`,
   },
   {
     title: '4. Trip Creation & Discovery',
@@ -29,11 +29,11 @@ const SECTIONS = [
   },
   {
     title: '5. Payments & Bookings',
-    body: `Certain features of the App involve financial transactions, including trip payments, booking confirmations, and budget tracking.\n\nAll payments are processed through secure third-party payment processors. Yatrenzo does not store your full credit/debit card information on its servers.\n\nRefund and cancellation policies are determined on a per-trip basis by the trip organizer. Yatrenzo is not liable for disputes between travelers and organizers regarding payments, refunds, or service delivery.\n\nReceipts for completed transactions are available in the App under your profile.`,
+    body: `Certain features of the App involve financial transactions, including trip payments, booking confirmations, and budget tracking.\n\nAll payments are processed through secure third-party payment processors. Yatrenzo does not store your full credit/debit card information on its servers.\n\nThe applicable price and cancellation/refund information is shown in the booking flow. Refunds follow the policy and payment status recorded for the booking. Do not pay for a review sample or a booking whose checkout is unavailable. Contact support about payment, refund or service disputes.\n\nReceipts for completed transactions are available in the App under your profile.`,
   },
   {
     title: '6. Location Services & Sharing',
-    body: `Yatrenzo offers optional location-based features, including:\n\n• Real-time location sharing with co-travelers in your trip group\n• Nearby trip discovery based on your current position\n• Location transmission during SOS alerts\n\nLocation data is collected only when you explicitly enable these features and grant the App permission to access your device's location services. You may disable location sharing at any time from your profile settings.\n\nLocation data shared during SOS alerts is transmitted to your configured audience (trip group or nearby travelers within your set radius) and is not stored beyond the duration necessary to facilitate the alert.`,
+    body: `Yatrenzo offers optional location-based features, including:\n\n• Optional real-time location sharing on maps, which may be visible to other signed-in users outside your trip group\n• Nearby trip discovery based on your current position\n• Location transmission during SOS alerts\n\nLocation data is collected only when you explicitly enable these features and grant the App permission to access your device's location services. You may disable location sharing at any time from your profile settings.\n\nLocation data shared during SOS alerts is transmitted to your configured audience (trip group or nearby travelers within your set radius) and is not stored beyond the duration necessary to facilitate the alert.`,
   },
   {
     title: '7. SOS & Emergency Features',
@@ -41,7 +41,7 @@ const SECTIONS = [
   },
   {
     title: '8. User-Generated Content',
-    body: `The App allows you to post content including trip descriptions, stories, photos, chat messages, reviews, and profile information ("User Content").\n\nYou retain ownership of your User Content. By posting it on Yatrenzo, you grant us a non-exclusive, worldwide, royalty-free license to display, distribute, and use your User Content within the App for the purpose of operating and improving the service.\n\nYou agree not to post content that is unlawful, defamatory, harassing, obscene, fraudulent, or that infringes any third party's intellectual property rights. Yatrenzo reserves the right to remove any User Content that violates these Terms without prior notice.`,
+    body: `The App allows you to post content including trip descriptions, stories, photos, chat messages, reviews, and profile information ("User Content").\n\nYou retain ownership of your User Content. By posting it on Yatrenzo, you grant us a non-exclusive, worldwide, royalty-free license to display, distribute, and use your User Content within the App for the purpose of operating and improving the service.\n\nYou must not post nudity, sexual exploitation, child sexual abuse material, graphic violence, threats, harassment, hate speech, scams, illegal content, or another person's private information. Accept the content rules before posting. Use Safety & reports to report users or content, block or unblock a person, and check report status. We review reports and may hide content or suspend accounts. Blocking does not cancel existing bookings or refund obligations. Contact 1bharatgo@gmail.com to appeal a moderation decision. Yatrenzo reserves the right to remove any User Content that violates these Terms without prior notice.`,
   },
   {
     title: '9. Chat & Communications',

@@ -95,6 +95,7 @@ class SocketService {
       });
 
       this.socket.on('connect', () => {});
+      this.socket.on('safetyChanged', () => eventBus.emit('safetyChanged', undefined));
 
       this.socket.on(
         'messageReceived',

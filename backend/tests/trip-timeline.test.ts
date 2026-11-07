@@ -33,7 +33,7 @@ async function registerOrganizer(): Promise<string> {
   createdEmails.push(email);
   const res = await request(app)
     .post('/api/v1/auth/register')
-    .send({ name: 'Timeline Organizer', email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
+    .send({ termsAccepted: true, name: 'Timeline Organizer', email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
   expect(res.status).toBe(201);
   return res.body.data.token as string;
 }

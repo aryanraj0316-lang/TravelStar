@@ -30,7 +30,7 @@ async function registerUser(): Promise<string> {
   createdEmails.push(email);
   const res = await request(app)
     .post('/api/v1/auth/register')
-    .send({ name: 'Media URL Tester', email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
+    .send({ termsAccepted: true, name: 'Media URL Tester', email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
   expect(res.status).toBe(201);
   return res.body.data.token as string;
 }

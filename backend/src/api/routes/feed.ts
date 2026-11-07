@@ -77,6 +77,7 @@ router.get('/', async (req, res) => {
       return {
         id: r.id,
         sourceType: 'REEL' as const,
+        userId: r.guide.userId,
         title: r.caption || null,
         coverImg: r.thumbnailUrl ?? null,
         authorName,

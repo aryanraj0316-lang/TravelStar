@@ -1,3 +1,5 @@
+import { env } from '../../config/env';
+import { CONTENT_RULES_VERSION } from '../../services/content-safety';
 import { eraseAccount } from '../../services/account-erasure';
 import { runMediaErasureJobs } from '../../services/privacy-maintenance';
 import { updatePrivateProfile } from '../../services/location-privacy';
@@ -20,7 +22,7 @@ import {
 } from '../../services/session';
 import { isLockedOut, recordFailure, recordSuccess } from '../../services/login-attempts';
 import { normalizeIndianMobile, INDIAN_MOBILE_ERROR } from '../../lib/indian-phone';
-import { sendEmail } from '../../services/email';
+import { sendEmail, isEmailConfigured } from '../../services/email';
 import { closeBookingsBeforeAccountDeletion } from '../../services/trip-cancellation';
 import crypto from 'node:crypto';
 import { createAvatarUploadUrl, getMissingObjectStorageVars, ObjectStorageNotConfiguredError } from '../../lib/object-storage';
@@ -102,6 +104,7 @@ function requestMeta(req: Request): SessionMeta {
 // ── Register ────────────────────────────────────────────────────────────────
 
 const registerSchema = z.object({
+  termsAccepted: z.boolean().optional(),
   name: z.string().trim().min(1).max(120),
   email: z.string().trim().toLowerCase().email(),
   // Required: the mobile number is what an account signs in with. Normalised
@@ -178,6 +181,7 @@ router.post('/register', async (req, res) => {
         phoneNumber,
         passwordHash,
         role: 'TOURIST',
+        ...(parsed.data.termsAccepted ? { contentAcceptance: { create: { version: CONTENT_RULES_VERSION } } } : {}),
         verificationStatus: 'NONE',
         profile: {
           create: {
@@ -395,6 +399,7 @@ router.post('/forgot-password', async (req, res) => {
     return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: INDIAN_MOBILE_ERROR } });
   }
 
+  if (env.NODE_ENV === 'production' && !isEmailConfigured()) return res.status(503).json({ ok: false, error: { code: 'SERVICE_UNAVAILABLE', message: 'Password reset email is temporarily unavailable. Contact support.' } });
   const genericOk = (extra: Record<string, unknown> = {}) =>
     res.status(200).json({
       ok: true,
@@ -455,9 +460,8 @@ router.post('/forgot-password', async (req, res) => {
         `<p>It expires in 10 minutes. If you did not request this, you can ignore this email.</p>`,
     });
     if (!sent) {
-      // Brevo not configured yet (or it failed): keep the flow testable
-      // without ever sending the code back to the client.
-      logger.warn(`[Auth] Password reset code for ${user.email}: ${otp}`);
+      await prisma.passwordResetToken.updateMany({ where: { id: rowId }, data: { usedAt: new Date() } });
+      logger.warn('[Auth] Password reset email delivery failed; code invalidated');
     }
 
     return genericOk({ maskedEmail: maskEmail(user.email), retryAfterSeconds: 60 });

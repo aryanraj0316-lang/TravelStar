@@ -1,3 +1,4 @@
+jest.mock('../src/services/email', () => ({ sendEmail: jest.fn().mockResolvedValue({ sent: true }), isEmailConfigured: () => true }));
 import request from 'supertest';
 import app from '../src/app';
 import prisma from '../src/services/db';
@@ -38,7 +39,7 @@ describe('POST /api/v1/auth/register', () => {
   it('creates a new account and returns a token', async () => {
     const res = await request(app)
       .post('/api/v1/auth/register')
-      .send({ name: 'Test User', email, phoneNumber: uniqueTestPhone(), password });
+      .send({ termsAccepted: true, name: 'Test User', email, phoneNumber: uniqueTestPhone(), password });
 
     expect(res.status).toBe(201);
     expect(res.body.data.token).toBeTruthy();
@@ -50,7 +51,7 @@ describe('POST /api/v1/auth/register', () => {
     const escalationEmail = uniqueEmail('escalation');
     const res = await request(app)
       .post('/api/v1/auth/register')
-      .send({ name: 'Escalator', email: escalationEmail, phoneNumber: uniqueTestPhone(), password, role: 'ADMIN' });
+      .send({ termsAccepted: true, name: 'Escalator', email: escalationEmail, phoneNumber: uniqueTestPhone(), password, role: 'ADMIN' });
 
     expect(res.status).toBe(201);
     expect(res.body.data.user.role).toBe('TOURIST');
@@ -59,7 +60,7 @@ describe('POST /api/v1/auth/register', () => {
   it('returns 409 and issues no token when the email is already registered (the account-takeover bug)', async () => {
     const res = await request(app)
       .post('/api/v1/auth/register')
-      .send({ name: 'Someone Else', email, phoneNumber: uniqueTestPhone(), password: 'aDifferentPassword1' });
+      .send({ termsAccepted: true, name: 'Someone Else', email, phoneNumber: uniqueTestPhone(), password: 'aDifferentPassword1' });
 
     expect(res.status).toBe(409);
     expect(res.body.ok).toBe(false);
@@ -69,7 +70,7 @@ describe('POST /api/v1/auth/register', () => {
   it('rejects passwords under the minimum length', async () => {
     const res = await request(app)
       .post('/api/v1/auth/register')
-      .send({ name: 'Weak', email: uniqueEmail('weak'), phoneNumber: uniqueTestPhone(), password: 'short' });
+      .send({ termsAccepted: true, name: 'Weak', email: uniqueEmail('weak'), phoneNumber: uniqueTestPhone(), password: 'short' });
 
     expect(res.status).toBe(400);
   });
@@ -90,7 +91,7 @@ describe('POST /api/v1/auth/login (mobile number only)', () => {
   beforeAll(async () => {
     await request(app)
       .post('/api/v1/auth/register')
-      .send({ name: 'Login Test', email, phoneNumber: phone, password });
+      .send({ termsAccepted: true, name: 'Login Test', email, phoneNumber: phone, password });
   });
 
   it('rejects an incorrect password', async () => {
@@ -131,7 +132,7 @@ describe('Indian mobile number rules on registration', () => {
   it('requires a mobile number', async () => {
     const res = await request(app)
       .post('/api/v1/auth/register')
-      .send({ name: 'No Phone', email: uniqueEmail('nophone'), password });
+      .send({ termsAccepted: true, name: 'No Phone', email: uniqueEmail('nophone'), password });
     expect(res.status).toBe(400);
   });
 
@@ -144,7 +145,7 @@ describe('Indian mobile number rules on registration', () => {
   ])('rejects %s', async (_label, phoneNumber) => {
     const res = await request(app)
       .post('/api/v1/auth/register')
-      .send({ name: 'Bad Phone', email: uniqueEmail(`bad-${_label.length}`), phoneNumber, password });
+      .send({ termsAccepted: true, name: 'Bad Phone', email: uniqueEmail(`bad-${_label.length}`), phoneNumber, password });
     expect(res.status).toBe(400);
   });
 
@@ -153,7 +154,7 @@ describe('Indian mobile number rules on registration', () => {
     const email = uniqueEmail('canonical');
     const res = await request(app)
       .post('/api/v1/auth/register')
-      .send({ name: 'Canonical', email, phoneNumber: `0${phone.slice(0, 5)}-${phone.slice(5)}`, password });
+      .send({ termsAccepted: true, name: 'Canonical', email, phoneNumber: `0${phone.slice(0, 5)}-${phone.slice(5)}`, password });
     expect(res.status).toBe(201);
     const user = await prisma.user.findUnique({ where: { email } });
     expect(user?.phoneNumber).toBe(`+91${phone}`);
@@ -163,10 +164,10 @@ describe('Indian mobile number rules on registration', () => {
     const phone = uniqueTestPhone();
     await request(app)
       .post('/api/v1/auth/register')
-      .send({ name: 'First', email: uniqueEmail('dup-a'), phoneNumber: phone, password });
+      .send({ termsAccepted: true, name: 'First', email: uniqueEmail('dup-a'), phoneNumber: phone, password });
     const res = await request(app)
       .post('/api/v1/auth/register')
-      .send({ name: 'Second', email: uniqueEmail('dup-b'), phoneNumber: `+91${phone}`, password });
+      .send({ termsAccepted: true, name: 'Second', email: uniqueEmail('dup-b'), phoneNumber: `+91${phone}`, password });
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe('PHONE_ALREADY_REGISTERED');
     expect(res.body.data).toBeUndefined();
@@ -193,7 +194,7 @@ describe('Password reset by emailed 6-digit code', () => {
   beforeAll(async () => {
     const res = await request(app)
       .post('/api/v1/auth/register')
-      .send({ name: 'Reset Test', email, phoneNumber: phone, password: oldPassword });
+      .send({ termsAccepted: true, name: 'Reset Test', email, phoneNumber: phone, password: oldPassword });
     userId = res.body.data.user.id;
   });
 
@@ -261,7 +262,7 @@ describe('Changing the mobile number on the profile', () => {
   beforeAll(async () => {
     const res = await request(app)
       .post('/api/v1/auth/register')
-      .send({ name: 'Profile Phone', email: uniqueEmail('profile-phone'), phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
+      .send({ termsAccepted: true, name: 'Profile Phone', email: uniqueEmail('profile-phone'), phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
     token = res.body.data.token;
     userId = res.body.data.user.id;
   });
@@ -286,7 +287,7 @@ describe('Changing the mobile number on the profile', () => {
     const taken = uniqueTestPhone();
     await request(app)
       .post('/api/v1/auth/register')
-      .send({ name: 'Holder', email: uniqueEmail('holder'), phoneNumber: taken, password: 'correcthorsebattery' });
+      .send({ termsAccepted: true, name: 'Holder', email: uniqueEmail('holder'), phoneNumber: taken, password: 'correcthorsebattery' });
     const res = await request(app)
       .put('/api/v1/auth/profile')
       .set('Authorization', `Bearer ${token}`)
@@ -345,12 +346,12 @@ describe('IDOR: SOS alert resolution (docs/REMEDIATION.md §2.5)', () => {
   beforeAll(async () => {
     const victim = await request(app)
       .post('/api/v1/auth/register')
-      .send({ name: 'Victim', email: victimEmail, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
+      .send({ termsAccepted: true, name: 'Victim', email: victimEmail, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
     victimToken = victim.body.data.token;
 
     const attacker = await request(app)
       .post('/api/v1/auth/register')
-      .send({ name: 'Attacker', email: attackerEmail, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
+      .send({ termsAccepted: true, name: 'Attacker', email: attackerEmail, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
     attackerToken = attacker.body.data.token;
 
     const sos = await request(app)
@@ -382,7 +383,7 @@ describe('Guide verification (docs/REMEDIATION.md §2.6)', () => {
   beforeAll(async () => {
     const res = await request(app)
       .post('/api/v1/auth/register')
-      .send({ name: 'Guide Applicant', email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
+      .send({ termsAccepted: true, name: 'Guide Applicant', email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
     token = res.body.data.token;
   });
 
@@ -422,7 +423,7 @@ describe('Refresh token rotation and reuse detection (docs/REMEDIATION.md §2.8)
   beforeAll(async () => {
     const res = await request(app)
       .post('/api/v1/auth/register')
-      .send({ name: 'Refresh Test', email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
+      .send({ termsAccepted: true, name: 'Refresh Test', email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
     refreshToken = res.body.data.refreshToken;
   });
 

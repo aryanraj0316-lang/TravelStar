@@ -595,6 +595,9 @@ async function requestWithMeta<T>(
 }
 
 export const apiService = {
+  safety<T>(path: string, method = 'GET', body?: unknown): Promise<T | null> {
+    return request<T>('/moderation' + path, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  },
   // Auth & Account
   /** Mobile number + password — the only way an account signs in. */
   async login(phoneNumber: string, password: string) {
@@ -607,7 +610,7 @@ export const apiService = {
   async register(userData: { name: string; email: string; phoneNumber: string; password: string; role?: string }) {
     return request<AuthResponse>('/auth/register', {
       method: 'POST',
-      body: JSON.stringify(userData),
+      body: JSON.stringify({ ...userData, termsAccepted: true }),
     });
   },
 

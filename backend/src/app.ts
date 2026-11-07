@@ -1,3 +1,6 @@
+import { privacyPage, deleteAccountPage } from './generated/public-pages';
+import moderationRoutes from './api/routes/moderation';
+import { contentSafety } from './middleware/content-safety';
 import fs from 'fs';
 import path from 'path';
 import 'express-async-errors';
@@ -35,6 +38,8 @@ import bookingRoutes from './api/routes/bookings';
 import { errorHandler } from './middleware/error';
 
 const app = express();
+app.get('/privacy', (_req, res) => res.type('html').send(privacyPage));
+app.get('/delete-account', (_req, res) => res.type('html').send(deleteAccountPage));
 
 // Trust the proxy so req.ip is the real client address behind a load balancer —
 // per-IP rate limiting is meaningless without this.
@@ -181,6 +186,8 @@ app.use('/api/v1/auth/reset-password', passwordResetLimiter);
 // Authenticate everything under /api/v1 by default. The public allowlist lives
 // in the middleware itself, so no route can silently opt out of auth.
 app.use('/api/v1', authenticateJWT);
+app.use('/api/v1', contentSafety);
+app.use('/api/v1/moderation', moderationRoutes);
 
 app.use('/api/v1', writeLimiter);
 

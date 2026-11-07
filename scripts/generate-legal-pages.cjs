@@ -29,3 +29,6 @@ fs.writeFileSync(path.join(output, 'delete-account.html'), page('Delete your Yat
   paragraphs(deletion.body) + `<h2>Retention and limitations</h2>` + paragraphs(retention.body)));
 fs.writeFileSync(path.join(output, '.nojekyll'), '');
 console.log('Generated privacy.html and delete-account.html in legal-pages/');
+
+fs.mkdirSync(path.join(__dirname, '..', 'backend', 'src', 'generated'), { recursive: true });
+fs.writeFileSync(path.join(__dirname, '..', 'backend', 'src', 'generated', 'public-pages.ts'), '// Generated public policy pages.\nexport const privacyPage = ' + JSON.stringify(fs.readFileSync(path.join(output, 'privacy.html'), 'utf8')) + ';\nexport const deleteAccountPage = ' + JSON.stringify(fs.readFileSync(path.join(output, 'delete-account.html'), 'utf8')) + ';\n');

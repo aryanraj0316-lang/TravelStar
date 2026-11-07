@@ -47,7 +47,7 @@ const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwM
 async function account(label: string) {
   const res = await request(app)
     .post('/api/v1/auth/register')
-    .send({
+    .send({ termsAccepted: true,
       name: `Privacy ${label}`,
       email: `${randomUUID()}@privacy.test`,
       phoneNumber: uniqueTestPhone(),

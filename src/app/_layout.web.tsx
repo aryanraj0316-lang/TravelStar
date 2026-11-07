@@ -1,3 +1,4 @@
+import { SafetyEntry } from '@/components/SafetyEntry';
 // Website version of the root layout. Expo Router uses this file instead of
 // _layout.tsx when bundling for web; Android keeps _layout.tsx untouched.
 //
@@ -99,6 +100,7 @@ export default function RootLayout() {
                   over earlier siblings regardless — the home screen showed
                   through for a frame before the splash covered it again.
                   Declared last, it paints last, so the cover never breaks. */}
+              <SafetyEntry />
               <AnimatedSplashOverlay />
             </ThemeProvider>
           </AppProvider>
