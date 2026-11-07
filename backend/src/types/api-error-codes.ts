@@ -3,6 +3,9 @@
 // see Phase 6.4 for the plan to replace this manual duplication with a generated
 // or shared-package source of truth.
 export type ApiErrorCode =
+  | 'ACCOUNT_SUSPENDED'
+  | 'CONTENT_RULES_REQUIRED'
+  | 'CONTACT_BLOCKED'
   | 'VALIDATION_FAILED'
   | 'UNAUTHORIZED'
   | 'FORBIDDEN'

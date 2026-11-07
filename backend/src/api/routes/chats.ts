@@ -1,3 +1,4 @@
+import { blockedBetween, assertRoomContact, safetySets } from '../../services/content-safety';
 import { Router } from 'express';
 import { z } from 'zod';
 import { NotificationCategory } from '@prisma/client';
@@ -57,12 +58,14 @@ async function assertChatRoomMember(
       .json({ ok: false, error: { code: 'FORBIDDEN', message: 'You are not a member of this chat room.' } });
     return false;
   }
+  await assertRoomContact(chatRoomId, userId);
   return true;
 }
 
 // 1. Get list of all chat rooms for current user
 router.get('/', async (req, res) => {
   const tokenUserId = requireUserId(req);
+  const visibility = await safetySets(tokenUserId);
 
   try {
     // Ensure all trips where user is creator or confirmed member have a ChatRoom & ChatRoomMember
@@ -103,6 +106,7 @@ router.get('/', async (req, res) => {
               },
             },
             messages: {
+              where: { senderId: { notIn: [...visibility.users] }, id: { notIn: [...visibility.content] } },
               orderBy: { createdAt: 'desc' },
               take: 10,
               include: {
@@ -198,6 +202,7 @@ router.get('/', async (req, res) => {
 
       return {
         id: room.id,
+        contactUserId: !room.isGroup ? room.members.find(m => m.userId !== tokenUserId)?.userId : null,
         tripId: trip?.id || null,
         name: roomName,
         avatar: roomAvatar,
@@ -263,6 +268,7 @@ router.post('/inquiry', async (req, res) => {
     if (!trip) {
       return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found.' } });
     }
+    if (await blockedBetween(tokenUserId, trip.creatorId)) return res.status(403).json({ ok: false, error: { code: 'CONTACT_BLOCKED', message: 'Direct contact is unavailable.' } });
     if (trip.creatorId === tokenUserId) {
       return res
         .status(400)
@@ -317,6 +323,7 @@ router.post('/dm', async (req, res) => {
   }
 
   try {
+    if (await blockedBetween(tokenUserId, otherUserId)) return res.status(403).json({ ok: false, error: { code: 'CONTACT_BLOCKED', message: 'Direct contact is unavailable.' } });
     const otherUser = await prisma.user.findUnique({ where: { id: otherUserId }, select: { id: true } });
     if (!otherUser) {
       return res.status(404).json({ ok: false, error: { code: 'USER_NOT_FOUND', message: 'User not found.' } });

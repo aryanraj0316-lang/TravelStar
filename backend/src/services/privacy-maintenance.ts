@@ -166,6 +166,9 @@ export function startPrivacyMaintenance() {
     running = true;
     try {
       await runMediaErasureJobs();
+      const safetyRetention = new Date(Date.now() - 180 * 86400_000);
+      await prisma.safetyReport.deleteMany({ where: { createdAt: { lt: safetyRetention } } });
+      await prisma.moderationAction.deleteMany({ where: { createdAt: { lt: safetyRetention } } });
     } catch (e) {
       logger.error('[privacy] Erasure worker failed', e);
     }

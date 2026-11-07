@@ -37,8 +37,8 @@ export function socketAuthMiddleware(
     }
     const data: SocketAuthData = { userId, role: decoded.role };
     socket.data = data;
-    prisma.user.findUnique({ where: { id: userId }, select: { id: true } }).then(user => {
-      next(user ? undefined : new Error('UNAUTHORIZED'));
+    prisma.user.findUnique({ where: { id: userId }, select: { id: true, safetyStatus: { select: { suspended: true } } } }).then(user => {
+      next(user && !user.safetyStatus?.suspended ? undefined : new Error('UNAUTHORIZED'));
     }).catch(() => next(new Error('UNAUTHORIZED')));
   });
 }

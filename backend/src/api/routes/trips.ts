@@ -1,3 +1,4 @@
+import { safetySets } from '../../services/content-safety';
 import { Router } from 'express';
 import { z } from 'zod';
 import { remoteMediaUrl } from '../../lib/validators';
@@ -1164,7 +1165,7 @@ router.post('/recommendations', async (req, res) => {
 
   try {
     const dbTrips = await prisma.trip.findMany({
-      where: { availableSeats: { gt: 0 } },
+      where: { availableSeats: { gt: 0 }, privacy: 'PUBLIC', status: 'ACTIVE', creatorId: { notIn: [...(await safetySets(req.user?.id)).users] }, id: { notIn: [...(await safetySets(req.user?.id)).content] } },
       take: 100,
     });
     const groups = dbTrips.map((t) => ({

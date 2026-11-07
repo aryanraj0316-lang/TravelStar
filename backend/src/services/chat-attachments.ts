@@ -1,3 +1,4 @@
+import { blockedBetween } from './content-safety';
 import prisma from './db';
 
 export const MAX_CHAT_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -36,9 +37,10 @@ export async function canSendAttachment(ref: string, ownerId: string, chatRoomId
 }
 
 export async function readAttachment(id: string, userId: string) {
-  // Membership is rechecked on every read, including after leaving a room.
-  return prisma.chatAttachment.findFirst({
-    where: { id, chatRoom: { members: { some: { userId } } } },
-    select: { bytes: true, contentType: true },
-  });
+  const asset = await prisma.chatAttachment.findFirst({ where: { id, chatRoom: { members: { some: { userId } } } }, select: { bytes: true, contentType: true, ownerId: true } });
+  if (!asset || await blockedBetween(userId, asset.ownerId)) return null;
+  const hiddenIds = (await prisma.hiddenContent.findMany({ where: { kind: 'MESSAGE' }, select: { targetId: true } })).map(h => h.targetId);
+  const hidden = await prisma.message.findFirst({ where: { mediaUrl: attachmentRef(id), id: { in: hiddenIds } } });
+  if (hidden || await prisma.userSafetyStatus.findFirst({ where: { userId: asset.ownerId, suspended: true } })) return null;
+  return { bytes: asset.bytes, contentType: asset.contentType };
 }

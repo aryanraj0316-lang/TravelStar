@@ -1,6 +1,6 @@
 {
-  "version": "2026-11-06",
-  "updated": "6 November 2026",
+  "version": "2026-11-07",
+  "updated": "7 November 2026",
   "email": "1bharatgo@gmail.com",
   "sections": [
     {
@@ -67,6 +67,11 @@
       "id": "changes",
       "title": "13. Policy changes and questions",
       "body": "We will update this policy when data practices or relevant services change. Check the revision date at the top. For questions about a revision, your information, permissions, service providers or privacy rights, contact Yatrenzo Support at 1bharatgo@gmail.com. Reading this policy is not a substitute for device permissions or any feature-specific consent required by law."
+    },
+    {
+      "id": "safety",
+      "title": "Safety reports, blocking and moderation",
+      "body": "We process block relationships, reports, report reasons and details, a snapshot of reported content and its author identifier, and moderator decisions to investigate abuse and enforce our content rules. Reports and moderation evidence are accessible only to authorized moderators; reporters can see their own report status. Report and decision records may be retained for up to 180 days, including after account deletion, for abuse investigation and safety. Blocking hides social content and stops direct contact; it does not cancel existing bookings, payment or refund obligations. Contact 1bharatgo@gmail.com for questions or appeals."
     }
   ]
 }

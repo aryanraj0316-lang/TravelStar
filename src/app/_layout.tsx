@@ -1,3 +1,4 @@
+import { SafetyEntry } from '@/components/SafetyEntry';
 import '@/global.css';
 
 import { DefaultTheme, ThemeProvider, Stack, type ErrorBoundaryProps, SplashScreen } from 'expo-router';
@@ -84,6 +85,7 @@ export default function RootLayout() {
                   over earlier siblings regardless — the home screen showed
                   through for a frame before the splash covered it again.
                   Declared last, it paints last, so the cover never breaks. */}
+              <SafetyEntry />
               <AnimatedSplashOverlay />
             </ThemeProvider>
           </AppProvider>

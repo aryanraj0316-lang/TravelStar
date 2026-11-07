@@ -9,6 +9,7 @@ export interface InAppNotif {
 }
 
 interface EventMap {
+  safetyChanged: undefined;
   toggleNavbar: boolean;
   focusTripOnMap: string;
   inAppNotification: InAppNotif;

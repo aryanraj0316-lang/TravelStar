@@ -1728,6 +1728,7 @@ function ChatScreen() {
   };
   const [replyingToMessage, setReplyingToMessage] = useState<CustomMessage | null>(null);
   const [selectedMessageForOptions, setSelectedMessageForOptions] = useState<CustomMessage | null>(null);
+  useEffect(() => eventBus.on('safetyChanged', () => { setTripMessages({}); setInboxRooms([]); setSelectedTripId(''); }), []);
   const [messageInfoOpen, setMessageInfoOpen] = useState(false);
   const [messageInfoRows, setMessageInfoRows] = useState<MessageAudienceEntry[] | null>(null);
   const [messageInfoLoading, setMessageInfoLoading] = useState(false);
@@ -3871,7 +3872,8 @@ function ChatScreen() {
             accessibilityLabel={t('common.close')}
           />
           <View style={styles.optionsModalContent}>
-            <View style={styles.optionsHeaderRow}>
+            <TouchableOpacity accessibilityRole="button" style={{ padding: 16, minHeight: 44 }} onPress={() => { const id = selectedMessageForOptions?.id; if (!id) return; setSelectedMessageForOptions(null); router.push({ pathname: '/safety-center', params: { kind: 'MESSAGE', targetId: id } }); }}><Text style={{ color: '#145ac4', fontWeight: '700' }}>Report message / block sender</Text></TouchableOpacity>
+              <View style={styles.optionsHeaderRow}>
               <Text style={styles.optionsHeaderTitle} numberOfLines={1}>
                 {t('chat.messageOptions')}
               </Text>

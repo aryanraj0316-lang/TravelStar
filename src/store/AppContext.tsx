@@ -547,6 +547,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // cover images, which stayed on screen — presented as real posts by real
   // people — whenever GET /stories failed or legitimately returned nothing.
   const [storiesList, setStoriesList] = useState<Story[]>([]);
+  useEffect(() => eventBus.on('safetyChanged', () => setStoriesList([])), []);
   const [deletedStoryIds, setDeletedStoryIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
