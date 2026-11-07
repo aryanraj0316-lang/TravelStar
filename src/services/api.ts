@@ -59,7 +59,6 @@ import type {
   TripPaymentOrder,
   InitiatePaymentResult,
   VerifyPaymentResult,
-  DirectPayResult,
   TripReceipt,
   MyBooking,
   PendingAllocations,
@@ -1625,19 +1624,6 @@ export const apiService = {
 
   async payTripFromWallet(input: { joinRequestId: string }): Promise<VerifyPaymentResult | null> {
     return request<VerifyPaymentResult>('/trip-payments/wallet-pay', {
-      method: 'POST',
-      body: JSON.stringify(input),
-    });
-  },
-
-  /**
-   * Pays a trip's seat fee for the exact amount owed. No balance is funded
-   * first and nothing is deducted from a stored credit — the amount itself is
-   * captured, and that captured order is what the organizer's trip budget is
-   * summed from.
-   */
-  async payTripDirect(input: { joinRequestId: string }): Promise<DirectPayResult | null> {
-    return request<DirectPayResult>('/trip-payments/pay', {
       method: 'POST',
       body: JSON.stringify(input),
     });
