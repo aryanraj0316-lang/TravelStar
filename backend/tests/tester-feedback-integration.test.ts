@@ -51,6 +51,15 @@ it('renames existing trip, chat, story, viewer and review identities without cha
     .send({ title: 'Existing story', content: 'Text-only story', location: 'Goa' });
   expect(storyResponse.status).toBe(201);
   const storyId = storyResponse.body.data.id as string;
+  // Read as a different account through the complete middleware stack,
+  // then apply the receiving phone's expiry rule to the JSON response.
+  for (const path of ['/api/v1/feed', '/api/v1/stories']) {
+    const response = await request(app).get(path).set('Authorization', `Bearer ${viewer.token}`);
+    expect(response.status).toBe(200);
+    const visibleStory = response.body.data.find((row: { id: string }) => row.id === storyId);
+    expect(visibleStory.createdAt).toBe(storyResponse.body.data.createdAt);
+    expect(Date.parse(visibleStory.createdAt)).toBeGreaterThan(Date.now() - 86_400_000);
+  }
   expect((await request(app).post(`/api/v1/stories/${storyId}/view`).set('Authorization', `Bearer ${viewer.token}`)).status).toBe(200);
   const guide = await prisma.guideProfile.create({ data: {
     userId: owner.id, licenseNumber: `feedback-${runId}`, experienceYears: 1, expertisePlaces: ['Goa'],

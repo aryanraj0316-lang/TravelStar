@@ -28,6 +28,10 @@ export async function safetySets(viewerId?: string) {
 
 /** Applies to social displays, never to financial records or account exports. */
 export function filterSocial(value: unknown, sets: { users: Set<string>; content: Set<string>; viewerId?: string | undefined; privateTrips?: Set<string> }): unknown {
+  // Prisma timestamps must reach Express intact so Date.toJSON emits ISO
+  // strings. Recursing into a Date's enumerable fields turns it into {},
+  // which makes clients discard otherwise valid stories as expired.
+  if (value instanceof Date) return value;
   if (Array.isArray(value)) return value.map(v => filterSocial(v, sets)).filter(v => v !== null);
   if (!value || typeof value !== 'object') return value;
   const row = value as Record<string, unknown>;
