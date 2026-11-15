@@ -11,13 +11,14 @@ export interface SheetProps {
   onClose: () => void;
   title?: string;
   children: React.ReactNode;
+  footer?: React.ReactNode;
   /** Set false for a sheet whose body manages its own scrolling. */
   scrollable?: boolean;
   /** Only used when scrollable — lets a caller scroll the body programmatically (e.g. to a specific field). */
   scrollRef?: React.RefObject<ScrollView | null>;
 }
 
-export function Sheet({ visible, onClose, title, children, scrollable = true, scrollRef }: SheetProps) {
+export function Sheet({ visible, onClose, title, children, footer, scrollable = true, scrollRef }: SheetProps) {
   const { t } = useTranslation();
   const Body = scrollable ? ScrollView : View;
   const bodyProps = scrollable && scrollRef ? { ref: scrollRef } : {};
@@ -53,6 +54,7 @@ export function Sheet({ visible, onClose, title, children, scrollable = true, sc
             </View>
           ) : null}
           <Body style={styles.body} keyboardShouldPersistTaps="handled" {...bodyProps}>{children}</Body>
+          {footer ? <View style={styles.footer}>{footer}</View> : null}
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -93,5 +95,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  body: { paddingHorizontal: space[5] },
+  body: { paddingHorizontal: space[5], flexShrink: 1 },
+  footer: { paddingHorizontal: space[5], paddingTop: space[3], borderTopWidth: 1, borderTopColor: C.border },
 });

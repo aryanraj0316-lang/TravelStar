@@ -27,6 +27,7 @@ import HelpCircle from 'lucide-react-native/icons/circle-question-mark';
 import Compass from 'lucide-react-native/icons/compass';
 import CreditCard from 'lucide-react-native/icons/credit-card';
 import ReceiptIcon from 'lucide-react-native/icons/receipt';
+import Landmark from 'lucide-react-native/icons/landmark';
 import Download from 'lucide-react-native/icons/download';
 import Globe from 'lucide-react-native/icons/globe';
 import ImageIcon from 'lucide-react-native/icons/image';
@@ -1065,6 +1066,30 @@ function ProfileScreen() {
 
               <View style={styles.menuDivider} />
 
+              {/* Payouts — an organizer's share of every confirmed booking,
+                  sent to their linked bank account. */}
+              <TouchableOpacity
+                style={styles.menuItem}
+                activeOpacity={0.7}
+                onPress={() => router.push('/payouts')}
+                accessibilityRole="button"
+                accessibilityLabel={t('profile.payouts', 'Payouts')}
+              >
+                <View style={styles.menuItemLeft}>
+                  <View style={[styles.menuIconBadge, { backgroundColor: '#EFF6FF' }]}>
+                    <Landmark size={16} color="#1D4ED8" />
+                  </View>
+                  <View style={styles.menuItemTextCol}>
+                    <Text style={styles.menuItemTitle}>{t('profile.payouts', 'Payouts')}</Text>
+                    <Text style={styles.menuItemSub}>
+                      {t('profile.payoutsSub', 'Your trip earnings, sent to your bank')}
+                    </Text>
+                  </View>
+                </View>
+                <ChevronRight size={16} color="#94A3B8" />
+              </TouchableOpacity>
+              <View style={styles.menuDivider} />
+
               {/* Expense Tracker */}
               <TouchableOpacity
                 style={styles.menuItem}
@@ -1240,6 +1265,30 @@ function ProfileScreen() {
               </TouchableOpacity>
 
               <View style={styles.menuDivider} />
+
+              {isLoggedIn && (
+                <>
+                  <TouchableOpacity
+                    style={styles.menuItem}
+                    activeOpacity={0.7}
+                    onPress={() => router.push('/safety-center')}
+                    accessibilityRole="button"
+                    accessibilityLabel="Safety Center"
+                  >
+                    <View style={styles.menuItemLeft}>
+                      <View style={[styles.menuIconBadge, { backgroundColor: '#ECFDF5' }]}>
+                        <ShieldAlert size={16} color="#059669" />
+                      </View>
+                      <View style={styles.menuItemTextCol}>
+                        <Text style={styles.menuItemTitle}>Safety Center</Text>
+                        <Text style={styles.menuItemSub}>Report content, block users, and manage safety</Text>
+                      </View>
+                    </View>
+                    <ChevronRight size={16} color="#94A3B8" />
+                  </TouchableOpacity>
+                  <View style={styles.menuDivider} />
+                </>
+              )}
 
               {/* Customer Support */}
               <TouchableOpacity
@@ -1446,6 +1495,7 @@ function ProfileScreen() {
         onClose={() => setShowEditModal(false)}
         title={completionPct < 100 ? 'Set Up Your Profile' : t('profile.editProfileTitle')}
         scrollRef={editScrollRef}
+        footer={<Button label={t('profile.saveProfileChanges')} onPress={handleSaveProfile} fullWidth />}
       >
         {/* Friendly setup guide notice if profile is not fully set up */}
         {completionPct < 100 && (
@@ -1620,13 +1670,6 @@ function ProfileScreen() {
             containerStyle={styles.editFieldGap}
           />
         </View>
-
-        <Button
-          label={t('profile.saveProfileChanges')}
-          onPress={handleSaveProfile}
-          fullWidth
-          style={styles.saveModalBtnSpacing}
-        />
       </Sheet>
 
       {/* ════════════════════════════════════════════════

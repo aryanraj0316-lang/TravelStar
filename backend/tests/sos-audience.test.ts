@@ -30,7 +30,7 @@ async function registerAndLogin(label: string): Promise<{ userId: string; token:
   createdEmails.push(email);
   const res = await request(app)
     .post('/api/v1/auth/register')
-    .send({ name: `SOS ${label}`, email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
+    .send({ termsAccepted: true, name: `SOS ${label}`, email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
   return { userId: res.body.data.user.id, token: res.body.data.token };
 }
 
@@ -51,15 +51,16 @@ async function createTripWithCheckpoint(token: string, name: string): Promise<st
     });
   expect(res.status).toBe(201);
   createdTripIds.push(res.body.data.id);
-
-  // Creation refuses a past start date, but the audience rule is about a
-  // trip already under way — so it is backdated directly once it exists.
-  await prisma.trip.update({
-    where: { id: res.body.data.id },
-    data: { startDate: new Date(Date.now() - 24 * 60 * 60 * 1000) },
-  });
-
   return res.body.data.id;
+}
+
+/**
+ * Creation refuses a past start date and a trip under way can no longer be
+ * booked, but the audience rule is about a trip already under way — so it
+ * is backdated directly once its travellers have booked.
+ */
+async function startTrip(tripId: string) {
+  await prisma.trip.update({ where: { id: tripId }, data: { startDate: new Date(Date.now() - 24 * 60 * 60 * 1000) } });
 }
 
 afterAll(async () => {
@@ -76,6 +77,7 @@ describe('SOS', () => {
     const tripId = await createTripWithCheckpoint(organizer.token, `SOS Trip ${runId}`);
 
     const joined = await bookAsMember(tripId, traveller.token);
+    await startTrip(tripId);
     expect(joined.status).toBe(200);
 
     const sos = await request(app)
@@ -140,6 +142,7 @@ describe('SOS', () => {
     const traveller = await registerAndLogin('staletraveller');
     const tripId = await createTripWithCheckpoint(organizer.token, `Stale Trip ${runId}`);
     await bookAsMember(tripId, traveller.token);
+    await startTrip(tripId);
 
     const sos = await request(app)
       .post('/api/v1/safety/sos')
@@ -171,10 +174,12 @@ describe('SOS', () => {
 
     const tripId = await createTripWithCheckpoint(organizer.token, `Audience Trip ${runId}`);
     await bookAsMember(tripId, traveller.token);
+    await startTrip(tripId);
 
     // A decoy on a completely different trip must not be told.
     const decoyTripId = await createTripWithCheckpoint(decoyOrganizer.token, `Decoy Trip ${runId}`);
     expect(decoyTripId).toBeTruthy();
+    await startTrip(decoyTripId);
 
     const guideProfile = await request(app)
       .post('/api/v1/guides/profile')
@@ -215,6 +220,7 @@ describe('SOS', () => {
     const outsider = await registerAndLogin('resolveoutsider');
     const tripId = await createTripWithCheckpoint(organizer.token, `Resolve Trip ${runId}`);
     await bookAsMember(tripId, traveller.token);
+    await startTrip(tripId);
 
     const sos = await request(app)
       .post('/api/v1/safety/sos')

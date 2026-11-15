@@ -12,7 +12,7 @@ async function registerUser(label: string): Promise<{ token: string; userId: str
   const email = `pay-test-${runId}-${seq}@travelstar.test`;
   const res = await request(app)
     .post('/api/v1/auth/register')
-    .send({ name: label, email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
+    .send({ termsAccepted: true, name: label, email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
   expect(res.status).toBe(201);
   return { token: res.body.data.token, userId: res.body.data.user.id };
 }
@@ -238,7 +238,7 @@ describe('Trip Payments & pay-first booking flow (CONVENTIONS.md §3, REMEDIATIO
     expect((await prisma.trip.findUnique({ where: { id: paidTripId } }))!.availableSeats).toBe(seatsBefore - 1);
     expect(await prisma.tripMember.count({ where: { tripId: paidTripId, userId: traveler.userId } })).toBe(0);
 
-    const order = await prisma.tripPaymentOrder.findUnique({ where: { joinRequestId: jr.id } });
+    const order = await prisma.tripPaymentOrder.findFirst({ where: { joinRequestId: jr.id }, orderBy: { createdAt: 'desc' } });
     expect(order?.status).toBe('CAPTURED');
     expect(order?.gateway).toBe('WALLET');
     expect(order?.verificationToken).toBe(res.body.data.verificationToken);
@@ -446,7 +446,7 @@ describe('Trip Payments & pay-first booking flow (CONVENTIONS.md §3, REMEDIATIO
     expect(Number(wallet?.balance)).toBe(2000);
 
     // TripPaymentOrder should be REFUNDED
-    const order = await prisma.tripPaymentOrder.findUnique({ where: { joinRequestId: jr.id } });
+    const order = await prisma.tripPaymentOrder.findFirst({ where: { joinRequestId: jr.id }, orderBy: { createdAt: 'desc' } });
     expect(order?.status).toBe('REFUNDED');
 
     // The traveller is told it was declined and where their money went.

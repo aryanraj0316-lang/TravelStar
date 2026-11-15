@@ -56,3 +56,13 @@ export async function getUserLocation(userId: string): Promise<Location | null> 
 export function isPresenceBackedByRedis(): boolean {
   return redis !== null;
 }
+
+export async function removeUserLocation(userId: string): Promise<void> {
+  memory.delete(userId);
+  if (redis) await redis.del(key(userId));
+}
+
+export async function closePresenceStore(): Promise<void> {
+  memory.clear();
+  if (redis) redis.disconnect();
+}

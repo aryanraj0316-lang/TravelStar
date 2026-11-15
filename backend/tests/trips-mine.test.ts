@@ -32,7 +32,7 @@ async function registerAndLogin(label: string): Promise<{ userId: string; token:
   const email = uniqueEmail(label);
   const res = await request(app)
     .post('/api/v1/auth/register')
-    .send({ name: `Trips Mine ${label}`, email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
+    .send({ termsAccepted: true, name: `Trips Mine ${label}`, email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
   return { userId: res.body.data.user.id, token: res.body.data.token };
 }
 

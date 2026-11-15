@@ -1,3 +1,4 @@
+import { setGuideBroadcast, writeGuideLocation } from '../../services/location-privacy';
 import { Router } from 'express';
 import { z } from 'zod';
 import { remoteMediaUrl } from '../../lib/validators';
@@ -96,7 +97,7 @@ router.get('/', async (req, res) => {
 
   try {
     const rows = await prisma.guideProfile.findMany({
-      where: cursorFilter(cursor),
+      where: { AND: [cursorFilter(cursor), { OR: [{ reviewOnly: false }, { userId: req.user?.id ?? '' }] }] },
       // Strictly createdAt-desc: cursorFilter pages on `createdAt < cursor`,
       // so any other sort key silently skips rows across pages. Sorting
       // verified guides first would also need VerificationStatus's enum
@@ -118,6 +119,7 @@ router.get('/', async (req, res) => {
     // one screen where a traveller decides who to trust with a trip.
     const mapped = dbGuides.map((g) => ({
       id: g.id,
+      userId: g.userId,
       name: g.user?.profile?.firstName
         ? `${g.user.profile.firstName} ${g.user.profile.lastName || ''}`.trim()
         : null,
@@ -514,9 +516,9 @@ router.get('/:id/reviews', async (req, res) => {
       id: r.id,
       rating: r.rating,
       comment: r.comment,
-      // The name captured at write time, so renaming a profile later does
-      // not rewrite old attributions.
-      reviewerName: r.reviewerName,
+      reviewerName: r.reviewer?.profile
+        ? `${r.reviewer.profile.firstName} ${r.reviewer.profile.lastName || ''}`.trim()
+        : r.reviewerName,
       reviewerAvatar: r.reviewer?.profile?.avatarUrl ?? null,
       tripName: r.trip?.name ?? null,
       createdAt: r.createdAt,
@@ -882,7 +884,10 @@ router.get('/:id/live-status', async (req, res) => {
     }
 
     const latestLoc = await prisma.liveLocation.findFirst({
-      where: { userId: guideProfile.userId },
+      where: { userId: guideProfile.userId,
+        updatedAt: { gte: new Date(Date.now() - 60_000) },
+        user: { profile: { locationSharing: true, guideLocationActive: true } },
+      },
       orderBy: { updatedAt: 'desc' },
     });
 
@@ -950,29 +955,8 @@ router.post('/:id/live-status', async (req, res) => {
       return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Guide profile not found' } });
     }
 
-    const existingLoc = await prisma.liveLocation.findFirst({
-      where: { userId: guideProfile.userId },
-    });
-
-    let updatedLoc;
-    if (existingLoc) {
-      updatedLoc = await prisma.liveLocation.update({
-        where: { id: existingLoc.id },
-        data: {
-          latitude,
-          longitude,
-          updatedAt: new Date(),
-        },
-      });
-    } else {
-      updatedLoc = await prisma.liveLocation.create({
-        data: {
-          userId: guideProfile.userId,
-          latitude,
-          longitude,
-        },
-      });
-    }
+    const updatedLoc = await writeGuideLocation(guideProfile.userId, latitude, longitude);
+    if (!updatedLoc) return res.status(403).json({ ok: false, error: { code: 'LOCATION_SHARING_DISABLED', message: 'Enable location sharing and start broadcasting first.' } });
 
     return res.status(200).json({ ok: true, data: updatedLoc });
   } catch (err) {
@@ -981,6 +965,19 @@ router.post('/:id/live-status', async (req, res) => {
       .status(500)
       .json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to update live location status' } });
   }
+});
+
+router.post('/:id/live-status/start', async (req, res) => {
+  if (!await assertOwnsGuideProfile(req, res, req.params.id!)) return;
+  const guide = await prisma.guideProfile.findUniqueOrThrow({ where: { id: req.params.id! } });
+  const active = await setGuideBroadcast(guide.userId, true);
+  return res.status(active ? 200 : 403).json(active ? { ok: true, data: { active } } : { ok: false, error: { code: 'LOCATION_SHARING_DISABLED', message: 'Enable location sharing in Privacy Settings first.' } });
+});
+router.delete('/:id/live-status', async (req, res) => {
+  if (!await assertOwnsGuideProfile(req, res, req.params.id!)) return;
+  const guide = await prisma.guideProfile.findUniqueOrThrow({ where: { id: req.params.id! } });
+  await setGuideBroadcast(guide.userId, false);
+  return res.json({ ok: true, data: { active: false } });
 });
 
 // 6. Guide leads - public trips matching this guide's expertise, with the

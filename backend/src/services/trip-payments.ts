@@ -6,6 +6,7 @@ import { formatTravellerDetails, parseStoredTravellerDetails } from '../lib/trav
 import { env } from '../config/env';
 import { logger } from '../lib/logger';
 import { holdSeatsForRequest } from './trip-membership';
+import { NO_REVERSAL, restorePayoutAfterFailedRefund, reverseForRefund, type Reversal } from './organizer-payouts';
 import { sendPushToUsers } from '../lib/push';
 import { Decimal } from '@prisma/client/runtime/library';
 import type { Server as SocketIOServer } from 'socket.io';
@@ -29,20 +30,27 @@ let _rzpClient: Razorpay | null = null;
  * error rather than silently accepting a request they cannot fulfil
  * (docs/CONVENTIONS.md §10 — no silent failures).
  */
-function razorpayClient(): Razorpay {
-  if (_rzpClient) return _rzpClient;
+export function razorpayClient(): Razorpay {
   const { RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET } = env;
-  if (!RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) {
+  if (!isRazorpayConfigured()) {
     throw Object.assign(new Error('Razorpay credentials not configured'), {
       code: 'SERVICE_UNAVAILABLE',
     });
   }
-  _rzpClient = new Razorpay({ key_id: RAZORPAY_KEY_ID, key_secret: RAZORPAY_KEY_SECRET });
+  if (_rzpClient) return _rzpClient;
+  _rzpClient = new Razorpay({ key_id: RAZORPAY_KEY_ID!, key_secret: RAZORPAY_KEY_SECRET! });
   return _rzpClient;
 }
 
 export function isRazorpayConfigured(): boolean {
-  return !!(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET);
+  return !!(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET) &&
+    (env.NODE_ENV !== 'production' || env.RAZORPAY_KEY_ID!.startsWith('rzp_live_'));
+}
+
+/** Booking simulation is available only to the automated test process. */
+export function testPaymentsAllowed(): boolean {
+  return env.NODE_ENV === 'test' && env.ALLOW_TEST_PAYMENTS !== false &&
+    !(env.RAZORPAY_KEY_ID ?? '').startsWith('rzp_live_');
 }
 
 // ── Pricing, platform fee and tokens ───────────────────────────────────────
@@ -68,6 +76,22 @@ export function computeFeeSplit(total: Decimal | number | string): {
 export function amountForRequest(jr: { adjustedPrice: Decimal | null; partySize: number }, tripBudget: Decimal): Decimal {
   const perPerson = jr.adjustedPrice ?? tripBudget;
   return new Decimal(perPerson).mul(Math.max(1, jr.partySize));
+}
+
+/**
+ * Whether a trip can no longer be booked or paid for: once it has ended, or
+ * once it has started — unless this is a midway join that boards later on
+ * (a future joining date, or a later starting city).
+ */
+export function bookingWindowClosed(
+  trip: { startDate: Date; endDate: Date },
+  booking: { fromCity?: string | null; joiningDate?: Date | null },
+  now = Date.now(),
+): boolean {
+  if (trip.endDate.getTime() <= now) return true;
+  if (trip.startDate.getTime() > now) return false;
+  if (booking.joiningDate) return booking.joiningDate.getTime() <= now;
+  return !booking.fromCity;
 }
 
 /**
@@ -98,10 +122,56 @@ async function createRazorpayOrder(amountRupees: Decimal | number) {
   return order;
 }
 
+// ── Current order ──────────────────────────────────────────────────────────
+//
+// A booking can have several payment rows over its life: a checkout opened
+// at an old price, a cancelled booking that was booked again. Earlier rows
+// stay as history (receipts, refunds, the organizer's payout); the booking
+// points at the one that counts now (JoinRequest.currentPaymentOrderId).
+
+/** The payment row that counts for this booking now, if any. */
+export async function currentPaymentOrder(joinRequestId: string) {
+  const jr = await prisma.joinRequest.findUnique({ where: { id: joinRequestId }, select: { paymentOrder: true } });
+  return jr?.paymentOrder ?? null;
+}
+
 /**
- * Idempotent: returns an existing TripPaymentOrder for the given
- * idempotencyKey, or creates a new one with a Razorpay order. The 4.5% /
- * 95.5% split is fixed on the order at creation.
+ * Creates a payment row and makes it the booking's current one, replacing
+ * `expectedCurrentId`. Returns null when another call changed the current
+ * row first (a double-tapped Pay), so only one payment is ever started.
+ *
+ * Two plain statements rather than a transaction: the claim is a single
+ * conditional update, and a row that loses the race is removed again. (An
+ * interactive transaction here ran out of pool connections when many
+ * travellers paid at once.)
+ */
+async function replaceCurrentOrder(
+  expectedCurrentId: string | null,
+  data: Prisma.TripPaymentOrderUncheckedCreateInput,
+) {
+  const order = await prisma.tripPaymentOrder.create({ data });
+  const claimed = await prisma.joinRequest.updateMany({
+    where: { id: data.joinRequestId, currentPaymentOrderId: expectedCurrentId },
+    data: { currentPaymentOrderId: order.id },
+  });
+  if (claimed.count === 1) return order;
+  await prisma.tripPaymentOrder.delete({ where: { id: order.id } }).catch(() => {});
+  return null;
+}
+
+/** An idempotency key not used by any row yet (a reused one gets a suffix). */
+async function freshIdempotencyKey(key: string): Promise<string> {
+  const taken = await prisma.tripPaymentOrder.findUnique({ where: { idempotencyKey: key }, select: { id: true } });
+  return taken ? `${key}:${crypto.randomUUID()}` : key;
+}
+
+/**
+ * Returns the booking's open Razorpay order, or starts a new one. An open
+ * order is only reused while it is for the amount due now: if the organizer
+ * changed the price (or the party changed) since checkout was opened, a new
+ * order is made at the current amount. The old one stays on record, and a
+ * payment that still lands on it is refunded (see captureAndHoldSeat). The
+ * 4.5% / 95.5% split is fixed on the order at creation.
  */
 export async function getOrCreatePaymentOrder(opts: {
   joinRequestId: string;
@@ -111,34 +181,33 @@ export async function getOrCreatePaymentOrder(opts: {
 }) {
   const { joinRequestId, userId, amount, idempotencyKey } = opts;
 
-  const existing = await prisma.tripPaymentOrder.findUnique({ where: { idempotencyKey } });
-  if (existing) return existing;
-
-  const byRequest = await prisma.tripPaymentOrder.findUnique({ where: { joinRequestId } });
-  if (byRequest && byRequest.gateway === 'RAZORPAY' && (byRequest.status === 'CREATED' || byRequest.status === 'PENDING')) {
-    return byRequest;
+  const current = await currentPaymentOrder(joinRequestId);
+  if (current) {
+    // A payment is landing or has landed: never open a second checkout.
+    if (current.status === 'PENDING' || current.status === 'CAPTURED') return current;
+    if (current.gateway === 'RAZORPAY' && current.status === 'CREATED' && new Decimal(current.amount).equals(amount)) {
+      return current;
+    }
   }
 
   const rzpOrder = await createRazorpayOrder(amount);
-  const split = computeFeeSplit(amount);
-  const data = {
+  const created = await replaceCurrentOrder(current?.id ?? null, {
+    joinRequestId,
     userId,
     amount,
     gateway: 'RAZORPAY',
     razorpayOrderId: rzpOrder.id,
-    status: 'CREATED' as const,
-    idempotencyKey,
+    status: 'CREATED',
+    idempotencyKey: await freshIdempotencyKey(idempotencyKey),
     gatewayDebit: amount,
     walletDebit: null,
-    ...split,
-  };
-
-  // One order row per join request: a stale FAILED/unpaid row from an
-  // earlier attempt (or another method) is reused rather than colliding on
-  // the unique joinRequestId.
-  return byRequest
-    ? prisma.tripPaymentOrder.update({ where: { id: byRequest.id }, data })
-    : prisma.tripPaymentOrder.create({ data: { joinRequestId, ...data } });
+    ...computeFeeSplit(amount),
+  });
+  if (created) return created;
+  // A concurrent call started the payment first; use theirs.
+  const theirs = await currentPaymentOrder(joinRequestId);
+  if (!theirs) throw new Error('Could not start the payment');
+  return theirs;
 }
 
 // ── Signature verification ─────────────────────────────────────────────────
@@ -154,7 +223,7 @@ export function verifyRazorpaySignature(
   signature: string,
 ): boolean {
   const secret = env.RAZORPAY_KEY_SECRET;
-  if (!secret) return false;
+  if (!secret || (env.NODE_ENV === 'production' && !isRazorpayConfigured())) return false;
   const body = razorpayOrderId + '|' + razorpayPaymentId;
   const expected = crypto.createHmac('sha256', secret).update(body).digest('hex');
   try {
@@ -167,7 +236,7 @@ export function verifyRazorpaySignature(
 /** Verifies Razorpay webhook signature using RAZORPAY_WEBHOOK_SECRET. */
 export function verifyWebhookSignature(rawBody: string, signature: string): boolean {
   const secret = env.RAZORPAY_WEBHOOK_SECRET;
-  if (!secret) return false;
+  if (!secret || (env.NODE_ENV === 'production' && !isRazorpayConfigured())) return false;
   const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
   try {
     return crypto.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(signature, 'hex'));
@@ -183,6 +252,7 @@ export type PaymentOutcome =
   | {
       ok: false;
       reason:
+        | 'TEST_PAYMENTS_DISABLED'
         | 'ORDER_NOT_FOUND'
         | 'INSUFFICIENT_BALANCE'
         | 'TRIP_FULL'
@@ -229,6 +299,22 @@ async function completePayment(
   throw new Error('Could not issue a unique verification token');
 }
 
+/**
+ * Another call (a double-tapped Pay) is completing this booking's payment.
+ * Waits briefly for it and reports its outcome, so both taps see the same
+ * success instead of one of them being told to retry.
+ */
+async function outcomeOfConcurrentPayment(joinRequestId: string): Promise<PaymentOutcome> {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const current = await currentPaymentOrder(joinRequestId);
+    const settled = current ? await completedByAnotherCall(current.id) : null;
+    if (settled) return settled;
+    if (current && current.status !== 'PENDING') break;
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  return { ok: false, reason: 'BUSY' };
+}
+
 /** Statuses an order may be (re)started from. Never CAPTURED or refunded. */
 const RESTARTABLE_ORDER_STATUSES = ['CREATED', 'PENDING', 'FAILED'] as const;
 
@@ -267,6 +353,9 @@ async function refundUnbookablePayment(
   joinRequestId: string,
   why: string,
   io?: SocketIOServer | null,
+  // False when the booking itself is still open (the payment landed on an
+  // outdated checkout): the money goes back, the booking stays payable.
+  closeRequest = true,
 ): Promise<boolean> {
   await prisma.tripPaymentOrder.update({ where: { id: orderId }, data: { status: 'CAPTURED' } });
   const order = await prisma.tripPaymentOrder.findUnique({ where: { id: orderId } });
@@ -276,10 +365,12 @@ async function refundUnbookablePayment(
     logger.error('[TripPayments] Automatic refund failed — needs manual refund', { orderId, why, refund });
     return false;
   }
-  await prisma.joinRequest.updateMany({
-    where: { id: joinRequestId, status: { in: ['PAYMENT_PENDING', 'PENDING'] } },
-    data: { status: 'REFUNDED' },
-  });
+  if (closeRequest) {
+    await prisma.joinRequest.updateMany({
+      where: { id: joinRequestId, status: { in: ['PAYMENT_PENDING', 'PENDING'] } },
+      data: { status: 'REFUNDED' },
+    });
+  }
   await notifyTraveller(order.userId, {
     title: 'Payment refunded',
     content: `We could not complete your booking (${why}). ₹${Number(order.amount).toFixed(2)} has been refunded to your original payment method.`,
@@ -303,7 +394,7 @@ export async function captureAndHoldSeat(opts: {
 
   const order = await prisma.tripPaymentOrder.findUnique({
     where: { razorpayOrderId },
-    include: { joinRequest: { include: { trip: true } } },
+    include: { joinRequest: { include: { trip: true } }, currentOf: { select: { id: true } } },
   });
 
   if (!order) return { ok: false, reason: 'ORDER_NOT_FOUND' };
@@ -328,6 +419,20 @@ export async function captureAndHoldSeat(opts: {
     return (await completedByAnotherCall(order.id)) ?? { ok: false, reason: 'BUSY' };
   }
 
+  // Paid on a checkout the booking has since moved on from (the price or
+  // party changed, or the booking was cancelled and made again): the money
+  // goes back in full, and the booking stays as it is.
+  if (!order.currentOf) {
+    const refunded = await refundUnbookablePayment(
+      order.id,
+      order.joinRequestId,
+      'the booking changed before this payment arrived',
+      opts.io,
+      false,
+    );
+    return { ok: false, reason: 'NOT_PAYABLE', refunded };
+  }
+
   const done = await completePayment(order.id, order.joinRequestId, {
     razorpayPaymentId,
     gateway: 'RAZORPAY',
@@ -347,37 +452,33 @@ export async function captureAndHoldSeat(opts: {
 }
 
 /**
- * Creates the order row for a join request, or re-points the existing one
- * at this payment method — but only while it is still restartable. Returns
- * null when the existing order has already been captured or refunded
- * (a concurrent payment won), so a captured order is never knocked back to
- * PENDING.
+ * Starts (or resumes) the booking's payment by this method. A row for the
+ * same method that is still restartable is reused — a wallet payment that
+ * was cut off after the deduction resumes on the same row, so it is never
+ * deducted twice. A row for another method (an open card checkout) is left
+ * on record and a new current row is made, so a card payment that still
+ * lands on the old one can be found and refunded. Returns null when another
+ * payment won the race or has already completed.
  */
-async function upsertRestartableOrder(
-  existingOrderId: string | null,
+async function startOrderByMethod(
+  current: { id: string; status: string; gateway: string } | null,
   data: Omit<Prisma.TripPaymentOrderUncheckedCreateInput, 'id'>,
 ) {
-  let existingId = existingOrderId;
-  if (!existingId) {
-    try {
-      return await prisma.tripPaymentOrder.create({ data });
-    } catch (e) {
-      // A concurrent call (double-tapped Pay) created this request's order
-      // first — joinRequestId is unique. Adopt theirs instead of failing.
-      if ((e as { code?: string }).code !== 'P2002') throw e;
-      const theirs = await prisma.tripPaymentOrder.findUnique({ where: { joinRequestId: data.joinRequestId } });
-      if (!theirs) throw e;
-      existingId = theirs.id;
+  if (current) {
+    if (current.gateway === data.gateway) {
+      const update: Partial<typeof data> = { ...data };
+      delete update.joinRequestId;
+      delete update.idempotencyKey;
+      const moved = await prisma.tripPaymentOrder.updateMany({
+        where: { id: current.id, status: { in: [...RESTARTABLE_ORDER_STATUSES] } },
+        data: update,
+      });
+      return moved.count === 0 ? null : prisma.tripPaymentOrder.findUnique({ where: { id: current.id } });
     }
+    // Another method's payment is landing or done.
+    if (!(RESTARTABLE_ORDER_STATUSES as readonly string[]).includes(current.status) || current.status === 'PENDING') return null;
   }
-  const update: Partial<typeof data> = { ...data };
-  delete update.joinRequestId;
-  delete update.idempotencyKey;
-  const moved = await prisma.tripPaymentOrder.updateMany({
-    where: { id: existingId, status: { in: [...RESTARTABLE_ORDER_STATUSES] } },
-    data: update,
-  });
-  return moved.count === 0 ? null : prisma.tripPaymentOrder.findUnique({ where: { id: existingId } });
+  return replaceCurrentOrder(current?.id ?? null, { ...data, idempotencyKey: `${data.gateway.toLowerCase()}-${crypto.randomUUID()}` });
 }
 
 // ── Wallet payment ─────────────────────────────────────────────────────────
@@ -417,15 +518,8 @@ export async function payFromWallet(
     razorpayOrderId: null,
     ...split,
   };
-  const order = await upsertRestartableOrder(existing?.id ?? null, {
-    joinRequestId,
-    idempotencyKey: `wallet-${joinRequestId}-${userId}`,
-    ...orderData,
-  });
-  if (!order) {
-    const current = await prisma.tripPaymentOrder.findUnique({ where: { joinRequestId } });
-    return (current && (await completedByAnotherCall(current.id))) ?? { ok: false, reason: 'BUSY' };
-  }
+  const order = await startOrderByMethod(existing, { joinRequestId, idempotencyKey: '', ...orderData });
+  if (!order) return outcomeOfConcurrentPayment(joinRequestId);
 
   const wallet = await prisma.wallet.findUnique({ where: { userId } });
   if (!wallet || new Decimal(wallet.balance).lt(amount)) {
@@ -469,23 +563,13 @@ export async function payFromWallet(
 
 // ── TEST-ONLY payment bypass ───────────────────────────────────────────────
 
-/**
- * ⚠️ DEVELOPMENT BYPASS — REMOVE BEFORE LAUNCH (with POST /trip-payments/pay
- * and the app's "Skip payment (testing)" button).
- *
- * Kept at the product owner's request so every test does not need a real
- * payment. No money moves, but everything downstream is the real flow:
- * the order is CAPTURED with its fee split, seats are held, a verification
- * token is issued and both sides are notified — so the organizer
- * allocation, Trip Pass, group chat and cancellation paths are exercised
- * exactly as after a real payment. Orders it creates carry gateway
- * 'DIRECT', and refunds on them move no money.
- */
+/** Automated test harness only; DIRECT records never represent money received. */
 export async function payDirect(
   joinRequestId: string,
   userId: string,
   io?: SocketIOServer | null | undefined,
 ): Promise<PaymentOutcome> {
+  if (!testPaymentsAllowed()) return { ok: false, reason: 'TEST_PAYMENTS_DISABLED' };
   const jr = await prisma.joinRequest.findUnique({
     where: { id: joinRequestId },
     include: { trip: true, paymentOrder: true },
@@ -509,15 +593,8 @@ export async function payDirect(
     razorpayOrderId: null,
     ...computeFeeSplit(amount),
   };
-  const order = await upsertRestartableOrder(existing?.id ?? null, {
-    joinRequestId,
-    idempotencyKey: `direct-${joinRequestId}-${userId}`,
-    ...orderData,
-  });
-  if (!order) {
-    const current = await prisma.tripPaymentOrder.findUnique({ where: { joinRequestId } });
-    return (current && (await completedByAnotherCall(current.id))) ?? { ok: false, reason: 'BUSY' };
-  }
+  const order = await startOrderByMethod(existing, { joinRequestId, idempotencyKey: '', ...orderData });
+  if (!order) return outcomeOfConcurrentPayment(joinRequestId);
 
   const done = await completePayment(order.id, joinRequestId, { gateway: 'DIRECT' });
   if (!done.ok) {
@@ -572,16 +649,24 @@ export async function refundOrder(orderId: string, requested: Decimal, reason: s
     return { ok: true, refundedAmount: new Decimal(now?.refundedAmount ?? 0), alreadyRefunded: true };
   }
 
+  // What was taken back from the organizer's share, so it can be given back
+  // if the refund itself then fails.
+  let reversal: Reversal = NO_REVERSAL;
+  let refundId: string | null = null;
   try {
     if (order.gateway === 'RAZORPAY') {
       if (!order.razorpayPaymentId) throw new Error('Order has no Razorpay payment id');
+      // Take the refund back out of the organizer's held share first: that
+      // is what puts the money back in the balance Razorpay refunds from.
+      reversal = await reverseForRefund(orderId, amount);
       const refund = await razorpayClient().payments.refund(order.razorpayPaymentId, {
         amount: Math.round(Number(amount) * 100),
         speed: 'normal',
         notes: { reason: reason.slice(0, 250), joinRequestId: order.joinRequestId },
       });
-      await prisma.tripPaymentOrder.update({ where: { id: orderId }, data: { razorpayRefundId: refund.id } });
+      refundId = refund.id;
     } else if (order.gateway === 'WALLET') {
+      reversal = await reverseForRefund(orderId, amount);
       const wallet = await prisma.wallet.upsert({
         where: { userId: order.userId },
         create: { userId: order.userId, balance: 0 },
@@ -605,8 +690,21 @@ export async function refundOrder(orderId: string, requested: Decimal, reason: s
       where: { id: orderId, status },
       data: { status: 'CAPTURED', refundedAmount: null, refundedAt: null },
     });
-    logger.error('[TripPayments] Refund failed; order restored to CAPTURED', { orderId, err });
-    return { ok: false, reason: 'GATEWAY_ERROR', message: err instanceof Error ? err.message : String(err) };
+    // The booking stands, so the organizer is owed their share again.
+    await restorePayoutAfterFailedRefund(orderId, reversal).catch((restoreErr) =>
+      logger.error('[TripPayments] Could not give the organizer their share back after a failed refund', { orderId, restoreErr }),
+    );
+    const e = err as { error?: { description?: string }; message?: string } | undefined;
+    const message = e?.error?.description ?? e?.message ?? String(err);
+    logger.error('[TripPayments] Refund failed; order restored to CAPTURED', { orderId, err: message });
+    return { ok: false, reason: 'GATEWAY_ERROR', message };
+  }
+
+  // Money has moved: a failure to record the refund id must not undo that.
+  if (refundId) {
+    await prisma.tripPaymentOrder
+      .update({ where: { id: orderId }, data: { razorpayRefundId: refundId, refundStatus: 'PROCESSING' } })
+      .catch((err) => logger.error('[TripPayments] Refund sent but its id was not saved', { orderId, refundId, err }));
   }
 
   logger.log(`[TripPayments] Refunded ${amount} (${order.gateway}) on order ${orderId}: ${reason}`);
@@ -717,6 +815,7 @@ async function dispatchPaymentCompletedNotifications(orderId: string, io?: Socke
         unread: true,
         tripId: trip.id,
         joinRequestId: order.joinRequestId,
+        subjectUserId: order.userId,
       },
     });
     io?.to(trip.creatorId).emit('notificationReceived', {
@@ -765,6 +864,7 @@ export async function announceMemberJoined(opts: {
       // Attributed to the organizer, matching interactions.ts; isSystem is
       // what every client actually renders on.
       senderId: trip?.creatorId ?? userId,
+      subjectUserId: userId,
       content,
       mediaType: 'NONE',
       isSystem: true,

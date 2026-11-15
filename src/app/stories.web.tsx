@@ -1,3 +1,7 @@
+import { isStoryMediaReady } from '@/lib/story-playback';
+import { Image as ExpoImage } from 'expo-image';
+import { useViewedStories } from '@/hooks/useViewedStories';
+import { useIdentityRevision } from '@/hooks/useIdentityRevision';
 // WEBSITE COPY of src/app/stories.tsx. Expo Router uses this file for the web
 // build; Android keeps using stories.tsx (this one is bundled there as an
 // unused route file). The screen itself is unchanged and renders as-is below
@@ -28,7 +32,6 @@ import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next';
 import {
   Alert,
-  Image,
   Share,
   StyleSheet,
   Text,
@@ -75,6 +78,7 @@ function StoriesScreenInner() {
   const insets = useSafeAreaInsets();
 
   const { storiesList, profile, isLoggedIn, deleteStory, deletedStoryIds } = useApp();
+  const { markViewed } = useViewedStories(isLoggedIn ? profile.id : undefined);
 
   const feedQuery = useQuery({
     ...feedQueryOptions(),
@@ -102,7 +106,7 @@ function StoriesScreenInner() {
         feedItems.unshift({
           id: local.id,
           sourceType: 'STORY',
-          userId: profile.id,
+          userId: local.userId ?? undefined,
           title: local.title,
           content: local.content,
           coverImg: local.coverImg,
@@ -116,8 +120,10 @@ function StoriesScreenInner() {
         });
       }
     }
-    return feedItems;
-  }, [feed, storiesList, profile.id, deletedStoryIds, isLoggedIn]);
+    return feedItems
+      .filter((story) => Date.parse(story.createdAt) > Date.now() - 86_400_000)
+      .map((story) => story.userId === profile.id ? { ...story, authorName: profile.name, authorAvatar: profile.avatar } : story);
+  }, [feed, storiesList, profile.id, profile.name, profile.avatar, deletedStoryIds, isLoggedIn]);
 
   // Only the story that was tapped — never a playlist of everyone else's.
   // Falling back to index 0 used to open a different story (or a reel)
@@ -152,7 +158,7 @@ function StoriesScreenInner() {
   const mediaFailed = activeStory ? !!failedMediaIds[activeStory.id] : false;
   const [mediaLoaded, setMediaLoaded] = useState<Record<string, boolean>>({});
   const slideReady = activeStory
-    ? !!mediaLoaded[activeStory.id] || wasStoryMediaPrefetched(storyMediaUrl)
+    ? isStoryMediaReady(storyMediaUrl, storyIsVideo, !!mediaLoaded[activeStory.id], wasStoryMediaPrefetched(storyMediaUrl))
     : false;
 
   // A spinner that never resolves is the worst outcome: the slide looks
@@ -316,6 +322,7 @@ function StoriesScreenInner() {
   }, [activeStory, profile.id, profile.name]);
 
   // Fetch viewer and like interactions
+  const identityRevision = useIdentityRevision();
   const fetchInteractions = useCallback(async () => {
     if (!activeStory?.id) return;
     setLoadingInteractions(true);
@@ -335,21 +342,22 @@ function StoriesScreenInner() {
     } finally {
       setLoadingInteractions(false);
     }
-  }, [activeStory?.id, profile.id, profile.name]);
+  }, [activeStory?.id, profile.id, profile.name, identityRevision]);
 
   // A view is recorded once the slide has actually been on screen for a
   // moment. Firing on mount counted every story someone swiped straight
   // past as seen, which is what made the counts wrong.
   useEffect(() => {
-    if (!isLoggedIn || !activeStory?.id) return;
+    if (!isLoggedIn || !activeStory?.id || !slideReady || mediaFailed) return;
     const storyId = activeStory.id;
     const dwellTimer = setTimeout(() => {
+      markViewed(storyId);
       void apiService.recordStoryView(storyId).then(() => {
         if (isMyStory) void fetchInteractions();
-      });
+      }).catch((error) => logger.warn('[Stories] Could not record view:', error));
     }, 1000);
     return () => clearTimeout(dwellTimer);
-  }, [isLoggedIn, activeStory?.id, isMyStory, fetchInteractions]);
+  }, [isLoggedIn, activeStory?.id, isMyStory, fetchInteractions, slideReady, mediaFailed, markViewed]);
 
   // Every story's like state and counts are fetched here, not just the
   // caller's own — GET /stories/:id/interactions already returns
@@ -583,9 +591,15 @@ function StoriesScreenInner() {
 
       <View style={styles.storyImageContainer} pointerEvents="none">
         {storyIsVideo && !mediaFailed ? (
-          <VideoView player={videoPlayer} style={styles.storyImg} contentFit="contain" nativeControls={false} />
+          <VideoView
+            player={videoPlayer}
+            style={styles.storyImg}
+            contentFit="contain"
+            nativeControls={false}
+            onFirstFrameRender={() => setMediaLoaded((prev) => ({ ...prev, [activeStory.id]: true }))}
+          />
         ) : storyImage && !mediaFailed ? (
-          <Image
+          <ExpoImage cachePolicy="memory-disk" transition={0}
             source={{ uri: storyImage }}
             style={styles.storyImg}
             resizeMode="contain"
@@ -682,7 +696,7 @@ function StoriesScreenInner() {
         <View style={styles.storyHeader} pointerEvents="box-none">
           <View style={styles.creatorMeta} pointerEvents="box-none">
             {storyCreatorAvatar ? (
-              <Image source={{ uri: storyCreatorAvatar }} style={styles.creatorAvatar} />
+              <ExpoImage cachePolicy="memory-disk" transition={0} source={{ uri: storyCreatorAvatar }} style={styles.creatorAvatar} />
             ) : (
               <View style={[styles.creatorAvatar, styles.creatorAvatarFallback]}>
                 <User size={16} color="rgba(255,255,255,0.7)" strokeWidth={2} />
@@ -856,7 +870,7 @@ function StoriesScreenInner() {
                   <View key={viewer.userId} style={styles.viewerItemRow}>
                     <View style={styles.viewerInfo}>
                       {viewer.avatar ? (
-                        <Image source={{ uri: viewer.avatar }} style={styles.viewerAvatar} />
+                        <ExpoImage cachePolicy="memory-disk" transition={0} source={{ uri: viewer.avatar }} style={styles.viewerAvatar} />
                       ) : (
                         <View style={styles.viewerAvatarFallback}>
                           <User size={18} color="rgba(255,255,255,0.7)" />

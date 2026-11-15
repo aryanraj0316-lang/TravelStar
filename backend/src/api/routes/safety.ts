@@ -13,7 +13,7 @@ const sosLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 30,
   skip: () => process.env.NODE_ENV === 'test',
-  keyGenerator: (req) => (req as any).user?.id ?? req.ip ?? 'unknown',
+  keyGenerator: (req) => req.user?.id ?? req.ip ?? 'unknown',
   message: {
     ok: false,
     error: {

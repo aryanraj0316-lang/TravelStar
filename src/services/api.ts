@@ -59,13 +59,15 @@ import type {
   TripPaymentOrder,
   InitiatePaymentResult,
   VerifyPaymentResult,
-  DirectPayResult,
   TripReceipt,
   MyBooking,
   PendingAllocations,
   AllocationSubmission,
   CancelBookingResult,
   TravellerDetails,
+  PayoutAccount,
+  PayoutAccountInput,
+  PayoutEarnings,
 } from '@/types/api';
 import { normalizeJoinRequestStatus } from '@/types/api';
 
@@ -596,6 +598,9 @@ async function requestWithMeta<T>(
 }
 
 export const apiService = {
+  safety<T>(path: string, method = 'GET', body?: unknown): Promise<T | null> {
+    return request<T>('/moderation' + path, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  },
   // Auth & Account
   /** Mobile number + password — the only way an account signs in. */
   async login(phoneNumber: string, password: string) {
@@ -608,7 +613,7 @@ export const apiService = {
   async register(userData: { name: string; email: string; phoneNumber: string; password: string; role?: string }) {
     return request<AuthResponse>('/auth/register', {
       method: 'POST',
-      body: JSON.stringify(userData),
+      body: JSON.stringify({ ...userData, termsAccepted: true }),
     });
   },
 
@@ -695,6 +700,13 @@ export const apiService = {
       method: 'POST',
       body: JSON.stringify({ contentType }),
     });
+  },
+
+  async uploadPrivateChatImage(chatRoomId: string, contentType: string, base64: string) {
+    return request<{ mediaUrl: string }>('/chats/attachments', { method: 'POST', body: JSON.stringify({ chatRoomId, contentType, base64 }) });
+  },
+  async getPrivateChatImage(id: string) {
+    return request<{ uri: string }>(`/chats/attachments/${id}`);
   },
 
   // Trips
@@ -819,6 +831,10 @@ export const apiService = {
     return request(`/trips/${tripId}/timeline/${stopId}/guide/${guideProfileId}`, {
       method: 'DELETE',
     });
+  },
+
+  async deleteTrip(tripId: string): Promise<{ deleted: boolean } | null> {
+    return request(`/trips/${tripId}`, { method: 'DELETE' });
   },
 
   async createTrip(tripData: CreateTripInput): Promise<Trip | null> {
@@ -1243,6 +1259,19 @@ export const apiService = {
     return created ? { ...created, status: normalizeJoinRequestStatus(created.status) } : created;
   },
 
+  // ── Organizer payouts ────────────────────────────────────────────────
+  async getPayoutAccount(): Promise<{ account: PayoutAccount | null; payoutsAvailable: boolean } | null> {
+    return request('/payouts/account');
+  },
+
+  async linkPayoutAccount(input: PayoutAccountInput): Promise<{ account: PayoutAccount } | null> {
+    return request('/payouts/account', { method: 'POST', body: JSON.stringify(input) });
+  },
+
+  async getPayoutEarnings(): Promise<PayoutEarnings | null> {
+    return request('/payouts/earnings');
+  },
+
   /** Fills in the details form for a booking already waiting for payment. */
   async saveTravellerDetails(joinRequestId: string, travellerDetails: TravellerDetails[]): Promise<unknown> {
     return request(`/interactions/join-request/${joinRequestId}/traveller-details`, {
@@ -1351,6 +1380,12 @@ export const apiService = {
     return request<GuideLiveStatus>(`/guides/${guideId}/live-status`);
   },
 
+  async startGuideBroadcast(guideId: string) {
+    return request(`/guides/${guideId}/live-status/start`, { method: 'POST' });
+  },
+  async stopGuideBroadcast(guideId: string) {
+    return request(`/guides/${guideId}/live-status`, { method: 'DELETE' });
+  },
   async updateGuideLiveStatus(guideId: string, coords: { latitude: number; longitude: number }): Promise<LiveLocation | null> {
     return request(`/guides/${guideId}/live-status`, {
       method: 'POST',
@@ -1612,19 +1647,6 @@ export const apiService = {
 
   async payTripFromWallet(input: { joinRequestId: string }): Promise<VerifyPaymentResult | null> {
     return request<VerifyPaymentResult>('/trip-payments/wallet-pay', {
-      method: 'POST',
-      body: JSON.stringify(input),
-    });
-  },
-
-  /**
-   * Pays a trip's seat fee for the exact amount owed. No balance is funded
-   * first and nothing is deducted from a stored credit — the amount itself is
-   * captured, and that captured order is what the organizer's trip budget is
-   * summed from.
-   */
-  async payTripDirect(input: { joinRequestId: string }): Promise<DirectPayResult | null> {
-    return request<DirectPayResult>('/trip-payments/pay', {
       method: 'POST',
       body: JSON.stringify(input),
     });

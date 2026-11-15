@@ -1,3 +1,5 @@
+import { SEEN_APPROVALS_KEY } from '@/lib/organizer-badge';
+import { useIdentityRevision } from '@/hooks/useIdentityRevision';
 import { Avatar, Button, CoverImage, Input, ScreenEmpty, Sheet } from '@/components/ui';
 import { OrganizerAgreementAcceptSheet } from '@/components/OrganizerAgreement';
 import { ApplicantDetails } from '@/components/ApplicantDetails';
@@ -231,7 +233,7 @@ export type GroupOrganizerTab = 'console' | 'chat';
 export type CreationSubTab = 'dashboard' | 'approvals' | 'itinerary' | 'roster' | 'overview' | 'checkpoints';
 
 const SEEN_CHATS_KEY = '@seen_inquiry_chat_timestamps';
-const SEEN_APPROVALS_KEY = '@seen_approval_request_ids';
+
 
 
 // ─── Live Map Geocoding & Road Routing Engine (OpenStreetMap & OSRM) ───
@@ -453,6 +455,7 @@ const getTripDisplayImage = (trip: Trip) => {
 };
 
 export default function GroupOrganizerScreen() {
+  const identityRevision = useIdentityRevision();
   const { t } = useTranslation();
   const router = useRouter();
   const params = useLocalSearchParams<{ tab?: string; tripId?: string; sub?: string; subTab?: string; category?: string }>();
@@ -464,6 +467,21 @@ export default function GroupOrganizerScreen() {
     };
   }, [setCurrentRole]);
   const confirm = useConfirm();
+  const { refreshTrips } = useApp();
+  const [deletingTripId, setDeletingTripId] = useState<string | null>(null);
+  const handleDeleteTrip = async (trip: Trip) => {
+    if (deletingTripId) return;
+    if (!(await confirm({ title: 'Delete trip?', message: `Remove “${trip.name}” from Your Creations? Trips with traveller requests, bookings, or expenses cannot be deleted.`, confirmLabel: 'Delete', destructive: true }))) return;
+    setDeletingTripId(trip.id);
+    try {
+      await apiService.deleteTrip(trip.id);
+      await refreshTrips();
+      await queryClient.invalidateQueries();
+      toast('Trip deleted.', 'success');
+    } catch (error) {
+      toast(errorToastMessage(error, 'Could not delete this trip.'), 'error');
+    } finally { setDeletingTripId(null); }
+  };
 
   const [activeTab, setActiveTab] = useState<GroupOrganizerTab>(
     (params.tab as GroupOrganizerTab) === 'chat' ? 'chat' : 'console',
@@ -549,6 +567,9 @@ export default function GroupOrganizerScreen() {
     travelerName: string;
     travelerAvatar?: string;
   } | null>(null);
+  const activeInquiryContact = travelerQuestions.find((question) => question.chatRoomId === activeInquiryChat?.chatRoomId);
+  const activeInquiryName = activeInquiryContact?.travelerName ?? activeInquiryChat?.travelerName;
+  const activeInquiryAvatar = activeInquiryContact?.travelerAvatar ?? activeInquiryChat?.travelerAvatar;
   const [inquiryMessages, setInquiryMessages] = useState<ChatMessage[]>([]);
   const [inquiryMessagesLoading, setInquiryMessagesLoading] = useState(false);
   const [inquiryReplyText, setInquiryReplyText] = useState('');
@@ -724,7 +745,7 @@ export default function GroupOrganizerScreen() {
 
     void loadItineraryFlow();
     void loadRequestsFlow();
-  }, [selectedCreation]);
+  }, [selectedCreation, identityRevision]);
 
   const openEditCheckpoint = (cp: ItineraryCheckpoint) => {
     setEditingCheckpoint(cp);
@@ -1503,10 +1524,11 @@ export default function GroupOrganizerScreen() {
       if (prev.has(id)) return prev;
       const next = new Set(prev);
       next.add(id);
-      void safeStorage.setItem(SEEN_APPROVALS_KEY, JSON.stringify(Array.from(next)));
+      void safeStorage.setItem(SEEN_APPROVALS_KEY, JSON.stringify(Array.from(next)))
+        .then(() => reloadIncomingRequestsCount())
+        .catch((e) => logger.warn('[Organizer] Could not save seen approvals:', e));
       return next;
     });
-    reloadIncomingRequestsCount?.();
   }, [reloadIncomingRequestsCount]);
 
   const isChatUnseen = useCallback(
@@ -1615,7 +1637,9 @@ export default function GroupOrganizerScreen() {
       .catch((e) => logger.warn('Failed to load inquiry chat messages:', e))
       .finally(() => setInquiryMessagesLoading(false));
 
-    void apiService.markChatRead(activeInquiryChat.chatRoomId);
+    void apiService.markChatRead(activeInquiryChat.chatRoomId)
+      .then(() => queryClient.invalidateQueries({ queryKey: queryKeys.myEnquiriesSummary() }))
+      .catch((e) => logger.warn('[Organizer] Could not mark enquiry read:', e));
     markChatAsSeen(activeInquiryChat.chatRoomId);
 
     const unsubMsg = socketService.onMessage(({ roomId, message }) => {
@@ -1676,7 +1700,7 @@ export default function GroupOrganizerScreen() {
     return () => {
       unsubMsg();
     };
-  }, [activeInquiryChat, profile?.id, profile?.name]);
+  }, [activeInquiryChat, profile?.id, profile?.name, identityRevision]);
 
   // Photo attachment, mirroring the chat tab's flow: presigned upload when
   // object storage is configured, otherwise the inline data URI so the
@@ -1914,7 +1938,7 @@ export default function GroupOrganizerScreen() {
     fetchIncoming();
     fetchPaymentSummaries();
     void fetchAllQuestions();
-  }, [fetchIncoming, fetchPaymentSummaries, fetchAllQuestions]);
+  }, [fetchIncoming, fetchPaymentSummaries, fetchAllQuestions, identityRevision]);
 
   useEffect(() => {
     if (activeTab === 'chat') {
@@ -1929,7 +1953,7 @@ export default function GroupOrganizerScreen() {
       fetchTripQuotes(currentTour.id);
       void fetchItinerary(currentTour.id);
     }
-  }, [selectedTourIdx, tours, currentTour, fetchTourMembers, fetchTripQuotes, fetchItinerary]);
+  }, [selectedTourIdx, tours, currentTour, fetchTourMembers, fetchTripQuotes, fetchItinerary, identityRevision]);
 
   // Fetch the route timeline (for per-checkpoint guide assignment) only
   // once the organizer actually opens that tab, matching the trip currently
@@ -1940,7 +1964,7 @@ export default function GroupOrganizerScreen() {
     if ((creationSubTab === 'checkpoints' || creationSubTab === 'approvals') && selectedCreation) {
       void fetchTripTimeline(selectedCreation.id);
     }
-  }, [creationSubTab, selectedCreation, fetchTripTimeline]);
+  }, [creationSubTab, selectedCreation, fetchTripTimeline, identityRevision]);
 
   useEffect(() => {
     if (creationSubTab === 'approvals' && selectedCreation) {
@@ -2127,7 +2151,7 @@ export default function GroupOrganizerScreen() {
     if (!selectedCreation) return false;
     if (selectedCreation.isMyTrip) return true;
     return !!(profile?.id && selectedCreation.creatorId === profile.id);
-  }, [selectedCreation, profile?.id]);
+  }, [selectedCreation, profile?.id, identityRevision]);
 
 
 
@@ -2573,6 +2597,9 @@ export default function GroupOrganizerScreen() {
                               </View>
 
                               <View style={styles.creationManageRow}>
+                                <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Delete ${trip.name}`} disabled={!!deletingTripId} onPress={(event) => { event.stopPropagation(); void handleDeleteTrip(trip); }} style={{ padding: 12 }}>
+                                  <Text style={{ color: '#DC2626', fontWeight: '700' }}>{deletingTripId === trip.id ? 'Deleting…' : 'Delete'}</Text>
+                                </TouchableOpacity>
                                 <Text style={styles.creationSeatSubtitle}>
                                   {tripConfirmedSeats}/{tripTotalSeats} seats filled ({tripAvailSeats} left)
                                 </Text>
@@ -4715,15 +4742,15 @@ export default function GroupOrganizerScreen() {
             </TouchableOpacity>
 
             <Avatar
-              uri={activeInquiryChat?.travelerAvatar || undefined}
-              name={activeInquiryChat?.travelerName || 'Traveler'}
+              uri={activeInquiryAvatar || undefined}
+              name={activeInquiryName || 'Traveler'}
               size={40}
               style={styles.inquiryChatHeaderAvatar}
             />
 
             <View style={styles.inquiryChatHeaderInfo}>
               <Text style={styles.inquiryChatModalName} numberOfLines={1}>
-                {activeInquiryChat?.travelerName || t('groupOrganizer.unnamedTraveler')}
+                {activeInquiryName || t('groupOrganizer.unnamedTraveler')}
               </Text>
               <Text style={styles.inquiryChatModalTrip} numberOfLines={1}>
                 Trip: {activeInquiryChat?.tripName}
@@ -4848,7 +4875,7 @@ export default function GroupOrganizerScreen() {
 
             <TextInput
               style={styles.inquiryChatInput}
-              placeholder={`Reply to ${activeInquiryChat?.travelerName || 'traveler'}...`}
+              placeholder={`Reply to ${activeInquiryName || 'traveler'}...`}
               placeholderTextColor={C.textMuted}
               value={inquiryReplyText}
               onChangeText={setInquiryReplyText}

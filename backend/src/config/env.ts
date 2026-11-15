@@ -75,8 +75,13 @@ const envSchema = z.object({
   RAZORPAY_KEY_ID: z.string().min(1).optional(),
   RAZORPAY_KEY_SECRET: z.string().min(1).optional(),
   RAZORPAY_WEBHOOK_SECRET: z.string().min(1).optional(),
+  // Automated tests only; never enables unpaid bookings in development or production.
+  ALLOW_TEST_PAYMENTS: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .optional(),
 
-  // Transactional email via Brevo — used for password-reset codes. Optional:
+  // Transactional email via Brevo ? used for password-reset codes. Optional:
   // unset, the code is logged server-side instead of emailed, so the flow is
   // testable before the Brevo account is set up.
   BREVO_API_KEY: z.string().min(1).optional(),

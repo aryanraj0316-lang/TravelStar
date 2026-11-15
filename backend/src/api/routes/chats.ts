@@ -1,10 +1,11 @@
+import { blockedBetween, assertRoomContact, safetySets } from '../../services/content-safety';
 import { Router } from 'express';
 import { z } from 'zod';
 import { NotificationCategory } from '@prisma/client';
 import prisma from '../../services/db';
 import { logger } from '../../lib/logger';
 import { requireUserId } from '../../lib/auth-context';
-import { ObjectStorageNotConfiguredError, createChatMediaUploadUrl } from '../../lib/object-storage';
+import { attachmentRef, decodeChatImage, readAttachment, visibleChatMedia } from '../../services/chat-attachments';
 import { audienceForMessage, recordDelivery, statusesForOwnMessages } from '../../services/message-status';
 
 const router = Router();
@@ -57,12 +58,14 @@ async function assertChatRoomMember(
       .json({ ok: false, error: { code: 'FORBIDDEN', message: 'You are not a member of this chat room.' } });
     return false;
   }
+  await assertRoomContact(chatRoomId, userId);
   return true;
 }
 
 // 1. Get list of all chat rooms for current user
 router.get('/', async (req, res) => {
   const tokenUserId = requireUserId(req);
+  const visibility = await safetySets(tokenUserId);
 
   try {
     // Ensure all trips where user is creator or confirmed member have a ChatRoom & ChatRoomMember
@@ -103,6 +106,7 @@ router.get('/', async (req, res) => {
               },
             },
             messages: {
+              where: { senderId: { notIn: [...visibility.users] }, id: { notIn: [...visibility.content] } },
               orderBy: { createdAt: 'desc' },
               take: 10,
               include: {
@@ -198,6 +202,7 @@ router.get('/', async (req, res) => {
 
       return {
         id: room.id,
+        contactUserId: !room.isGroup ? room.members.find(m => m.userId !== tokenUserId)?.userId : null,
         tripId: trip?.id || null,
         name: roomName,
         avatar: roomAvatar,
@@ -258,11 +263,12 @@ router.post('/inquiry', async (req, res) => {
   try {
     const trip = await prisma.trip.findUnique({
       where: { id: tripId },
-      select: { id: true, name: true, creatorId: true },
+      select: { id: true, name: true, creatorId: true, status: true },
     });
-    if (!trip) {
+    if (!trip || trip.status === 'CANCELLED') {
       return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found.' } });
     }
+    if (await blockedBetween(tokenUserId, trip.creatorId)) return res.status(403).json({ ok: false, error: { code: 'CONTACT_BLOCKED', message: 'Direct contact is unavailable.' } });
     if (trip.creatorId === tokenUserId) {
       return res
         .status(400)
@@ -277,16 +283,21 @@ router.post('/inquiry', async (req, res) => {
       return res.status(200).json({ ok: true, data: { chatRoomId: existing.id, tripId, tripName: trip.name } });
     }
 
-    const room = await prisma.chatRoom.create({
-      data: {
-        isGroup: false,
-        name: null,
-        inquiryTripId: tripId,
-        inquiryUserId: tokenUserId,
-        members: { create: [{ userId: tokenUserId }, { userId: trip.creatorId }] },
-      },
-      select: { id: true },
+    const room = await prisma.$transaction(async (tx) => {
+      const current = await tx.$queryRaw<{ status: string }[]>`SELECT "status" FROM "Trip" WHERE "id" = ${tripId} FOR UPDATE`;
+      if (!current[0] || current[0].status === 'CANCELLED') return null;
+      return tx.chatRoom.create({
+        data: {
+          isGroup: false,
+          name: null,
+          inquiryTripId: tripId,
+          inquiryUserId: tokenUserId,
+          members: { create: [{ userId: tokenUserId }, { userId: trip.creatorId }] },
+        },
+        select: { id: true },
+      });
     });
+    if (!room) return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found.' } });
 
     return res.status(201).json({ ok: true, data: { chatRoomId: room.id, tripId, tripName: trip.name } });
   } catch (err) {
@@ -317,6 +328,7 @@ router.post('/dm', async (req, res) => {
   }
 
   try {
+    if (await blockedBetween(tokenUserId, otherUserId)) return res.status(403).json({ ok: false, error: { code: 'CONTACT_BLOCKED', message: 'Direct contact is unavailable.' } });
     const otherUser = await prisma.user.findUnique({ where: { id: otherUserId }, select: { id: true } });
     if (!otherUser) {
       return res.status(404).json({ ok: false, error: { code: 'USER_NOT_FOUND', message: 'User not found.' } });
@@ -503,7 +515,7 @@ router.get('/:id/messages', async (req, res) => {
           timestamp: m.createdAt.toISOString(),
           createdAt: m.createdAt.toISOString(),
           mediaType: m.mediaType || 'NONE',
-          mediaUrl: m.mediaUrl || null,
+          mediaUrl: visibleChatMedia(m.mediaUrl),
           // Set only on LOCATION messages — a shared pin's coordinates.
           latitude: m.latitude,
           longitude: m.longitude,
@@ -901,39 +913,29 @@ router.delete('/:id/members/me', async (req, res) => {
   }
 });
 
-// docs/REMEDIATION.md §8.7 — hands back a presigned PUT so the client can
-// upload a chat photo straight to object storage and send the resulting
-// public URL, instead of sending its own device-local file:// URI (which
-// resolved for nobody but the sender). Same contract as the avatar, trip
-// cover and guide media endpoints: a real error when storage is not
-// configured, never a fake success.
-const chatMediaUploadUrlSchema = z.object({
-  contentType: z.enum(['image/jpeg', 'image/png', 'image/webp']),
+// Old clients must upgrade; never issue another public chat-media URL.
+router.post('/media-upload-url', (_req, res) => res.status(410).json({ ok: false, error: { code: 'UPGRADE_REQUIRED', message: 'Update the app to send private chat photos.' } }));
+
+router.post('/attachments', async (req, res) => {
+  const parsed = z.object({ chatRoomId: z.string().uuid(), contentType: z.enum(['image/jpeg','image/png','image/webp']), base64: z.string().min(1).max(6990508) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ ok: false, error: { code: 'INVALID_IMAGE', message: 'Choose an image under 5 MB.' } });
+  const userId = requireUserId(req);
+  if (!await assertChatRoomMember(res, parsed.data.chatRoomId, userId)) return;
+  let bytes: Buffer;
+  try { bytes = decodeChatImage(parsed.data.base64, parsed.data.contentType); }
+  catch { return res.status(400).json({ ok: false, error: { code: 'INVALID_IMAGE', message: 'Choose a JPEG, PNG or WebP image under 5 MB.' } }); }
+  const asset = await prisma.chatAttachment.create({ data: { ownerId: userId, chatRoomId: parsed.data.chatRoomId, contentType: parsed.data.contentType, bytes } });
+  res.set('Cache-Control', 'no-store');
+  return res.status(201).json({ ok: true, data: { mediaUrl: attachmentRef(asset.id) } });
 });
 
-router.post('/media-upload-url', async (req, res) => {
-  const parsed = chatMediaUploadUrlSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({
-      ok: false,
-      error: { code: 'VALIDATION_FAILED', message: 'contentType must be image/jpeg, image/png or image/webp.' },
-    });
-  }
-
-  try {
-    const userId = requireUserId(req);
-    const { uploadUrl, publicUrl } = await createChatMediaUploadUrl(userId, parsed.data.contentType);
-    return res.status(200).json({ ok: true, data: { uploadUrl, publicUrl } });
-  } catch (err) {
-    if (err instanceof ObjectStorageNotConfiguredError) {
-      return res.status(503).json({
-        ok: false,
-        error: { code: 'STORAGE_UNAVAILABLE', message: 'Photo sharing is not available right now.' },
-      });
-    }
-    logger.error('[Chats] Media upload URL failed:', err);
-    return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Could not start the upload.' } });
-  }
+router.get('/attachments/:assetId', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const parsed = z.string().uuid().safeParse(req.params.assetId);
+  if (!parsed.success) return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Photo unavailable.' } });
+  const asset = await readAttachment(parsed.data, requireUserId(req));
+  if (!asset) return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Photo unavailable.' } });
+  return res.json({ ok: true, data: { uri: 'data:' + asset.contentType + ';base64,' + Buffer.from(asset.bytes).toString('base64') } });
 });
 
 export default router;

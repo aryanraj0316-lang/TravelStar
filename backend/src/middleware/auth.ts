@@ -1,3 +1,4 @@
+import prisma from '../services/db';
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env';
@@ -145,12 +146,22 @@ export const authenticateJWT = (
       res.status(401).json({ ok: false, error: { code: 'UNAUTHORIZED', message: 'Unauthorized: Invalid or expired token' } });
       return;
     }
+    if (typeof (decoded.id || decoded.userId) !== 'string' || !(decoded.id || decoded.userId)) {
+      if (isPublic) return next();
+      res.status(401).json({ ok: false, error: { code: 'UNAUTHORIZED', message: 'Invalid account token.' } });
+      return;
+    }
     req.user = {
       id: decoded.id || decoded.userId,
       role: decoded.role,
       email: decoded.email,
     };
-    next();
+    prisma.user.findUnique({ where: { id: req.user.id }, select: { id: true } }).then(user => {
+      if (user) return next();
+      delete req.user;
+      if (isPublic) return next();
+      res.status(401).json({ ok: false, error: { code: 'UNAUTHORIZED', message: 'Account no longer exists.' } });
+    }).catch(next);
   });
 };
 

@@ -179,7 +179,7 @@ export default function FindGuidesScreen() {
   const { tripId } = useLocalSearchParams<{ tripId?: string }>();
   const { isLoggedIn, joinTrip, requestedTrips, joinRequestStatuses } = useApp();
 
-  const [selected, setSelected] = useState<PublicGuide | null>(null);
+  const [selectedSnapshot, setSelected] = useState<PublicGuide | null>(null);
   const [selectedPackageId, setSelectedPackageId] = useState<string | null>(null);
   const [travelDate, setTravelDate] = useState<Date | null>(null);
   const [checkpointsExpanded, setCheckpointsExpanded] = useState(true);
@@ -192,6 +192,7 @@ export default function FindGuidesScreen() {
     queryFn: async (): Promise<PublicGuide[]> => (await apiService.getPublicGuides()) ?? [],
   });
   const guides = guidesQuery.data ?? [];
+  const selected = guides.find((guide) => guide.id === selectedSnapshot?.id) ?? selectedSnapshot;
   const listState = sectionState(guidesQuery, guides.length > 0);
 
   const tripDetailQuery = useQuery({

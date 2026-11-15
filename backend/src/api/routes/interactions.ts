@@ -7,7 +7,7 @@ import { cursorPageQuerySchema } from '../../lib/pagination';
 import { sendPushToUsers, unreadCountFor } from '../../lib/push';
 import { requireUserId } from '../../lib/auth-context';
 import { holdSeatsForRequest } from '../../services/trip-membership';
-import { amountForRequest } from '../../services/trip-payments';
+import { amountForRequest, bookingWindowClosed, currentPaymentOrder } from '../../services/trip-payments';
 import { cancelBooking, rejectBooking } from '../../services/trip-cancellation';
 import { calculateMidwayPrice } from '../../services/midway-pricing';
 import { formatTravellerDetails, parseStoredTravellerDetails, travellerDetailsSchema } from '../../lib/traveller-details';
@@ -129,7 +129,7 @@ router.post('/join-request', async (req, res) => {
 
   try {
     const trip = await prisma.trip.findUnique({ where: { id: tripId } });
-    if (!trip) {
+    if (!trip || trip.status === 'CANCELLED') {
       return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found.' } });
     }
     if (trip.creatorId === userId) {
@@ -146,17 +146,35 @@ router.post('/join-request', async (req, res) => {
     // book again. Any other existing status is a real in-flight or settled
     // booking, so it is returned unchanged.
     if (existing && !REBOOKABLE_STATUSES.has(existing.status)) {
+      if (existing.status !== 'PAYMENT_PENDING') {
+        return res.status(200).json({ ok: true, data: { ...existing, message: 'Join request already exists' } });
+      }
       // A booking still waiting for payment takes the freshly filled form
       // (same party), so the details the traveller just typed are the ones
       // the organizer receives.
-      if (existing.status === 'PAYMENT_PENDING' && existing.partySize === partySize) {
+      if (existing.partySize === partySize) {
         const updated = await prisma.joinRequest.update({
           where: { id: existing.id },
           data: { travellerDetails, ...(acceptedTerms ? { termsAcceptedAt: new Date() } : {}) },
         });
         return res.status(200).json({ ok: true, data: updated });
       }
-      return res.status(200).json({ ok: true, data: { ...existing, message: 'Join request already exists' } });
+      // The party changed before paying (family members added or removed):
+      // the booking is re-priced below. Not while a payment is landing.
+      const current = await currentPaymentOrder(existing.id);
+      if (current && (current.status === 'PENDING' || current.status === 'CAPTURED')) {
+        return res.status(409).json({
+          ok: false,
+          error: { code: 'PAYMENT_IN_PROGRESS', message: 'A payment for this booking is being processed. Please wait a moment and try again.' },
+        });
+      }
+    }
+
+    if (bookingWindowClosed(trip, { fromCity: midway ? (fromCity ?? null) : null, joiningDate: joiningDate ?? null })) {
+      return res.status(409).json({
+        ok: false,
+        error: { code: 'TRIP_STARTED', message: 'This trip has already started, so it can no longer be booked.' },
+      });
     }
 
     // A party that could never fit is rejected up front with an honest
@@ -214,11 +232,21 @@ router.post('/join-request', async (req, res) => {
       joiningDate: joiningDate ?? null,
       travellerDetails,
     };
-    const joinReq = await prisma.joinRequest.upsert({
-      where: { tripId_userId: { tripId, userId } },
-      create: { tripId, userId, ...requestData },
-      update: requestData,
+    const joinReq = await prisma.$transaction(async (tx) => {
+      // Serialize new requests with deletion so a cached page cannot revive
+      // a trip after the organizer has removed it.
+      const current = await tx.$queryRaw<{ status: string }[]>`SELECT "status" FROM "Trip" WHERE "id" = ${tripId} FOR UPDATE`;
+      if (!current[0] || current[0].status === 'CANCELLED') return null;
+      return tx.joinRequest.upsert({
+        where: { tripId_userId: { tripId, userId } },
+        create: { tripId, userId, ...requestData },
+        // Booking again after a cancellation (or changing the party before
+        // paying) starts a fresh payment. The earlier payment stays on record
+        // for receipts, refunds and the organizer's payout.
+        update: { ...requestData, currentPaymentOrderId: null },
+      });
     });
+    if (!joinReq) return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found.' } });
 
     // A paid booking reaches the organizer once it is paid (with its
     // verification token — see trip-payments.ts); an unpaid checkout is not
@@ -252,6 +280,7 @@ router.post('/join-request', async (req, res) => {
           time: 'Just now',
           tripId: trip.id,
           joinRequestId: joinReq.id,
+          subjectUserId: userId,
         },
       });
 
@@ -587,7 +616,7 @@ const handleStatusChange = async (req: Request, res: Response) => {
       // money reads as the money being kept.
       const refunded = Number(rejected.refundAmount);
       const order = refunded > 0
-        ? await prisma.tripPaymentOrder.findUnique({ where: { joinRequestId: request.id }, select: { gateway: true } })
+        ? await currentPaymentOrder(request.id)
         : null;
       const amountLabel = `₹${refunded.toFixed(2)}`;
       const refundLine = refunded <= 0

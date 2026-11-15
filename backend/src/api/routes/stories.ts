@@ -23,12 +23,17 @@ router.get('/', async (req, res) => {
 
   try {
     const rows = await prisma.travelStory.findMany({
-      where: cursorFilter(cursor),
+      where: { AND: [cursorFilter(cursor), { createdAt: { gt: new Date(Date.now() - 86_400_000) } }] },
+      include: { user: { include: { profile: true } } },
       orderBy: { createdAt: 'desc' },
       take: takeWithLookahead(limit),
     });
     const { items, nextCursor } = buildPage(rows, limit);
-    res.status(200).json({ ok: true, data: items, meta: { cursor: nextCursor } });
+    res.status(200).json({ ok: true, data: items.map(({ user, ...story }) => ({
+      ...story,
+      authorName: user?.profile ? `${user.profile.firstName} ${user.profile.lastName || ''}`.trim() : story.authorName,
+      authorAvatar: user?.profile ? user.profile.avatarUrl : story.authorAvatar,
+    })), meta: { cursor: nextCursor } });
   } catch (err) {
     logger.error('[Stories] DB error:', err);
     res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to retrieve stories' } });
@@ -144,9 +149,9 @@ router.post('/:id/view', async (req, res) => {
   try {
     const story = await prisma.travelStory.findUnique({
       where: { id: storyId },
-      select: { id: true, userId: true },
+      select: { id: true, userId: true, createdAt: true },
     });
-    if (!story) {
+    if (!story || story.createdAt.getTime() <= Date.now() - 86_400_000) {
       return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Story not found.' } });
     }
 
@@ -186,8 +191,8 @@ router.post('/:id/like', async (req, res) => {
   const userId = requireUserId(req);
 
   try {
-    const story = await prisma.travelStory.findUnique({ where: { id: storyId }, select: { id: true } });
-    if (!story) {
+    const story = await prisma.travelStory.findUnique({ where: { id: storyId }, select: { id: true, createdAt: true } });
+    if (!story || story.createdAt.getTime() <= Date.now() - 86_400_000) {
       return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Story not found.' } });
     }
 
@@ -233,9 +238,9 @@ router.get('/:id/interactions', async (req, res) => {
   try {
     const story = await prisma.travelStory.findUnique({
       where: { id: storyId },
-      select: { id: true, userId: true },
+      select: { id: true, userId: true, createdAt: true },
     });
-    if (!story) {
+    if (!story || story.createdAt.getTime() <= Date.now() - 86_400_000) {
       return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Story not found.' } });
     }
 
@@ -253,7 +258,7 @@ router.get('/:id/interactions', async (req, res) => {
     }
 
     const [views, likes] = await Promise.all([
-      prisma.storyView.findMany({ where: { storyId }, orderBy: { lastViewedAt: 'desc' }, take: 200 }),
+      prisma.storyView.findMany({ where: { storyId }, include: { user: { include: { profile: true } } }, orderBy: { lastViewedAt: 'desc' }, take: 200 }),
       prisma.storyLike.findMany({ where: { storyId }, select: { userId: true } }),
     ]);
     const likedBy = new Set(likes.map((l) => l.userId));
@@ -266,8 +271,10 @@ router.get('/:id/interactions', async (req, res) => {
         viewerHasLiked: !!viewerLike,
         viewers: views.map((v) => ({
           userId: v.userId,
-          name: v.userName || 'Traveller',
-          avatar: v.userAvatar,
+          name: v.user?.profile
+            ? `${v.user.profile.firstName} ${v.user.profile.lastName || ''}`.trim()
+            : v.userName || 'Traveller',
+          avatar: v.user?.profile ? v.user.profile.avatarUrl : v.userAvatar,
           hasLiked: likedBy.has(v.userId),
           viewedAt: v.lastViewedAt.toISOString(),
         })),
@@ -351,7 +358,7 @@ router.post('/upload-direct', async (req, res) => {
         error: { code: 'UNSUPPORTED_MEDIA_TYPE', message: `Cannot store ${contentType}.` },
       });
     }
-    const filename = `story-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const filename = `story-${requireUserId(req)}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
     const uploadDir = path.join(process.cwd(), 'uploads');
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
@@ -400,7 +407,7 @@ router.delete('/:id', async (req, res) => {
       where: { id: storyId },
     });
 
-    if (!story) {
+    if (!story || story.createdAt.getTime() <= Date.now() - 86_400_000) {
       return res.status(200).json({
         ok: true,
         data: { deleted: true, id: storyId },

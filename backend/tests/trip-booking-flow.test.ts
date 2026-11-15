@@ -29,7 +29,7 @@ async function registerUser(label: string): Promise<{ token: string; userId: str
   emails.push(email);
   const res = await request(app)
     .post('/api/v1/auth/register')
-    .send({ name: label, email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
+    .send({ termsAccepted: true, name: label, email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
   expect(res.status).toBe(201);
   return { token: res.body.data.token, userId: res.body.data.user.id };
 }
@@ -128,7 +128,7 @@ describe('tiered cancellation', () => {
     expect(await prisma.tripMember.count({ where: { tripId, userId: traveller.userId } })).toBe(0);
     expect(await prisma.tripMemberAllocation.count({ where: { tripMember: { tripId } } })).toBe(0);
     expect(await prisma.chatRoomMember.count({ where: { chatRoomId, userId: traveller.userId } })).toBe(0);
-    const order = await prisma.tripPaymentOrder.findUnique({ where: { joinRequestId } });
+    const order = await prisma.tripPaymentOrder.findFirst({ where: { joinRequestId }, orderBy: { createdAt: 'desc' } });
     expect(order?.status).toBe('PARTIALLY_REFUNDED');
     expect(Number(order?.refundedAmount)).toBe(1910);
 
@@ -166,7 +166,7 @@ describe('tiered cancellation', () => {
     expect((await prisma.trip.findUnique({ where: { id: tripId } }))!.availableSeats).toBe(5);
     expect((await prisma.joinRequest.findUnique({ where: { id: joinRequestId } }))?.status).toBe('CANCELLED');
     // The money stays collected (organizer share + platform fee).
-    expect((await prisma.tripPaymentOrder.findUnique({ where: { joinRequestId } }))?.status).toBe('CAPTURED');
+    expect((await prisma.tripPaymentOrder.findFirst({ where: { joinRequestId }, orderBy: { createdAt: 'desc' } }))?.status).toBe('CAPTURED');
   }, 120_000);
 
   it('the traveller can book again after cancelling', async () => {
@@ -288,14 +288,14 @@ describe('Razorpay path (gateway mocked)', () => {
     mockRefund.mockRejectedValueOnce(new Error('gateway down'));
     const failed = await request(app).post(`/api/v1/trips/${tripId}/cancel-booking`).set(auth(t.token));
     expect(failed.status).toBe(502);
-    expect((await prisma.tripPaymentOrder.findUnique({ where: { joinRequestId } }))?.status).toBe('CAPTURED');
+    expect((await prisma.tripPaymentOrder.findFirst({ where: { joinRequestId }, orderBy: { createdAt: 'desc' } }))?.status).toBe('CAPTURED');
     expect((await prisma.joinRequest.findUnique({ where: { id: joinRequestId } }))?.status).toBe('PAYMENT_COMPLETED');
 
     mockRefund.mockResolvedValueOnce({ id: `rfnd_${runId}` });
     const cancelled = await request(app).post(`/api/v1/trips/${tripId}/cancel-booking`).set(auth(t.token));
     expect(cancelled.status).toBe(200);
     expect(mockRefund).toHaveBeenLastCalledWith(paymentId, expect.objectContaining({ amount: 191000 }));
-    const order = await prisma.tripPaymentOrder.findUnique({ where: { joinRequestId } });
+    const order = await prisma.tripPaymentOrder.findFirst({ where: { joinRequestId }, orderBy: { createdAt: 'desc' } });
     expect(order?.razorpayRefundId).toBe(`rfnd_${runId}`);
     expect((await prisma.trip.findUnique({ where: { id: tripId } }))!.availableSeats).toBe(5);
   }, 120_000);

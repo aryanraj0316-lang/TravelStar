@@ -3,6 +3,9 @@
 // this as the follow-up: either a shared workspace of zod schemas, or an
 // OpenAPI-generated client, so this stops being two files that can drift).
 export type ApiErrorCode =
+  | 'ACCOUNT_SUSPENDED'
+  | 'CONTENT_RULES_REQUIRED'
+  | 'CONTACT_BLOCKED'
   | 'VALIDATION_FAILED'
   | 'UNAUTHORIZED'
   | 'FORBIDDEN'

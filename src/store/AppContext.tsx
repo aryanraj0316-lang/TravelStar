@@ -1,3 +1,4 @@
+import { SEEN_APPROVALS_KEY, needsOrganizerAction, countUnseenOrganizerRequests } from '@/lib/organizer-badge';
 import { File } from 'expo-file-system';
 import { uploadFileToUrl } from '@/lib/upload';
 import { queryClient } from '@/lib/query-client';
@@ -205,6 +206,7 @@ export interface SOSAlert {
 export type StoryMediaType = 'IMAGE' | 'VIDEO';
 
 export interface Story {
+  userId?: string | null;
   id: string;
   authorName: string;
   authorAvatar: string;
@@ -341,8 +343,6 @@ const GUEST_PROFILE: UserProfile = {
 
 // What the organizer still has to act on: a free-trip request to accept or
 // decline, or a paid booking to verify and allocate.
-const needsOrganizerAction = (status: string) =>
-  status === 'PENDING' || status === 'PAYMENT_COMPLETED' || status === 'ALLOCATION_PENDING';
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentRole, setCurrentRole] = useState<UserRole>('TOURIST');
@@ -510,7 +510,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // group-organizer as real, bookable trips whenever GET /trips failed or
   // returned an empty list — and a join request against `trip-1` targets a
   // trip id that does not exist in any database.
-  const [trips, setTrips] = useState<Trip[]>([]);
+  const [trips, setTrips] = useState<Trip[]>(() => queryClient.getQueryData<Trip[]>(queryKeys.trips()) ?? []);
+
+
 
   // Mirrored into refs so the socket handlers — subscribed once per login —
   // can answer "is this room my own enquiry thread?" against current data
@@ -547,6 +549,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // cover images, which stayed on screen — presented as real posts by real
   // people — whenever GET /stories failed or legitimately returned nothing.
   const [storiesList, setStoriesList] = useState<Story[]>([]);
+  useEffect(() => {
+    const prune = () => setStoriesList((stories) => stories.filter((story) => Date.parse(story.createdAt) > Date.now() - 86_400_000));
+    const timer = setInterval(prune, 30_000);
+    return () => clearInterval(timer);
+  }, []);
+  useEffect(() => eventBus.on('safetyChanged', () => setStoriesList([])), []);
   const [deletedStoryIds, setDeletedStoryIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -564,9 +572,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
 
   const [dataStatus, setDataStatus] = useState<Omit<DataStatus, 'guides'>>({
-    trips: 'loading',
+    trips: queryClient.getQueryData(queryKeys.trips()) !== undefined ? 'ready' : 'loading',
     stories: 'loading',
   });
+  // Restore the last trip list as soon as the persisted query cache hydrates.
+  // A background refresh still replaces it with the server's current data.
+  useEffect(() => queryClient.getQueryCache().subscribe((event) => {
+    if (event.type !== 'updated' || event.query.queryKey.length !== 1 || event.query.queryKey[0] !== 'trips') return;
+    const cached = event.query.state.data as Trip[] | undefined;
+    if (cached) {
+      setTrips(cached);
+      setDataStatus((previous) => ({ ...previous, trips: 'ready' }));
+    }
+  }), []);
+
   const [navbarHidden, setNavbarHidden] = useState(false);
 
   // Declared here (rather than down by the effects that call them, where
@@ -630,6 +649,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return t;
         });
         setTrips(enriched);
+        queryClient.setQueryData(queryKeys.trips(), enriched);
         setDataStatus((prev) => ({ ...prev, trips: 'ready' }));
       })
       .catch((e) => {
@@ -659,12 +679,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .then(async (reqs) => {
         if (reqs && reqs.length > 0) {
           try {
-            const savedApprovals = await safeStorage.getItem('@seen_approvals');
-            const seenSet = new Set(savedApprovals ? JSON.parse(savedApprovals) : []);
-            const pending = reqs.filter(
-              (r: IncomingJoinRequest) =>
-                needsOrganizerAction(r.status) && !seenSet.has(String(r.id || (r as any)._id || '').trim()),
-            ).length;
+            const savedApprovals = await safeStorage.getItem(SEEN_APPROVALS_KEY);
+            const seenIds: unknown = savedApprovals ? JSON.parse(savedApprovals) : [];
+            const seenSet = new Set<string>(Array.isArray(seenIds) ? seenIds.filter((id): id is string => typeof id === 'string') : []);
+            const pending = countUnseenOrganizerRequests(reqs, seenSet);
             setPendingRequestsCount(pending);
           } catch {
             const pending = reqs.filter((r: IncomingJoinRequest) => needsOrganizerAction(r.status)).length;
@@ -707,6 +725,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       })
       .catch((e) => logger.warn('[Notifications] Unread check failed:', e));
   }, [isLoggedIn]);
+
+  useEffect(() => eventBus.on('profileChanged', ({ userId }) => {
+    if (!isLoggedIn) return;
+    // Queries include identities across trips, guides, reviews, bookings,
+    // members and the feed. Inactive queries become stale for their next visit.
+    void queryClient.invalidateQueries();
+    refreshTrips();
+    reloadJoinRequests();
+    refreshSosAlerts();
+    if (!userId || userId === profile.id) {
+      void apiService.getProfile().then((saved) => {
+        if (!saved) return;
+        setProfile(saved);
+        setStoriesList((stories) => stories.map((story) => story.userId === saved.id
+          ? { ...story, authorName: saved.name, authorAvatar: saved.avatar } : story));
+        void safeStorage.setItem('savedProfile', JSON.stringify(saved)).catch((e) => logger.warn('[Profile] Local sync failed:', e));
+      }).catch((e) => logger.warn('[Profile] Identity refresh failed:', e));
+    }
+  }), [isLoggedIn, profile.id, refreshTrips, reloadJoinRequests, refreshSosAlerts]);
 
   const checkUnreadChats = useCallback(() => {
     if (!isLoggedIn) return;
@@ -1050,6 +1087,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     const unsubNotificationRead = socketService.onNotificationRead((data) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.myEnquiriesSummary() });
       checkUnreadNotifications();
       checkUnreadChats();
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications() });
@@ -1135,9 +1173,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         .catch((e) => logger.warn('[Profile] Failed to persist profile locally:', e));
       return next;
     });
-    apiService.updateProfile(updated).catch((e) => {
+    apiService.updateProfile(updated).then((saved) => {
+      if (saved) {
+        setProfile(saved);
+        void safeStorage.setItem('savedProfile', JSON.stringify(saved)).catch((e) => logger.warn('[Profile] Local save failed:', e));
+        if (saved.id && (updated.name !== undefined || updated.avatar !== undefined)) {
+          eventBus.emit('profileChanged', { userId: saved.id });
+        }
+      }
+    }).catch((e) => {
       logger.warn('[Profile] Server update failed, rolling back:', e);
-      if (previous) setProfile(previous);
+      if (previous) {
+        setProfile(previous);
+        void safeStorage.setItem('savedProfile', JSON.stringify(previous)).catch((error) => logger.warn('[Profile] Local rollback failed:', error));
+      }
       toast(errorToastMessage(e, 'Could not save your profile changes.'), 'error');
     });
   }, []);
@@ -1374,6 +1423,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     async (storyData: NewStoryInput) => {
       const localStoryId = `story-${Date.now()}`;
       const localStory: Story = {
+        userId: profile.id,
         id: localStoryId,
         authorName: profile.name,
         authorAvatar: profile.avatar,

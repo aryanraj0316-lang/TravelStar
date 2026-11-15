@@ -1,3 +1,4 @@
+import { safetySets } from '../../services/content-safety';
 import { Router } from 'express';
 import { z } from 'zod';
 import { remoteMediaUrl } from '../../lib/validators';
@@ -145,7 +146,7 @@ router.get('/', async (req, res) => {
   const pageSize = Math.min(MAX_PAGE_SIZE, parsed.data.limit ?? DEFAULT_PAGE_SIZE);
 
   try {
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = { status: { not: 'CANCELLED' } };
     if (category && category !== 'All') {
       where.category = { equals: category, mode: 'insensitive' };
     }
@@ -431,7 +432,7 @@ router.get('/:id', async (req, res) => {
         checklist: { orderBy: { order: 'asc' } },
       },
     });
-    if (!t) {
+    if (!t || t.status === 'CANCELLED') {
       return res.status(404).json({ ok: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found' } });
     }
     return res.status(200).json({
@@ -1164,7 +1165,7 @@ router.post('/recommendations', async (req, res) => {
 
   try {
     const dbTrips = await prisma.trip.findMany({
-      where: { availableSeats: { gt: 0 } },
+      where: { availableSeats: { gt: 0 }, privacy: 'PUBLIC', status: 'ACTIVE', creatorId: { notIn: [...(await safetySets(req.user?.id)).users] }, id: { notIn: [...(await safetySets(req.user?.id)).content] } },
       take: 100,
     });
     const groups = dbTrips.map((t) => ({
@@ -2162,6 +2163,25 @@ router.delete('/:tripId/expenses/:expenseId', async (req, res) => {
     logger.error('[Trips] Delete expense error:', err);
     return res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: 'Failed to remove expense' } });
   }
+});
+
+// Remove a mistakenly created trip while retaining its audit history.
+router.delete('/:id', async (req, res) => {
+  const userId = requireUserId(req);
+  const parsed = z.string().uuid().safeParse(req.params.id);
+  if (!parsed.success) return res.status(400).json({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid trip id.' } });
+  const result = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "Trip" WHERE id = ${parsed.data} FOR UPDATE`;
+    const trip = await tx.trip.findUnique({ where: { id: parsed.data }, include: { _count: { select: { members: true, requests: true, bookings: true, expenses: true, inquiryRooms: true, quotes: true } } } });
+    if (!trip) return 404;
+    if (trip.creatorId !== userId) return 403;
+    if (trip.status === 'CANCELLED') return 200;
+    if (Object.values(trip._count).some((count) => count > 0)) return 409;
+    await tx.trip.update({ where: { id: trip.id }, data: { status: 'CANCELLED' } });
+    return 200;
+  });
+  if (result !== 200) return res.status(result).json({ ok: false, error: { code: result === 409 ? 'CONFLICT' : result === 403 ? 'FORBIDDEN' : 'NOT_FOUND', message: result === 409 ? 'This trip has traveller requests, bookings, enquiries, guide quotes, or expenses and cannot be deleted.' : 'Trip not found or you do not own it.' } });
+  return res.json({ ok: true, data: { deleted: true } });
 });
 
 export default router;

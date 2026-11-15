@@ -14,6 +14,9 @@ import {
   payDirect,
   amountForRequest,
   computeFeeSplit,
+  notifyTraveller,
+  testPaymentsAllowed,
+  bookingWindowClosed,
   type PaymentOutcome,
 } from '../../services/trip-payments';
 import { parseStoredTravellerDetails } from '../../lib/traveller-details';
@@ -41,6 +44,8 @@ function sendPaymentOutcome(res: Response, result: PaymentOutcome) {
     });
   }
   switch (result.reason) {
+    case 'TEST_PAYMENTS_DISABLED':
+      return res.status(403).json({ ok: false, error: { code: 'TEST_PAYMENTS_DISABLED', message: 'Please pay to complete your booking.' } });
     case 'ORDER_NOT_FOUND':
       return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Booking or payment order not found.' } });
     case 'INSUFFICIENT_BALANCE':
@@ -83,6 +88,20 @@ const DETAILS_REQUIRED = {
     message: 'Please fill in the traveller details before paying.',
   },
 } as const;
+
+const BOOKING_CLOSED = {
+  ok: false,
+  error: { code: 'TRIP_STARTED', message: 'This trip has already started, so it can no longer be booked.' },
+} as const;
+
+/** True when the trip has started (or ended) for this booking: no new payment. */
+async function bookingClosed(joinRequestId: string): Promise<boolean> {
+  const row = await prisma.joinRequest.findUnique({
+    where: { id: joinRequestId },
+    select: { fromCity: true, joiningDate: true, trip: { select: { startDate: true, endDate: true } } },
+  });
+  return !!row && bookingWindowClosed(row.trip, row);
+}
 
 /** No booking is paid for until its traveller details form is filled in. */
 async function hasTravellerDetails(joinRequestId: string): Promise<boolean> {
@@ -138,6 +157,8 @@ router.post('/initiate', async (req: Request, res: Response) => {
   if (!parseStoredTravellerDetails(joinRequest.travellerDetails)) {
     return res.status(409).json(DETAILS_REQUIRED);
   }
+
+  if (bookingWindowClosed(joinRequest.trip, joinRequest)) return res.status(409).json(BOOKING_CLOSED);
 
   // Refuse before any money moves when the party can no longer fit. The
   // authoritative check is still the seat hold at capture (a trip can fill
@@ -238,15 +259,13 @@ router.post('/wallet-pay', async (req: Request, res: Response) => {
   const userId = requireUserId(req);
 
   if (!(await hasTravellerDetails(joinRequestId))) return res.status(409).json(DETAILS_REQUIRED);
+  if (await bookingClosed(joinRequestId)) return res.status(409).json(BOOKING_CLOSED);
   const result = await payFromWallet(joinRequestId, userId, req.app.get('socketio'));
   return sendPaymentOutcome(res, result);
 });
 
 // ── POST /trip-payments/pay ───────────────────────────────────────────────
-// ⚠️ DEVELOPMENT BYPASS — REMOVE BEFORE LAUNCH. Completes a booking with no
-// money moving (the app's "Skip payment (testing)" button), running the
-// real post-payment flow: fee split, seat hold, verification token,
-// notifications. See payDirect in services/trip-payments.ts.
+// Automated integration-test harness; never enabled on a deployed server.
 const directPaySchema = z.object({
   joinRequestId: z.string().uuid(),
 });
@@ -258,7 +277,15 @@ router.post('/pay', async (req: Request, res: Response) => {
   const { joinRequestId } = parsed.data;
   const userId = requireUserId(req);
 
+  // Refuse even if the environment override is accidentally enabled.
+  if (!testPaymentsAllowed()) {
+    return res.status(403).json({
+      ok: false,
+      error: { code: 'TEST_PAYMENTS_DISABLED', message: 'Please pay to complete your booking.' },
+    });
+  }
   if (!(await hasTravellerDetails(joinRequestId))) return res.status(409).json(DETAILS_REQUIRED);
+  if (await bookingClosed(joinRequestId)) return res.status(409).json(BOOKING_CLOSED);
   const result = await payDirect(joinRequestId, userId, req.app.get('socketio'));
   return sendPaymentOutcome(res, result);
 });
@@ -392,6 +419,8 @@ router.get('/order/:joinRequestId', async (req: Request, res: Response) => {
       joinRequestStatus: joinRequest.status,
       // False sends the traveller to the details form before paying.
       travellerDetailsSubmitted: parseStoredTravellerDetails(joinRequest.travellerDetails) !== null,
+      // Older clients must also hide their retired test-payment control.
+      testPaymentsAllowed: testPaymentsAllowed(),
     },
   });
 });
@@ -429,11 +458,47 @@ router.post('/webhook', async (req: Request, res: Response) => {
         io: req.app.get('socketio'),
       });
     }
+  } else if ((event === 'refund.processed' || event === 'refund.failed') && req.body?.payload?.refund?.entity) {
+    // Razorpay's final word on a refund we requested.
+    const refund = req.body.payload.refund.entity as { id?: string; payment_id?: string; amount?: number };
+    const order = await prisma.tripPaymentOrder.findFirst({
+      where: { OR: [{ razorpayRefundId: refund.id ?? '' }, { razorpayPaymentId: refund.payment_id ?? '' }] },
+      include: { joinRequest: { include: { trip: { select: { id: true, name: true } } } } },
+    });
+    if (order) {
+      const failed = event === 'refund.failed';
+      await prisma.tripPaymentOrder.update({ where: { id: order.id }, data: { refundStatus: failed ? 'FAILED' : 'PROCESSED' } });
+      if (failed) {
+        logger.error('[TripPayments Webhook] Refund FAILED — refund this traveller manually from the Razorpay dashboard', {
+          orderId: order.id,
+          refundId: refund.id,
+          paymentId: refund.payment_id,
+        });
+        await notifyTraveller(order.userId, {
+          title: `Refund delayed — ${order.joinRequest.trip.name}`,
+          content:
+            `Your refund of ₹${((refund.amount ?? 0) / 100).toFixed(2)} could not be completed by the bank. ` +
+            'Our team has been alerted and will send it again. You do not need to do anything.',
+          tripId: order.joinRequest.trip.id,
+          io: req.app.get('socketio'),
+        });
+      }
+    }
+  } else if (event === 'transfer.failed' && req.body?.payload?.transfer?.entity?.id) {
+    const transferId = req.body.payload.transfer.entity.id as string;
+    await prisma.tripPaymentOrder.updateMany({
+      where: { razorpayTransferId: transferId },
+      data: { payoutStatus: 'FAILED', payoutError: 'Razorpay could not complete the transfer to the organizer.' },
+    });
+    logger.error('[TripPayments Webhook] Organizer transfer failed', { transferId });
   } else if (event === 'payment.failed' && paymentEntity) {
     const rzpOrderId = paymentEntity.order_id;
     if (rzpOrderId) {
+      // Only an order still waiting to be paid. One failed attempt (often
+      // followed by a successful retry) arrives late or is re-sent by
+      // Razorpay; it must never overwrite a captured or refunded payment.
       await prisma.tripPaymentOrder.updateMany({
-        where: { razorpayOrderId: rzpOrderId, status: { not: 'CAPTURED' } },
+        where: { razorpayOrderId: rzpOrderId, status: 'CREATED' },
         data: { status: 'FAILED' },
       });
     }

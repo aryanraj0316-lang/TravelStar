@@ -24,7 +24,8 @@ router.get('/', async (req, res) => {
     // Fetch both content types in parallel
     const [stories, reels] = await Promise.all([
       prisma.travelStory.findMany({
-        where: cursorFilter,
+        where: { AND: [cursorFilter, { createdAt: { gt: new Date(Date.now() - 86_400_000) } }] },
+        include: { user: { include: { profile: true } } },
         orderBy: { createdAt: 'desc' },
         take: limit,
       }),
@@ -54,8 +55,8 @@ router.get('/', async (req, res) => {
       // A story can itself be a video; coverImg is only its poster frame.
       mediaUrl: s.mediaUrl,
       mediaType: s.mediaType,
-      authorName: s.authorName,
-      authorAvatar: s.authorAvatar,
+      authorName: s.user?.profile ? `${s.user.profile.firstName} ${s.user.profile.lastName || ''}`.trim() : s.authorName,
+      authorAvatar: s.user?.profile ? s.user.profile.avatarUrl : s.authorAvatar,
       location: s.location,
       likesCount: s.likesCount,
       hasReel: s.hasReel,
@@ -77,6 +78,7 @@ router.get('/', async (req, res) => {
       return {
         id: r.id,
         sourceType: 'REEL' as const,
+        userId: r.guide.userId,
         title: r.caption || null,
         coverImg: r.thumbnailUrl ?? null,
         authorName,

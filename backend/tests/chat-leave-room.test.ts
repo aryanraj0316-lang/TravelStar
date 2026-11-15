@@ -26,7 +26,7 @@ async function registerUser(label: string): Promise<{ id: string; token: string 
   createdEmails.push(email);
   const res = await request(app)
     .post('/api/v1/auth/register')
-    .send({ name: `LeaveRoom ${label}`, email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
+    .send({ termsAccepted: true, name: `LeaveRoom ${label}`, email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
   return { id: res.body.data.user.id, token: res.body.data.token };
 }
 

@@ -1,3 +1,6 @@
+import { privacyPage, deleteAccountPage } from './generated/public-pages';
+import moderationRoutes from './api/routes/moderation';
+import { contentSafety } from './middleware/content-safety';
 import fs from 'fs';
 import path from 'path';
 import 'express-async-errors';
@@ -28,6 +31,7 @@ import alertRoutes from './api/routes/alerts';
 import mapRoutes from './api/routes/map';
 import interactionRoutes from './api/routes/interactions';
 import tripPaymentRoutes from './api/routes/trip-payments';
+import payoutRoutes from './api/routes/payouts';
 import chatRoutes from './api/routes/chats';
 import feedRoutes from './api/routes/feed';
 import consentRoutes from './api/routes/consent';
@@ -35,6 +39,8 @@ import bookingRoutes from './api/routes/bookings';
 import { errorHandler } from './middleware/error';
 
 const app = express();
+app.get('/privacy', (_req, res) => res.type('html').send(privacyPage));
+app.get('/delete-account', (_req, res) => res.type('html').send(deleteAccountPage));
 
 // Trust the proxy so req.ip is the real client address behind a load balancer —
 // per-IP rate limiting is meaningless without this.
@@ -100,7 +106,7 @@ const captureRawBody = (req: any, _res: any, buf: Buffer) => {
 // parser these requests died with a 413 before reaching their route, which
 // is why story uploads failed even on the fallback path. The large limit is
 // scoped to those paths only; everything else keeps the tight one.
-const LARGE_UPLOAD_PATHS = ['/api/v1/stories/upload-direct'];
+const LARGE_UPLOAD_PATHS = ['/api/v1/stories/upload-direct', '/api/v1/chats/attachments'];
 const isLargeUploadPath = (req: { path: string }) => LARGE_UPLOAD_PATHS.some((p) => req.path.startsWith(p));
 
 const standardJson = express.json({ limit: '256kb', verify: captureRawBody });
@@ -176,6 +182,8 @@ app.use('/api/v1/auth/reset-password', passwordResetLimiter);
 // Authenticate everything under /api/v1 by default. The public allowlist lives
 // in the middleware itself, so no route can silently opt out of auth.
 app.use('/api/v1', authenticateJWT);
+app.use('/api/v1', contentSafety);
+app.use('/api/v1/moderation', moderationRoutes);
 
 app.use('/api/v1', writeLimiter);
 
@@ -195,6 +203,7 @@ app.use('/api/v1/alerts', alertRoutes);
 app.use('/api/v1/map', mapRoutes);
 app.use('/api/v1/interactions', interactionRoutes);
 app.use('/api/v1/trip-payments', tripPaymentRoutes);
+app.use('/api/v1/payouts', payoutRoutes);
 app.use('/api/v1/chats', chatRoutes);
 app.use('/api/v1/feed', feedRoutes);
 app.use('/api/v1/consent', consentRoutes);
@@ -227,7 +236,19 @@ app.get('/ready', async (req, res) => {
     checks.database = 'fail';
   }
   const ready = Object.values(checks).every((c) => c === 'ok');
-  res.status(ready ? 200 : 503).json({ ok: ready, data: { ready, checks } });
+  const privacy = await prisma.privacyMaintenanceState
+    .findUnique({ where: { id: 'private-chat-v1' }, select: { completedAt: true, phase: true } })
+    .catch(() => null);
+  res
+    .status(ready ? 200 : 503)
+    .json({
+      ok: ready,
+      data: {
+        ready,
+        checks,
+        privacy: { legacyChatMediaRevoked: !!privacy?.completedAt, phase: privacy?.phase ?? 'PENDING' },
+      },
+    });
 });
 
 app.use('/api/v1', (req, res) => {

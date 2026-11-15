@@ -888,6 +888,8 @@ export interface TripPaymentOrder {
   walletBalance?: Money;
   /** False until the traveller details form is filled in; payment needs it. */
   travellerDetailsSubmitted?: boolean;
+  /** False once live payments are on: the "Skip payment (testing)" button is hidden. */
+  testPaymentsAllowed?: boolean;
 }
 
 export interface InitiatePaymentResult {
@@ -1034,4 +1036,72 @@ export interface CancelBookingResult {
   refundAmount: Money;
   tier: RefundTier;
   seatsReleased: boolean;
+}
+
+// ── Organizer payouts (Razorpay Route) ─────────────────────────────────────
+
+/** GET /payouts/account — the organizer's linked bank (masked). */
+export interface PayoutAccount {
+  legalName: string;
+  panMasked: string;
+  beneficiaryName: string;
+  bankAccountLast4: string;
+  ifsc: string;
+  /** Razorpay Route activation, e.g. activated / under_review / needs_clarification. */
+  activationStatus: string;
+  /** Bank account check: pending / verified / failed. */
+  bankVerification: string;
+  linkedAt: IsoDateTime;
+}
+
+export interface PayoutAccountInput {
+  legalName: string;
+  pan: string;
+  email: string;
+  phone: string;
+  beneficiaryName: string;
+  accountNumber: string;
+  ifsc: string;
+}
+
+export type PayoutState =
+  | 'AWAITING_CONFIRMATION'
+  | 'AWAITING_ACCOUNT'
+  | 'PROCESSING'
+  | 'ON_HOLD'
+  | 'RELEASED'
+  | 'REVERSED'
+  | 'PARTIALLY_REVERSED'
+  | 'FAILED'
+  | 'MANUAL'
+  | 'NOT_APPLICABLE'
+  | 'REFUNDED';
+
+export interface PayoutItem {
+  orderId: string;
+  tripId: string;
+  tripName: string;
+  travellerName: string;
+  seats: number;
+  amountPaid: Money;
+  yourShare: Money;
+  reversed: Money;
+  net: Money;
+  state: PayoutState;
+  releaseOn: IsoDateTime | null;
+  paidAt: IsoDateTime;
+  error: string | null;
+}
+
+/** GET /payouts/earnings */
+export interface PayoutEarnings {
+  totals: {
+    onHold: Money;
+    released: Money;
+    awaitingAccount: Money;
+    awaitingConfirmation: Money;
+    reversed: Money;
+    manual: Money;
+  };
+  items: PayoutItem[];
 }

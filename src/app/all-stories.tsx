@@ -1,3 +1,5 @@
+import { useViewedStories } from '@/hooks/useViewedStories';
+import { unseenStoriesFirst } from '@/lib/story-view-state';
 import { ScreenError, ScreenLoading } from '@/components/ui';
 import { feedQueryOptions } from '@/lib/prefetch-launch';
 import { sectionState } from '@/lib/query-state';
@@ -25,6 +27,7 @@ export default function AllStoriesScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const { isLoggedIn, deletedStoryIds, profile } = useApp();
+  const { viewedStoryIds } = useViewedStories(isLoggedIn ? profile.id : undefined);
 
   const feedQuery = useQuery({
     ...feedQueryOptions(),
@@ -48,10 +51,10 @@ export default function AllStoriesScreen() {
           item.authorName.trim().toLowerCase() === profile.name.trim().toLowerCase());
       return !isMine;
     });
-    return [...items].sort(
+    return unseenStoriesFirst([...items].sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    );
-  }, [feed, deletedStoryIds, profile.id, profile.name]);
+    ), viewedStoryIds);
+  }, [feed, deletedStoryIds, profile.id, profile.name, viewedStoryIds]);
 
   const handleOpenStory = (storyId: string) => {
     router.push({ pathname: '/stories', params: { id: storyId } });
@@ -115,9 +118,9 @@ export default function AllStoriesScreen() {
               accessibilityLabel={story.authorName || t('stories.defaultCreatorName')}
             >
               {story.authorAvatar ? (
-                <ExpoImage source={{ uri: story.authorAvatar }} style={styles.avatar} />
+                <ExpoImage source={{ uri: story.authorAvatar }} style={[styles.avatar, styles.storyRing, viewedStoryIds.has(story.id) && styles.storyRingViewed]} />
               ) : (
-                <View style={[styles.avatar, styles.avatarFallback]}>
+                <View style={[styles.avatar, styles.avatarFallback, styles.storyRing, viewedStoryIds.has(story.id) && styles.storyRingViewed]}>
                   <User size={20} color={C.blueText} strokeWidth={2.2} />
                 </View>
               )}
@@ -133,6 +136,8 @@ export default function AllStoriesScreen() {
 }
 
 const styles = StyleSheet.create({
+  storyRing: { borderWidth: 2, borderColor: C.blueText },
+  storyRingViewed: { borderColor: '#9CA3AF' },
   container: {
     flex: 1,
     backgroundColor: '#F8FAFC',

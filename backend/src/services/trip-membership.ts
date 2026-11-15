@@ -486,7 +486,7 @@ export async function admitAllocatedMember(opts: {
     });
 
     await tx.tripPaymentOrder.updateMany({
-      where: { joinRequestId: opts.joinRequestId },
+      where: { currentOf: { is: { id: opts.joinRequestId } } },
       data: { isVerifiedByOrganizer: true, verifiedAt: new Date() },
     });
 

@@ -1251,6 +1251,30 @@ function ProfileScreen() {
 
               <View style={styles.menuDivider} />
 
+              {isLoggedIn && (
+                <>
+                  <TouchableOpacity
+                    style={styles.menuItem}
+                    activeOpacity={0.7}
+                    onPress={() => router.push('/safety-center')}
+                    accessibilityRole="button"
+                    accessibilityLabel="Safety Center"
+                  >
+                    <View style={styles.menuItemLeft}>
+                      <View style={[styles.menuIconBadge, { backgroundColor: '#ECFDF5' }]}>
+                        <ShieldAlert size={16} color="#059669" />
+                      </View>
+                      <View style={styles.menuItemTextCol}>
+                        <Text style={styles.menuItemTitle}>Safety Center</Text>
+                        <Text style={styles.menuItemSub}>Report content, block users, and manage safety</Text>
+                      </View>
+                    </View>
+                    <ChevronRight size={16} color="#94A3B8" />
+                  </TouchableOpacity>
+                  <View style={styles.menuDivider} />
+                </>
+              )}
+
               {/* Customer Support */}
               <TouchableOpacity
                 style={styles.menuItem}
@@ -1456,6 +1480,7 @@ function ProfileScreen() {
         onClose={() => setShowEditModal(false)}
         title={completionPct < 100 ? 'Set Up Your Profile' : t('profile.editProfileTitle')}
         scrollRef={editScrollRef}
+        footer={<Button label={t('profile.saveProfileChanges')} onPress={handleSaveProfile} fullWidth />}
       >
         {/* Friendly setup guide notice if profile is not fully set up */}
         {completionPct < 100 && (
@@ -1630,13 +1655,6 @@ function ProfileScreen() {
             containerStyle={styles.editFieldGap}
           />
         </View>
-
-        <Button
-          label={t('profile.saveProfileChanges')}
-          onPress={handleSaveProfile}
-          fullWidth
-          style={styles.saveModalBtnSpacing}
-        />
       </Sheet>
 
       {/* ════════════════════════════════════════════════

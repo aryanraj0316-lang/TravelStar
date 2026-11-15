@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { transferForOrder } from '../../services/organizer-payouts';
 import { formatTravellerDetails, parseStoredTravellerDetails } from '../../lib/traveller-details';
 import { z } from 'zod';
 import prisma from '../../services/db';
@@ -250,6 +251,12 @@ router.post('/:tripId/approve-and-allocate', async (req, res) => {
       return admitted.reason === 'ALREADY_MEMBER'
         ? fail(res, 409, 'ALREADY_CONFIRMED', 'This traveller is already confirmed on the trip.')
         : fail(res, 409, 'INVALID_STATUS', 'This booking is not awaiting allocation (it may have been cancelled).');
+    }
+
+    // Confirmed: send the organizer's share to their bank (held until the
+    // trip starts). Never blocks the confirmation.
+    if (order && isPaid) {
+      await transferForOrder(order.id).catch((err) => logger.warn('[TripBookings] Payout transfer failed (non-fatal):', err));
     }
 
     const io = req.app.get('socketio');

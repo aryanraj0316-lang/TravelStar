@@ -8,7 +8,7 @@ import { apiService, type ConsentCategory } from '@/services/api';
 import { logger } from '@/lib/logger';
 
 export const CONSENT_CATEGORIES: readonly ConsentCategory[] = ['LOCATION', 'CAMERA', 'PHOTOS', 'NOTIFICATIONS'];
-export const CURRENT_POLICY_VERSION = '2026-09-03-placeholder';
+export const CURRENT_POLICY_VERSION = '2026-11-06';
 
 /**
  * Records a consent decision at the moment it's actually made — right

@@ -36,15 +36,15 @@ enum PrivacySetting {
 /// is CONFIRMED — i.e. after the organizer has verified the payment token
 /// and submitted the traveller's per-stop allocations.
 enum JoinRequestStatus {
-  PENDING            // Free trip: waiting for the organizer
-  PAYMENT_PENDING    // Paid trip: terms accepted, payment not yet captured
-  PAYMENT_COMPLETED  // Paid; verification token issued; seats held
+  PENDING // Free trip: waiting for the organizer
+  PAYMENT_PENDING // Paid trip: terms accepted, payment not yet captured
+  PAYMENT_COMPLETED // Paid; verification token issued; seats held
   ALLOCATION_PENDING // Organizer verified (token, or approved a free trip); seats held
-  CONFIRMED          // Allocations submitted; member + group chat
+  CONFIRMED // Allocations submitted; member + group chat
   REJECTED
   WAITLISTED
-  CANCELLED          // Cancelled with no refund due
-  REFUNDED           // Cancelled with a full or partial refund
+  CANCELLED // Cancelled with no refund due
+  REFUNDED // Cancelled with a full or partial refund
 }
 
 enum BookingType {
@@ -200,6 +200,12 @@ enum ConsentCategory {
 }
 
 model User {
+  blocksMade UserBlock[] @relation("Blocker")
+  blocksReceived UserBlock[] @relation("Blocked")
+  safetyReports SafetyReport[] @relation("Reporter")
+  safetyStatus UserSafetyStatus?
+  contentAcceptance ContentAcceptance?
+  reviewAccess ReviewAccess?
   id                 String             @id @default(uuid())
   email              String?            @unique
   phoneNumber        String?            @unique
@@ -223,31 +229,32 @@ model User {
   tripLikes       TripLike[]
 
   // Group Relations
-  createdGroups    Group[]        @relation("GroupCreator")
-  groupMemberships GroupMember[]
-  groupPosts       GroupPost[]
-  groupComments    GroupComment[]
-  votes            PollVote[]
-  expensesPaid     Expense[]      @relation("ExpensePaidBy")
-  tripExpensesPaid TripExpense[]  @relation("TripExpensePaidBy")
+  createdGroups     Group[]            @relation("GroupCreator")
+  groupMemberships  GroupMember[]
+  groupPosts        GroupPost[]
+  groupComments     GroupComment[]
+  votes             PollVote[]
+  expensesPaid      Expense[]          @relation("ExpensePaidBy")
+  tripExpensesPaid  TripExpense[]      @relation("TripExpensePaidBy")
   tripExpenseShares TripExpenseShare[] @relation("TripExpenseShareOwner")
 
   // Payments & Wallet
-  wallet       Wallet?
-  transactions Transaction[]
-  bookings     Booking[]     @relation("UserBookings")
+  wallet            Wallet?
+  transactions      Transaction[]
+  bookings          Booking[]               @relation("UserBookings")
   tripPaymentOrders TripPaymentOrder[]
+  payoutAccount     OrganizerPayoutAccount?
 
   // Safety
   sosAlerts         SOSAlert[]
-  guideReviews      Review[]      @relation("GuideReviewAuthor")
+  guideReviews      Review[]           @relation("GuideReviewAuthor")
   emergencyContacts EmergencyContact[]
   liveLocations     LiveLocation[]
 
   // Notifications
-  notifications      Notification[]
-  notificationReads  NotificationRead[]
-  deviceTokens       DeviceToken[]
+  notifications     Notification[]
+  notificationReads NotificationRead[]
+  deviceTokens      DeviceToken[]
 
   // Privacy & consent
   consentRecords ConsentRecord[]
@@ -263,15 +270,15 @@ model User {
   comments  Comment[]
 
   // Chat Relations
-  chatMemberships ChatRoomMember[]
-  inquiryRooms    ChatRoom[]           @relation("UserInquiries")
-  dmRoomsAsA      ChatRoom[]           @relation("DirectMessageUserA")
-  dmRoomsAsB      ChatRoom[]           @relation("DirectMessageUserB")
-  sentMessages    Message[]            @relation("MessageSender")
-  readReceipts    MessageReadReceipt[]
+  chatMemberships  ChatRoomMember[]
+  inquiryRooms     ChatRoom[]               @relation("UserInquiries")
+  dmRoomsAsA       ChatRoom[]               @relation("DirectMessageUserA")
+  dmRoomsAsB       ChatRoom[]               @relation("DirectMessageUserB")
+  sentMessages     Message[]                @relation("MessageSender")
+  readReceipts     MessageReadReceipt[]
   deliveryReceipts MessageDeliveryReceipt[]
-  initiatedCalls  CallLog[]            @relation("CallInitiator")
-  receivedCalls   CallLog[]            @relation("CallReceiver")
+  initiatedCalls   CallLog[]                @relation("CallInitiator")
+  receivedCalls    CallLog[]                @relation("CallReceiver")
 
   // Admin Logs
   adminActions AdminLog[]
@@ -281,6 +288,12 @@ model User {
   passwordResetTokens PasswordResetToken[]
 
   organizerAgreements TripOrganizerAgreement[]
+  chatAttachments ChatAttachment[]
+  stories TravelStory[]
+  storyViews StoryView[]
+  storyLikes StoryLike[]
+  subjectNotifications Notification[] @relation("NotificationSubject")
+  subjectMessages Message[] @relation("MessageSubject")
 }
 
 model Session {
@@ -355,12 +368,13 @@ model Profile {
   // master switch and the matching category are both on. Defaulting the
   // categories to true keeps existing users' behaviour unchanged — the
   // master switch is the one they have actually seen and set.
-  pushNotifications Boolean  @default(true)
-  pushTripUpdates   Boolean  @default(true)
-  pushHazardAlerts  Boolean  @default(true)
-  pushSeasonal      Boolean  @default(true)
-  locationSharing   Boolean  @default(true)
-  selectedLanguage  String   @default("English")
+  pushNotifications Boolean @default(true)
+  pushTripUpdates   Boolean @default(true)
+  pushHazardAlerts  Boolean @default(true)
+  pushSeasonal      Boolean @default(true)
+  locationSharing   Boolean @default(true)
+  guideLocationActive Boolean @default(false)
+  selectedLanguage  String  @default("English")
 
   /// How far an SOS this user raises should reach. TRIP_GROUP keeps it to
   /// the people they are actually travelling with; NEARBY also wakes other
@@ -370,11 +384,11 @@ model Profile {
   /// Defaulting to TRIP_GROUP is deliberate: broadcasting someone's
   /// position to strangers is an opt-in, not something an existing user
   /// gets signed up for by a deploy.
-  sosAudienceMode   SosAudienceMode @default(TRIP_GROUP)
+  sosAudienceMode SosAudienceMode @default(TRIP_GROUP)
   /// Only meaningful when sosAudienceMode is NEARBY.
-  sosRadiusKm       Int      @default(5)
+  sosRadiusKm     Int             @default(5)
 
-  updatedAt         DateTime @updatedAt
+  updatedAt DateTime @updatedAt
 }
 
 /// Who a user's SOS alert reaches, beyond the emergency contacts and admins
@@ -388,11 +402,12 @@ enum SosAudienceMode {
 }
 
 model GuideProfile {
+  reviewOnly Boolean @default(false)
   id              String             @id @default(uuid())
   userId          String             @unique
   user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   licenseNumber   String             @unique
-  licensePhotoUrl String?            // optional — v1 stores no credential documents (§12.1)
+  licensePhotoUrl String? // optional — v1 stores no credential documents (§12.1)
   experienceYears Int
   expertisePlaces String[] // List of places/destinations
   languagesSpoken String[]
@@ -406,11 +421,11 @@ model GuideProfile {
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
 
-  packages GuidePackage[]
-  quotes   GuideQuote[]
-  bookings Booking[]      @relation("GuideBookings")
-  reviews  Review[]
-  reels    GuideReel[]
+  packages                GuidePackage[]
+  quotes                  GuideQuote[]
+  bookings                Booking[]               @relation("GuideBookings")
+  reviews                 Review[]
+  reels                   GuideReel[]
   timelineStopAssignments TripTimelineStopGuide[]
   serviceZones            GuideServiceZone[]
 }
@@ -513,17 +528,17 @@ model Trip {
   updatedAt      DateTime       @updatedAt
   chatRoom       ChatRoom?
 
-  members   TripMember[]
-  requests  JoinRequest[]
-  bookings  Booking[]
-  likes     TripLike[]
-  expenses  TripExpense[]
-  itinerary TripItineraryDay[]
-  timeline  TripTimelineStop[]
-  checklist TripChecklistItem[]
-  quotes    GuideQuote[]
-  reviews   Review[]
-  inquiryRooms ChatRoom[] @relation("TripInquiries")
+  members            TripMember[]
+  requests           JoinRequest[]
+  bookings           Booking[]
+  likes              TripLike[]
+  expenses           TripExpense[]
+  itinerary          TripItineraryDay[]
+  timeline           TripTimelineStop[]
+  checklist          TripChecklistItem[]
+  quotes             GuideQuote[]
+  reviews            Review[]
+  inquiryRooms       ChatRoom[]              @relation("TripInquiries")
   organizerAgreement TripOrganizerAgreement?
 
   @@index([creatorId])
@@ -534,28 +549,28 @@ model Trip {
 }
 
 model TripMember {
-  id       String         @id @default(uuid())
-  tripId   String
-  trip     Trip           @relation(fields: [tripId], references: [id], onDelete: Cascade)
-  userId   String
-  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  joinedAt DateTime       @default(now())
-  role     TripMemberRole @default(MEMBER)
+  id                    String                 @id @default(uuid())
+  tripId                String
+  trip                  Trip                   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  userId                String
+  user                  User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt              DateTime               @default(now())
+  role                  TripMemberRole         @default(MEMBER)
   // Organizer roster tools (docs/REMEDIATION.md §8.6 — group-organizer.tsx).
   // These three used to be pure client-side useState, silently discarded
   // the next time the member list was refetched from the server.
-  checkedInAt   DateTime?
-  roomAllocated String?
-  seatAllocated String?
+  checkedInAt           DateTime?
+  roomAllocated         String?
+  seatAllocated         String?
   // How many seats this membership holds (the member plus any family they
   // brought in under one join request). Copied from JoinRequest.partySize at
   // approval time so the roster reflects what was actually claimed even if
   // the request row is later edited.
-  partySize Int @default(1)
+  partySize             Int                    @default(1)
   // The payment verification token this membership was confirmed against
   // (copied from TripPaymentOrder.verificationToken at allocation). Null for
   // free trips and for members who joined before tokens existed.
-  bookingReferenceToken String? @unique
+  bookingReferenceToken String?                @unique
   allocations           TripMemberAllocation[]
 
   @@unique([tripId, userId])
@@ -610,8 +625,8 @@ model JoinRequest {
   // TripTimelineStop rows ("at what checkpoint are they joining" / leaving)
   // instead of the free-text fromCity/toCity above, which stay populated
   // for display and older clients.
-  familyMemberCount Int       @default(0)
-  partySize         Int       @default(1)
+  familyMemberCount Int               @default(0)
+  partySize         Int               @default(1)
   joiningDate       DateTime?
   fromStopId        String?
   fromStop          TripTimelineStop? @relation("JoinRequestFromStop", fields: [fromStopId], references: [id], onDelete: SetNull)
@@ -626,10 +641,17 @@ model JoinRequest {
   // payment. Null on bookings made before the form existed.
   travellerDetails  Json?
 
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  paymentOrder  TripPaymentOrder?
+  // Every payment attempt for this booking, kept for receipts and refunds.
+  // Cancelling and booking the same trip again reuses this row, so the
+  // earlier payment stays here as history and a fresh order is made.
+  paymentOrders         TripPaymentOrder[] @relation("JoinRequestPaymentOrders")
+  // The payment for the booking as it stands now (null after a rebooking,
+  // until the new payment starts).
+  currentPaymentOrderId String?            @unique
+  paymentOrder          TripPaymentOrder?  @relation("CurrentPaymentOrder", fields: [currentPaymentOrderId], references: [id], onDelete: SetNull)
 
   @@unique([tripId, userId])
   @@index([tripId])
@@ -767,17 +789,17 @@ enum SplitMode {
 }
 
 model TripExpense {
-  id          String   @id @default(uuid())
+  id          String    @id @default(uuid())
   tripId      String
-  trip        Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  trip        Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
   description String
-  amount      Decimal  @db.Decimal(12, 2)
-  category    String   @default("OTHER") // TRANSPORT | LODGING | FOOD | ACTIVITY | OTHER
+  amount      Decimal   @db.Decimal(12, 2)
+  category    String    @default("OTHER") // TRANSPORT | LODGING | FOOD | ACTIVITY | OTHER
   paidById    String
-  paidBy      User     @relation("TripExpensePaidBy", fields: [paidById], references: [id], onDelete: Cascade)
+  paidBy      User      @relation("TripExpensePaidBy", fields: [paidById], references: [id], onDelete: Cascade)
   splitMode   SplitMode @default(EQUAL)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   shares TripExpenseShare[]
 
@@ -855,11 +877,11 @@ model TripTimelineStop {
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 
-  fromStopRequests JoinRequest[] @relation("JoinRequestFromStop")
+  fromStopRequests  JoinRequest[]           @relation("JoinRequestFromStop")
   memberAllocations TripMemberAllocation[]
-  guideBookings    Booking[]
-  toStopRequests   JoinRequest[] @relation("JoinRequestToStop")
-  assignedGuides   TripTimelineStopGuide[]
+  guideBookings     Booking[]
+  toStopRequests    JoinRequest[]           @relation("JoinRequestToStop")
+  assignedGuides    TripTimelineStopGuide[]
 
   @@unique([tripId, order])
   @@index([tripId])
@@ -915,40 +937,40 @@ model Attendance {
 }
 
 model Booking {
-  id             String        @id @default(uuid())
-  userId         String
-  user           User          @relation("UserBookings", fields: [userId], references: [id])
-  type           BookingType
+  id                 String            @id @default(uuid())
+  userId             String
+  user               User              @relation("UserBookings", fields: [userId], references: [id])
+  type               BookingType
   // Fallback identifier for booking types with no modeled entity yet (HOTEL,
   // VEHICLE, LOCAL_EXPERIENCE, TEMPLE_DARSHAN, ADVENTURE_ACTIVITY — none of
   // those have a table in this schema, so there is nothing to point a real
   // FK at without inventing product surface that doesn't exist elsewhere in
   // the app). TRIP and GUIDE bookings must use tripId/guideProfileId below,
   // not this field — those are the two types that do have a real relation.
-  targetId       String?
-  guideProfileId String?
-  guide          GuideProfile? @relation("GuideBookings", fields: [guideProfileId], references: [id])
-  tripId         String?
-  trip           Trip?         @relation(fields: [tripId], references: [id])
-  bookingDate    DateTime      @default(now())
+  targetId           String?
+  guideProfileId     String?
+  guide              GuideProfile?     @relation("GuideBookings", fields: [guideProfileId], references: [id])
+  tripId             String?
+  trip               Trip?             @relation(fields: [tripId], references: [id])
+  bookingDate        DateTime          @default(now())
   /// The first day of the hire. Kept as the single source for "when" on
   /// legacy single-day package bookings, where endDate equals it.
-  travelDate     DateTime
+  travelDate         DateTime
   /// Last day of a multi-day hire. Null means a single-day booking, so
   /// callers read "endDate ?? travelDate" rather than assuming a range.
-  endDate        DateTime?
-  scope          BookingScope?
+  endDate            DateTime?
+  scope              BookingScope?
   /// Set when the hire is for one checkpoint rather than the whole route.
   tripTimelineStopId String?
   tripTimelineStop   TripTimelineStop? @relation(fields: [tripTimelineStopId], references: [id], onDelete: SetNull)
   /// What the organizer asked for, in their own words.
-  note           String?
-  amount         Decimal       @db.Decimal(12, 2)
-  status         BookingStatus @default(PENDING)
-  paymentStatus  PaymentStatus @default(PENDING)
-  ticketData     Json? // QR codes, offline validation info
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  note               String?
+  amount             Decimal           @db.Decimal(12, 2)
+  status             BookingStatus     @default(PENDING)
+  paymentStatus      PaymentStatus     @default(PENDING)
+  ticketData         Json? // QR codes, offline validation info
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
   payments Payment[]
   reviews  Review[]
@@ -1018,6 +1040,7 @@ model ChatRoom {
   createdAt DateTime         @default(now())
   members   ChatRoomMember[]
   messages  Message[]
+  attachments ChatAttachment[]
   tripId    String?          @unique
   trip      Trip?            @relation(fields: [tripId], references: [id])
 
@@ -1031,11 +1054,6 @@ model ChatRoom {
   inquiryUserId String?
   inquiryUser   User?   @relation("UserInquiries", fields: [inquiryUserId], references: [id], onDelete: Cascade)
 
-  /// One thread per (trip, traveller): tapping "Ask the organizer" twice
-  /// reopens the same conversation instead of spawning duplicates.
-  @@unique([inquiryTripId, inquiryUserId])
-  @@index([inquiryTripId])
-
   /// A plain member-to-member DM, independent of any trip or enquiry.
   /// dmUserAId/dmUserBId always hold the pair's two user ids sorted
   /// lexicographically (smaller id first) so the unique index catches the
@@ -1046,7 +1064,37 @@ model ChatRoom {
   dmUserA   User?   @relation("DirectMessageUserA", fields: [dmUserAId], references: [id], onDelete: Cascade)
   dmUserB   User?   @relation("DirectMessageUserB", fields: [dmUserBId], references: [id], onDelete: Cascade)
 
+  /// One thread per (trip, traveller): tapping "Ask the organizer" twice
+  /// reopens the same conversation instead of spawning duplicates.
+  @@unique([inquiryTripId, inquiryUserId])
   @@unique([dmUserAId, dmUserBId])
+  @@index([inquiryTripId])
+}
+
+// Bytes are deliberately outside the public object bucket and /uploads.
+model ChatAttachment {
+  id String @id @default(uuid())
+  ownerId String
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  chatRoomId String
+  chatRoom ChatRoom @relation(fields: [chatRoomId], references: [id], onDelete: Cascade)
+  contentType String
+  bytes Bytes
+  legacyKey String?
+  createdAt DateTime @default(now())
+  @@index([ownerId])
+  @@index([chatRoomId])
+}
+
+// No User FK: this outbox must survive account erasure and storage outages.
+model MediaErasureJob {
+  id String @id @default(uuid())
+  ownerId String @unique
+  localFiles String[]
+  nextAttemptAt DateTime @default(now())
+  // Re-sweep after every previously issued PUT URL has expired.
+  finishAfter DateTime
+  createdAt DateTime @default(now())
 }
 
 model ChatRoomMember {
@@ -1065,21 +1113,23 @@ model ChatRoomMember {
 }
 
 model Message {
-  id         String               @id @default(uuid())
-  chatRoomId String
-  chatRoom   ChatRoom             @relation(fields: [chatRoomId], references: [id], onDelete: Cascade)
-  senderId   String
-  sender     User                 @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
-  content    String?
-  mediaType  MediaType?
-  mediaUrl   String?
+  subjectUserId String?
+  subject User? @relation("MessageSubject", fields: [subjectUserId], references: [id], onDelete: Cascade)
+  id          String                   @id @default(uuid())
+  chatRoomId  String
+  chatRoom    ChatRoom                 @relation(fields: [chatRoomId], references: [id], onDelete: Cascade)
+  senderId    String
+  sender      User                     @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  content     String?
+  mediaType   MediaType?
+  mediaUrl    String?
   // Set only when mediaType is LOCATION — a shared live/meeting-point pin.
   // Nullable for every other message type.
-  latitude   Float?
-  longitude  Float?
-  isSystem   Boolean              @default(false)
-  createdAt  DateTime             @default(now())
-  readBy     MessageReadReceipt[]
+  latitude    Float?
+  longitude   Float?
+  isSystem    Boolean                  @default(false)
+  createdAt   DateTime                 @default(now())
+  readBy      MessageReadReceipt[]
   deliveredTo MessageDeliveryReceipt[]
 
   @@index([chatRoomId, createdAt])
@@ -1130,26 +1180,26 @@ model CallLog {
 }
 
 model SOSAlert {
-  id        String         @id @default(uuid())
-  userId    String
-  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  latitude  Float
-  longitude Float
-  alertTime DateTime       @default(now())
-  status    SOSAlertStatus @default(ACTIVE)
+  id              String         @id @default(uuid())
+  userId          String
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  latitude        Float
+  longitude       Float
+  alertTime       DateTime       @default(now())
+  status          SOSAlertStatus @default(ACTIVE)
   /// What the person said was wrong when they raised it. Was accepted by
   /// the API and broadcast live, but never stored — so anyone who opened
   /// the app after the alert fired saw a bare "needs help" with no reason.
-  message        String?
+  message         String?
   /// What they said when standing it down ("found my group", "all fine").
-  resolutionNote String?
-  resolvedAt     DateTime?
+  resolutionNote  String?
+  resolvedAt      DateTime?
   /// Everyone this SOS was sent to, saved when it was raised (see
   /// services/sos-audience.ts). Only these people see it in the Home/Chat
   /// banner and get its all-clear — the person's name and exact location
   /// must not reach anyone outside the audience their own setting chose.
   /// Empty only on alerts raised before this was recorded.
-  audienceUserIds String[] @default([])
+  audienceUserIds String[]       @default([])
 
   @@index([userId])
   @@index([status])
@@ -1296,24 +1346,26 @@ model MapPin {
 }
 
 model Notification {
-  id         String                @id @default(uuid())
-  userId     String?
-  user       User?                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type       NotificationType
-  title      String
-  content    String
-  time       String
-  unread     Boolean               @default(true)
-  chatRoomId String?
-  tripId     String?
+  subjectUserId String?
+  subject User? @relation("NotificationSubject", fields: [subjectUserId], references: [id], onDelete: Cascade)
+  id            String                @id @default(uuid())
+  userId        String?
+  user          User?                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type          NotificationType
+  title         String
+  content       String
+  time          String
+  unread        Boolean               @default(true)
+  chatRoomId    String?
+  tripId        String?
   /// The join request a PAYMENT_REQUIRED notification is asking payment
   /// for. Without it the stored notification could not say *which* request
   /// to pay, so tapping it in the notifications list had nowhere to go —
   /// only the live socket payload could route, and only until reload.
   joinRequestId String?
-  category   NotificationCategory?
-  createdAt  DateTime              @default(now())
-  reads      NotificationRead[]
+  category      NotificationCategory?
+  createdAt     DateTime              @default(now())
+  reads         NotificationRead[]
 
   @@index([userId])
   @@index([unread])
@@ -1398,13 +1450,13 @@ model SavedDestination {
 }
 
 model Destination {
-  id        String   @id @default(uuid())
-  name      String
-  tags      String
-  rating    Float    @default(4.5)
-  image     String
-  rank      Int      @default(0)
-  featured  Boolean  @default(false)
+  id          String   @id @default(uuid())
+  name        String
+  tags        String
+  rating      Float    @default(4.5)
+  image       String
+  rank        Int      @default(0)
+  featured    Boolean  @default(false)
   // Detail-screen content (docs/REMEDIATION.md §8.19 — destination-details.tsx
   // previously rendered a hardcoded client-side DESTINATIONS_DATABASE
   // constant instead of the API). No reviews field: there is no real
@@ -1415,8 +1467,8 @@ model Destination {
   description String   @default("")
   gallery     String[] @default([])
   specialties Json     @default("[]")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   savedBy SavedDestination[]
 
@@ -1472,8 +1524,9 @@ enum StoryMediaType {
 }
 
 model TravelStory {
-  id           String   @id @default(uuid())
+  id           String         @id @default(uuid())
   userId       String?
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
   authorName   String
   authorAvatar String?
   title        String
@@ -1485,10 +1538,10 @@ model TravelStory {
   coverImg     String?
   mediaUrl     String?
   mediaType    StoryMediaType @default(IMAGE)
-  likesCount   Int      @default(0)
+  likesCount   Int            @default(0)
   location     String
-  hasReel      Boolean  @default(false)
-  createdAt    DateTime @default(now())
+  hasReel      Boolean        @default(false)
+  createdAt    DateTime       @default(now())
   views        StoryView[]
   likes        StoryLike[]
 }
@@ -1545,52 +1598,91 @@ enum QuoteStatus {
 // part from their wallet and the rest via Razorpay.
 
 enum TripPaymentOrderStatus {
-  CREATED    // Razorpay order created; waiting for the traveller to pay
-  PENDING    // Traveller has opened the checkout; payment in flight
-  CAPTURED   // Payment verified, token issued and seats held
-  FAILED     // Payment failed or expired
-  REFUNDED   // Fully refunded (rejection, trip full, or cancellation)
+  CREATED // Razorpay order created; waiting for the traveller to pay
+  PENDING // Traveller has opened the checkout; payment in flight
+  CAPTURED // Payment verified, token issued and seats held
+  FAILED // Payment failed or expired
+  REFUNDED // Fully refunded (rejection, trip full, or cancellation)
   PARTIALLY_REFUNDED // Part refunded under the cancellation policy
 }
 
 model TripPaymentOrder {
-  id                String                 @id @default(uuid())
-  joinRequestId     String                 @unique
-  joinRequest       JoinRequest            @relation(fields: [joinRequestId], references: [id], onDelete: Cascade)
-  userId            String
-  user              User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  amount            Decimal                @db.Decimal(12, 2)
-  gateway           String                 // 'RAZORPAY' | 'WALLET' | 'SPLIT'
-  razorpayOrderId   String?                @unique
-  razorpayPaymentId String?
-  status            TripPaymentOrderStatus @default(CREATED)
+  id                    String                 @id @default(uuid())
+  joinRequestId         String
+  joinRequest           JoinRequest            @relation("JoinRequestPaymentOrders", fields: [joinRequestId], references: [id], onDelete: Cascade)
+  currentOf             JoinRequest?           @relation("CurrentPaymentOrder")
+  userId                String
+  user                  User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount                Decimal                @db.Decimal(12, 2)
+  gateway               String // 'RAZORPAY' | 'WALLET' | 'SPLIT'
+  razorpayOrderId       String?                @unique
+  razorpayPaymentId     String?
+  status                TripPaymentOrderStatus @default(CREATED)
   // Client-generated UUIDv4 idempotency key (CONVENTIONS.md §5).
   // The initiate endpoint returns the existing row unchanged on a retry.
-  idempotencyKey    String                 @unique
-  walletDebit       Decimal?               @db.Decimal(12, 2)
-  gatewayDebit      Decimal?               @db.Decimal(12, 2)
+  idempotencyKey        String                 @unique
+  walletDebit           Decimal?               @db.Decimal(12, 2)
+  gatewayDebit          Decimal?               @db.Decimal(12, 2)
   // Escrow split, fixed when the order is created: the platform keeps 4.5%
   // of the amount; the organizer is owed the remaining 95.5%. Null on
   // orders created before the split existed.
-  platformFee       Decimal?               @db.Decimal(12, 2)
-  organizerAmount   Decimal?               @db.Decimal(12, 2)
+  platformFee           Decimal?               @db.Decimal(12, 2)
+  organizerAmount       Decimal?               @db.Decimal(12, 2)
   // Issued when payment is captured (e.g. TST-8F92A1). The organizer must
   // quote it back to allocate the traveller — proof the seat was paid for.
-  verificationToken     String?            @unique
-  isVerifiedByOrganizer Boolean            @default(false)
+  verificationToken     String?                @unique
+  isVerifiedByOrganizer Boolean                @default(false)
   verifiedAt            DateTime?
   // Cancellation refunds (services/trip-cancellation.ts).
-  refundedAmount    Decimal?               @db.Decimal(12, 2)
-  razorpayRefundId  String?
-  refundedAt        DateTime?
-  createdAt         DateTime               @default(now())
-  updatedAt         DateTime               @updatedAt
+  refundedAmount        Decimal?               @db.Decimal(12, 2)
+  razorpayRefundId      String?
+  refundedAt            DateTime?
+  // Razorpay's own refund status (refund.processed / refund.failed webhooks):
+  // PROCESSING | PROCESSED | FAILED.
+  refundStatus          String?
+  // Organizer payout via Razorpay Route (services/organizer-payouts.ts):
+  // NOT_APPLICABLE | AWAITING_ACCOUNT | PROCESSING | ON_HOLD | REVERSED |
+  // PARTIALLY_REVERSED | FAILED | MANUAL. Null until the booking is confirmed.
+  payoutStatus          String?
+  payoutAmount          Decimal?               @db.Decimal(12, 2)
+  razorpayTransferId    String?                @unique
+  // Razorpay releases the held transfer to the organizer's bank on this date.
+  payoutHoldUntil       DateTime?
+  payoutReversedAmount  Decimal?               @db.Decimal(12, 2)
+  payoutError           String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
 
+  @@index([joinRequestId])
   @@index([userId])
   @@index([status])
+  @@index([payoutStatus])
 }
 
-
+// An organizer's Razorpay Route linked account: where their share of every
+// booking is sent. Only masked bank and PAN details are kept here; the full
+// details live with Razorpay.
+model OrganizerPayoutAccount {
+  id                String   @id @default(uuid())
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  razorpayAccountId String   @unique
+  razorpayProductId String?
+  legalName         String
+  panMasked         String
+  email             String
+  phone             String
+  beneficiaryName   String
+  bankAccountLast4  String
+  ifsc              String
+  // Razorpay's Route activation status, e.g. activated / under_review /
+  // needs_clarification / suspended.
+  activationStatus  String   @default("created")
+  // Bank account check (penny drop): pending | verified | failed.
+  bankVerification  String   @default("pending")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
 
 // One row per person per story. Re-opening a story updates lastViewedAt
 // rather than adding a second row — a view count is how many people saw it,
@@ -1603,6 +1695,7 @@ model StoryView {
   storyId      String
   story        TravelStory @relation(fields: [storyId], references: [id], onDelete: Cascade)
   userId       String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   userName     String?
   userAvatar   String?
   createdAt    DateTime    @default(now())
@@ -1618,6 +1711,7 @@ model StoryLike {
   storyId    String
   story      TravelStory @relation(fields: [storyId], references: [id], onDelete: Cascade)
   userId     String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   userName   String?
   userAvatar String?
   createdAt  DateTime    @default(now())
@@ -1651,4 +1745,91 @@ model TripOrganizerAgreement {
   updatedAt                 DateTime @updatedAt
 
   @@index([organizerId])
+}
+
+model LegacyChatMediaErasure {
+  key String @id
+  createdAt DateTime @default(now())
+}
+
+model PrivacyMaintenanceState {
+  id String @id
+  readyAfter DateTime
+  inventoriedAt DateTime?
+  completedAt DateTime?
+  phase String @default("COPYING")
+}
+
+model UserBlock {
+  id String @id @default(uuid())
+  blockerId String
+  blockedId String
+  blocker User @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked User @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  @@unique([blockerId, blockedId])
+  @@index([blockedId])
+}
+model ContentAcceptance {
+  userId String @id
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  version String
+  acceptedAt DateTime @default(now())
+}
+model UserSafetyStatus {
+  userId String @id
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  suspended Boolean @default(false)
+  reason String
+  updatedAt DateTime @updatedAt
+}
+model SafetyReport {
+  id String @id @default(uuid())
+  reporterId String?
+  reporter User? @relation("Reporter", fields: [reporterId], references: [id], onDelete: SetNull)
+  kind String
+  targetId String
+  subjectUserId String?
+  reason String
+  details String
+  evidence Json
+  status String @default("OPEN")
+  resolution String?
+  reviewedBy String?
+  createdAt DateTime @default(now())
+  reviewedAt DateTime?
+  @@index([status, createdAt])
+  @@index([reporterId, kind, targetId])
+}
+model HiddenContent {
+  id String @id @default(uuid())
+  kind String
+  targetId String
+  reason String
+  reviewedBy String
+  createdAt DateTime @default(now())
+  @@unique([kind, targetId])
+}
+
+model ModeratorInvite {
+  tokenHash String @id
+  consumedAt DateTime?
+  consumedBy String?
+}
+
+model ReviewAccess {
+  userId String @id
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  travellerTripId String
+  organizerTripId String
+  createdAt DateTime @default(now())
+}
+model ModerationAction {
+  id String @id @default(uuid())
+  reportId String
+  actorId String
+  action String
+  note String
+  createdAt DateTime @default(now())
+  @@index([reportId, createdAt])
 }

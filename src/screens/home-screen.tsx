@@ -1,3 +1,5 @@
+import { useViewedStories } from '@/hooks/useViewedStories';
+import { unseenStoriesFirst } from '@/lib/story-view-state';
 import TripDetailModal from '@/components/TripDetailModal';
 import AccountStoriesModal from '@/components/AccountStoriesModal';
 import { CoverImage, ScreenEmpty, ScreenError, Skeleton, SkeletonCard } from '@/components/ui';
@@ -61,7 +63,6 @@ import {
   Dimensions,
   Platform,
   Easing,
-  Image,
   ImageBackground,
   Modal,
   Pressable,
@@ -614,7 +615,7 @@ function FeaturedTripsCarouselBase({
     onOpenTrip(trip);
   };
 
-  if (dataStatus.trips === 'loading') {
+  if (dataStatus.trips === 'loading' && trips.length === 0) {
     return (
       <View style={styles.carouselContainer}>
         <SkeletonCard />
@@ -696,7 +697,7 @@ function FeaturedTripsCarouselBase({
               {/* Left side: Image */}
               <View style={styles.tripImageContainer}>
                 {imageUri ? (
-                  <Image source={{ uri: imageUri }} style={styles.tripImage} />
+                  <ExpoImage cachePolicy="memory-disk" transition={0} source={{ uri: imageUri }} style={styles.tripImage} />
                 ) : (
                   <View style={[styles.tripImage, styles.tripImageFallback]}>
                     <MapPin size={18} color={C.textMuted} />
@@ -985,7 +986,7 @@ function TrendingDestinationsBase({ isFocused }: { isFocused: boolean }) {
               accessibilityLabel={t('home.destinationCardLabel', { name: dest.name, rating: dest.rating })}
             >
               {/* Full bleed cinematic photo */}
-              <Image
+              <ExpoImage cachePolicy="memory-disk" transition={0}
                 source={{ uri: highResImage }}
                 style={StyleSheet.absoluteFill}
                 resizeMode="cover"
@@ -1091,6 +1092,7 @@ function StoriesRailBase({
   const { t } = useTranslation();
   const router = useRouter();
   const { profile, storiesList, isLoggedIn, deletedStoryIds } = useApp();
+  const { viewedStoryIds } = useViewedStories(isLoggedIn ? profile.id : undefined);
 
   // Do not show or fetch stories if user is not signed in
   const feedQuery = useQuery({
@@ -1118,7 +1120,7 @@ function StoriesRailBase({
         feedItems.unshift({
           id: local.id,
           sourceType: 'STORY',
-          userId: profile.id,
+          userId: local.userId ?? undefined,
           title: local.title,
           content: local.content,
           coverImg: local.coverImg,
@@ -1132,8 +1134,10 @@ function StoriesRailBase({
         });
       }
     }
-    return feedItems;
-  }, [feed, storiesList, profile.id, deletedStoryIds]);
+    return feedItems
+      .filter((item) => item.sourceType !== 'STORY' || Date.parse(item.createdAt) > Date.now() - 86_400_000)
+      .map((item) => item.userId === profile.id ? { ...item, authorName: profile.name, authorAvatar: profile.avatar } : item);
+  }, [feed, storiesList, profile.id, profile.name, profile.avatar, deletedStoryIds]);
 
   const isUserStory = React.useCallback((item: FeedItem) => {
     if (item.userId && profile.id && item.userId === profile.id) return true;
@@ -1153,8 +1157,8 @@ function StoriesRailBase({
     [mergedFeed, isUserStory],
   );
   const otherStories = React.useMemo(
-    () => mergedFeed.filter((item) => item.sourceType === 'STORY' && !isUserStory(item)),
-    [mergedFeed, isUserStory],
+    () => unseenStoriesFirst(mergedFeed.filter((item) => item.sourceType === 'STORY' && !isUserStory(item)), viewedStoryIds),
+    [mergedFeed, isUserStory, viewedStoryIds],
   );
 
   // A signed-out visitor sees the same "no stories yet, tap + to share"
@@ -1202,9 +1206,9 @@ function StoriesRailBase({
       accessibilityRole="button"
       accessibilityLabel="View your story"
     >
-      <View style={styles.storyRingActive}>
+      <View style={[styles.storyRingActive, viewedStoryIds.has(myStory.id) && styles.storyRingViewed]}>
         {myStoryCover ? (
-          <Image source={{ uri: myStoryCover }} style={styles.storyImage} />
+          <ExpoImage cachePolicy="memory-disk" transition={0} source={{ uri: myStoryCover }} style={styles.storyImage} />
         ) : (
           <View style={styles.addStoryAvatarFallback}>
             <Camera size={24} color={C.blueText} strokeWidth={1.8} />
@@ -1225,7 +1229,7 @@ function StoriesRailBase({
     >
       <View style={styles.addStoryRing}>
         {avatarUri ? (
-          <Image source={{ uri: avatarUri }} style={styles.storyImage} />
+          <ExpoImage cachePolicy="memory-disk" transition={0} source={{ uri: avatarUri }} style={styles.storyImage} />
         ) : (
           <View style={styles.addStoryAvatarFallback}>
             <Camera size={24} color={C.blueText} strokeWidth={1.8} />
@@ -1297,14 +1301,14 @@ function StoriesRailBase({
           accessibilityRole="button"
           accessibilityLabel={t('home.storyLabel', { location: feedItemLabel(item, t) })}
         >
-          <View style={styles.storyRing}>
+          <View style={[styles.storyRing, viewedStoryIds.has(item.id) && styles.storyRingViewed]}>
             {/* The ring shows who posted (their real DP), not a preview of
                 the story itself — falls back to the story's own cover only
                 when the author has no avatar at all, then to a person
                 silhouette rather than a camera icon, which read as "add a
                 photo" on someone else's story. */}
             {item.authorAvatar || item.coverImg ? (
-              <Image source={{ uri: item.authorAvatar || item.coverImg || undefined }} style={styles.storyImage} />
+              <ExpoImage cachePolicy="memory-disk" transition={0} source={{ uri: item.authorAvatar || item.coverImg || undefined }} style={styles.storyImage} />
             ) : (
               <View style={[styles.storyImage, styles.storyImageFallback]}>
                 <User size={20} color={C.textMuted} strokeWidth={1.8} />
@@ -1433,6 +1437,12 @@ function HomeScreen() {
     enabled: isLoggedIn,
     refetchOnWindowFocus: false,
   });
+  const { refetch: refetchEnquiriesSummary } = enquiriesSummaryQuery;
+  useEffect(() => {
+    if (!isLoggedIn || !isFocused) return;
+    reloadIncomingRequestsCount();
+    void refetchEnquiriesSummary();
+  }, [isLoggedIn, isFocused, reloadIncomingRequestsCount, refetchEnquiriesSummary]);
   const pendingEnquiriesCount = enquiriesSummaryQuery.data?.totalUnread ?? 0;
   // Pending join requests waiting on this organizer's approve/decline, plus
   // unread enquiries — together they drive the red badge on the Organizer
@@ -1655,7 +1665,7 @@ function HomeScreen() {
                   accessibilityLabel={isLoggedIn ? t('home.profileLabel') : t('home.loginSignUp')}
                 >
                   {avatarUri ? (
-                    <Image source={{ uri: avatarUri }} style={styles.avatar} />
+                    <ExpoImage cachePolicy="memory-disk" transition={0} source={{ uri: avatarUri }} style={styles.avatar} />
                   ) : (
                     <View
                       style={[
@@ -3191,6 +3201,7 @@ const styles = StyleSheet.create({
     borderColor: '#FFFFFF',
     zIndex: 3,
   },
+  storyRingViewed: { borderColor: '#9CA3AF' },
   storyRing: {
     width: 72,
     height: 72,
@@ -3520,7 +3531,7 @@ function StoryComposerModal({ media, onClose, onPublish }: StoryComposerModalPro
                   nativeControls={false}
                 />
               ) : (
-                <Image
+                <ExpoImage cachePolicy="memory-disk" transition={0}
                   source={{ uri: media.uri }}
                   style={storyStyles.previewImage}
                   resizeMode="contain"

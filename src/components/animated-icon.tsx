@@ -5,6 +5,8 @@ import { useEffect, useState } from 'react';
 import { Animated, Dimensions, Modal, StyleSheet, View } from 'react-native';
 
 import { useApp } from '@/store/AppContext';
+import { useIsRestoring } from '@tanstack/react-query';
+import { prepareHomeLaunch } from '@/lib/prefetch-launch';
 
 // Short fade: during it the screen underneath is partly visible, which is
 // what read as 'the home screen appears behind the splash'.
@@ -41,7 +43,8 @@ const REDIRECT_FALLBACK_MS = 2500;
 const MIN_VISIBLE_MS = 1400;
 
 export function AnimatedSplashOverlay() {
-  const { sessionRestored, hasOnboarded } = useApp();
+  const { sessionRestored, hasOnboarded, isLoggedIn, profile } = useApp();
+  const isRestoring = useIsRestoring();
   const router = useRouter();
   const pathname = usePathname();
   const [visible, setVisible] = useState(true);
@@ -50,6 +53,19 @@ export function AnimatedSplashOverlay() {
   // splash must not sit there forever hiding a working app.
   const [redirectTimedOut, setRedirectTimedOut] = useState(false);
   const [minTimeDone, setMinTimeDone] = useState(false);
+  const [homeReady, setHomeReady] = useState(false);
+
+  useEffect(() => {
+    if (!sessionRestored || isRestoring || !hasOnboarded || !visible) return;
+    let cancelled = false;
+    // This is an upper bound, not an added minimum launch delay.
+    const timer = setTimeout(() => { if (!cancelled) setHomeReady(true); }, 2500);
+    void prepareHomeLaunch(isLoggedIn, profile.avatar).catch((error) => logger.warn('[Splash] Home warmup failed:', error)).finally(() => {
+      clearTimeout(timer);
+      if (!cancelled) setHomeReady(true);
+    });
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [sessionRestored, isRestoring, hasOnboarded, isLoggedIn, profile.avatar, visible]);
 
   useEffect(() => {
     const timer = setTimeout(() => setMinTimeDone(true), MIN_VISIBLE_MS);
@@ -68,7 +84,7 @@ export function AnimatedSplashOverlay() {
   }, [sessionRestored, hasOnboarded, router]);
 
   useEffect(() => {
-    if (!sessionRestored || coveredUntil || !minTimeDone) return;
+    if (!sessionRestored || isRestoring || coveredUntil || !minTimeDone || (hasOnboarded && !homeReady)) return;
     SplashScreen.hideAsync()
       .catch((e) => logger.warn('[Splash] hideAsync failed:', e))
       .finally(() => {
@@ -80,7 +96,7 @@ export function AnimatedSplashOverlay() {
           setVisible(false);
         });
       });
-  }, [sessionRestored, coveredUntil, minTimeDone, opacity]);
+  }, [sessionRestored, isRestoring, coveredUntil, minTimeDone, hasOnboarded, homeReady, opacity]);
 
   if (!visible) return null;
 

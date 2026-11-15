@@ -19,7 +19,7 @@ import Info from 'lucide-react-native/icons/info';
 import Ticket from 'lucide-react-native/icons/ticket';
 import TravellerDetailsForm from '@/components/booking/TravellerDetailsForm';
 import { ScreenError, ScreenLoading } from '@/components/ui/ScreenState';
-import { toast, useConfirm } from '@/lib/feedback';
+import { toast } from '@/lib/feedback';
 import { formatINR } from '@/lib/money';
 import { ApiError, apiService } from '@/services/api';
 import { openRazorpayCheckout } from '@/services/razorpay';
@@ -34,13 +34,11 @@ export default function TripPaymentScreen() {
   // autostart=1: arrived from "Proceed to Payment" — open the checkout at once.
   const params = useLocalSearchParams<{ joinRequestId: string; autostart?: string }>();
   const { refreshTrips, reloadJoinRequests } = useApp();
-  const confirm = useConfirm();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [order, setOrder] = useState<TripPaymentOrder | null>(null);
   const [payingGateway, setPayingGateway] = useState(false);
-  const [payingWallet, setPayingWallet] = useState(false);
   // Set once a payment succeeds: the receipt with the booking token is shown
   // in place of the payment methods. Paying never opens the group chat —
   // that follows the organizer's allocation.
@@ -54,7 +52,6 @@ export default function TripPaymentScreen() {
   // gets the form here first; the payment the traveller chose follows.
   const [detailsFormOpen, setDetailsFormOpen] = useState(false);
   const detailsSavedRef = useRef(false);
-  const afterDetailsRef = useRef<'gateway' | 'skip'>('gateway');
 
   const insets = useSafeAreaInsets();
   const topInset = Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 0);
@@ -87,10 +84,6 @@ export default function TripPaymentScreen() {
     loadOrder();
   }, [loadOrder]);
 
-  // ⚠️ DEVELOPMENT BYPASS — REMOVE BEFORE LAUNCH (with POST /trip-payments/pay).
-  // No money moves, but it runs the real post-payment flow: seat held,
-  // verification token issued, organizer notified to allocate. Only the
-  // paying step itself is skipped.
   const onPaid = (res: VerifyPaymentResult) => {
     setReceipt({ verificationToken: res.verificationToken, amount: res.amount });
     refreshTrips();
@@ -98,54 +91,15 @@ export default function TripPaymentScreen() {
   };
 
   const needsDetails = () => !detailsSavedRef.current && order?.travellerDetailsSubmitted === false;
-  const askForDetails = (next: 'gateway' | 'skip') => {
-    afterDetailsRef.current = next;
+  const askForDetails = () => {
     setDetailsFormOpen(true);
   };
   const isDetailsRequired = (err: unknown) => err instanceof ApiError && (err.code as string) === 'TRAVELLER_DETAILS_REQUIRED';
 
-  const handleSkipPayment = async (afterDetails = false) => {
-    if (!order || payingWallet) return;
-    if (needsDetails()) {
-      askForDetails('skip');
-      return;
-    }
-    // Already confirmed before the details form opened.
-    if (!afterDetails) {
-      const confirmed = await confirm({
-        title: 'Skip payment (testing)',
-        message:
-          'Continue without paying? Your booking goes through the real flow (seat held, token issued, organizer asked to allocate) with no money taken. Intended for testing only.',
-        confirmLabel: 'Skip & continue',
-        cancelLabel: 'Cancel',
-      });
-      if (!confirmed) return;
-    }
-
-    setPayingWallet(true);
-    try {
-      const res = await apiService.payTripDirect({ joinRequestId: order.joinRequestId });
-      if (res?.verificationToken) {
-        toast('Payment skipped (testing) — booking token issued.', 'success');
-        onPaid(res);
-      } else {
-        toast('Could not complete the booking. Please try again.', 'error');
-      }
-    } catch (err: any) {
-      if (isDetailsRequired(err)) {
-        askForDetails('skip');
-        return;
-      }
-      toast(err?.message || 'Could not skip payment', 'error');
-    } finally {
-      setPayingWallet(false);
-    }
-  };
-
   const handlePayRazorpay = async () => {
     if (!order || payingGateway) return;
     if (needsDetails()) {
-      askForDetails('gateway');
+      askForDetails();
       return;
     }
     setPayingGateway(true);
@@ -163,7 +117,7 @@ export default function TripPaymentScreen() {
     } catch (err) {
       setPayingGateway(false);
       if (isDetailsRequired(err)) {
-        askForDetails('gateway');
+        askForDetails();
         return;
       }
       if (err instanceof ApiError && err.statusCode === 503) {
@@ -255,8 +209,7 @@ export default function TripPaymentScreen() {
     setOrder((o) => (o ? { ...o, travellerDetailsSubmitted: true } : o));
     setDetailsFormOpen(false);
     // Carry on with the payment the traveller had started.
-    if (afterDetailsRef.current === 'skip') void handleSkipPayment(true);
-    else void handlePayRazorpay();
+    void handlePayRazorpay();
   };
 
   if (loading) {
@@ -436,20 +389,6 @@ export default function TripPaymentScreen() {
               </TouchableOpacity>
             </View>
 
-            <TouchableOpacity
-              style={styles.skipPaymentBtn}
-              onPress={() => void handleSkipPayment()}
-              disabled={payingWallet}
-              activeOpacity={0.8}
-              accessibilityRole="button"
-              accessibilityLabel="Skip payment for testing"
-            >
-              <Text style={styles.skipPaymentText}>Skip payment for now (testing)</Text>
-              <Text style={styles.skipPaymentSub}>
-                Development only — runs the real booking flow with no money taken
-              </Text>
-            </TouchableOpacity>
-
             {/* Guarantee Note */}
             <View style={styles.guaranteeBox}>
               <Info size={16} color={C.textMuted} />
@@ -482,27 +421,6 @@ const styles = StyleSheet.create({
   },
   noticeBoxError: { backgroundColor: C.roseGlow },
   noticeText: { flex: 1, fontSize: fontSize.sm, color: C.blueText, lineHeight: 19, fontWeight: fontWeight.semibold },
-  skipPaymentBtn: {
-    marginTop: 4,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: C.border,
-    backgroundColor: C.cardAlt,
-    alignItems: 'center',
-    gap: 2,
-  },
-  skipPaymentText: {
-    fontSize: 13.5,
-    fontWeight: '700',
-    color: C.textSec,
-  },
-  skipPaymentSub: {
-    fontSize: 11,
-    color: C.textMuted,
-  },
   safe: {
     flex: 1,
     backgroundColor: '#F8FAFC',

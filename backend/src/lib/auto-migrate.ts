@@ -27,6 +27,8 @@ import { logger } from './logger';
 const RERUNNABLE_MIGRATIONS = new Set([
   '20261011090000_paid_booking_allocation_flow',
   '20261023090000_join_request_traveller_details',
+  '20261025090000_organizer_payouts',
+  '20261029090000_payment_order_history',
 ]);
 const TIMEOUT_MS = 120_000;
 

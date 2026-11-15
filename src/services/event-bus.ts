@@ -9,6 +9,8 @@ export interface InAppNotif {
 }
 
 interface EventMap {
+  profileChanged: { userId: string };
+  safetyChanged: undefined;
   toggleNavbar: boolean;
   focusTripOnMap: string;
   inAppNotification: InAppNotif;

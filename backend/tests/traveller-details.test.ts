@@ -21,7 +21,7 @@ async function register(label: string): Promise<{ token: string; userId: string 
   emails.push(email);
   const res = await request(app)
     .post('/api/v1/auth/register')
-    .send({ name: label, email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
+    .send({ termsAccepted: true, name: label, email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
   expect(res.status).toBe(201);
   return { token: res.body.data.token, userId: res.body.data.user.id };
 }

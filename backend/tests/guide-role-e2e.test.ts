@@ -22,7 +22,7 @@ async function registerUser(label: string): Promise<{ token: string; userId: str
   emails.push(email);
   const res = await request(app)
     .post('/api/v1/auth/register')
-    .send({ name: label, email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
+    .send({ termsAccepted: true, name: label, email, phoneNumber: uniqueTestPhone(), password: 'correcthorsebattery' });
   expect(res.status).toBe(201);
   return { token: res.body.data.token, userId: res.body.data.user.id, email };
 }
@@ -168,6 +168,8 @@ describe('package CRUD survives a round trip', () => {
 
 describe('live location broadcast', () => {
   it('stores and reads back the guide pin', async () => {
+      const start = await request(app).post(`/api/v1/guides/${guideProfileId}/live-status/start`).set(auth(guideToken));
+      expect(start.status).toBe(200);
     const post = await request(app)
       .post(`/api/v1/guides/${guideProfileId}/live-status`)
       .set(auth(guideToken))

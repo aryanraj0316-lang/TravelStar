@@ -1,3 +1,5 @@
+import { useIdentityRevision } from '@/hooks/useIdentityRevision';
+import { usePrivateChatImage } from '@/hooks/use-private-chat-image';
 // WEBSITE COPY of src/app/(tabs)/chat.tsx. Expo Router uses this file for the
 // web build; Android keeps using chat.tsx (this one is bundled there as an
 // unused route file).
@@ -17,7 +19,6 @@ import { getCurrentDeviceLocation, getEmergencyDeviceLocation } from '@/lib/devi
 import { errorToastMessage, showAlert, showPrompt, toast, useConfirm } from '@/lib/feedback';
 import { logger } from '@/lib/logger';
 import { formatINR } from '@/lib/money';
-import { uploadFileToUrl } from '@/lib/upload';
 import { queryClient } from '@/lib/query-client';
 import { queryKeys } from '@/lib/query-keys';
 import { chatsQueryOptions } from '@/lib/prefetch-launch';
@@ -526,6 +527,7 @@ function MessageBubble({
 }) {
   const { t } = useTranslation();
   const hasTranslation = isTranslated;
+  const photoUri = usePrivateChatImage(msg.mediaUrl);
   const displayedContent = hasTranslation && msg.translations?.hindi ? msg.translations.hindi : msg.content;
   const isSOS =
     msg.type === 'sos' ||
@@ -754,14 +756,14 @@ function MessageBubble({
               <Pressable
                 style={styles.imageMediaWrapper}
                 onPress={() => {
-                  const uri = msg.mediaUrl || (msg.content && !msg.content.includes('📷') ? msg.content : undefined);
+                  const uri = photoUri;
                   if (uri) onOpenImage(uri);
                 }}
                 accessibilityRole="imagebutton"
                 accessibilityLabel={t('chat.viewImageLabel')}
               >
                 <Image
-                  source={{ uri: msg.mediaUrl || (msg.content && !msg.content.includes('📷') ? msg.content : undefined) }}
+                  source={{ uri: photoUri }}
                   style={styles.imageMedia}
                   resizeMode="cover"
                 />
@@ -946,6 +948,7 @@ function ChatScreen() {
   // removed-INITIAL_TRIP_MESSAGES comment above the CustomMessage/ChatRoom
   // interfaces for why this used to be seeded with fake conversations.
   const [tripMessages, setTripMessages] = useState<Record<string, CustomMessage[]>>({});
+  const identityRevision = useIdentityRevision();
 
   const chatsQuery = useQuery({
     ...chatsQueryOptions(),
@@ -1236,7 +1239,7 @@ function ChatScreen() {
           logger.warn('Failed to load chat messages:', e);
         });
     }
-  }, [selectedRoomId, profile.avatar, profile.id, profile.name, checkUnreadChats]);
+  }, [selectedRoomId, profile.avatar, profile.id, profile.name, checkUnreadChats, identityRevision]);
 
   // Tick updates for our own bubbles, batched per room by the server.
   useEffect(() => {
@@ -1602,7 +1605,7 @@ function ChatScreen() {
           logger.warn('Failed to fetch room details for members:', err);
         });
     }
-  }, [selectedTripId, selectedRoomId]);
+  }, [selectedTripId, selectedRoomId, identityRevision]);
 
   // Bottom attachments overlay
   const [isAttachmentOpen, setIsAttachmentOpen] = useState(false);
@@ -1727,12 +1730,16 @@ function ChatScreen() {
   };
   const [replyingToMessage, setReplyingToMessage] = useState<CustomMessage | null>(null);
   const [selectedMessageForOptions, setSelectedMessageForOptions] = useState<CustomMessage | null>(null);
+  useEffect(() => eventBus.on('safetyChanged', () => { setTripMessages({}); setInboxRooms([]); setSelectedTripId(''); }), []);
   const [messageInfoOpen, setMessageInfoOpen] = useState(false);
   const [messageInfoRows, setMessageInfoRows] = useState<MessageAudienceEntry[] | null>(null);
   const [messageInfoLoading, setMessageInfoLoading] = useState(false);
   const [messageInfoError, setMessageInfoError] = useState<string | null>(null);
   const [selectedRoomForOptions, setSelectedRoomForOptions] = useState<ChatRoom | null>(null);
   const [viewerImageUri, setViewerImageUri] = useState<string | null>(null);
+  // Clear private image bytes when the session or open chat changes.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { setViewerImageUri(null); }, [isLoggedIn, profile.id, selectedRoomId]);
   const [pinnedRoomIds, setPinnedRoomIds] = useState<Set<string>>(new Set());
   const [translatedMsgs, setTranslatedMsgs] = useState<Set<string>>(new Set());
 
@@ -2640,20 +2647,14 @@ function ChatScreen() {
         asset.mimeType === 'image/png' || asset.mimeType === 'image/webp' ? asset.mimeType : 'image/jpeg';
 
       setPhotoUploading(true);
-      let mediaUrl = asset.uri;
-
-      try {
-        const { uploadUrl, publicUrl } = await apiService.getChatMediaUploadUrl(contentType);
-        await uploadFileToUrl(asset.uri, uploadUrl, contentType);
-        if (publicUrl) mediaUrl = publicUrl;
-      } catch (uploadErr) {
-        logger.warn('[Chat] Remote storage upload not available; using data/local photo:', uploadErr);
-        if (asset.base64) {
-          mediaUrl = `data:${contentType};base64,${asset.base64}`;
-        } else {
-          mediaUrl = asset.uri;
-        }
-      }
+      if (!asset.base64) throw new Error('Could not read this photo. Choose it again.');
+      const rawRoomId = selectedRoomId?.replace(/^room-/, '');
+      const room = inboxRooms.find(r => r.id === rawRoomId || (r.tripId === selectedTripId && r.type === 'GROUP'));
+      const roomId = room?.id || rawRoomId;
+      if (!roomId) throw new Error('Open a chat before sending a photo.');
+      const uploaded = await apiService.uploadPrivateChatImage(roomId, contentType, asset.base64);
+      if (!uploaded?.mediaUrl) throw new Error('Photo upload failed.');
+      const mediaUrl = uploaded.mediaUrl;
 
       sendNewMessage({
         content: '',
@@ -3873,7 +3874,8 @@ function ChatScreen() {
             accessibilityLabel={t('common.close')}
           />
           <View style={styles.optionsModalContent}>
-            <View style={styles.optionsHeaderRow}>
+            <TouchableOpacity accessibilityRole="button" style={{ padding: 16, minHeight: 44 }} onPress={() => { const id = selectedMessageForOptions?.id; if (!id) return; setSelectedMessageForOptions(null); router.push({ pathname: '/safety-center', params: { kind: 'MESSAGE', targetId: id } }); }}><Text style={{ color: '#145ac4', fontWeight: '700' }}>Report message / block sender</Text></TouchableOpacity>
+              <View style={styles.optionsHeaderRow}>
               <Text style={styles.optionsHeaderTitle} numberOfLines={1}>
                 {t('chat.messageOptions')}
               </Text>

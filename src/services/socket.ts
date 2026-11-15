@@ -94,7 +94,10 @@ class SocketService {
         },
       });
 
-      this.socket.on('connect', () => {});
+      // Catch up identity edits made while this device was offline.
+      this.socket.on('connect', () => eventBus.emit('profileChanged', { userId: '' }));
+      this.socket.on('safetyChanged', () => eventBus.emit('safetyChanged', undefined));
+      this.socket.on('profileChanged', (data: { userId: string }) => eventBus.emit('profileChanged', data));
 
       this.socket.on(
         'messageReceived',

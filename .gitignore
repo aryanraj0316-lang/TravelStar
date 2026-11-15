@@ -51,3 +51,7 @@ example
 *.aab
 backend/uploads/
 uploads/
+
+# Isolated privacy release and synthetic test database
+/backend/privacy-release-20261106/
+/backend/privacy-test-runtime/

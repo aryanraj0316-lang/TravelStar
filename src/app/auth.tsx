@@ -1,3 +1,4 @@
+import { AuthModeBookmark } from '@/components/AuthModeBookmark';
 import React, { useState, useEffect, useRef } from 'react';
 import { indianMobileError, normalizeIndianMobile } from '@/lib/indian-phone';
 import { useTranslation } from 'react-i18next';
@@ -26,7 +27,6 @@ import Svg, {
   RadialGradient,
   Stop,
   Rect,
-  LinearGradient as SvgLinearGradient,
 } from 'react-native-svg';
 import ArrowLeft from 'lucide-react-native/icons/arrow-left';
 import Mail from 'lucide-react-native/icons/mail';
@@ -60,47 +60,6 @@ interface FieldErrors {
 }
 
 // ─── Deep Bluish Swallow-Tail Bookmark Ribbon ─────────────────────────────────
-function BookmarkRibbon({
-  width = 248,
-  height = 42,
-}: {
-  width?: number;
-  height?: number;
-}) {
-  const notch = 16;
-
-  return (
-    <Svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={StyleSheet.absoluteFill} pointerEvents="none">
-      <Defs>
-        <SvgLinearGradient id="ribbonBg" x1="0%" y1="0%" x2="100%" y2="0%">
-          <Stop offset="0%" stopColor="#081635" />
-          <Stop offset="25%" stopColor="#0E2A68" />
-          <Stop offset="65%" stopColor="#1E40AF" />
-          <Stop offset="100%" stopColor="#1D4ED8" />
-        </SvgLinearGradient>
-      </Defs>
-
-      {/* Swallow-tail ribbon body: fully transparent in the notch cutout */}
-      <Path
-        d={`M 0 0 L ${width} 0 L ${width} ${height} L 0 ${height} L ${notch} ${height / 2} Z`}
-        fill="url(#ribbonBg)"
-      />
-
-      {/* Solid Top & Bottom Edge Accents */}
-      <Path d={`M 0 0 L ${width} 0`} stroke="rgba(147, 197, 253, 0.45)" strokeWidth={1.5} />
-      <Path d={`M 0 ${height} L ${width} ${height}`} stroke="rgba(147, 197, 253, 0.45)" strokeWidth={1.5} />
-
-      {/* Swallow-tail notch chevron accent stroke */}
-      <Path
-        d={`M 0 0 L ${notch} ${height / 2} L 0 ${height}`}
-        stroke="rgba(147, 197, 253, 0.75)"
-        strokeWidth={1.8}
-        fill="none"
-      />
-    </Svg>
-  );
-}
-
 // ─── Tourist Backpacker Icon ────────────────────────────────────
 function TouristIcon({ color }: { color: string }) {
   return (
@@ -129,9 +88,6 @@ const HEADER_BANNER_HEIGHT = Math.max(
 // instead of under it; on a tall banner nothing moves.
 const BACK_BUTTON_TOP = Platform.OS === 'ios' ? 40 : 46;
 const HEADER_COPY_LEFT = HEADER_BANNER_HEIGHT < 175 ? 76 : 20;
-
-const BOOKMARK_WIDTH = 268;
-const BOOKMARK_HEIGHT = 46;
 
 interface RoleOption {
   id: UserRole;
@@ -184,6 +140,7 @@ export default function AuthScreen() {
   const [mode, setMode] = useState<'LOGIN' | 'SIGNUP'>(initialMode);
   const [selectedRole, setSelectedRole] = useState<UserRole>(currentRole || 'TOURIST');
 
+  const [rulesAccepted, setRulesAccepted] = useState(false);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -194,8 +151,6 @@ export default function AuthScreen() {
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   // How far the window shrank. Android runs adjustResize, so anything
   // anchored to the bottom is lifted by exactly this much when the keyboard
-  // opens — which is what dragged the bookmark up over the form.
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const keyboardOpen = isKeyboardVisible;
 
   const scrollViewRef = useRef<ScrollView>(null);
@@ -210,7 +165,6 @@ export default function AuthScreen() {
 
     const showSub = Keyboard.addListener(showEvent, (e) => {
       setIsKeyboardVisible(true);
-      setKeyboardHeight(e?.endCoordinates?.height ?? 0);
       if (passwordInputRef.current?.isFocused?.()) {
         setTimeout(() => {
           scrollViewRef.current?.scrollToEnd({ animated: true });
@@ -227,7 +181,6 @@ export default function AuthScreen() {
     });
     const hideSub = Keyboard.addListener(hideEvent, () => {
       setIsKeyboardVisible(false);
-      setKeyboardHeight(0);
       scrollViewRef.current?.scrollTo({ y: 0, animated: true });
     });
 
@@ -278,6 +231,7 @@ export default function AuthScreen() {
   };
 
   const handleFormSubmit = async () => {
+    if (mode === 'SIGNUP' && !rulesAccepted) { toast('Read and accept the Terms and content rules before creating an account.', 'error'); return; }
     const validationErrors = validateFields();
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
@@ -487,18 +441,13 @@ export default function AuthScreen() {
       >
         <ScrollView
           ref={scrollViewRef}
-          scrollEnabled={keyboardOpen}
+          scrollEnabled
           bounces={false}
           overScrollMode="never"
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={[
             styles.scrollContent,
-            // Reserve the strip the bookmark ribbon occupies. It is
-            // absolutely positioned against the screen, so it is outside
-            // this content's flow and used to sit on top of whatever the
-            // card ended with. Height (42) + its bottom offset + a gap.
-            { paddingBottom: BOOKMARK_HEIGHT + Math.max(insets.bottom, 14) + 14 + 16 },
             keyboardOpen && styles.scrollContentKeyboardOpen,
           ]}
         >
@@ -550,7 +499,7 @@ export default function AuthScreen() {
                 <Text style={styles.headerBottomLeftSubtitle}>
                   {mode === 'LOGIN'
                     ? 'Sign in to access your saved trips and bookings.'
-                    : 'Join 50,000+ travelers and guides across India.'}
+                    : 'Connect with travelers and guides across India.'}
                 </Text>
               </View>
             </View>
@@ -851,6 +800,25 @@ export default function AuthScreen() {
                 </TouchableOpacity>
               </View>
 
+              {mode === 'SIGNUP' && (
+                <View style={styles.rulesCard}>
+                  <Text style={styles.rulesHeading}>Community guidelines</Text>
+                  <Text style={styles.rulesCopy}>
+                    No nudity or sexual exploitation, graphic violence, hate, threats, harassment, scams, illegal activity, or sharing private information. Reports are reviewed; content may be removed and accounts may be suspended.
+                  </Text>
+                  <TouchableOpacity
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: rulesAccepted }}
+                    onPress={() => setRulesAccepted((accepted) => !accepted)}
+                    style={styles.rulesAcceptRow}
+                  >
+                    <View style={[styles.rulesCheckbox, rulesAccepted && styles.rulesCheckboxChecked]}>
+                      {rulesAccepted ? <Check size={14} color="#FFFFFF" strokeWidth={3} /> : null}
+                    </View>
+                    <Text style={styles.rulesAcceptText}>I accept the Terms and content rules</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
               {/* Terms & Privacy Notice */}
               <View style={styles.disclaimerWrap}>
                 <Text style={styles.disclaimerText}>
@@ -871,52 +839,29 @@ export default function AuthScreen() {
                   .
                 </Text>
               </View>
+
+              <TouchableOpacity
+                onPress={() => {
+                  setMode(mode === 'LOGIN' ? 'SIGNUP' : 'LOGIN');
+                  setErrors({});
+                }}
+                style={styles.modeSwitchButton}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel={mode === 'LOGIN' ? 'Switch to Sign Up' : 'Switch to Log In'}
+              >
+                <AuthModeBookmark
+                  label={mode === 'LOGIN' ? t('auth.noAccountYet') : t('auth.alreadyRegistered')}
+                  action={mode === 'LOGIN' ? t('auth.createOneNow') : t('auth.switchToLogIn')}
+                />
+              </TouchableOpacity>
             </View>
 
           </View>
 
-          {/* Reserved vertical clearance only needed when keyboard is active to keep fields clear */}
-          <View style={{ height: keyboardOpen ? 120 : 0 }} />
         </ScrollView>
       </KeyboardAvoidingView>
-
-      {/* ── Deep Bluish Bookmark, pinned to the bottom-right ──
-          Always mounted and always at the same offset. It used to be
-          unmounted whenever the keyboard opened (`!isKeyboardVisible &&`),
-          so it vanished mid-typing and popped back afterwards. It is
-          absolutely positioned against the screen, so it holds its place
-          instead of being shoved around by the form reflowing above it. */}
-      <TouchableOpacity
-          onPress={() => {
-            setMode(mode === 'LOGIN' ? 'SIGNUP' : 'LOGIN');
-            setErrors({});
-          }}
-          style={[
-            styles.screenBookmarkTab,
-            {
-              height: BOOKMARK_HEIGHT,
-              bottom: Math.max(insets.bottom, 14) + 14 - (keyboardOpen ? keyboardHeight : 0),
-            },
-          ]}
-          // Not tappable while it sits behind the keyboard — a tap there is
-          // aimed at the keyboard, not at switching mode.
-          disabled={keyboardOpen}
-          activeOpacity={0.88}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          accessibilityRole="button"
-          accessibilityLabel={mode === 'LOGIN' ? 'Switch to Sign Up' : 'Switch to Log In'}
-        >
-          <BookmarkRibbon width={BOOKMARK_WIDTH} height={BOOKMARK_HEIGHT} />
-          <View style={styles.bookmarkContent}>
-            <Text style={styles.bookmarkLabel} numberOfLines={1}>
-              {mode === 'LOGIN' ? t('auth.noAccountYet') : t('auth.alreadyRegistered')}
-            </Text>
-            <Text style={styles.bookmarkAction} numberOfLines={1}>
-              {mode === 'LOGIN' ? t('auth.createOneNow') : t('auth.switchToLogIn')} →
-            </Text>
-          </View>
-      </TouchableOpacity>
-    </SafeAreaView>
+</SafeAreaView>
   );
 }
 
@@ -937,8 +882,6 @@ const styles = StyleSheet.create({
 
   // ── Top Navigation Bar ──
   // Floats OVER the card rather than taking a row above it: that row cost
-  // ~58px of height that the form needed, which is what pushed the submit
-  // button down into the bookmark ribbon.
   topBar: {
     position: 'absolute',
     top: 0,
@@ -996,60 +939,24 @@ const styles = StyleSheet.create({
     }),
   },
 
-  // ── Deep Bluish Bookmark Hanging Off the Screen from Right Side Below the Form ──
-  screenBookmarkTab: {
-    position: 'absolute',
-    right: 0,
-    bottom: 56,
-    width: 248,
-    height: 42,
-    zIndex: 99,
-    shadowColor: '#1D4ED8',
-    shadowOffset: { width: -3, height: 4 },
-    shadowOpacity: 0.55,
-    shadowRadius: 10,
-    elevation: 8,
-    ...Platform.select({
-      web: {
-        outlineWidth: 0,
-        clipPath: 'polygon(16px 50%, 0% 0%, 100% 0%, 100% 100%, 0% 100%)',
-        WebkitClipPath: 'polygon(16px 50%, 0% 0%, 100% 0%, 100% 100%, 0% 100%)',
-        WebkitTapHighlightColor: 'transparent',
-        cursor: 'pointer',
-      } as unknown as ViewStyle,
-    }),
-  },
-  // Stacked, not side by side: the two strings shared one 248px row and
-  // both got ellipsised once they were translated ("Don't have an accou…
-  // Create one no…"). Stacking gives each the ribbon's full width, which
-  // also absorbs the longer Indian-language wordings.
-  bookmarkContent: {
-    width: BOOKMARK_WIDTH,
-    height: BOOKMARK_HEIGHT,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingLeft: 26,
-    paddingRight: 14,
-  },
-  bookmarkLabel: {
-    fontSize: 11,
-    color: '#BFDBFE',
-    fontWeight: '500',
-    textShadowColor: 'rgba(0, 0, 0, 0.35)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
-  },
-  bookmarkAction: {
-    fontSize: 11.5,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: 0.2,
-    textShadowColor: 'rgba(0, 0, 0, 0.45)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
-  },
-
   // ── Header Airplane Image Banner ──
+  rulesCard: {
+    marginTop: 16,
+    padding: 14,
+    gap: 9,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#DCE6F2',
+    backgroundColor: '#F8FAFC',
+  },
+  rulesHeading: { color: '#1E293B', fontSize: 13, fontWeight: '800' },
+  rulesCopy: { color: '#43536C', fontSize: 12.5, lineHeight: 18, flexShrink: 1 },
+  rulesAcceptRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  rulesCheckbox: { width: 20, height: 20, borderWidth: 1.5, borderColor: '#64748B', borderRadius: 5, alignItems: 'center', justifyContent: 'center' },
+  rulesCheckboxChecked: { backgroundColor: '#145AC4', borderColor: '#145AC4' },
+  rulesAcceptText: { flex: 1, color: '#145AC4', fontSize: 13, fontWeight: '700', lineHeight: 18 },
+  modeSwitchButton: { alignSelf: 'flex-end', width: '100%', maxWidth: 268, marginTop: 16 },
+
   headerBanner: {
     width: '100%',
     height: HEADER_BANNER_HEIGHT,

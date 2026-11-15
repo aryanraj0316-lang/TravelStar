@@ -21,10 +21,11 @@ import app from '../src/app';
 describe('GET /api/v1/weather/live', () => {
   it('is publicly reachable with no token', async () => {
     const res = await request(app).get('/api/v1/weather/live?lat=28.61&lon=77.21');
-    // 200 with a reading, or 502 when the upstream is unreachable. Never 401:
+    // 200 with a reading, 502 upstream failure, or 503 without provider config. Never 401:
     // a logged-out visitor must be able to see local weather.
     expect(res.status).not.toBe(401);
-    expect([200, 502]).toContain(res.status);
+    expect([200, 502, 503]).toContain(res.status);
+    if (res.status === 503) expect(res.body.error.code).toBe('WEATHER_UNAVAILABLE');
   });
 
   it('rejects missing coordinates with a 400, not a guess', async () => {

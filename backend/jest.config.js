@@ -5,6 +5,7 @@ module.exports = {
   rootDir: '.',
   testMatch: ['<rootDir>/tests/**/*.test.ts'],
   setupFiles: ['<rootDir>/tests/setup.ts'],
+  setupFilesAfterEnv: ['<rootDir>/tests/cleanup.ts'],
   // Integration suites talk to a remote Postgres (Neon in dev, a service
   // container in CI). 20s was too tight once several suites run back to
   // back and cold-start latency stacks up — every suite passes in
