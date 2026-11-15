@@ -206,11 +206,11 @@ router.post('/initiate', async (req: Request, res: Response) => {
         keyId: env.RAZORPAY_KEY_ID,
       },
     });
-  } catch (err: any) {
+  } catch (err) {
     logger.warn('[TripPayments] Initiate order failed:', err);
     return res.status(500).json({
       ok: false,
-      error: { code: 'INTERNAL', message: err.message || 'Failed to initiate payment' },
+      error: { code: 'INTERNAL', message: err instanceof Error ? err.message : 'Failed to initiate payment' },
     });
   }
 });
@@ -271,6 +271,7 @@ const directPaySchema = z.object({
 });
 
 router.post('/pay', async (req: Request, res: Response) => {
+  if (!testPaymentsAllowed()) return res.status(403).json({ ok: false, error: { code: 'TEST_PAYMENTS_DISABLED', message: 'Please pay to complete your booking.' } });
   const parsed = directPaySchema.safeParse(req.body);
   if (!parsed.success) return validationError(res, parsed.error.issues);
 
@@ -432,7 +433,7 @@ router.post('/webhook', async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: { code: 'MISSING_SIGNATURE', message: 'Missing x-razorpay-signature header' } });
   }
 
-  const rawBody = (req as any).rawBody;
+  const rawBody = req.rawBody;
   if (!rawBody) {
     return res.status(400).json({ ok: false, error: { code: 'NO_RAW_BODY', message: 'Raw body required for HMAC verification' } });
   }

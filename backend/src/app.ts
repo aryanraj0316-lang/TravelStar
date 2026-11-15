@@ -64,7 +64,7 @@ app.use(
     referrerPolicy: { policy: 'no-referrer' },
     noSniff: true,
     frameguard: { action: 'deny' },
-  })
+  }),
 );
 
 app.use(
@@ -84,7 +84,7 @@ app.use(
       return callback(corsError);
     },
     credentials: true,
-  })
+  }),
 );
 
 // JSON endpoints do not need 10mb. Media uploads get their own limit when
@@ -96,7 +96,7 @@ app.use(
 // the original.
 app.use(compression({ threshold: 1024 }));
 
-const captureRawBody = (req: any, _res: any, buf: Buffer) => {
+const captureRawBody = (req: import('express').Request, _res: import('express').Response, buf: Buffer) => {
   req.rawBody = buf.toString();
 };
 
@@ -125,9 +125,14 @@ app.use(express.urlencoded({ extended: true, limit: '256kb' }));
 // not just uploads.
 const uploadDir = path.join(process.cwd(), 'uploads');
 try {
-  if (!fs.existsSync(uploadDir)) { fs.mkdirSync(uploadDir, { recursive: true }); }
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  }
 } catch (err) {
-  logger.warn('[App] Could not create local uploads/ directory — the object-storage-unconfigured upload fallback will be unavailable:', err);
+  logger.warn(
+    '[App] Could not create local uploads/ directory — the object-storage-unconfigured upload fallback will be unavailable:',
+    err,
+  );
 }
 app.use('/uploads', express.static(uploadDir));
 

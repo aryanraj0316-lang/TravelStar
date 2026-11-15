@@ -1,3 +1,4 @@
+/* eslint-disable no-console -- This standalone diagnostic intentionally prints its report. */
 import prisma from '../services/db';
 import { isObjectStorageConfigured } from '../lib/object-storage';
 

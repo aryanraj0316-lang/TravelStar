@@ -30,12 +30,11 @@ async function registerUser(label: string): Promise<{ token: string; userId: str
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 
 let guideToken: string;
-let guideUserId: string;
 let otherToken: string;
 let guideProfileId: string;
 
 beforeAll(async () => {
-  ({ token: guideToken, userId: guideUserId } = await registerUser('Guide Applicant'));
+  ({ token: guideToken } = await registerUser('Guide Applicant'));
   ({ token: otherToken } = await registerUser('Unrelated User'));
 });
 
