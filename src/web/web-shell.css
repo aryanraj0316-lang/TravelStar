@@ -148,7 +148,7 @@
     display: flex;
     align-items: center;
     gap: 16px;
-    height: 50px;
+    height: 44px;
     padding: 0 14px;
     border-radius: 14px;
     color: var(--ts-ink-2);
@@ -319,10 +319,10 @@
 /* ── 1264px and up: full sidebar with labels ─────────────────────────── */
 @media (min-width: 1264px) {
   :root {
-    --ts-rail-w: 248px;
+    --ts-rail-w: 216px;
   }
   .ts-rail {
-    padding: 26px 16px 18px;
+    padding: 22px 12px 16px;
   }
   #root .ts-brand-word {
     display: inline;
@@ -331,7 +331,7 @@
     display: inline;
   }
   .ts-nav-item.is-active::before {
-    inset-inline-start: -16px;
+    inset-inline-start: -12px;
   }
   .ts-nav-item.is-primary {
     justify-content: flex-start;

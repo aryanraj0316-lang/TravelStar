@@ -1892,7 +1892,7 @@ function HomeScreen() {
   // ── Website layout (≥768px). Below that, the phone layout further down
   // renders unchanged. Same state, same handlers, same modals.
   if (web.isDesktop) {
-    const heroHeight = web.twoCol ? 380 : 320;
+    const heroHeight = web.twoCol ? 300 : 260;
 
     const quickAccessList = (
       <View style={webStyles.sideCard}>
@@ -4512,7 +4512,7 @@ const STICKY = { position: 'sticky', top: 28 } as unknown as ViewStyle;
 const webStyles = StyleSheet.create({
   page: {
     alignItems: 'center',
-    paddingTop: 28,
+    paddingTop: 24,
     paddingBottom: 72,
   },
 
@@ -4528,8 +4528,8 @@ const webStyles = StyleSheet.create({
     borderRadius: 28,
   },
   heroCopy: {
-    paddingHorizontal: 44,
-    paddingBottom: 92,
+    paddingHorizontal: 32,
+    paddingBottom: 76,
     maxWidth: 680,
   },
   heroEyebrow: {
@@ -4542,8 +4542,8 @@ const webStyles = StyleSheet.create({
   },
   heroName: {
     color: '#FFFFFF',
-    fontSize: 56,
-    lineHeight: 62,
+    fontSize: 44,
+    lineHeight: 50,
     fontWeight: '600',
     letterSpacing: -1.2,
   },
@@ -4553,9 +4553,9 @@ const webStyles = StyleSheet.create({
   },
   heroSub: {
     color: 'rgba(255, 255, 255, 0.86)',
-    fontSize: 18,
-    lineHeight: 26,
-    marginTop: 12,
+    fontSize: 16,
+    lineHeight: 24,
+    marginTop: 8,
   },
   heroLogin: {
     position: 'absolute',
@@ -4583,9 +4583,9 @@ const webStyles = StyleSheet.create({
   roleRow: {
     flexDirection: 'row',
     gap: 16,
-    paddingHorizontal: 28,
-    marginTop: -58,
-    marginBottom: 36,
+    paddingHorizontal: 20,
+    marginTop: -44,
+    marginBottom: 24,
     zIndex: 2,
   },
   roleCard: {
@@ -4594,8 +4594,8 @@ const webStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
-    paddingVertical: 18,
-    paddingHorizontal: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
     borderRadius: 20,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
@@ -4611,8 +4611,8 @@ const webStyles = StyleSheet.create({
     shadowOpacity: 0.16,
   },
   roleIcon: {
-    width: 46,
-    height: 46,
+    width: 40,
+    height: 40,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
@@ -4653,8 +4653,8 @@ const webStyles = StyleSheet.create({
   },
   sectionTitle: {
     color: INK,
-    fontSize: 30,
-    lineHeight: 36,
+    fontSize: 26,
+    lineHeight: 32,
     fontWeight: '600',
     letterSpacing: -0.6,
   },

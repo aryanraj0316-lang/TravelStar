@@ -22,7 +22,7 @@ export function useHydrated(): boolean {
 export const WEB_DESKTOP_MIN = 768;
 export const WEB_WIDE_MIN = 1264;
 const RAIL_COMPACT = 76;
-const RAIL_WIDE = 248;
+const RAIL_WIDE = 216;
 
 export type WebLayout = {
   /** True from 768px up, once hydrated. Below that the phone layout renders. */
