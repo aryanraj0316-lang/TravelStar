@@ -14,7 +14,7 @@ const assert = require('node:assert/strict');
     await p.goto(web + '/');
     await p.locator('.ts-shell[data-session-ready=true]').waitFor();
     await p.locator('.ts-menu-toggle').click();
-    await p.locator('.ts-rail-cta a').click();
+    await p.locator('.ts-mobile-create a').click();
     const dialog = p.getByRole('dialog');
     await dialog.waitFor();
     assert.equal(new URL(p.url()).pathname, '/');

@@ -188,6 +188,16 @@ function WebSidebar({ pathname }: { pathname: string }) {
         <span className="ts-brand-word">Yatrenzo</span>
       </a>
 
+      <div className="ts-mobile-create">
+        <NavItem
+          href="/create"
+          label={t('nav.create')}
+          active={activeTab === 'create'}
+          onActivate={() => goTab('create')}
+          icon={<Plus size={20} color="#FFFFFF" />}
+          variant="primary"
+        />
+      </div>
       <div
         id="ts-navigation-menu"
         className="ts-navigation-menu"

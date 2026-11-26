@@ -609,3 +609,27 @@ body select {
   flex-direction: column;
   justify-content: center;
 }
+
+.ts-mobile-create {
+  display: none;
+}
+@media (max-width: 767px) {
+  .ts-rail {
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+  }
+  .ts-mobile-create {
+    display: block;
+    grid-column: 3;
+    grid-row: 1;
+  }
+  .ts-mobile-create .ts-nav-item {
+    padding: 0 12px;
+    font-size: 13px;
+  }
+  .ts-mobile-create .ts-nav-icon {
+    display: none;
+  }
+  .ts-navigation-menu .ts-rail-cta {
+    display: none;
+  }
+}
