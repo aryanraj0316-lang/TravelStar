@@ -1413,7 +1413,7 @@ function WebFeaturedTripsBase({
 
   if (uniqueTrips.length === 0) {
     return (
-      <View style={[styles.emptyTripCard, webStyles.emptyCard]}>
+      <View {...({ dataSet: { desktopTripEmpty: "true" } } as object)} style={[styles.emptyTripCard, webStyles.emptyCard]}>
         <View style={styles.emptyTripIconCircle}>
           <Users size={20} color="#64748B" strokeWidth={1.8} />
         </View>
@@ -1895,7 +1895,7 @@ function HomeScreen() {
     const heroHeight = 220;
 
     const quickAccessList = (
-      <View style={webStyles.sideCard}>
+      <View {...({ dataSet: { desktopQuickAccess: "true" } } as object)} style={webStyles.sideCard}>
         <Text style={webStyles.sideCardTitle}>{t('web.quickAccess')}</Text>
         {quickAccessItems.map((item, index) => {
           const iconBg = index === 0 ? '#EFF6FF' : index === 1 ? '#F5F3FF' : index === 2 ? '#FFF7ED' : '#ECFDF5';
@@ -1952,6 +1952,7 @@ function HomeScreen() {
 
     const mainSections = (
       <>
+        <View {...({ dataSet: { desktopHomePanel: "stories" } } as object)}>
         <WebSectionHeader
           title={t('home.reelsAndStories')}
           action={
@@ -1978,12 +1979,25 @@ function HomeScreen() {
             <StoriesRail avatarUri={avatarUri} onAddStory={handleAddStoryPress} />
           </View>
         ) : (
-          <View style={{ height: 4 }} />
+          web.isMobile ? <View style={{ height: 4 }} /> : <TouchableOpacity
+            {...({ dataSet: { desktopStoryInvite: "true" } } as object)}
+            onPress={() => setAuthReason('STORY')} accessibilityRole="button" accessibilityLabel={t('home.shareStoryModalTitle')}
+          >
+            <View style={webStyles.storyInviteIcon}><Camera size={22} color="#2563EB" /></View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={webStyles.storyInviteTitle}>{t('home.shareStoryModalTitle')}</Text>
+              <Text style={webStyles.storyInviteCopy}>{t('home.shareStoryBenefit1')}</Text>
+            </View>
+            <ChevronRight size={18} color="#64748B" />
+          </TouchableOpacity>
         )}
+        </View>
 
         {web.isMobile && quickAccessTiles}
+        <View {...({ dataSet: { desktopHomePanel: "trips" } } as object)}>
         <WebSectionHeader title={t('home.featuredGroupTrips')} />
-        <WebFeaturedTrips width={web.main} onOpenTrip={handleOpenTrip} onRequestAuth={requestAuth} />
+        <WebFeaturedTrips width={web.main - (web.isMobile ? 0 : 40)} onOpenTrip={handleOpenTrip} onRequestAuth={requestAuth} />
+        </View>
 
         <WebSectionHeader title={t('home.trendingDestinations')} />
         <WebTrendingDestinations width={web.main} />
@@ -2007,10 +2021,11 @@ function HomeScreen() {
             />
           }
         >
-          <View style={{ width: web.content }}>
+          <View {...({ dataSet: { desktopHome: "true" } } as object)} style={{ width: web.content }}>
             {/* Masthead: the same time-of-day artwork as the phone header */}
             <ImageBackground
               source={headerTheme.source}
+              {...({ dataSet: { desktopHomeHero: "true" } } as object)}
               style={[webStyles.hero, { height: heroHeight }]}
               imageStyle={webStyles.heroImage}
               resizeMode="cover"
@@ -2059,7 +2074,8 @@ function HomeScreen() {
             </ImageBackground>
 
             {/* Role switcher, overlapping the masthead */}
-            <View style={[webStyles.roleRow, web.isMobile && { flexDirection: 'column', marginTop: 12, paddingHorizontal: 0, gap: 8 }]}>
+            <View {...({ dataSet: { desktopHomeRoles: "true" } } as object)}
+              style={[webStyles.roleRow, web.isMobile && { flexDirection: 'column', marginTop: 12, paddingHorizontal: 0, gap: 8 }]}>
               {roles.map((role) => {
                 const isActive = currentRole === role.value;
                 const iconBg =
@@ -4517,6 +4533,9 @@ const webStyles = StyleSheet.create({
     paddingBottom: 72,
   },
 
+  storyInviteIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center' },
+  storyInviteTitle: { fontSize: 15, lineHeight: 22, fontWeight: '600', color: INK },
+  storyInviteCopy: { fontSize: 13, lineHeight: 20, color: C.textSec, marginTop: 2 },
   // Masthead
   hero: {
     width: '100%',
