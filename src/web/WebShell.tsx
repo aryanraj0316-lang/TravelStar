@@ -315,7 +315,7 @@ export function WebShell({ children }: { children: React.ReactNode }) {
     if (!signInOpen && dialogRef.current?.open) dialogRef.current?.close();
   }, [signInOpen]);
   const guardGuestAction = (event: React.SyntheticEvent) => {
-    if (isLoggedIn || !sessionRestored || (publicPage && pathname !== '/')) return;
+    if (isLoggedIn || (publicPage && pathname !== '/')) return;
     const target = event.target as HTMLElement;
     if (target.closest('.ts-menu-toggle, .ts-brand, .ts-signin-dialog, [data-guest-allow]')) return;
     const action = target.closest('a, button, [role=button], input, textarea, select, [role=checkbox], [role=tab]');
@@ -324,7 +324,7 @@ export function WebShell({ children }: { children: React.ReactNode }) {
     if (href && ['/', '/auth', '/about', '/support', '/legal/terms', '/legal/privacy'].includes(href)) return;
     event.preventDefault();
     event.stopPropagation();
-    setSignInOpen(true);
+    if (sessionRestored) setSignInOpen(true);
   };
 
   // Wide screens keep the page hidden until the app has hydrated, so the
@@ -337,11 +337,12 @@ export function WebShell({ children }: { children: React.ReactNode }) {
   return (
     <div
       className={`ts-shell${chromeless ? ' is-chromeless' : ''}`}
+      data-session-ready={sessionRestored}
       onClickCapture={guardGuestAction}
       onFocusCapture={guardGuestAction}
     >
       {chromeless ? null : <WebSidebar pathname={pathname} />}
-      <main className="ts-main" inert={!hydrated}>
+      <main className="ts-main" inert={!hydrated || !sessionRestored}>
         <div
           className={`ts-stage ${chromeless ? 'is-full' : stageClass(pathname)}${guestRoute ? ' is-guest-route' : ''}`}
           inert={guestRoute}
