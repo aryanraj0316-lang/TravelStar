@@ -1,4 +1,4 @@
-
+import { AuthModeBookmark } from '@/components/AuthModeBookmark';
 // WEBSITE COPY of src/app/auth.tsx. Expo Router uses this file for the
 // web build; Android keeps using the original (this one is bundled there as
 // an unused route file). Below 768px it renders exactly what the original
@@ -473,7 +473,7 @@ export default function AuthScreen() {
                 still was not enough height. The keyboard is handled by
                 anchoring the card to the bottom instead - see
                 `pageContent` in the stylesheet. */}
-            <View {...({ dataSet: { authHeading: "true" } } as object)} style={styles.headerBanner}>
+            <View style={styles.headerBanner}>
               <Image
                 source={require('@/assets/images/auth-header.jpg')}
                 style={styles.headerBannerImage}
@@ -504,7 +504,7 @@ export default function AuthScreen() {
               </Svg>
 
               {/* Text on lower-left side just above the form */}
-              <View {...({ dataSet: { authHeadingCopy: "true" } } as object)} style={styles.headerBottomLeftWrap} pointerEvents="none">
+              <View style={styles.headerBottomLeftWrap} pointerEvents="none">
                 <Text style={styles.headerBrandHeading}>Yatrenzo</Text>
                 <Text style={styles.headerBottomLeftTitle}>
                   {mode === 'LOGIN' ? 'Welcome back' : 'Create account'}
@@ -863,10 +863,10 @@ export default function AuthScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={mode === 'LOGIN' ? 'Switch to Sign Up' : 'Switch to Log In'}
               >
-<View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 4 }}>
-                  <Text style={{ color: '#64748B', fontSize: 13 }}>{mode === 'LOGIN' ? t('auth.noAccountYet') : t('auth.alreadyRegistered')}</Text>
-                  <Text style={{ color: '#2563EB', fontWeight: '600', fontSize: 13 }}>{mode === 'LOGIN' ? t('auth.createOneNow') : t('auth.switchToLogIn')}</Text>
-                </View>
+                <AuthModeBookmark
+                  label={mode === 'LOGIN' ? t('auth.noAccountYet') : t('auth.alreadyRegistered')}
+                  action={mode === 'LOGIN' ? t('auth.createOneNow') : t('auth.switchToLogIn')}
+                />
               </TouchableOpacity>
             </View>
 
@@ -879,7 +879,7 @@ export default function AuthScreen() {
 
   if (web.isDesktop) {
     return (
-      <View {...({ dataSet: { authPage: "true" } } as object)} style={webSplit.page}>
+      <View style={webSplit.page}>
         <View style={webSplit.hero}>
           <AuthHero />
         </View>
@@ -1064,13 +1064,13 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   roleSectionTitle: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '800',
     color: '#0F172A',
     letterSpacing: -0.1,
   },
   roleSectionSub: {
-    fontSize: 12,
+    fontSize: 10,
     color: '#64748B',
     lineHeight: 13,
     marginTop: 1,
@@ -1129,7 +1129,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
   },
   roleCardTitle: {
-    fontSize: 12,
+    fontSize: 10.5,
     fontWeight: '700',
     color: '#0F172A',
     textAlign: 'center',
@@ -1139,7 +1139,7 @@ const styles = StyleSheet.create({
     color: '#0F172A',
   },
   roleCardSubtitle: {
-    fontSize: 10,
+    fontSize: 8,
     color: '#64748B',
     textAlign: 'center',
     lineHeight: 10.5,
@@ -1150,7 +1150,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   inputFieldLabel: {
-    fontSize: 11,
+    fontSize: 8.5,
     fontWeight: '700',
     color: '#475569',
     letterSpacing: 0.6,
@@ -1163,7 +1163,7 @@ const styles = StyleSheet.create({
     marginBottom: 3,
   },
   forgotPasswordText: {
-    fontSize: 12,
+    fontSize: 9,
     fontWeight: '600',
     color: '#0B63E5',
   },
@@ -1210,7 +1210,7 @@ const styles = StyleSheet.create({
     marginBottom: 7,
   },
   submitButton: {
-    height: 44,
+    height: 39,
     borderRadius: 8,
     flexDirection: 'row',
     alignItems: 'center',
@@ -1234,7 +1234,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   disclaimerText: {
-    fontSize: 11,
+    fontSize: 8.5,
     color: '#64748B',
     textAlign: 'center',
     lineHeight: 12,
@@ -1253,12 +1253,12 @@ const webSplit = StyleSheet.create({
     backgroundColor: '#EFF4FB',
   },
   hero: {
-    flex: 0.85,
+    flex: 1.05,
     minWidth: 0,
   },
   form: {
     flex: 1,
     minWidth: 0,
-    maxWidth: 800,
+    maxWidth: 640,
   },
 });
