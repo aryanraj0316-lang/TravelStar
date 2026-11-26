@@ -24,6 +24,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useApp } from '@/store/AppContext';
 import { useHydrated } from '@/web/layout';
+import { usePullToRefresh } from '@/web/usePullToRefresh';
 
 // Full-screen flows keep their own chrome: no sidebar around them.
 const CHROMELESS_PREFIXES = ['/auth', '/onboarding', '/stories', '/forgot-password', '/reset-password'];
@@ -303,6 +304,7 @@ export function WebShell({ children }: { children: React.ReactNode }) {
   const [signInOpen, setSignInOpen] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const pathname = usePathname();
+  const pullRefresh = usePullToRefresh(pathname);
   const chromeless = isChromeless(pathname);
   const publicPage =
     pathname === '/' ||
@@ -352,7 +354,16 @@ export function WebShell({ children }: { children: React.ReactNode }) {
       onFocusCapture={guardGuestAction}
     >
       {chromeless ? null : <WebSidebar pathname={pathname} />}
-      <main className="ts-main" inert={!hydrated || !sessionRestored}>
+      <main ref={pullRefresh.mainRef} className="ts-main" inert={!hydrated || !sessionRestored}>
+        {(pullRefresh.distance > 10 || pullRefresh.refreshing) && (
+          <div className="ts-pull-refresh" role="status" aria-live="polite">
+            {pullRefresh.refreshing
+              ? 'Refreshing...'
+              : pullRefresh.ready
+                ? 'Release to refresh'
+                : 'Pull down to refresh'}
+          </div>
+        )}
         <div
           className={`ts-stage ${chromeless ? 'is-full' : stageClass(pathname)}${guestRoute ? ' is-guest-route' : ''}`}
           inert={guestRoute}

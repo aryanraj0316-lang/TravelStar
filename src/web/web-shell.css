@@ -633,3 +633,20 @@ body select {
     display: none;
   }
 }
+
+.ts-pull-refresh {
+  position: absolute;
+  z-index: 20;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 16px;
+  border: 1px solid var(--ts-line);
+  border-radius: 999px;
+  background: white;
+  color: var(--ts-ink);
+  box-shadow: 0 4px 18px #0b122020;
+  font-size: 13px;
+  white-space: nowrap;
+  pointer-events: none;
+}
