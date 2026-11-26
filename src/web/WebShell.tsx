@@ -347,76 +347,94 @@ export function WebShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <div
-      className={`ts-shell${chromeless ? ' is-chromeless' : ''}`}
-      data-session-ready={sessionRestored}
-      onClickCapture={guardGuestAction}
-      onFocusCapture={guardGuestAction}
-    >
-      {chromeless ? null : <WebSidebar pathname={pathname} />}
-      <main ref={pullRefresh.mainRef} className="ts-main" inert={!hydrated || !sessionRestored}>
-        {(pullRefresh.distance > 10 || pullRefresh.refreshing) && (
-          <div className="ts-pull-refresh" role="status" aria-live="polite">
-            {pullRefresh.refreshing
-              ? 'Refreshing...'
-              : pullRefresh.ready
-                ? 'Release to refresh'
-                : 'Pull down to refresh'}
-          </div>
-        )}
+    <>
+      {(pullRefresh.distance > 10 || pullRefresh.refreshing) && (
         <div
-          className={`ts-stage ${chromeless ? 'is-full' : stageClass(pathname)}${guestRoute ? ' is-guest-route' : ''}`}
-          inert={guestRoute}
+          className="ts-pull-refresh"
+          role="status"
+          aria-label={
+            pullRefresh.refreshing ? 'Refreshing' : pullRefresh.ready ? 'Release to refresh' : 'Pull to refresh'
+          }
+          style={{ top: Math.max(4, pullRefresh.distance / 2 - 18) }}
         >
-          {children}
+          <svg
+            className={pullRefresh.refreshing ? 'ts-refresh-spinner is-spinning' : 'ts-refresh-spinner'}
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            style={pullRefresh.refreshing ? undefined : { transform: `rotate(${pullRefresh.distance * 3}deg)` }}
+          >
+            <circle className="ts-spinner-track" cx="12" cy="12" r="9" />
+            <circle className="ts-spinner-arc" cx="12" cy="12" r="9" />
+          </svg>
         </div>
-        {guestRoute && (
-          <div className="ts-guest-route">
-            <h1>Sign in to continue</h1>
-            <p>Sign in or create an account to use Yatrenzo.</p>
-            <button data-guest-allow onClick={() => setSignInOpen(true)}>
-              Sign in / Sign up
-            </button>
-          </div>
-        )}
-      </main>
-      {chromeless ? null : (
-        <footer className="ts-site-mobile-footer">
-          {FOOTER_LINKS.map(({ href, labelKey }) => (
-            <a key={href} href={href}>
-              {tFooter(labelKey)}
-            </a>
-          ))}
-          <span>&copy; {new Date().getFullYear()} Yatrenzo</span>
-        </footer>
       )}
-      <dialog
-        ref={dialogRef}
-        className="ts-signin-dialog"
-        aria-labelledby="ts-signin-title"
-        onCancel={() => setSignInOpen(false)}
-        onClick={(event) => {
-          if (event.target === event.currentTarget) setSignInOpen(false);
+      <div
+        style={{
+          transform: pullRefresh.distance ? `translate3d(0, ${pullRefresh.distance}px, 0)` : undefined,
+          transition: pullRefresh.dragging ? 'none' : 'transform 220ms ease-out',
         }}
+        aria-busy={pullRefresh.refreshing}
+        className={`ts-shell${chromeless ? ' is-chromeless' : ''}`}
+        data-session-ready={sessionRestored}
+        onClickCapture={guardGuestAction}
+        onFocusCapture={guardGuestAction}
       >
-        <button className="ts-signin-close" aria-label="Close sign-in message" onClick={() => setSignInOpen(false)}>
-          <X size={20} />
-        </button>
-        <h2 id="ts-signin-title">Sign in to continue</h2>
-        <p>Sign in or create an account to explore trips, make bookings, and connect with travelers.</p>
-        <button
-          className="ts-signin-primary"
-          onClick={() => {
-            setSignInOpen(false);
-            router.push('/auth?mode=LOGIN');
+        {chromeless ? null : <WebSidebar pathname={pathname} />}
+        <main ref={pullRefresh.mainRef} className="ts-main" inert={!hydrated || !sessionRestored}>
+          <div
+            className={`ts-stage ${chromeless ? 'is-full' : stageClass(pathname)}${guestRoute ? ' is-guest-route' : ''}`}
+            inert={guestRoute}
+          >
+            {children}
+          </div>
+          {guestRoute && (
+            <div className="ts-guest-route">
+              <h1>Sign in to continue</h1>
+              <p>Sign in or create an account to use Yatrenzo.</p>
+              <button data-guest-allow onClick={() => setSignInOpen(true)}>
+                Sign in / Sign up
+              </button>
+            </div>
+          )}
+        </main>
+        {chromeless ? null : (
+          <footer className="ts-site-mobile-footer">
+            {FOOTER_LINKS.map(({ href, labelKey }) => (
+              <a key={href} href={href}>
+                {tFooter(labelKey)}
+              </a>
+            ))}
+            <span>&copy; {new Date().getFullYear()} Yatrenzo</span>
+          </footer>
+        )}
+        <dialog
+          ref={dialogRef}
+          className="ts-signin-dialog"
+          aria-labelledby="ts-signin-title"
+          onCancel={() => setSignInOpen(false)}
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setSignInOpen(false);
           }}
         >
-          Sign in / Sign up
-        </button>
-        <button className="ts-signin-later" onClick={() => setSignInOpen(false)}>
-          Maybe later
-        </button>
-      </dialog>
-    </div>
+          <button className="ts-signin-close" aria-label="Close sign-in message" onClick={() => setSignInOpen(false)}>
+            <X size={20} />
+          </button>
+          <h2 id="ts-signin-title">Sign in to continue</h2>
+          <p>Sign in or create an account to explore trips, make bookings, and connect with travelers.</p>
+          <button
+            className="ts-signin-primary"
+            onClick={() => {
+              setSignInOpen(false);
+              router.push('/auth?mode=LOGIN');
+            }}
+          >
+            Sign in / Sign up
+          </button>
+          <button className="ts-signin-later" onClick={() => setSignInOpen(false)}>
+            Maybe later
+          </button>
+        </dialog>
+      </div>
+    </>
   );
 }

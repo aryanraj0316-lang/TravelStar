@@ -7,6 +7,8 @@ export function usePullToRefresh(route: string) {
   const mainRef = useRef<HTMLElement>(null);
   const [distance, setDistance] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const refreshingRef = useRef(false);
 
   useEffect(() => {
     const main = mainRef.current;
@@ -18,6 +20,7 @@ export function usePullToRefresh(route: string) {
     let reloadTimer: ReturnType<typeof setTimeout> | undefined;
     const reset = () => {
       active = false;
+      setDragging(false);
       pull = 0;
       setDistance(0);
     };
@@ -28,6 +31,7 @@ export function usePullToRefresh(route: string) {
       return true;
     };
     const start = (event: TouchEvent) => {
+      if (refreshingRef.current) return;
       reset();
       const target = event.target;
       if (!matchMedia('(max-width: 767px)').matches || event.touches.length !== 1 || !(target instanceof Element))
@@ -40,6 +44,7 @@ export function usePullToRefresh(route: string) {
       startX = event.touches[0].clientX;
       startY = event.touches[0].clientY;
       active = true;
+      setDragging(true);
     };
     const move = (event: TouchEvent) => {
       if (!active) return;
@@ -74,8 +79,11 @@ export function usePullToRefresh(route: string) {
       if (!active) return;
       if (pull >= TRIGGER) {
         active = false;
+        refreshingRef.current = true;
+        setDragging(false);
+        setDistance(72);
         setRefreshing(true);
-        reloadTimer = setTimeout(() => window.location.reload(), 100);
+        reloadTimer = setTimeout(() => window.location.reload(), 650);
       } else reset();
     };
     main.addEventListener('touchstart', start, { passive: true });
@@ -91,5 +99,5 @@ export function usePullToRefresh(route: string) {
     };
   }, [route]);
 
-  return { mainRef, distance, refreshing, ready: distance >= TRIGGER };
+  return { mainRef, distance, refreshing, dragging, ready: distance >= TRIGGER };
 }

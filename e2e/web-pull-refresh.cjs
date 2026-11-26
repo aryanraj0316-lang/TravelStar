@@ -5,25 +5,35 @@ const assert = require('node:assert/strict');
   const b = await chromium.launch({ headless: true, channel: 'chrome' });
   try {
     const p = await b.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
-    await p.goto(web + '/?pullCheck=1');
+    await p.goto(web + '/?pullCheck=' + Date.now());
     await p.locator('.ts-shell[data-session-ready=true]').waitFor();
     const cdp = await p.context().newCDPSession(p);
     const touch = async (type, x, y) =>
       cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
     await touch('touchStart', 150, 190);
     await touch('touchMove', 150, 250);
-    await p.getByRole('status').filter({ hasText: 'Pull down to refresh' }).waitFor();
+    await p.getByRole('status', { name: 'Pull to refresh', exact: true }).waitFor();
     await touch('touchEnd');
     assert.equal(await p.locator('.ts-pull-refresh').count(), 0);
     await touch('touchStart', 150, 190);
-    await touch('touchMove', 260, 200);
+    await touch('touchMove', 50, 200);
     await touch('touchEnd');
     assert.equal(await p.locator('.ts-pull-refresh').count(), 0);
-    await touch('touchStart', 150, 190);
-    await touch('touchMove', 150, 360);
-    await p.getByRole('status').filter({ hasText: 'Release to refresh' }).waitFor();
+    await p.reload();
+    await p.locator('.ts-shell[data-session-ready=true]').waitFor();
+    await p.waitForTimeout(500);
+    await touch('touchStart', 100, 260);
+    for (let y = 280; y <= 440; y += 20) {
+      await touch('touchMove', 100, y);
+      await p.waitForTimeout(25);
+    }
+    await p.getByRole('status', { name: 'Release to refresh', exact: true }).waitFor();
+    assert(await p.locator('.ts-shell').evaluate((el) => getComputedStyle(el).transform !== 'none'));
     const reloaded = p.waitForNavigation({ waitUntil: 'domcontentloaded' });
     await touch('touchEnd');
+    await p.locator('.ts-refresh-spinner.is-spinning').waitFor();
+    assert.equal(await p.locator('.ts-pull-refresh').innerText(), '');
+    await p.screenshot({ path: '.expo/refresh-spinner.png' });
     await reloaded;
     await p.locator('.ts-shell[data-session-ready=true]').waitFor();
     await p.evaluate(() => {

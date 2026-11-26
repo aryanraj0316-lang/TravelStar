@@ -635,18 +635,39 @@ body select {
 }
 
 .ts-pull-refresh {
-  position: absolute;
-  z-index: 20;
-  top: 10px;
+  position: fixed;
+  z-index: 30;
   left: 50%;
   transform: translateX(-50%);
-  padding: 10px 16px;
-  border: 1px solid var(--ts-line);
-  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
   background: white;
-  color: var(--ts-ink);
-  box-shadow: 0 4px 18px #0b122020;
-  font-size: 13px;
-  white-space: nowrap;
+  box-shadow: 0 2px 8px #0b122018;
   pointer-events: none;
+}
+.ts-refresh-spinner {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke-width: 2.5;
+}
+.ts-spinner-track {
+  stroke: #e7ebf1;
+}
+.ts-spinner-arc {
+  stroke: #2563eb;
+  stroke-dasharray: 42 57;
+  stroke-linecap: round;
+}
+@keyframes ts-refresh-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.ts-refresh-spinner.is-spinning {
+  animation: ts-refresh-rotate 750ms linear infinite;
 }
