@@ -1,0 +1,9 @@
+[
+  {
+    "AllowedOrigins": ["https://yatrenzo-web.onrender.com"],
+    "AllowedMethods": ["GET", "HEAD", "PUT"],
+    "AllowedHeaders": ["Content-Type"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3600
+  }
+]
