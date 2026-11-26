@@ -72,25 +72,6 @@ function isChromeless(pathname: string) {
   return CHROMELESS_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
-function BrandMark() {
-  return (
-    <svg className="ts-brand-mark" viewBox="0 0 40 40" aria-hidden="true">
-      <defs>
-        <linearGradient id="ts-mark-grad" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#1E3A8A" />
-          <stop offset="1" stopColor="#2563EB" />
-        </linearGradient>
-      </defs>
-      <rect x="0" y="0" width="40" height="40" rx="12" fill="url(#ts-mark-grad)" />
-      <path
-        d="M20 8.5l2.6 8.9 8.9 2.6-8.9 2.6L20 31.5l-2.6-8.9L8.5 20l8.9-2.6z"
-        fill="#FFFFFF"
-      />
-      <circle cx="29.5" cy="10.5" r="1.6" fill="#FCD34D" />
-    </svg>
-  );
-}
-
 type NavItemProps = {
   href: string;
   label: string;
@@ -171,7 +152,7 @@ function WebSidebar({ pathname }: { pathname: string }) {
           goTab('index');
         }}
       >
-        <BrandMark />
+        <span className="ts-brand-initial" aria-hidden="true">Y</span>
         <span className="ts-brand-word">Yatrenzo</span>
       </a>
 
@@ -255,7 +236,7 @@ function WebSidebar({ pathname }: { pathname: string }) {
             </a>
           ))}
         </div>
-        <div className="ts-rail-copy">© {new Date().getFullYear()} Yatrenzo</div>
+        <div className="ts-rail-copy">© {new Date().getFullYear()} Yatrenzo<br /><span>All rights reserved.</span></div>
       </footer>
     </nav>
   );

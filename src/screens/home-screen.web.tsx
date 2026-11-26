@@ -1892,7 +1892,7 @@ function HomeScreen() {
   // ── Website layout (≥768px). Below that, the phone layout further down
   // renders unchanged. Same state, same handlers, same modals.
   if (web.isDesktop) {
-    const heroHeight = web.twoCol ? 300 : 260;
+    const heroHeight = web.twoCol ? 240 : 230;
 
     const quickAccessList = (
       <View style={webStyles.sideCard}>
@@ -4512,7 +4512,7 @@ const STICKY = { position: 'sticky', top: 28 } as unknown as ViewStyle;
 const webStyles = StyleSheet.create({
   page: {
     alignItems: 'center',
-    paddingTop: 24,
+    paddingTop: 20,
     paddingBottom: 72,
   },
 
@@ -4529,12 +4529,12 @@ const webStyles = StyleSheet.create({
   },
   heroCopy: {
     paddingHorizontal: 32,
-    paddingBottom: 76,
+    paddingBottom: 64,
     maxWidth: 680,
   },
   heroEyebrow: {
     color: '#BFDBFE',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     letterSpacing: 2.2,
     textTransform: 'uppercase',
@@ -4542,8 +4542,8 @@ const webStyles = StyleSheet.create({
   },
   heroName: {
     color: '#FFFFFF',
-    fontSize: 44,
-    lineHeight: 50,
+    fontSize: 36,
+    lineHeight: 42,
     fontWeight: '600',
     letterSpacing: -1.2,
   },
@@ -4553,7 +4553,7 @@ const webStyles = StyleSheet.create({
   },
   heroSub: {
     color: 'rgba(255, 255, 255, 0.86)',
-    fontSize: 16,
+    fontSize: 14,
     lineHeight: 24,
     marginTop: 8,
   },
@@ -4584,7 +4584,7 @@ const webStyles = StyleSheet.create({
     flexDirection: 'row',
     gap: 16,
     paddingHorizontal: 20,
-    marginTop: -44,
+    marginTop: -36,
     marginBottom: 24,
     zIndex: 2,
   },
@@ -4593,8 +4593,8 @@ const webStyles = StyleSheet.create({
     minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    paddingVertical: 14,
+    gap: 12,
+    paddingVertical: 12,
     paddingHorizontal: 14,
     borderRadius: 20,
     backgroundColor: '#FFFFFF',
@@ -4619,12 +4619,12 @@ const webStyles = StyleSheet.create({
   },
   roleLabel: {
     color: INK,
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '700',
   },
   roleSub: {
     color: C.textSec,
-    fontSize: 13,
+    fontSize: 12,
     marginTop: 2,
   },
 
@@ -4653,8 +4653,8 @@ const webStyles = StyleSheet.create({
   },
   sectionTitle: {
     color: INK,
-    fontSize: 26,
-    lineHeight: 32,
+    fontSize: 24,
+    lineHeight: 30,
     fontWeight: '600',
     letterSpacing: -0.6,
   },
@@ -4786,7 +4786,7 @@ const webStyles = StyleSheet.create({
   },
   destPillText: {
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
   },
   destBottom: {
@@ -4810,14 +4810,14 @@ const webStyles = StyleSheet.create({
   destTitle: {
     flex: 1,
     color: '#FFFFFF',
-    fontSize: 26,
-    lineHeight: 32,
+    fontSize: 24,
+    lineHeight: 30,
     fontWeight: '600',
     letterSpacing: -0.4,
   },
   destTitleLead: {
-    fontSize: 44,
-    lineHeight: 50,
+    fontSize: 36,
+    lineHeight: 42,
     letterSpacing: -1,
   },
   destKeywords: {
@@ -4849,7 +4849,7 @@ const webStyles = StyleSheet.create({
   quickRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
+    gap: 12,
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 14,
@@ -4879,7 +4879,7 @@ const webStyles = StyleSheet.create({
   // Single-column (768–1263px) versions of the right column
   quickTiles: {
     flexDirection: 'row',
-    gap: 14,
+    gap: 12,
     marginBottom: 20,
   },
   quickTile: {
