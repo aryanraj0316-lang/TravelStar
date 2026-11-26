@@ -3,6 +3,7 @@ module.exports = {
   preset: 'jest-expo',
   rootDir: '.',
   testMatch: ['<rootDir>/src/**/*.test.ts', '<rootDir>/src/**/*.test.tsx'],
+  modulePathIgnorePatterns: ['<rootDir>/.expo/', '<rootDir>/backend/'],
   // jest-expo's preset already declares its own `setupFiles` (the RN native
   // module mock registry); a `setupFiles` entry here REPLACES rather than
   // merges with it, so the base preset's file has to be re-listed alongside

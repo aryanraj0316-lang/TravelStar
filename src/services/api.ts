@@ -995,8 +995,8 @@ export const apiService = {
     });
   },
 
-  async createStory(storyData: StoryPayload): Promise<{ id: string; coverImg?: string | null } | null> {
-    return request<{ id: string; coverImg?: string | null }>('/stories', {
+  async createStory(storyData: StoryPayload): Promise<Story | null> {
+    return request<Story>('/stories', {
       method: 'POST',
       body: JSON.stringify(storyData),
     });

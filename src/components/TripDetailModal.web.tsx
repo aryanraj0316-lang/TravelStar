@@ -112,7 +112,7 @@ export default function TripDetailModal({
   if (!trip) return null;
 
   const tripName = trip.name;
-  const organizerName = trip.creator;
+  const organizerName = detail?.creator ?? trip.creator;
 
   // Only the authoritative id checks — the previous version also matched
   // by substring on display name, including whenever the organizer's own
@@ -130,7 +130,7 @@ export default function TripDetailModal({
   const organizerAvatarUri =
     (!avatarLoadFailed && (
       (isMeOrganizer && profile?.avatar ? profile.avatar : null) ||
-      ('creatorAvatar' in trip && (trip as any).creatorAvatar ? (trip as any).creatorAvatar : null) ||
+      (detail ? detail.creatorAvatar : ('creatorAvatar' in trip ? trip.creatorAvatar : null)) ||
       (isMeOrganizer && (profile as any)?.avatarUrl ? (profile as any).avatarUrl : null)
     )) || null;
   const price = trip.budget;

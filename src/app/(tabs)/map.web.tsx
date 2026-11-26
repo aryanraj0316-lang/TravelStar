@@ -818,13 +818,20 @@ function WebMapScreen() {
 
             var popupHTML = '<div class="popup-card">' +
               '<div class="popup-badge ' + badgeClass + '">' + pin.type + '</div>' +
-              '<h4>' + pin.name + '</h4>' +
-              '<p>' + pin.detail + '</p>' +
-              '<div class="popup-cta" onclick="startNavigationToPin(\'' + pin.id + '\', \'' + pin.name + '\', ' + pin.latitude + ', ' + pin.longitude + ')">' + I18N.navigate + '</div></div>';
+              '<h4>' + escapeHtml(pin.name) + '</h4>' +
+              '<p>' + escapeHtml(pin.detail) + '</p>' +
+              '<div class="popup-cta">' + escapeHtml(I18N.navigate) + '</div></div>';
 
             var marker = L.marker([pin.latitude, pin.longitude], { icon: customIcon })
               .addTo(map)
               .bindPopup(popupHTML, { closeButton: false, minWidth: 120 });
+
+            marker.on('popupopen', function(event) {
+              var action = event.popup.getElement().querySelector('.popup-cta');
+              if (action) action.onclick = function() {
+                startNavigationToPin(pin.id, pin.name, pin.latitude, pin.longitude);
+              };
+            });
 
             markerInstances.push({ marker: marker, type: pin.type });
           });

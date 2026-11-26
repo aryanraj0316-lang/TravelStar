@@ -1,0 +1,30 @@
+# Frontend only. The existing mobile/API service is managed separately.
+services:
+  - type: web
+    name: yatrenzo-web
+    runtime: static
+    branch: master
+    buildCommand: npm ci && npm run build:web
+    staticPublishPath: ./dist
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_VERSION
+        value: '22'
+      - key: SKIP_INSTALL_DEPS
+        value: 'true'
+      - key: EXPO_PUBLIC_API_URL
+        value: https://travelstar.onrender.com
+    headers:
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+    routes:
+      - type: rewrite
+        source: /legal/:page
+        destination: /legal/:page.html
+      - type: rewrite
+        source: /:page
+        destination: /:page.html

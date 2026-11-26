@@ -1,3 +1,4 @@
+import { isStoryOwner } from '@/lib/story-identity';
 import { useViewedStories } from '@/hooks/useViewedStories';
 import { unseenStoriesFirst } from '@/lib/story-view-state';
 // WEBSITE COPY of src/screens/home-screen.tsx. Metro picks this file for the
@@ -1149,18 +1150,7 @@ function StoriesRailBase({
       .map((item) => item.userId === profile.id ? { ...item, authorName: profile.name, authorAvatar: profile.avatar } : item);
   }, [feed, storiesList, profile.id, profile.name, profile.avatar, deletedStoryIds]);
 
-  const isUserStory = React.useCallback((item: FeedItem) => {
-    if (item.userId && profile.id && item.userId === profile.id) return true;
-    if (
-      item.authorName &&
-      profile.name &&
-      profile.name !== 'Guest Traveler' &&
-      item.authorName.trim().toLowerCase() === profile.name.trim().toLowerCase()
-    ) {
-      return true;
-    }
-    return false;
-  }, [profile.id, profile.name]);
+  const isUserStory = React.useCallback((item: FeedItem) => isStoryOwner(item, profile), [profile.id, profile.name]);
 
   const myStory = React.useMemo(
     () => mergedFeed.find((item) => item.sourceType === 'STORY' && isUserStory(item)) ?? null,

@@ -1,3 +1,4 @@
+import { isStoryOwner } from '@/lib/story-identity';
 import { useViewedStories } from '@/hooks/useViewedStories';
 import { unseenStoriesFirst } from '@/lib/story-view-state';
 import { ScreenError, ScreenLoading } from '@/components/ui';
@@ -43,12 +44,7 @@ export default function AllStoriesScreen() {
     const items = (feed ?? []).filter((item) => {
       if (item.sourceType !== 'STORY') return false;
       if (deletedStoryIds?.has(item.id)) return false;
-      const isMine =
-        (item.userId && profile.id && item.userId === profile.id) ||
-        (item.authorName &&
-          profile.name &&
-          profile.name !== 'Guest Traveler' &&
-          item.authorName.trim().toLowerCase() === profile.name.trim().toLowerCase());
+      const isMine = isStoryOwner(item, profile);
       return !isMine;
     });
     return unseenStoriesFirst([...items].sort(

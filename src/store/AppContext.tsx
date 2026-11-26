@@ -1,5 +1,5 @@
 import { SEEN_APPROVALS_KEY, needsOrganizerAction, countUnseenOrganizerRequests } from '@/lib/organizer-badge';
-import { File } from 'expo-file-system';
+import { readStoryMedia } from '@/lib/story-upload';
 import { uploadFileToUrl } from '@/lib/upload';
 import { queryClient } from '@/lib/query-client';
 import { safeStorage } from '@/services/storage';
@@ -1469,8 +1469,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               logger.warn('[Stories] Presigned video upload unavailable, using direct upload:', presignErr);
               // expo-file-system's top-level readAsStringAsync is a stub that
               // always throws in this SDK — the real API is the File class.
-              const base64 = await new File(storyData.mediaUri).base64();
-              const direct = await apiService.uploadStoryDirect(base64, contentType);
+              const media = await readStoryMedia(storyData.mediaUri, contentType);
+              const direct = await apiService.uploadStoryDirect(media.base64, media.contentType);
               if (direct?.publicUrl) remoteMediaUrl = direct.publicUrl;
             }
           }
@@ -1478,12 +1478,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         if (storyData.coverImg && /^https?:\/\//i.test(storyData.coverImg)) {
           remoteCoverUrl = storyData.coverImg;
-        } else if (storyData.coverImg && /^file:|^content:/i.test(storyData.coverImg)) {
+        } else if (storyData.coverImg && /^(file:|content:|blob:|data:)/i.test(storyData.coverImg)) {
           try {
             const ext = storyData.coverImg.split('.').pop()?.toLowerCase() || 'jpg';
             const contentType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
-            const base64 = await new File(storyData.coverImg).base64();
-            const direct = await apiService.uploadStoryDirect(base64, contentType);
+            const media = await readStoryMedia(storyData.coverImg, contentType);
+            const direct = await apiService.uploadStoryDirect(media.base64, media.contentType);
             if (direct?.publicUrl) {
               remoteCoverUrl = direct.publicUrl;
             }
@@ -1525,7 +1525,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const created = await apiService.createStory(payload);
         if (created?.id) {
           setStoriesList((prev) => {
-            const updated = prev.map((s) => (s.id === localStoryId ? { ...s, id: created.id, coverImg: created.coverImg || s.coverImg } : s));
+            const updated = prev.map((s) => (s.id === localStoryId ? {
+              ...s, id: created.id, userId: profile.id,
+              coverImg: created.coverImg ?? '',
+              mediaUrl: created.mediaUrl ?? created.coverImg ?? null,
+              mediaType: created.mediaType ?? s.mediaType,
+              createdAt: created.createdAt,
+            } : s));
             void safeStorage.setItem('savedStories', JSON.stringify(updated));
             return updated;
           });
@@ -1546,7 +1552,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toast(errorToastMessage(e, "Couldn't share your story. Please try again."), 'error');
       }
     },
-    [profile.name, profile.avatar],
+    [profile.id, profile.name, profile.avatar],
   );
 
 

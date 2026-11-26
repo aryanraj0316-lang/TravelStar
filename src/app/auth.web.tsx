@@ -145,8 +145,12 @@ export default function AuthScreen() {
     void queryClient.invalidateQueries();
   };
 
-  const initialMode = (params.mode === 'LOGIN' || params.mode === 'SIGNUP') ? (params.mode as 'LOGIN' | 'SIGNUP') : 'SIGNUP';
-  const [mode, setMode] = useState<'LOGIN' | 'SIGNUP'>(initialMode);
+  // Static /auth HTML has no query parameters. Match it on the first
+  // browser render, then apply the requested mode after hydration.
+  const [mode, setMode] = useState<'LOGIN' | 'SIGNUP'>('SIGNUP');
+  useEffect(() => {
+    if (params.mode === 'LOGIN' || params.mode === 'SIGNUP') setMode(params.mode);
+  }, [params.mode]);
   const [selectedRole, setSelectedRole] = useState<UserRole>(currentRole || 'TOURIST');
 
   const [rulesAccepted, setRulesAccepted] = useState(false);

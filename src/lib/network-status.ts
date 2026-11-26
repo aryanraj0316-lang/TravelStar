@@ -7,7 +7,7 @@
 // probe of actual reachability and is null until the first probe resolves.
 // We treat "online" as `isConnected && isInternetReachable !== false` so we
 // don't show a false "offline" banner during that initial null window.
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 import NetInfo, { type NetInfoState } from '@react-native-community/netinfo';
 import { logger } from '@/lib/logger';
 
@@ -50,14 +50,13 @@ export function onReconnect(callback: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
+function subscribeOnline(callback: () => void): () => void {
+  listeners.add(callback);
+  return () => { listeners.delete(callback); };
+}
+
 export function useOnlineStatus(): boolean {
-  const [online, setOnline] = useState(currentlyOnline);
-  useEffect(() => {
-    const listener = (next: boolean) => setOnline(next);
-    listeners.add(listener);
-    return () => {
-      listeners.delete(listener);
-    };
-  }, []);
-  return online;
+  // A static export has no device network. Use a deterministic snapshot
+  // for its HTML and hydration, then read the browser/device state.
+  return useSyncExternalStore(subscribeOnline, isOnline, () => true);
 }
