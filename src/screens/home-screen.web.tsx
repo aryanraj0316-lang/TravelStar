@@ -1892,7 +1892,7 @@ function HomeScreen() {
   // ── Website layout (≥768px). Below that, the phone layout further down
   // renders unchanged. Same state, same handlers, same modals.
   if (web.isDesktop) {
-    const heroHeight = web.twoCol ? 240 : 230;
+    const heroHeight = 200;
 
     const quickAccessList = (
       <View style={webStyles.sideCard}>
@@ -1978,7 +1978,7 @@ function HomeScreen() {
             <StoriesRail avatarUri={avatarUri} onAddStory={handleAddStoryPress} />
           </View>
         ) : (
-          <View style={{ height: 20 }} />
+          <View style={{ height: 4 }} />
         )}
 
         <WebSectionHeader title={t('home.featuredGroupTrips')} />
@@ -4529,7 +4529,7 @@ const webStyles = StyleSheet.create({
   },
   heroCopy: {
     paddingHorizontal: 32,
-    paddingBottom: 64,
+    paddingBottom: 52,
     maxWidth: 680,
   },
   heroEyebrow: {
@@ -4542,8 +4542,8 @@ const webStyles = StyleSheet.create({
   },
   heroName: {
     color: '#FFFFFF',
-    fontSize: 36,
-    lineHeight: 42,
+    fontSize: 30,
+    lineHeight: 36,
     fontWeight: '600',
     letterSpacing: -1.2,
   },
@@ -4584,8 +4584,8 @@ const webStyles = StyleSheet.create({
     flexDirection: 'row',
     gap: 16,
     paddingHorizontal: 20,
-    marginTop: -36,
-    marginBottom: 24,
+    marginTop: -28,
+    marginBottom: 16,
     zIndex: 2,
   },
   roleCard: {
@@ -4594,7 +4594,7 @@ const webStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    paddingVertical: 12,
+    paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: 20,
     backgroundColor: '#FFFFFF',
@@ -4611,8 +4611,8 @@ const webStyles = StyleSheet.create({
     shadowOpacity: 0.16,
   },
   roleIcon: {
-    width: 40,
-    height: 40,
+    width: 32,
+    height: 32,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
@@ -4648,13 +4648,13 @@ const webStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
-    marginBottom: 18,
+    marginBottom: 12,
     marginTop: 8,
   },
   sectionTitle: {
     color: INK,
-    fontSize: 24,
-    lineHeight: 30,
+    fontSize: 21,
+    lineHeight: 27,
     fontWeight: '600',
     letterSpacing: -0.6,
   },
@@ -4677,12 +4677,12 @@ const webStyles = StyleSheet.create({
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginBottom: 44,
+    marginBottom: 24,
   },
   emptyCard: {
     marginHorizontal: 0,
-    marginBottom: 44,
-    paddingVertical: 36,
+    marginBottom: 24,
+    paddingVertical: 16,
     borderRadius: 22,
   },
 
@@ -4746,7 +4746,7 @@ const webStyles = StyleSheet.create({
     marginTop: 2,
   },
   joinBtn: {
-    height: 40,
+    height: 32,
     paddingHorizontal: 18,
     borderRadius: 12,
     backgroundColor: INK,
@@ -4810,14 +4810,14 @@ const webStyles = StyleSheet.create({
   destTitle: {
     flex: 1,
     color: '#FFFFFF',
-    fontSize: 24,
-    lineHeight: 30,
+    fontSize: 21,
+    lineHeight: 27,
     fontWeight: '600',
     letterSpacing: -0.4,
   },
   destTitleLead: {
-    fontSize: 36,
-    lineHeight: 42,
+    fontSize: 30,
+    lineHeight: 36,
     letterSpacing: -1,
   },
   destKeywords: {
@@ -4833,7 +4833,7 @@ const webStyles = StyleSheet.create({
     borderRadius: 22,
     borderWidth: 1,
     borderColor: HAIRLINE,
-    paddingVertical: 10,
+    paddingVertical: 6,
     paddingHorizontal: 8,
   },
   sideCardTitle: {
@@ -4850,13 +4850,13 @@ const webStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    paddingVertical: 10,
+    paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 14,
   },
   quickIcon: {
-    width: 40,
-    height: 40,
+    width: 32,
+    height: 32,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
@@ -4864,7 +4864,7 @@ const webStyles = StyleSheet.create({
   quickRowLabel: {
     flex: 1,
     color: INK,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
   },
   sideWeather: {
