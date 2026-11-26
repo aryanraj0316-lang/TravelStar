@@ -1,7 +1,7 @@
 // Website-only navigation frame. Imported only from `*.web.tsx` route
 // layouts, so it never enters the Android bundle.
 //
-// From 768px up this replaces the phone's floating bottom dock with a
+// Responsive website navigation replaces the phone's floating bottom dock with a
 // sidebar (icons only below 1264px, icons and labels above). Below 768px
 // every element here is `display: none` / `display: contents` (see
 // web-shell.css), so narrow browsers get exactly the phone layout.
@@ -243,6 +243,7 @@ function WebSidebar({ pathname }: { pathname: string }) {
 }
 
 export function WebShell({ children }: { children: React.ReactNode }) {
+  const { t: tFooter } = useTranslation();
   const pathname = usePathname();
   const chromeless = isChromeless(pathname);
 
@@ -259,6 +260,10 @@ export function WebShell({ children }: { children: React.ReactNode }) {
       <main className="ts-main">
         <div className={`ts-stage ${chromeless ? 'is-full' : stageClass(pathname)}`}>{children}</div>
       </main>
+      {chromeless ? null : <footer className="ts-site-mobile-footer">
+        {FOOTER_LINKS.map(({ href, labelKey }) => <a key={href} href={href}>{tFooter(labelKey)}</a>)}
+        <span>? {new Date().getFullYear()} Yatrenzo</span>
+      </footer>}
     </div>
   );
 }

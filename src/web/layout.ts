@@ -27,6 +27,8 @@ const RAIL_WIDE = 192;
 export type WebLayout = {
   /** True from 768px up, once hydrated. Below that the phone layout renders. */
   isDesktop: boolean;
+  isMobile: boolean;
+  hydrated: boolean;
   /** Page width beside the sidebar. */
   avail: number;
   /** Width of the centred content column. */
@@ -43,13 +45,15 @@ export function useWebLayout(): WebLayout {
   const hydrated = useHydrated();
   const rail = width >= WEB_WIDE_MIN ? RAIL_WIDE : width >= WEB_DESKTOP_MIN ? RAIL_COMPACT : 0;
   const avail = width - rail;
-  const pad = avail >= 1100 ? 48 : 32;
+  const pad = width < 768 ? 16 : avail >= 1100 ? 48 : 32;
   const content = Math.max(0, Math.min(1200, avail - pad * 2));
   const twoCol = content >= 980;
   const side = 340;
   const colGap = 32;
   return {
     isDesktop: hydrated && width >= WEB_DESKTOP_MIN,
+    isMobile: width < WEB_DESKTOP_MIN,
+    hydrated,
     avail,
     content,
     twoCol,

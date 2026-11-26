@@ -1891,8 +1891,8 @@ function HomeScreen() {
 
   // ── Website layout (≥768px). Below that, the phone layout further down
   // renders unchanged. Same state, same handlers, same modals.
-  if (web.isDesktop) {
-    const heroHeight = 200;
+  if (web.hydrated) {
+    const heroHeight = 220;
 
     const quickAccessList = (
       <View style={webStyles.sideCard}>
@@ -1923,14 +1923,14 @@ function HomeScreen() {
     );
 
     const quickAccessTiles = (
-      <View style={webStyles.quickTiles}>
+      <View style={[webStyles.quickTiles, web.isMobile && { flexWrap: 'wrap', gap: 8 }]}>
         {quickAccessItems.map((item, index) => {
           const iconBg = index === 0 ? '#EFF6FF' : index === 1 ? '#F5F3FF' : index === 2 ? '#FFF7ED' : '#ECFDF5';
           const iconCol = index === 0 ? '#2563EB' : index === 1 ? '#7C3AED' : index === 2 ? '#D97706' : '#059669';
           return (
             <TouchableOpacity
               key={item.labelKey}
-              style={webStyles.quickTile}
+              style={[webStyles.quickTile, web.isMobile && { flexBasis: '47%', padding: 12 }]}
               activeOpacity={0.8}
               onPress={() => router.push(item.route)}
               accessibilityRole="button"
@@ -2029,7 +2029,7 @@ function HomeScreen() {
 
               {identityResolved && !isLoggedIn && (
                 <TouchableOpacity
-                  style={webStyles.heroLogin}
+                  style={[webStyles.heroLogin, web.isMobile && { top: 14, right: 14, height: 36, paddingHorizontal: 12 }]}
                   activeOpacity={0.85}
                   onPress={() => router.push('/auth')}
                   accessibilityRole="button"
@@ -2040,7 +2040,7 @@ function HomeScreen() {
                 </TouchableOpacity>
               )}
 
-              <View style={webStyles.heroCopy}>
+              <View style={[webStyles.heroCopy, web.isMobile && { paddingHorizontal: 20, paddingBottom: 28 }]}>
                 <Text style={webStyles.heroEyebrow} numberOfLines={1}>
                   {HOME_GREETING}
                 </Text>
@@ -2058,7 +2058,7 @@ function HomeScreen() {
             </ImageBackground>
 
             {/* Role switcher, overlapping the masthead */}
-            <View style={webStyles.roleRow}>
+            <View style={[webStyles.roleRow, web.isMobile && { flexDirection: 'column', marginTop: 12, paddingHorizontal: 0, gap: 8 }]}>
               {roles.map((role) => {
                 const isActive = currentRole === role.value;
                 const iconBg =
@@ -2185,11 +2185,12 @@ function HomeScreen() {
             ) : (
               <>
                 {quickAccessTiles}
-                <View style={webStyles.inlineCards}>
+                {web.isMobile && mainSections}
+                <View style={[webStyles.inlineCards, web.isMobile && { flexDirection: 'column', height: 440 }]}>
                   <TrendingWeatherCard isFocused={isFocused} />
                   <RouteSafetyCard isFocused={isFocused} />
                 </View>
-                {mainSections}
+                {!web.isMobile && mainSections}
               </>
             )}
           </View>
@@ -4529,7 +4530,7 @@ const webStyles = StyleSheet.create({
   },
   heroCopy: {
     paddingHorizontal: 32,
-    paddingBottom: 52,
+    paddingBottom: 58,
     maxWidth: 680,
   },
   heroEyebrow: {
@@ -4542,8 +4543,8 @@ const webStyles = StyleSheet.create({
   },
   heroName: {
     color: '#FFFFFF',
-    fontSize: 30,
-    lineHeight: 36,
+    fontSize: 34,
+    lineHeight: 40,
     fontWeight: '600',
     letterSpacing: -1.2,
   },
@@ -4594,7 +4595,7 @@ const webStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
     paddingHorizontal: 14,
     borderRadius: 20,
     backgroundColor: '#FFFFFF',
@@ -4611,8 +4612,8 @@ const webStyles = StyleSheet.create({
     shadowOpacity: 0.16,
   },
   roleIcon: {
-    width: 32,
-    height: 32,
+    width: 36,
+    height: 36,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
@@ -4653,8 +4654,8 @@ const webStyles = StyleSheet.create({
   },
   sectionTitle: {
     color: INK,
-    fontSize: 21,
-    lineHeight: 27,
+    fontSize: 23,
+    lineHeight: 29,
     fontWeight: '600',
     letterSpacing: -0.6,
   },
@@ -4725,7 +4726,7 @@ const webStyles = StyleSheet.create({
   },
   tripName: {
     color: INK,
-    fontSize: 21,
+    fontSize: 23,
     lineHeight: 26,
     fontWeight: '600',
     letterSpacing: -0.3,
@@ -4746,7 +4747,7 @@ const webStyles = StyleSheet.create({
     marginTop: 2,
   },
   joinBtn: {
-    height: 32,
+    height: 36,
     paddingHorizontal: 18,
     borderRadius: 12,
     backgroundColor: INK,
@@ -4810,14 +4811,14 @@ const webStyles = StyleSheet.create({
   destTitle: {
     flex: 1,
     color: '#FFFFFF',
-    fontSize: 21,
-    lineHeight: 27,
+    fontSize: 23,
+    lineHeight: 29,
     fontWeight: '600',
     letterSpacing: -0.4,
   },
   destTitleLead: {
-    fontSize: 30,
-    lineHeight: 36,
+    fontSize: 34,
+    lineHeight: 40,
     letterSpacing: -1,
   },
   destKeywords: {
@@ -4855,8 +4856,8 @@ const webStyles = StyleSheet.create({
     borderRadius: 14,
   },
   quickIcon: {
-    width: 32,
-    height: 32,
+    width: 36,
+    height: 36,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',

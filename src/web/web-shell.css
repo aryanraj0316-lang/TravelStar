@@ -33,7 +33,7 @@
 }
 
 /* ── 768px and up: website frame ─────────────────────────────────────── */
-@media (min-width: 768px) {
+@media (min-width: 0px) {
   :root {
     --ts-rail-w: 76px;
   }
@@ -290,7 +290,7 @@
     opacity: 1;
   }
 }
-@media (min-width: 768px) {
+@media (min-width: 0px) {
   /* Hidden until hydrated; the animation is a fallback that reveals the
      page anyway if the app script never runs. */
   html:not(.ts-hydrated) .ts-main {
@@ -348,4 +348,26 @@
   .ts-rail-footer {
     display: block;
   }
+}
+
+.ts-site-mobile-footer { display: none; }
+@media (max-width: 767px) {
+  :root { --ts-rail-w: 0px; }
+  .ts-shell { flex-direction: column; }
+  .ts-rail { display: grid; grid-template-columns: 1fr auto; flex: none; width: 100%; height: auto; position: relative; padding: 12px 16px 8px; overflow: visible; border-right: 0; border-bottom: 1px solid var(--ts-line); }
+  .ts-brand { padding: 4px 0 10px; }
+  .ts-brand-initial { display: none; }
+  #root .ts-brand-word { display: inline; font-size: 24px; }
+  .ts-nav-list { grid-column: 1 / -1; grid-row: 2; flex-direction: row; overflow-x: auto; gap: 4px; padding-bottom: 2px; }
+  .ts-nav-label { display: inline; }
+  .ts-nav-item { height: 44px; padding: 0 10px; gap: 6px; flex-shrink: 0; font-size: 13px; }
+  .ts-nav-icon { display: none; }
+  .ts-nav-item.is-active::before { display: none; }
+  .ts-nav-item.is-active { background: var(--ts-hover); }
+  .ts-rail-cta { grid-column: 2; grid-row: 1; margin: 0; }
+  .ts-rail-footer { display: none; }
+  .ts-mobile-only { display: none; }
+  .ts-site-mobile-footer { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 12px; flex-shrink: 0; padding: 10px 16px; border-top: 1px solid var(--ts-line); background: white; color: var(--ts-muted); font-size: 10px; }
+  .ts-site-mobile-footer a { color: inherit; text-decoration: none; padding: 4px 0; }
+  .ts-site-mobile-footer span { flex-basis: 100%; text-align: center; }
 }
