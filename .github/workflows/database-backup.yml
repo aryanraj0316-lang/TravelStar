@@ -1,0 +1,39 @@
+name: Encrypted database backup
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-database-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Check backup encryption
+        run: node --test scripts/database-backup.test.cjs
+      - name: Download PostgreSQL 18 client
+        run: docker pull postgres:18-bookworm
+      - name: Create and verify encrypted backup
+        run: node scripts/database-backup.cjs --docker
+        env:
+          AIVEN_BACKUP_DATABASE_URL: ${{ secrets.AIVEN_BACKUP_DATABASE_URL }}
+          AIVEN_BACKUP_KEY_BASE64: ${{ secrets.AIVEN_BACKUP_KEY_BASE64 }}
+      - name: Preserve matching recovery schema
+        run: tar -czf .backup-output/schema.tar.gz backend/prisma scripts/database-backup.cjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: encrypted-database-${{ github.run_id }}
+          path: .backup-output/
+          retention-days: 14
+          if-no-files-found: error
