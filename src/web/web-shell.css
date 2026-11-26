@@ -1,6 +1,4 @@
-/* Website-only styles. Imported from src/app/_layout.web.tsx, so the Android
-   bundle never sees this file. Everything visual is inside a min-width
-   media query, which leaves narrow browsers (< 768px) exactly as they were. */
+/* Website-only responsive styles. Never included in the Android bundle. */
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=Outfit:wght@300;400;500;600;700;800&display=swap');
 
 :root {

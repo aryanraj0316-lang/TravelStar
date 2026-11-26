@@ -1,10 +1,7 @@
 // Website-only navigation frame. Imported only from `*.web.tsx` route
 // layouts, so it never enters the Android bundle.
 //
-// Responsive website navigation replaces the phone's floating bottom dock with a
-// sidebar (icons only below 1264px, icons and labels above). Below 768px
-// every element here is `display: none` / `display: contents` (see
-// web-shell.css), so narrow browsers get exactly the phone layout.
+// Desktop browsers use a sidebar; narrow browsers use a website header.
 //
 // Each nav action mirrors what the same tap does on the phone:
 // - tab items copy AppTabBar's onPress: Profile sends guests to sign-up, Chat
@@ -262,7 +259,7 @@ export function WebShell({ children }: { children: React.ReactNode }) {
       </main>
       {chromeless ? null : <footer className="ts-site-mobile-footer">
         {FOOTER_LINKS.map(({ href, labelKey }) => <a key={href} href={href}>{tFooter(labelKey)}</a>)}
-        <span>? {new Date().getFullYear()} Yatrenzo</span>
+        <span>&copy; {new Date().getFullYear()} Yatrenzo</span>
       </footer>}
     </div>
   );
