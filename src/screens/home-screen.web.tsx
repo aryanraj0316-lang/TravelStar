@@ -1981,6 +1981,7 @@ function HomeScreen() {
           <View style={{ height: 4 }} />
         )}
 
+        {web.isMobile && quickAccessTiles}
         <WebSectionHeader title={t('home.featuredGroupTrips')} />
         <WebFeaturedTrips width={web.main} onOpenTrip={handleOpenTrip} onRequestAuth={requestAuth} />
 
@@ -2184,13 +2185,12 @@ function HomeScreen() {
               </View>
             ) : (
               <>
-                {quickAccessTiles}
-                {web.isMobile && mainSections}
+                {!web.isMobile && quickAccessTiles}
                 <View style={[webStyles.inlineCards, web.isMobile && { flexDirection: 'column', height: 440 }]}>
                   <TrendingWeatherCard isFocused={isFocused} />
                   <RouteSafetyCard isFocused={isFocused} />
                 </View>
-                {!web.isMobile && mainSections}
+                {mainSections}
               </>
             )}
           </View>

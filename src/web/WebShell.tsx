@@ -17,7 +17,9 @@ import MessageSquare from 'lucide-react-native/icons/message-square';
 import Plus from 'lucide-react-native/icons/plus';
 import Search from 'lucide-react-native/icons/search';
 import User from 'lucide-react-native/icons/user';
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import Menu from 'lucide-react-native/icons/menu';
+import X from 'lucide-react-native/icons/x';
 import { useTranslation } from 'react-i18next';
 
 import { useApp } from '@/store/AppContext';
@@ -104,6 +106,18 @@ function NavItem({ href, label, active, onActivate, icon, dot, variant = 'defaul
 }
 
 function WebSidebar({ pathname }: { pathname: string }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const railRef = useRef<HTMLElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => { setMenuOpen(false); }, [pathname]);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const outside = (event: PointerEvent) => { if (!railRef.current?.contains(event.target as Node)) setMenuOpen(false); };
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { setMenuOpen(false); menuButtonRef.current?.focus(); } };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("pointerdown", outside); document.removeEventListener("keydown", escape); };
+  }, [menuOpen]);
   const { t } = useTranslation();
   const router = useRouter();
   const {
@@ -138,7 +152,10 @@ function WebSidebar({ pathname }: { pathname: string }) {
   const profileLabel = isLoggedIn ? t('nav.profile') : t('home.loginSignUp');
 
   return (
-    <nav className="ts-rail" aria-label="Primary">
+    <nav ref={railRef} className={`ts-rail${menuOpen ? " is-menu-open" : ""}`} aria-label="Primary">
+      <button ref={menuButtonRef} className="ts-menu-toggle" type="button" aria-label={menuOpen ? "Close navigation menu" : "Open navigation menu"} aria-expanded={menuOpen} aria-controls="ts-navigation-menu" onClick={() => setMenuOpen(open => !open)}>
+        {menuOpen ? <X size={22} /> : <Menu size={22} />}
+      </button>
       <a
         href="/"
         className="ts-brand"
@@ -153,6 +170,7 @@ function WebSidebar({ pathname }: { pathname: string }) {
         <span className="ts-brand-word">Yatrenzo</span>
       </a>
 
+      <div id="ts-navigation-menu" className="ts-navigation-menu" onClick={(event) => { if ((event.target as HTMLElement).closest("a")) setMenuOpen(false); }}>
       <div className="ts-nav-list">
         <NavItem
           href="/"
@@ -217,6 +235,7 @@ function WebSidebar({ pathname }: { pathname: string }) {
         />
       </div>
 
+      </div>
       <footer className="ts-rail-footer">
         <div className="ts-rail-links">
           {FOOTER_LINKS.map(({ href, labelKey }) => (
