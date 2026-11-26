@@ -16,6 +16,7 @@ const assert = require('node:assert/strict');
   page.on('pageerror', error => errors.push(error.message));
   try {
     await page.goto(web + '/auth?mode=LOGIN');
+    await page.locator('html.ts-hydrated').waitFor();
     await page.getByPlaceholder('98765 43210').fill(phone);
     await page.locator('input[type="password"]').fill('WebCheck-pass-2026!');
     await page.getByRole('button', { name: 'Log In', exact: true }).click();

@@ -55,6 +55,7 @@ import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Dimensions,
+  useWindowDimensions,
   Image,
   Keyboard,
   KeyboardAvoidingView,
@@ -324,6 +325,8 @@ const TIME_HOURS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', 
 const TIME_MINUTES = ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'] as const;
 
 function CreateTripScreen() {
+  const { width: browserWidth } = useWindowDimensions();
+  const compactWeb = Platform.OS === "web" && browserWidth < 600;
   useEffect(() => {
     logger.log('Screen mounted: CreateTripScreen');
   }, []);
@@ -1192,7 +1195,7 @@ function CreateTripScreen() {
                 <Text style={styles.sectionTitle}>{t('createTrip.step4Title')}</Text>
               </View>
 
-              <View style={styles.gridRow}>
+              <View style={[styles.gridRow, compactWeb && { flexDirection: "column" }]}>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.inputLabel, styles.compactGridLabel]} numberOfLines={1}>
                     {t('createTrip.startDateLabel')}
@@ -1246,7 +1249,7 @@ function CreateTripScreen() {
                   <Text style={styles.subCardTitle}>{t('createTrip.pricingGroupTitle')}</Text>
                 </View>
 
-                <View style={styles.gridRow}>
+                <View style={[styles.gridRow, compactWeb && { flexDirection: "column" }]}>
                   <Input
                     label={t('createTrip.budgetPerPersonLabel')}
                     labelStyle={styles.compactGridLabel}
@@ -1299,7 +1302,7 @@ function CreateTripScreen() {
                   containerStyle={styles.inputGroup}
                 />
 
-                <View style={styles.gridRow}>
+                <View style={[styles.gridRow, compactWeb && { flexDirection: "column" }]}>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.inputLabel, styles.compactGridLabel]} numberOfLines={1}>
                       {t('createTrip.meetingDateLabel')}
@@ -1795,7 +1798,7 @@ function CreateTripScreen() {
           INTERACTIVE DATE PICKER CALENDAR MODAL
           ════════════════════════════════════════════════ */}
         {activeDatePicker && (
-          <View style={styles.modalOverlay}>
+          <View style={styles.modalOverlay} {...(Platform.OS === "web" ? { dataSet: { createModal: "calendar" } } : {})}>
             <View style={styles.calendarModalCard}>
               <View style={styles.calendarHeaderRow}>
                 <TouchableOpacity
@@ -3843,7 +3846,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   detailStatCell: {
-    width: (SCREEN_WIDTH - 48) / 2,
+    ...(Platform.OS === "web" ? { flexBasis: "47%" as const, flexGrow: 1, minWidth: 0 } : { width: (SCREEN_WIDTH - 48) / 2 }),
     backgroundColor: C.cardAlt,
     borderRadius: 14,
     padding: 12,

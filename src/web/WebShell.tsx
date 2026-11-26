@@ -23,6 +23,7 @@ import X from 'lucide-react-native/icons/x';
 import { useTranslation } from 'react-i18next';
 
 import { useApp } from '@/store/AppContext';
+import { useHydrated } from '@/web/layout';
 
 // Full-screen flows keep their own chrome: no sidebar around them.
 const CHROMELESS_PREFIXES = ['/auth', '/onboarding', '/stories', '/forgot-password', '/reset-password'];
@@ -109,28 +110,35 @@ function WebSidebar({ pathname }: { pathname: string }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const railRef = useRef<HTMLElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => { setMenuOpen(false); }, [pathname]);
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
   useEffect(() => {
     if (!menuOpen) return;
-    const outside = (event: PointerEvent) => { if (!railRef.current?.contains(event.target as Node)) setMenuOpen(false); };
-    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { setMenuOpen(false); menuButtonRef.current?.focus(); } };
-    document.addEventListener("pointerdown", outside);
-    document.addEventListener("keydown", escape);
-    return () => { document.removeEventListener("pointerdown", outside); document.removeEventListener("keydown", escape); };
+    const outside = (event: PointerEvent) => {
+      if (!railRef.current?.contains(event.target as Node)) setMenuOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMenuOpen(false);
+        menuButtonRef.current?.focus();
+      }
+    };
+    document.addEventListener('pointerdown', outside);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('pointerdown', outside);
+      document.removeEventListener('keydown', escape);
+    };
   }, [menuOpen]);
   const { t } = useTranslation();
   const router = useRouter();
-  const {
-    isLoggedIn,
-    profile,
-    hasUnreadChat,
-    hasUnreadNotification,
-    setActiveRoomId,
-    setNavbarHidden,
-  } = useApp();
+  const { isLoggedIn, profile, hasUnreadChat, hasUnreadNotification, setActiveRoomId, setNavbarHidden } = useApp();
 
   const activeTab: TabName | null =
-    pathname === '/' ? 'index' : ((Object.keys(TAB_PATHS) as TabName[]).find((k) => k !== 'index' && pathname === TAB_PATHS[k]) ?? null);
+    pathname === '/'
+      ? 'index'
+      : ((Object.keys(TAB_PATHS) as TabName[]).find((k) => k !== 'index' && pathname === TAB_PATHS[k]) ?? null);
 
   // Same steps, in the same order, as AppTabBar's onPress.
   const goTab = (name: TabName) => {
@@ -152,8 +160,16 @@ function WebSidebar({ pathname }: { pathname: string }) {
   const profileLabel = isLoggedIn ? t('nav.profile') : t('home.loginSignUp');
 
   return (
-    <nav ref={railRef} className={`ts-rail${menuOpen ? " is-menu-open" : ""}`} aria-label="Primary">
-      <button ref={menuButtonRef} className="ts-menu-toggle" type="button" aria-label={menuOpen ? "Close navigation menu" : "Open navigation menu"} aria-expanded={menuOpen} aria-controls="ts-navigation-menu" onClick={() => setMenuOpen(open => !open)}>
+    <nav ref={railRef} className={`ts-rail${menuOpen ? ' is-menu-open' : ''}`} aria-label="Primary">
+      <button
+        ref={menuButtonRef}
+        className="ts-menu-toggle"
+        type="button"
+        aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+        aria-expanded={menuOpen}
+        aria-controls="ts-navigation-menu"
+        onClick={() => setMenuOpen((open) => !open)}
+      >
         {menuOpen ? <X size={22} /> : <Menu size={22} />}
       </button>
       <a
@@ -166,75 +182,82 @@ function WebSidebar({ pathname }: { pathname: string }) {
           goTab('index');
         }}
       >
-        <span className="ts-brand-initial" aria-hidden="true">Y</span>
+        <span className="ts-brand-initial" aria-hidden="true">
+          Y
+        </span>
         <span className="ts-brand-word">Yatrenzo</span>
       </a>
 
-      <div id="ts-navigation-menu" className="ts-navigation-menu" onClick={(event) => { if ((event.target as HTMLElement).closest("a")) setMenuOpen(false); }}>
-      <div className="ts-nav-list">
-        <NavItem
-          href="/"
-          label={t('nav.home')}
-          active={activeTab === 'index'}
-          onActivate={() => goTab('index')}
-          icon={<Home {...iconProps(activeTab === 'index')} />}
-        />
-        <NavItem
-          href="/search"
-          label={t('nav.search')}
-          active={activeTab === 'search'}
-          onActivate={() => goTab('search')}
-          icon={<Search {...iconProps(activeTab === 'search')} />}
-        />
-        <NavItem
-          href="/map"
-          label={t('nav.map')}
-          active={activeTab === 'map'}
-          onActivate={() => goTab('map')}
-          icon={<Map {...iconProps(activeTab === 'map')} />}
-        />
-        <NavItem
-          href="/chat"
-          label={t('nav.chat')}
-          active={activeTab === 'chat'}
-          onActivate={() => goTab('chat')}
-          icon={<MessageSquare {...iconProps(activeTab === 'chat')} />}
-          dot={hasUnreadChat}
-        />
-        <NavItem
-          href="/notifications"
-          label={t('home.notificationsLabel')}
-          active={pathname === '/notifications'}
-          onActivate={() => router.push('/notifications')}
-          icon={<Bell {...iconProps(pathname === '/notifications')} />}
-          dot={hasUnreadNotification}
-        />
-        <NavItem
-          href={isLoggedIn ? '/profile' : '/auth?mode=SIGNUP'}
-          label={profileLabel}
-          active={activeTab === 'profile'}
-          onActivate={() => goTab('profile')}
-          icon={
-            avatarUri ? (
-              <img className={`ts-nav-avatar${activeTab === 'profile' ? ' is-active' : ''}`} src={avatarUri} alt="" />
-            ) : (
-              <User {...iconProps(activeTab === 'profile')} />
-            )
-          }
-        />
-      </div>
+      <div
+        id="ts-navigation-menu"
+        className="ts-navigation-menu"
+        onClick={(event) => {
+          if ((event.target as HTMLElement).closest('a')) setMenuOpen(false);
+        }}
+      >
+        <div className="ts-nav-list">
+          <NavItem
+            href="/"
+            label={t('nav.home')}
+            active={activeTab === 'index'}
+            onActivate={() => goTab('index')}
+            icon={<Home {...iconProps(activeTab === 'index')} />}
+          />
+          <NavItem
+            href="/search"
+            label={t('nav.search')}
+            active={activeTab === 'search'}
+            onActivate={() => goTab('search')}
+            icon={<Search {...iconProps(activeTab === 'search')} />}
+          />
+          <NavItem
+            href="/map"
+            label={t('nav.map')}
+            active={activeTab === 'map'}
+            onActivate={() => goTab('map')}
+            icon={<Map {...iconProps(activeTab === 'map')} />}
+          />
+          <NavItem
+            href="/chat"
+            label={t('nav.chat')}
+            active={activeTab === 'chat'}
+            onActivate={() => goTab('chat')}
+            icon={<MessageSquare {...iconProps(activeTab === 'chat')} />}
+            dot={hasUnreadChat}
+          />
+          <NavItem
+            href="/notifications"
+            label={t('home.notificationsLabel')}
+            active={pathname === '/notifications'}
+            onActivate={() => router.push('/notifications')}
+            icon={<Bell {...iconProps(pathname === '/notifications')} />}
+            dot={hasUnreadNotification}
+          />
+          <NavItem
+            href={isLoggedIn ? '/profile' : '/auth?mode=SIGNUP'}
+            label={profileLabel}
+            active={activeTab === 'profile'}
+            onActivate={() => goTab('profile')}
+            icon={
+              avatarUri ? (
+                <img className={`ts-nav-avatar${activeTab === 'profile' ? ' is-active' : ''}`} src={avatarUri} alt="" />
+              ) : (
+                <User {...iconProps(activeTab === 'profile')} />
+              )
+            }
+          />
+        </div>
 
-      <div className="ts-rail-cta">
-        <NavItem
-          href="/create"
-          label={t('nav.create')}
-          active={activeTab === 'create'}
-          onActivate={() => goTab('create')}
-          icon={<Plus size={20} color="#FFFFFF" strokeWidth={2.4} />}
-          variant="primary"
-        />
-      </div>
-
+        <div className="ts-rail-cta">
+          <NavItem
+            href="/create"
+            label={t('nav.create')}
+            active={activeTab === 'create'}
+            onActivate={() => goTab('create')}
+            icon={<Plus size={20} color="#FFFFFF" strokeWidth={2.4} />}
+            variant="primary"
+          />
+        </div>
       </div>
       <footer className="ts-rail-footer">
         <div className="ts-rail-links">
@@ -252,16 +275,57 @@ function WebSidebar({ pathname }: { pathname: string }) {
             </a>
           ))}
         </div>
-        <div className="ts-rail-copy">© {new Date().getFullYear()} Yatrenzo<br /><span>All rights reserved.</span></div>
+        <div className="ts-rail-copy">
+          © {new Date().getFullYear()} Yatrenzo
+          <br />
+          <span>All rights reserved.</span>
+        </div>
       </footer>
     </nav>
   );
 }
 
 export function WebShell({ children }: { children: React.ReactNode }) {
+  const hydrated = useHydrated();
   const { t: tFooter } = useTranslation();
+  const { isLoggedIn, sessionRestored } = useApp();
+  const router = useRouter();
+  const [signInOpen, setSignInOpen] = useState(false);
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const pathname = usePathname();
   const chromeless = isChromeless(pathname);
+  const publicPage =
+    pathname === '/' ||
+    [
+      '/about',
+      '/support',
+      '/legal/terms',
+      '/legal/privacy',
+      '/auth',
+      '/forgot-password',
+      '/reset-password',
+      '/onboarding',
+    ].includes(pathname);
+  const guestRoute = sessionRestored && !isLoggedIn && !publicPage;
+  useEffect(() => {
+    setSignInOpen(guestRoute);
+  }, [guestRoute, pathname]);
+  useEffect(() => {
+    if (signInOpen && !dialogRef.current?.open) dialogRef.current?.showModal();
+    if (!signInOpen && dialogRef.current?.open) dialogRef.current?.close();
+  }, [signInOpen]);
+  const guardGuestAction = (event: React.SyntheticEvent) => {
+    if (isLoggedIn || !sessionRestored || (publicPage && pathname !== '/')) return;
+    const target = event.target as HTMLElement;
+    if (target.closest('.ts-menu-toggle, .ts-brand, .ts-signin-dialog, [data-guest-allow]')) return;
+    const action = target.closest('a, button, [role=button], input, textarea, select, [role=checkbox], [role=tab]');
+    if (!action || (event.type === 'focus' && !action.matches('input, textarea, select'))) return;
+    const href = action.getAttribute('href')?.split('?')[0];
+    if (href && ['/', '/auth', '/about', '/support', '/legal/terms', '/legal/privacy'].includes(href)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setSignInOpen(true);
+  };
 
   // Wide screens keep the page hidden until the app has hydrated, so the
   // static HTML (always rendered at phone width) never flashes before the
@@ -271,15 +335,66 @@ export function WebShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <div className={`ts-shell${chromeless ? ' is-chromeless' : ''}`}>
+    <div
+      className={`ts-shell${chromeless ? ' is-chromeless' : ''}`}
+      onClickCapture={guardGuestAction}
+      onFocusCapture={guardGuestAction}
+    >
       {chromeless ? null : <WebSidebar pathname={pathname} />}
-      <main className="ts-main">
-        <div className={`ts-stage ${chromeless ? 'is-full' : stageClass(pathname)}`}>{children}</div>
+      <main className="ts-main" inert={!hydrated}>
+        <div
+          className={`ts-stage ${chromeless ? 'is-full' : stageClass(pathname)}${guestRoute ? ' is-guest-route' : ''}`}
+          inert={guestRoute}
+        >
+          {children}
+        </div>
+        {guestRoute && (
+          <div className="ts-guest-route">
+            <h1>Sign in to continue</h1>
+            <p>Sign in or create an account to use Yatrenzo.</p>
+            <button data-guest-allow onClick={() => setSignInOpen(true)}>
+              Sign in / Sign up
+            </button>
+          </div>
+        )}
       </main>
-      {chromeless ? null : <footer className="ts-site-mobile-footer">
-        {FOOTER_LINKS.map(({ href, labelKey }) => <a key={href} href={href}>{tFooter(labelKey)}</a>)}
-        <span>&copy; {new Date().getFullYear()} Yatrenzo</span>
-      </footer>}
+      {chromeless ? null : (
+        <footer className="ts-site-mobile-footer">
+          {FOOTER_LINKS.map(({ href, labelKey }) => (
+            <a key={href} href={href}>
+              {tFooter(labelKey)}
+            </a>
+          ))}
+          <span>&copy; {new Date().getFullYear()} Yatrenzo</span>
+        </footer>
+      )}
+      <dialog
+        ref={dialogRef}
+        className="ts-signin-dialog"
+        aria-labelledby="ts-signin-title"
+        onCancel={() => setSignInOpen(false)}
+        onClick={(event) => {
+          if (event.target === event.currentTarget) setSignInOpen(false);
+        }}
+      >
+        <button className="ts-signin-close" aria-label="Close sign-in message" onClick={() => setSignInOpen(false)}>
+          <X size={20} />
+        </button>
+        <h2 id="ts-signin-title">Sign in to continue</h2>
+        <p>Sign in or create an account to explore trips, make bookings, and connect with travelers.</p>
+        <button
+          className="ts-signin-primary"
+          onClick={() => {
+            setSignInOpen(false);
+            router.push('/auth?mode=LOGIN');
+          }}
+        >
+          Sign in / Sign up
+        </button>
+        <button className="ts-signin-later" onClick={() => setSignInOpen(false)}>
+          Maybe later
+        </button>
+      </dialog>
     </div>
   );
 }
