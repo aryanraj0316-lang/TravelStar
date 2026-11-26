@@ -777,3 +777,16 @@ body select {
     padding: 10px 8px !important;
   }
 }
+
+@media (min-width: 768px) {
+  [data-auth-page] { background: #f8fafc !important; }
+  [data-auth-card] { margin-top: 64px; margin-bottom: 24px; max-width: 440px !important; border: 1px solid var(--ts-line); border-radius: 20px; padding: 28px; background: white; box-shadow: 0 12px 36px -24px #0b122050 !important; }
+  [data-auth-heading] { height: auto !important; overflow: visible !important; background: transparent !important; border-radius: 0 !important; padding-bottom: 24px; border-bottom: 1px solid var(--ts-line); }
+  [data-auth-heading] > :not([data-auth-heading-copy]) { display: none !important; }
+  [data-auth-heading-copy] { position: relative !important; left: auto !important; bottom: auto !important; max-width: 100% !important; }
+  [data-auth-heading-copy] > :first-child { font-size: 14px !important; font-weight: 600 !important; color: #64748b !important; margin-bottom: 10px !important; text-shadow: none !important; }
+  [data-auth-heading-copy] > :nth-child(2) { color: var(--ts-ink) !important; font-size: 28px !important; line-height: 36px !important; text-shadow: none !important; margin-bottom: 6px !important; }
+  [data-auth-heading-copy] > :last-child { font-size: 13px !important; line-height: 20px !important; font-weight: 400 !important; text-shadow: none !important; }
+  [data-auth-form] { padding: 24px 0 0 !important; border: 0 !important; border-radius: 0 !important; }
+  [data-auth-form] input { font-size: 15px !important; }
+}

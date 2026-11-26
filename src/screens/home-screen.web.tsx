@@ -1950,8 +1950,7 @@ function HomeScreen() {
       </View>
     );
 
-    const mainSections = (
-      <>
+    const storySection = (
         <View {...({ dataSet: { desktopHomePanel: "stories" } } as object)}>
         <WebSectionHeader
           title={t('home.reelsAndStories')}
@@ -1993,7 +1992,10 @@ function HomeScreen() {
         )}
         </View>
 
-        {web.isMobile && quickAccessTiles}
+    );
+    const mainSections = (
+      <>
+        {!web.isMobile && storySection}
         <View {...({ dataSet: { desktopHomePanel: "trips" } } as object)}>
         <WebSectionHeader title={t('home.featuredGroupTrips')} />
         <WebFeaturedTrips width={web.main - (web.isMobile ? 0 : 40)} onOpenTrip={handleOpenTrip} onRequestAuth={requestAuth} />
@@ -2201,7 +2203,8 @@ function HomeScreen() {
               </View>
             ) : (
               <>
-                {!web.isMobile && quickAccessTiles}
+                {web.isMobile && storySection}
+                {quickAccessTiles}
                 <View style={[webStyles.inlineCards, web.isMobile && { flexDirection: 'column', height: 440 }]}>
                   <TrendingWeatherCard isFocused={isFocused} />
                   <RouteSafetyCard isFocused={isFocused} />

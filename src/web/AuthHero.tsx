@@ -29,9 +29,6 @@ export function AuthHero() {
         style={StyleSheet.absoluteFill}
       />
       <View style={styles.brandRow}>
-        <View style={styles.mark}>
-          <Text style={styles.markStar}>✦</Text>
-        </View>
         <Text {...webDisplayFont} style={styles.brand}>
           Yatrenzo
         </Text>
@@ -62,26 +59,14 @@ export function AuthHero() {
 const styles = StyleSheet.create({
   hero: {
     flex: 1,
-    justifyContent: 'space-between',
-    padding: 48,
+    justifyContent: 'flex-start',
+    padding: 36,
     backgroundColor: '#0B1220',
   },
   brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-  },
-  mark: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#2563EB',
-  },
-  markStar: {
-    color: '#FFFFFF',
-    fontSize: 20,
   },
   brand: {
     color: '#FFFFFF',
@@ -90,12 +75,14 @@ const styles = StyleSheet.create({
     letterSpacing: -0.4,
   },
   copy: {
+    flex: 1,
+    justifyContent: 'center',
     maxWidth: 520,
   },
   headline: {
     color: '#FFFFFF',
-    fontSize: 54,
-    lineHeight: 60,
+    fontSize: 40,
+    lineHeight: 46,
     fontWeight: '600',
     letterSpacing: -1.2,
   },
@@ -119,13 +106,13 @@ const styles = StyleSheet.create({
   },
   pointTitle: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
   },
   pointBody: {
     color: 'rgba(255, 255, 255, 0.78)',
-    fontSize: 14,
-    lineHeight: 21,
+    fontSize: 13,
+    lineHeight: 20,
     marginTop: 3,
   },
 });
