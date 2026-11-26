@@ -2,6 +2,9 @@
 
 Render Static Site: `yatrenzo-web`, service `srv-dc41t2p7lnhs73f5kebg`.
 Website: https://yatrenzo-web.onrender.com
+Custom domain: https://yatrenzo.com (`www` redirects to the apex).
+Registrar/DNS: Hostinger. Apex A record `216.24.57.1`; www CNAME
+`yatrenzo-web.onrender.com`. Existing Hostinger nameservers are retained.
 Backend: https://travelstar.onrender.com (shared with Android).
 
 Build from repository root on `master` using `npm ci && npm run build:web`,

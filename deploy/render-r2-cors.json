@@ -1,6 +1,6 @@
 [
   {
-    "AllowedOrigins": ["https://yatrenzo-web.onrender.com"],
+    "AllowedOrigins": ["https://yatrenzo-web.onrender.com", "https://yatrenzo.com", "https://www.yatrenzo.com"],
     "AllowedMethods": ["GET", "HEAD", "PUT"],
     "AllowedHeaders": ["Content-Type"],
     "ExposeHeaders": ["ETag"],
