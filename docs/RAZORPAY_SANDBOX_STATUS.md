@@ -4,6 +4,33 @@ The downloaded test credentials are stored only in the ignored local file
 `.expo/razorpay-test.env.local`. No credentials are included in this document.
 Production has not been switched to sandbox mode.
 
+## Public receiver completed
+
+The dedicated receiver is live at https://yatrenzo-sandbox.onrender.com.
+Its webhook is registered and active in the Razorpay test account at
+https://yatrenzo-sandbox.onrender.com/api/v1/trip-payments/webhook.
+
+At 16:16 UTC on 28 November 2026, the public integration check verified:
+
+- Razorpay itself delivered the signed `payment.captured` notification.
+- The hosted receiver completed the booking, issued its verification token,
+  and reserved one seat without a browser confirmation request.
+- Razorpay itself delivered the refund notification and the stored refund status
+  became `PROCESSED`.
+- Invalid webhook signatures were rejected and other payment/auth API routes
+  on this receiver returned 404.
+- Synthetic database fixtures were removed after verification. Test transactions
+  remain in the Razorpay test dashboard; no real money moved.
+
+The receiver uses a separate database and restricted database login. Its login
+was checked to have no SELECT access to production users. The production Render
+backend still has no Razorpay key and does not use the sandbox database.
+
+See `deploy/RAZORPAY_SANDBOX.md` for deployment and reproduction details and
+`deploy/razorpay-sandbox-verification.json` for the secret-free verification result.
+The backend build/typecheck passed, and all 32 sandbox-isolation, booking,
+production-payment-policy and organizer-payout regression tests passed after setup.
+
 ## Verified
 
 - Razorpay accepted the test credentials and created an INR 1 sandbox order.
@@ -32,11 +59,10 @@ must also be installed. It does not invent a captured payment.
 ## Still required before calling payments ready
 
 - Exercise checkout cancellation and payment failure from the installed website/app UI. The automated success flow calls the shared wrapper and backend services, rather than navigating the full trip-booking UI.
-- Register a webhook on a publicly reachable sandbox backend and confirm actual Razorpay delivery. Local signature tests do not establish provider delivery.
 - Test checkout in an installed Android development/release build; Expo Go cannot load the native Razorpay module.
 - Have the adult merchant account owner configure live credentials and webhook settings for production. Test keys are deliberately rejected by the production backend.
 
 The shared webhook route is `/api/v1/trip-payments/webhook`. The receiver handles
-`payment.captured`, `payment.failed`, `refund.failed`, and `transfer.failed`.
+`payment.captured`, `payment.failed`, `refund.processed`, `refund.failed`, and `transfer.failed`.
 The webhook secret belongs on the backend as `RAZORPAY_WEBHOOK_SECRET`; the key
 secret must never be embedded in the website or Android bundle.
